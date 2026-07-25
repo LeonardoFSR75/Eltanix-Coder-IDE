@@ -11,20 +11,27 @@ modelo ou de nuvem é mudança de configuração, não de código.
 
 ## Estado atual
 
-As cinco fases estão construídas. **Nada foi exercitado contra infraestrutura
-real ainda** — a validação ponta a ponta depende de Docker e Ollama no ar.
+As cinco fases estão construídas e **validadas contra infraestrutura real** —
+Postgres com pgvector, Redis e Docker no ar.
 
 | Fase | Escopo | Status |
 |---|---|---|
-| 1 | Gateway multi-modelo, fallback, contabilidade de custo, dashboard | construída |
-| 2 | Indexação do repositório (tree-sitter + pgvector), busca híbrida | construída |
-| 3 | Agente LangGraph, sandbox Docker, Git/GitHub, PRs | construída |
-| 4 | IDE web (Monaco, diff, agente, terminal) | construída |
+| 1 | Gateway multi-modelo, fallback, contabilidade de custo, dashboard | validada |
+| 2 | Indexação do repositório (tree-sitter + pgvector), busca híbrida | validada |
+| 3 | Agente LangGraph, sandbox Docker, Git/GitHub, PRs | validada |
+| 4 | IDE web (Monaco, diff, agente, terminal) | validada |
 | 5 | Compressão de contexto e roteamento por complexidade | construída |
 
-Verificado: 170 testes (~72s), incluindo Git e fronteira de workspace contra
-repositórios temporários reais e o pipeline de indexação contra o código deste
-próprio projeto. Ruff, `tsc` e `next build` limpos.
+Exercitado de ponta a ponta: as três migrações contra Postgres real (extensão
+`vector`, índice HNSW, `tsvector` como coluna gerada); indexação deste próprio
+repositório (117 arquivos, 849 chunks); sessão de agente com worktree Git e
+sandbox Docker, confirmando na prática usuário não-root, escrita barrada fora do
+workspace e rede desabilitada; e o dashboard renderizando telemetria real.
+
+Falta apenas uma chamada a um modelo de verdade — depende do Ollama ou de
+credenciais de nuvem.
+
+172 testes (~74s). Ruff, `tsc` e `next build` limpos.
 
 ## Requisitos
 
@@ -87,6 +94,28 @@ Testes:
 ```bash
 cd apps/api && uv run pytest
 ```
+
+### Se as portas 8000 ou 3000 estiverem ocupadas
+
+No Windows com Docker Desktop, o proxy do WSL costuma reservar essas portas para
+containers de outros projetos. A colisão é traiçoeira: em vez de recusar a
+conexão, **outro serviço responde no lugar deste** — o backend parece no ar mas
+devolve 404 em todas as rotas.
+
+Para conferir quem está na porta:
+
+```bash
+netstat -ano | findstr :8000
+```
+
+Backend em outra porta:
+
+```bash
+cd apps/api && uv run uvicorn sicoobito.main:app --host 127.0.0.1 --port 8010
+```
+
+Front em outra porta: defina `PORT=3010` no `apps/web/.env.local`, junto com
+`SICOOBITO_API_URL` apontando para o backend.
 
 ## Configuração
 
