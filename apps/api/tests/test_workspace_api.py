@@ -122,6 +122,27 @@ def test_terminal_websocket_refuses_a_bogus_ticket(client):
     assert "WebSocket" in type(erro.value).__name__ or "4401" in str(erro.value)
 
 
+def test_terminal_websocket_accepts_a_valid_ticket(client):
+    """O teste de recusa acima passava pelo motivo errado.
+
+    A rota WebSocket herdava a dependência de autenticação por header do router,
+    e o browser não consegue enviar `Authorization` ao abrir um WebSocket —
+    então *toda* conexão morria antes de o ticket ser avaliado, e o mecanismo de
+    ticket era código morto. Um teste que só afirma "falhou" passa por qualquer
+    motivo; este exige que o handshake **complete**.
+    """
+    ticket = client.post(
+        "/api/workspace/terminal/sessao-x/ticket", headers=AUTH
+    ).json()["ticket"]
+
+    with client.websocket_connect(f"/api/workspace/terminal/sessao-x?ticket={ticket}") as ws:
+        # Conexão aceita. A sessão não existe neste teste, então o servidor
+        # informa isso pelo próprio canal — o que só é possível após o accept.
+        mensagem = ws.receive_json()
+        assert mensagem["type"] == "error"
+        assert "sessao-x" in mensagem["message"]
+
+
 def test_agent_tools_endpoint_exposes_risk_classes(client):
     resposta = client.get("/api/agent/tools", headers=AUTH)
     assert resposta.status_code == 200

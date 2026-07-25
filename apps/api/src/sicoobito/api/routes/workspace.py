@@ -25,6 +25,13 @@ log = get_logger(__name__)
 
 router = APIRouter(prefix="/api/workspace", tags=["workspace"], dependencies=[AuthDep])
 
+# O WebSocket vive num router **sem** a dependência de autenticação por header.
+# `require_api_key` lê `Authorization`, que o browser não consegue enviar ao
+# abrir um WebSocket: a dependência rejeitaria toda conexão antes de o ticket
+# ser avaliado, e o handshake morreria sem resposta HTTP válida. A autenticação
+# desta rota é o ticket de uso único, verificado dentro do próprio handler.
+ws_router = APIRouter(prefix="/api/workspace", tags=["workspace"])
+
 # Profundidade máxima da árvore numa única resposta. Repositório grande tem
 # dezenas de milhares de arquivos; mandar tudo travaria o browser.
 MAX_TREE_ENTRIES = 2000
@@ -130,7 +137,7 @@ async def terminal_ticket(session_id: str, request: Request) -> dict[str, Any]:
     return {"ticket": ticket, "expires_in": TICKET_TTL_SECONDS}
 
 
-@router.websocket("/terminal/{session_id}")
+@ws_router.websocket("/terminal/{session_id}")
 async def terminal(websocket: WebSocket, session_id: str) -> None:
     """Terminal ligado ao sandbox da sessão.
 
@@ -148,6 +155,7 @@ async def terminal(websocket: WebSocket, session_id: str) -> None:
         store: TicketStore | None = getattr(websocket.app.state, "tickets", None)
         ticket = websocket.query_params.get("ticket", "")
         if store is None or not await store.consume(ticket, f"terminal:{session_id}"):
+            log.warning("workspace.terminal.rejected", session=session_id)
             await websocket.close(code=4401, reason="ticket inválido ou expirado")
             return
 

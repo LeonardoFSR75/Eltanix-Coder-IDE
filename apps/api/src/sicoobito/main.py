@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from contextlib import asynccontextmanager
+import asyncio
+from contextlib import asynccontextmanager, suppress
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -16,6 +17,7 @@ from sicoobito.api.routes import (
     health_router,
     metrics_router,
     workspace_router,
+    workspace_ws_router,
 )
 from sicoobito.api.tickets import TicketStore
 from sicoobito.api.v1 import router as openai_router
@@ -98,11 +100,19 @@ async def lifespan(app: FastAPI):
     app.state.agent_runner = AgentRunner(
         settings=settings, engine=engine, indexer=indexer, sandboxes=sandboxes
     )
+    # O desligamento ordenado abaixo cobre o caso normal; este laço cobre o
+    # anormal (kill -9, queda), varrendo containers de execuções anteriores que
+    # ninguém mais conhece.
+    reaper = asyncio.create_task(sandboxes.run_reaper())
+
     log.info("app.started", version=__version__, workspace_root=str(settings.workspace_root))
 
     try:
         yield
     finally:
+        reaper.cancel()
+        with suppress(asyncio.CancelledError):
+            await reaper
         # Containers da sessão não podem sobreviver ao processo que os criou:
         # ficariam órfãos consumindo memória até alguém notar.
         await sandboxes.shutdown()
@@ -139,6 +149,7 @@ def create_app() -> FastAPI:
     app.include_router(context_router)
     app.include_router(agent_router)
     app.include_router(workspace_router)
+    app.include_router(workspace_ws_router)
 
     @app.get("/", tags=["meta"])
     async def root() -> dict[str, str]:

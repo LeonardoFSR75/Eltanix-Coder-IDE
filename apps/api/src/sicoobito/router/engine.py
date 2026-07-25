@@ -439,6 +439,7 @@ class RouterEngine:
                 prompt_tokens=estimated,
                 usage_estimated=True,
                 cost_known=False,
+                complexity=verdict.complexity if verdict else None,
             )
         )
         raise AllCandidatesFailedError(

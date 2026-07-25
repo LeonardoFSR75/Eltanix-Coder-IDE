@@ -301,7 +301,7 @@ class SandboxManager:
             await sandbox.stop()
 
     async def reap_expired(self) -> int:
-        """Derruba containers ociosos além do TTL. Chamado periodicamente."""
+        """Derruba containers ociosos além do TTL."""
         now = time.time()
         expired = [
             session
@@ -313,6 +313,52 @@ class SandboxManager:
         if expired:
             log.info("sandbox.reaped", count=len(expired))
         return len(expired)
+
+    async def reap_orphans(self) -> int:
+        """Remove containers de sessões que este processo não conhece.
+
+        Um `kill -9` no servidor — ou uma queda — impede o desligamento
+        ordenado, e os containers ficam consumindo memória até alguém notar.
+        Eles não estão em `_sandboxes`, então `reap_expired` nunca os veria; a
+        única pista que resta é o label gravado na criação.
+        """
+        try:
+            client = await asyncio.to_thread(_docker_client)
+        except SandboxUnavailableError:
+            return 0
+
+        try:
+            containers = await asyncio.to_thread(
+                lambda: client.containers.list(all=True, filters={"label": LABEL})
+            )
+        except Exception as exc:
+            log.warning("sandbox.reap_orphans.failed", error=str(exc))
+            return 0
+
+        removidos = 0
+        for container in containers:
+            session = container.labels.get(LABEL, "")
+            if session in self._sandboxes:
+                continue
+            try:
+                await asyncio.to_thread(lambda c=container: c.remove(force=True))
+                removidos += 1
+                log.info("sandbox.orphan.removed", session=session, container=container.short_id)
+            except Exception as exc:
+                log.warning("sandbox.orphan.remove_failed", session=session, error=str(exc))
+        return removidos
+
+    async def run_reaper(self, interval_seconds: int = 300) -> None:
+        """Laço de limpeza. Roda como task de fundo enquanto a app vive."""
+        while True:
+            try:
+                await asyncio.sleep(interval_seconds)
+                await self.reap_expired()
+                await self.reap_orphans()
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                log.warning("sandbox.reaper.iteration_failed", error=str(exc))
 
     async def shutdown(self) -> None:
         for session in list(self._sandboxes):

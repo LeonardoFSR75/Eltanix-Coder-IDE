@@ -113,6 +113,23 @@ def test_decorated_symbols_keep_their_real_kind():
     assert kinds.get("handler") == "function"
 
 
+def test_decorated_class_is_not_nested_under_itself():
+    # `decorated_definition` não tem campo `body`. Procurar o corpo nele
+    # devolvia o próprio wrapper, e a recursão reencontrava a classe — que
+    # aparecia como `Config.Config` no repo map.
+    fonte = (
+        "from dataclasses import dataclass\n\n"
+        "@dataclass\nclass Config:\n    nome: str\n\n"
+        "    def validar(self):\n        return True\n"
+    )
+    result = chunk_file("c.py", fonte, "python")
+
+    qualificados = [c.qualified_name for c in result.chunks if c.symbol]
+    assert "Config.Config" not in qualificados
+    assert "Config" in qualificados
+    assert "Config.validar" in qualificados
+
+
 def test_module_level_code_is_not_lost():
     # Imports e constantes de topo são onde moram as dependências do arquivo;
     # perdê-los deixaria a busca cega para "quem importa o quê".

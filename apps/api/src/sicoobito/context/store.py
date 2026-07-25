@@ -78,7 +78,6 @@ async def upsert_file(
     if existing is None:
         existing = IndexedFile(workspace=workspace, path=path)
         session.add(existing)
-        await session.flush()
     else:
         await session.execute(delete(CodeChunk).where(CodeChunk.file_id == existing.id))
 
@@ -88,6 +87,11 @@ async def upsert_file(
     existing.mtime = mtime
     existing.chunk_count = len(chunks)
     existing.fallback_chunking = fallback_chunking
+
+    # O flush vem **depois** de preencher os campos obrigatórios: antes disso o
+    # INSERT sairia com content_hash nulo. Ele é necessário aqui para que
+    # `existing.id` exista antes de virar chave estrangeira dos chunks.
+    await session.flush()
 
     for chunk, embedding in zip(chunks, embeddings, strict=True):
         session.add(

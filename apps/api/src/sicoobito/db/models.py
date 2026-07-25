@@ -18,6 +18,7 @@ from datetime import datetime
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
     Boolean,
+    Computed,
     DateTime,
     Float,
     ForeignKey,
@@ -179,7 +180,14 @@ class CodeChunk(Base):
     # Coluna gerada pelo Postgres (ver migração 0002): não precisa manutenção e
     # nunca fica dessincronizada do `content`. Config `simple` porque stemming
     # de inglês estraga identificador de código.
-    tsv: Mapped[str | None] = mapped_column(TSVECTOR, nullable=True)
+    #
+    # `Computed` não é decoração: sem ele o SQLAlchemy inclui `tsv` no INSERT, e
+    # o Postgres recusa qualquer escrita numa coluna GENERATED ALWAYS.
+    tsv: Mapped[str | None] = mapped_column(
+        TSVECTOR,
+        Computed("to_tsvector('simple', content)", persisted=True),
+        nullable=True,
+    )
 
     file: Mapped[IndexedFile] = relationship(back_populates="chunks")
 

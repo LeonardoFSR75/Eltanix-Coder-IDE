@@ -115,20 +115,31 @@ def _comment(language: str, text: str) -> str:
     return f"{_COMMENT_PREFIX.get(language, '//')} {text}"
 
 
-def _effective_type(node: Any) -> str:
-    """Tipo real por trás de um nó que só embrulha outro.
+_WRAPPER_NODES = {"decorated_definition", "export_statement", "ambient_declaration"}
+
+
+def _unwrap(node: Any) -> Any:
+    """Nó real por trás de um que só embrulha outro.
 
     `decorated_definition` (`@dataclass`, `@router.get`, `@pytest.fixture`) e
-    `export_statement` não dizem nada sobre o que declaram — o tipo útil está no
-    filho. Sem desembrulhar, todo símbolo decorado viraria `block` e sumiria do
-    repo map, que filtra justamente por tipo.
+    `export_statement` não declaram nada por conta própria — a definição está no
+    filho.
+
+    Desembrulhar importa duas vezes: sem isso todo símbolo decorado viraria
+    `block` e sumiria do repo map (que filtra por tipo), e o corpo da classe
+    seria procurado no wrapper — que não tem campo `body` —, fazendo a recursão
+    reencontrar a própria classe e indexá-la aninhada sob si mesma.
     """
-    if node.type not in {"decorated_definition", "export_statement", "ambient_declaration"}:
-        return node.type
+    if node.type not in _WRAPPER_NODES:
+        return node
     for child in node.named_children:
         if child.type not in {"decorator", "comment"}:
-            return child.type
-    return node.type
+            return child
+    return node
+
+
+def _effective_type(node: Any) -> str:
+    return _unwrap(node).type
 
 
 def _kind_of(node_type: str) -> str:
@@ -212,7 +223,10 @@ def _collect_symbols(
         # Classes e blocos `impl` viram contêiner: em vez de um chunk de 500
         # linhas, cada método vira um chunk com a classe como `parent`.
         if kind in {"class", "interface"} and depth < 6:
-            body = child.child_by_field_name("body") or child
+            # O corpo vem do nó desembrulhado; procurá-lo no wrapper devolveria
+            # o próprio wrapper e a classe apareceria como filha de si mesma.
+            interno = _unwrap(child)
+            body = interno.child_by_field_name("body") or interno
             nested = _collect_symbols(
                 body, source, rules, path, language, parent=name, depth=depth + 1
             )
