@@ -11,15 +11,20 @@ modelo ou de nuvem é mudança de configuração, não de código.
 
 ## Estado atual
 
-Fase 1 (gateway + custo) em construção. As fases seguintes estão descritas em `docs/`.
+As cinco fases estão construídas. **Nada foi exercitado contra infraestrutura
+real ainda** — a validação ponta a ponta depende de Docker e Ollama no ar.
 
 | Fase | Escopo | Status |
 |---|---|---|
-| 1 | Gateway multi-modelo, fallback, contabilidade de custo, dashboard | em andamento |
-| 2 | Indexação do repositório (tree-sitter + pgvector), busca híbrida | planejado |
-| 3 | Agente LangGraph, sandbox Docker, Git/GitHub, PRs | planejado |
-| 4 | IDE web (Monaco, diff, terminal) | planejado |
-| 5 | Otimização avançada de token | planejado |
+| 1 | Gateway multi-modelo, fallback, contabilidade de custo, dashboard | construída |
+| 2 | Indexação do repositório (tree-sitter + pgvector), busca híbrida | construída |
+| 3 | Agente LangGraph, sandbox Docker, Git/GitHub, PRs | construída |
+| 4 | IDE web (Monaco, diff, agente, terminal) | construída |
+| 5 | Compressão de contexto e roteamento por complexidade | construída |
+
+Verificado: 170 testes (~72s), incluindo Git e fronteira de workspace contra
+repositórios temporários reais e o pipeline de indexação contra o código deste
+próprio projeto. Ruff, `tsc` e `next build` limpos.
 
 ## Requisitos
 
@@ -91,7 +96,23 @@ Os modelos e as políticas de roteamento são declarativos:
 - `config/routes.yaml` — perfis (`auto`, `coding`, `cheap`, `fast`, `local-first`)
 - `config/pricing.yaml` — preço por 1M tokens, usado na contabilidade
 
+## Estrutura
+
+```
+apps/api/src/sicoobito/
+  router/     única saída para LLM: catálogo, política, adaptadores, custo
+  optimizer/  cache, estimativa de token, compressão, complexidade
+  context/    indexação, chunking por símbolo, busca híbrida
+  agent/      grafo LangGraph, ferramentas com classe de risco
+  workspace/  fs com fronteira, git, github
+  sandbox/    container efêmero por sessão
+  api/        fachada /v1 e rotas de gestão
+apps/web/     dashboard e IDE (Next.js + Monaco)
+config/       providers.yaml, routes.yaml, pricing.yaml
+```
+
 ## Documentação
 
 - [Arquitetura](docs/architecture.md)
 - [Decisões arquiteturais](docs/adr/)
+- Notas de projeto no Obsidian: `vault-solo/Projects/sicoobito-code/`
