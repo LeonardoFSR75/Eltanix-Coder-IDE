@@ -29,6 +29,14 @@ dependencies = [
     "tree-sitter-language-pack>=0.7",
     "pathspec>=0.12",
     "watchfiles>=0.24",
+    # Fase 3 — agente, sandbox e Git/GitHub
+    "langgraph>=1.0",
+    "langgraph-checkpoint-postgres>=3.0",
+    # O checkpointer do LangGraph fala psycopg, não asyncpg. Conviver com dois
+    # drivers é o preço de não reimplementar persistência de grafo à mão.
+    "psycopg[binary,pool]>=3.2",
+    "docker>=7.1",
+    "GitPython>=3.1",
 ]
 
 [project.optional-dependencies]

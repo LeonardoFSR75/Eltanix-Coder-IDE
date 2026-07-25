@@ -56,6 +56,15 @@ class Settings(BaseSettings):
     embedding_batch_size: int = Field(default=32, alias="EMBEDDING_BATCH_SIZE")
     workspace_root: Path | None = Field(default=None, alias="WORKSPACE_ROOT")
 
+    # ── Sandbox de execução ─────────────────────────────────────────────────
+    sandbox_image: str = Field(default="python:3.12-slim", alias="SANDBOX_IMAGE")
+    sandbox_memory: str = Field(default="2g", alias="SANDBOX_MEMORY")
+    sandbox_timeout_seconds: int = Field(default=300, alias="SANDBOX_TIMEOUT_SECONDS")
+    # Rede desligada por padrão: impede exfiltrar código e impede baixar e
+    # executar algo de origem desconhecida. Ligue só quando precisar instalar
+    # dependências, e prefira fazê-lo por uma imagem preparada.
+    sandbox_network: bool = Field(default=False, alias="SANDBOX_NETWORK")
+
     # ── Credenciais de provedores ───────────────────────────────────────────
     ollama_base_url: str = Field(default="http://localhost:11434", alias="OLLAMA_BASE_URL")
 

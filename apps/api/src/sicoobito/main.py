@@ -9,7 +9,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from redis.asyncio import Redis
 
 from sicoobito import __version__
-from sicoobito.api.routes import context_router, health_router, metrics_router
+from sicoobito.agent.runner import AgentRunner
+from sicoobito.api.routes import agent_router, context_router, health_router, metrics_router
 from sicoobito.api.v1 import router as openai_router
 from sicoobito.config import get_settings
 from sicoobito.context.indexer import ContextIndexer
@@ -21,6 +22,7 @@ from sicoobito.router.catalog import load_catalog
 from sicoobito.router.engine import RouterEngine
 from sicoobito.router.health import HealthTracker
 from sicoobito.router.pricing import PriceTable
+from sicoobito.sandbox.container import SandboxConfig, SandboxManager
 
 log = get_logger(__name__)
 
@@ -71,14 +73,31 @@ async def lifespan(app: FastAPI):
     )
     engine.build()
 
+    indexer = ContextIndexer(settings=settings, engine=engine)
+    sandboxes = SandboxManager(
+        SandboxConfig(
+            image=settings.sandbox_image,
+            memory_limit=settings.sandbox_memory,
+            network_enabled=settings.sandbox_network,
+            timeout_seconds=settings.sandbox_timeout_seconds,
+        )
+    )
+
     app.state.engine = engine
     app.state.redis = redis
-    app.state.indexer = ContextIndexer(settings=settings, engine=engine)
+    app.state.indexer = indexer
+    app.state.sandboxes = sandboxes
+    app.state.agent_runner = AgentRunner(
+        settings=settings, engine=engine, indexer=indexer, sandboxes=sandboxes
+    )
     log.info("app.started", version=__version__, workspace_root=str(settings.workspace_root))
 
     try:
         yield
     finally:
+        # Containers da sessão não podem sobreviver ao processo que os criou:
+        # ficariam órfãos consumindo memória até alguém notar.
+        await sandboxes.shutdown()
         if redis is not None:
             await redis.aclose()
         await shutdown_engine()
@@ -110,6 +129,7 @@ def create_app() -> FastAPI:
     app.include_router(health_router)
     app.include_router(metrics_router)
     app.include_router(context_router)
+    app.include_router(agent_router)
 
     @app.get("/", tags=["meta"])
     async def root() -> dict[str, str]:
