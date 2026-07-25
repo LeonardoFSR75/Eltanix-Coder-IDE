@@ -1,0 +1,12 @@
+# Normaliza para LF no repositório. Sem isto, o mesmo arquivo aparece como
+# modificado ao alternar entre Windows e o container Linux do sandbox.
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.ico binary
+*.woff2 binary
+
+# Lockfiles não precisam poluir o diff em revisão.
+uv.lock linguist-generated=true
+package-lock.json linguist-generated=true

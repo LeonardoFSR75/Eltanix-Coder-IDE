@@ -1,0 +1,61 @@
+# Preço em USD por 1.000.000 de tokens.
+#
+# Trate isto como dado versionado: preços mudam e a contabilidade só vale se a
+# tabela acompanhar. Reconcilie `usage_daily` com a fatura do provedor
+# periodicamente — divergência sistemática significa tabela desatualizada.
+#
+# cache_read/cache_write só se aplicam a provedores com prompt caching; quando
+# ausentes, o cálculo trata tokens de cache como input normal.
+
+currency: USD
+unit: per_million_tokens
+
+# Última conferência manual desta tabela.
+updated_at: "2026-07-24"
+
+models:
+  # Local: custo marginal zero (a energia não entra na contabilidade).
+  ollama/qwen2.5-coder:7b:
+    input: 0.0
+    output: 0.0
+  ollama/qwen2.5-coder:1.5b:
+    input: 0.0
+    output: 0.0
+  ollama/nomic-embed-text:
+    input: 0.0
+    output: 0.0
+
+  foundry/gpt-4o:
+    input: 2.50
+    output: 10.00
+    cache_read: 1.25
+  foundry/gpt-4o-mini:
+    input: 0.15
+    output: 0.60
+    cache_read: 0.075
+  foundry/llama-3.3-70b:
+    input: 0.71
+    output: 0.71
+
+  databricks/llama-3.3-70b:
+    input: 0.50
+    output: 1.50
+  databricks/bge-large-en:
+    input: 0.05
+    output: 0.0
+
+  anthropic/claude-sonnet-4-5:
+    input: 3.00
+    output: 15.00
+    cache_read: 0.30
+    cache_write: 3.75
+  openai/gpt-4o-mini:
+    input: 0.15
+    output: 0.60
+    cache_read: 0.075
+
+# Usado quando um modelo não está na tabela: registra custo desconhecido em vez
+# de assumir zero silenciosamente.
+fallback:
+  input: null
+  output: null

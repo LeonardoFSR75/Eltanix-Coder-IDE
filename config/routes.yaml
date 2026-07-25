@@ -1,0 +1,80 @@
+# Perfis de roteamento. O cliente pede um perfil no campo `model`
+# (ex.: "auto/cheap") ou um id concreto do providers.yaml (ex.: "foundry/gpt-4o").
+#
+# strategy:
+#   priority     ordem literal da lista `models`
+#   cost         menor custo estimado do request primeiro
+#   latency      menor latência p95 observada primeiro
+#   score        combinação ponderada (ver `weights`)
+#
+# `models` também aceita o fallback: quando o primeiro candidato falha ou o
+# contexto não cabe na janela, o próximo assume.
+
+default_profile: auto
+
+profiles:
+  # Padrão: pondera saúde, custo, latência e sucesso. Prefere local quando cabe.
+  auto:
+    strategy: score
+    weights:
+      health: 0.30
+      cost: 0.25
+      latency: 0.20
+      success_rate: 0.15
+      context_fit: 0.10
+    models:
+      - ollama/qwen2.5-coder:7b
+      - foundry/gpt-4o-mini
+      - foundry/gpt-4o
+
+  # O maior redutor de custo do projeto: só sobe para a nuvem quando o local falha
+  # ou o contexto não cabe.
+  local-first:
+    strategy: priority
+    models:
+      - ollama/qwen2.5-coder:7b
+      - foundry/gpt-4o-mini
+      - foundry/gpt-4o
+
+  # Tarefas de codificação de verdade: qualidade primeiro.
+  coding:
+    strategy: priority
+    models:
+      - foundry/gpt-4o
+      - databricks/llama-3.3-70b
+      - ollama/qwen2.5-coder:7b
+
+  cheap:
+    strategy: cost
+    models:
+      - ollama/qwen2.5-coder:7b
+      - foundry/gpt-4o-mini
+      - openai/gpt-4o-mini
+
+  fast:
+    strategy: latency
+    models:
+      - ollama/qwen2.5-coder:1.5b
+      - foundry/gpt-4o-mini
+
+  # Trabalho auxiliar barato: mensagem de commit, título de PR, classificação,
+  # sumarização de histórico. Nunca deveria custar dinheiro.
+  utility:
+    strategy: priority
+    models:
+      - ollama/qwen2.5-coder:1.5b
+      - foundry/gpt-4o-mini
+
+  embedding:
+    strategy: priority
+    models:
+      - ollama/nomic-embed-text
+      - databricks/bge-large-en
+
+# Resiliência aplicada a todos os perfis.
+resilience:
+  max_attempts: 3            # tentativas antes de desistir do request
+  allowed_fails: 5           # falhas até abrir o circuito do provedor
+  cooldown_seconds: 60       # cooldown base; cresce exponencialmente
+  cooldown_max_seconds: 900
+  request_timeout_seconds: 300

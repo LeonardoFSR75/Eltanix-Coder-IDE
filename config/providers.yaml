@@ -1,0 +1,94 @@
+# Catálogo declarativo de modelos.
+#
+# Cada entrada vira uma rota no litellm.Router. `id` é o nome público exposto em
+# GET /v1/models; `provider` seleciona o adaptador em router/adapters/.
+#
+# Variáveis no formato ${VAR} são resolvidas a partir do ambiente na carga.
+# Uma entrada cujo segredo obrigatório esteja ausente é marcada como indisponível
+# (não derruba a inicialização) e some das rotas até a credencial existir.
+
+providers:
+  # ── Local ────────────────────────────────────────────────────────────────
+  - id: ollama/qwen2.5-coder:7b
+    provider: ollama
+    model: qwen2.5-coder:7b
+    context_window: 32768
+    tags: [local, coding, fast]
+    capabilities: [chat, tools]
+
+  - id: ollama/qwen2.5-coder:1.5b
+    provider: ollama
+    model: qwen2.5-coder:1.5b
+    context_window: 32768
+    tags: [local, tiny, fast, utility]
+    capabilities: [chat]
+
+  - id: ollama/nomic-embed-text
+    provider: ollama
+    model: nomic-embed-text
+    context_window: 8192
+    tags: [local, embedding]
+    capabilities: [embedding]
+
+  # ── Azure AI Foundry ─────────────────────────────────────────────────────
+  # Deployment gerenciado (Azure OpenAI): `deployment` é o nome do deployment,
+  # não o nome do modelo.
+  - id: foundry/gpt-4o
+    provider: azure_foundry
+    mode: managed
+    deployment: gpt-4o
+    context_window: 128000
+    tags: [cloud, coding, strong]
+    capabilities: [chat, tools, vision, prompt_cache]
+
+  - id: foundry/gpt-4o-mini
+    provider: azure_foundry
+    mode: managed
+    deployment: gpt-4o-mini
+    context_window: 128000
+    tags: [cloud, cheap, fast, utility]
+    capabilities: [chat, tools, prompt_cache]
+
+  # Endpoint serverless (MaaS): `model` é o nome do modelo no catálogo Foundry.
+  - id: foundry/llama-3.3-70b
+    provider: azure_foundry
+    mode: serverless
+    model: Llama-3.3-70B-Instruct
+    context_window: 128000
+    tags: [cloud, coding]
+    capabilities: [chat, tools]
+    enabled: false
+
+  # ── Databricks Model Serving ─────────────────────────────────────────────
+  - id: databricks/llama-3.3-70b
+    provider: databricks
+    endpoint: databricks-meta-llama-3-3-70b-instruct
+    context_window: 128000
+    tags: [cloud, coding]
+    capabilities: [chat, tools]
+    enabled: false
+
+  - id: databricks/bge-large-en
+    provider: databricks
+    endpoint: databricks-bge-large-en
+    context_window: 512
+    tags: [cloud, embedding]
+    capabilities: [embedding]
+    enabled: false
+
+  # ── Provedores diretos (comparação de qualidade/custo) ───────────────────
+  - id: anthropic/claude-sonnet-4-5
+    provider: anthropic
+    model: claude-sonnet-4-5
+    context_window: 200000
+    tags: [cloud, coding, strong]
+    capabilities: [chat, tools, vision, prompt_cache]
+    enabled: false
+
+  - id: openai/gpt-4o-mini
+    provider: openai
+    model: gpt-4o-mini
+    context_window: 128000
+    tags: [cloud, cheap, fast]
+    capabilities: [chat, tools, prompt_cache]
+    enabled: false

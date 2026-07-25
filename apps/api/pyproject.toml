@@ -1,0 +1,64 @@
+[project]
+name = "sicoobito-api"
+version = "0.1.0"
+description = "Gateway multi-modelo e backend agêntico do SicoobitoCode"
+readme = "../../README.md"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "pydantic>=2.9",
+    "pydantic-settings>=2.6",
+    # Teto proposital: a partir da 1.92 o litellm passou a distribuir uma extensão
+    # Rust e as versões estáveis não publicam wheel win_amd64 — instalar exigiria
+    # MSVC Build Tools. A 1.91.x ainda é py3-none-any e roda em Windows e Linux.
+    # Ao subir de versão, confira o wheel antes: https://pypi.org/pypi/litellm/json
+    "litellm>=1.91.4,<1.92",
+    "sqlalchemy[asyncio]>=2.0.36",
+    "asyncpg>=0.30",
+    "alembic>=1.14",
+    "redis>=5.2",
+    "structlog>=24.4",
+    "tiktoken>=0.8",
+    "pyyaml>=6.0",
+    "httpx>=0.27",
+    "python-dotenv>=1.0",
+]
+
+[project.optional-dependencies]
+azure = ["azure-identity>=1.19"]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "ruff>=0.8",
+    "mypy>=1.13",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/sicoobito"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "ASYNC", "RUF"]
+# Comentários e docstrings do projeto são em português e usam pontuação
+# tipográfica (travessão, aspas curvas) de propósito. RUF001-003 sinalizariam
+# cada ocorrência como "caractere ambíguo".
+ignore = ["RUF001", "RUF002", "RUF003"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.mypy]
+python_version = "3.12"
+plugins = []
+ignore_missing_imports = true
