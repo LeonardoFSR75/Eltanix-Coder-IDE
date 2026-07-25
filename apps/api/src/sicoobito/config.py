@@ -48,6 +48,14 @@ class Settings(BaseSettings):
     # transforma criatividade pedida em repetição silenciosa.
     cache_only_deterministic: bool = Field(default=True, alias="CACHE_ONLY_DETERMINISTIC")
 
+    # ── Contexto / indexação ────────────────────────────────────────────────
+    # Dimensão do vetor de embedding. Mudar exige migração: o índice HNSW do
+    # pgvector é criado sobre uma coluna de dimensão fixa. 768 = nomic-embed-text.
+    embedding_dim: int = Field(default=768, alias="EMBEDDING_DIM")
+    embedding_profile: str = Field(default="embedding", alias="EMBEDDING_PROFILE")
+    embedding_batch_size: int = Field(default=32, alias="EMBEDDING_BATCH_SIZE")
+    workspace_root: Path | None = Field(default=None, alias="WORKSPACE_ROOT")
+
     # ── Credenciais de provedores ───────────────────────────────────────────
     ollama_base_url: str = Field(default="http://localhost:11434", alias="OLLAMA_BASE_URL")
 

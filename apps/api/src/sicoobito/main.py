@@ -9,9 +9,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from redis.asyncio import Redis
 
 from sicoobito import __version__
-from sicoobito.api.routes import health_router, metrics_router
+from sicoobito.api.routes import context_router, health_router, metrics_router
 from sicoobito.api.v1 import router as openai_router
 from sicoobito.config import get_settings
+from sicoobito.context.indexer import ContextIndexer
 from sicoobito.db.session import init_engine, shutdown_engine
 from sicoobito.logging_setup import get_logger, setup_logging
 from sicoobito.optimizer.cache import ResponseCache
@@ -72,7 +73,8 @@ async def lifespan(app: FastAPI):
 
     app.state.engine = engine
     app.state.redis = redis
-    log.info("app.started", version=__version__)
+    app.state.indexer = ContextIndexer(settings=settings, engine=engine)
+    log.info("app.started", version=__version__, workspace_root=str(settings.workspace_root))
 
     try:
         yield
@@ -107,6 +109,7 @@ def create_app() -> FastAPI:
     app.include_router(openai_router)
     app.include_router(health_router)
     app.include_router(metrics_router)
+    app.include_router(context_router)
 
     @app.get("/", tags=["meta"])
     async def root() -> dict[str, str]:
