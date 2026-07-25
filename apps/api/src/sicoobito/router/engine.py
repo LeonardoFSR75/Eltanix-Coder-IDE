@@ -25,6 +25,12 @@ from litellm import Router as LiteLLMRouter
 from sicoobito.config import Settings
 from sicoobito.logging_setup import get_logger
 from sicoobito.optimizer.cache import ResponseCache
+
+# Alias explícito: `router.errors` também exporta um `classify`, que recebe uma
+# exceção. Importar os dois com o mesmo nome faria o segundo sobrescrever o
+# primeiro silenciosamente.
+from sicoobito.optimizer.complexity import classify as classify_complexity
+from sicoobito.optimizer.compressor import ContextCompressor
 from sicoobito.optimizer.tokens import count_text, estimate_prompt_tokens
 from sicoobito.router.adapters import ProviderAdapter, build_adapters
 from sicoobito.router.budget import BudgetGuard
@@ -73,6 +79,7 @@ class RouterEngine:
         health: HealthTracker,
         cache: ResponseCache,
         budget: BudgetGuard,
+        compressor: ContextCompressor | None = None,
     ) -> None:
         self.settings = settings
         self.catalog = catalog
@@ -80,6 +87,7 @@ class RouterEngine:
         self.health = health
         self.cache = cache
         self.budget = budget
+        self.compressor = compressor or ContextCompressor(enabled=settings.compression_enabled)
         self.adapters: dict[str, ProviderAdapter] = build_adapters(settings)
         self.policy = RoutingPolicy(catalog, prices, health)
         self._router: LiteLLMRouter | None = None
@@ -139,6 +147,48 @@ class RouterEngine:
             raise RuntimeError("RouterEngine.build() não foi chamado.")
         return self._router
 
+    # ── Otimização ──────────────────────────────────────────────────────────
+
+    async def _optimize(
+        self, params: dict[str, Any], source: str
+    ) -> tuple[dict[str, Any], Any, Any]:
+        """Comprime o contexto e classifica a complexidade antes de rotear."""
+        messages = list(params.get("messages") or [])
+        tools = params.get("tools")
+
+        verdict = None
+        if self.settings.complexity_routing_enabled:
+            verdict = classify_complexity(messages=messages, tools=tools, source=source)
+
+        compression = await self.compressor.compress(messages, tools=tools)
+        if compression.tokens_saved > 0:
+            params = {**params, "messages": compression.messages}
+
+        return params, compression, verdict
+
+    def _apply_complexity(self, requested_model: str, verdict: Any) -> str:
+        """Redireciona apenas pedidos genéricos.
+
+        Trocar o modelo quando o cliente pediu um id concreto quebraria a
+        expectativa dele e tornaria o custo por modelo impossível de interpretar.
+        """
+        if verdict is None:
+            return requested_model
+        if self.catalog.get(requested_model) is not None:
+            return requested_model
+        if requested_model not in {"auto", "auto/auto", ""}:
+            return requested_model
+        if self.catalog.profile(verdict.profile) is None:
+            return requested_model
+
+        log.debug(
+            "router.complexity.redirected",
+            from_model=requested_model,
+            to_profile=verdict.profile,
+            reason=verdict.reason,
+        )
+        return verdict.profile
+
     # ── Preparação do request ───────────────────────────────────────────────
 
     def _prepare_params(self, spec: ModelSpec, params: dict[str, Any]) -> dict[str, Any]:
@@ -196,11 +246,16 @@ class RouterEngine:
     ) -> CompletionResult:
         await self.budget.check()
 
+        params, compression, verdict = await self._optimize(params, source)
         messages = list(params.get("messages") or [])
         estimated = estimate_prompt_tokens(messages, params.get("tools"))
 
+        # Um pedido genérico (`auto`) pode ser redirecionado pela complexidade;
+        # um modelo pedido explicitamente nunca é trocado por baixo do cliente.
+        effective_model = self._apply_complexity(requested_model, verdict)
+
         decision = await self.policy.select(
-            requested_model=requested_model, estimated_prompt_tokens=estimated
+            requested_model=effective_model, estimated_prompt_tokens=estimated
         )
         if not decision.candidates:
             reasons = [f"{c.spec.id}: {c.excluded_reason}" for c in decision.excluded]
@@ -215,6 +270,7 @@ class RouterEngine:
                     prompt_tokens=estimated,
                     usage_estimated=True,
                     cost_known=False,
+                    complexity=verdict.complexity if verdict else None,
                 )
             )
             raise NoCandidatesError(
@@ -342,6 +398,10 @@ class RouterEngine:
                     usage_estimated=usage.estimated,
                     cost_usd=cost.usd,
                     cost_known=cost.known,
+                    tokens_saved=compression.tokens_saved,
+                    cost_saved_usd=self._savings_value(spec.id, compression.tokens_saved),
+                    savings_breakdown=compression.savings,
+                    complexity=verdict.complexity if verdict else None,
                 )
             )
             log.info(
@@ -401,10 +461,13 @@ class RouterEngine:
         """
         await self.budget.check()
 
+        params, compression, verdict = await self._optimize(params, source)
         messages = list(params.get("messages") or [])
         estimated = estimate_prompt_tokens(messages, params.get("tools"))
+        effective_model = self._apply_complexity(requested_model, verdict)
+
         decision = await self.policy.select(
-            requested_model=requested_model, estimated_prompt_tokens=estimated
+            requested_model=effective_model, estimated_prompt_tokens=estimated
         )
         if not decision.candidates:
             reasons = [f"{c.spec.id}: {c.excluded_reason}" for c in decision.excluded]
@@ -447,6 +510,8 @@ class RouterEngine:
                 estimated_prompt_tokens=estimated,
                 tried=list(tried),
                 started=started,
+                compression=compression,
+                verdict=verdict,
             ):
                 yield event
             return
@@ -469,6 +534,8 @@ class RouterEngine:
         estimated_prompt_tokens: int,
         tried: list[str],
         started: float,
+        compression: Any = None,
+        verdict: Any = None,
     ) -> AsyncIterator[dict[str, Any]]:
         ttft_ms: int | None = None
         usage = Usage()
@@ -535,6 +602,12 @@ class RouterEngine:
                     usage_estimated=usage.estimated,
                     cost_usd=cost.usd,
                     cost_known=cost.known,
+                    tokens_saved=compression.tokens_saved if compression else 0,
+                    cost_saved_usd=self._savings_value(
+                        spec.id, compression.tokens_saved if compression else 0
+                    ),
+                    savings_breakdown=compression.savings if compression else {},
+                    complexity=verdict.complexity if verdict else None,
                 )
             )
 
@@ -633,6 +706,12 @@ class RouterEngine:
             attempts=tried,
             last_error=last_error,
         )
+
+    def _savings_value(self, model_id: str, tokens_saved: int) -> Decimal:
+        """Valor em dólar dos tokens de input que deixaram de ser enviados."""
+        if tokens_saved <= 0:
+            return Decimal(0)
+        return self.prices.cost(model_id, Usage(prompt_tokens=tokens_saved)).usd
 
     @staticmethod
     def _estimate_usage(estimated_prompt: int, payload: dict[str, Any]) -> Usage:

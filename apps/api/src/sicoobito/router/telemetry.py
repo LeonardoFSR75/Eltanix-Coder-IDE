@@ -43,6 +43,8 @@ class TelemetryEntry:
     cache_hit: bool = False
     tokens_saved: int = 0
     cost_saved_usd: Decimal = Decimal(0)
+    savings_breakdown: dict[str, int] = field(default_factory=dict)
+    complexity: str | None = None
 
 
 async def record(entry: TelemetryEntry) -> None:
@@ -76,6 +78,8 @@ async def record(entry: TelemetryEntry) -> None:
                     cache_hit=entry.cache_hit,
                     tokens_saved=entry.tokens_saved,
                     cost_saved_usd=entry.cost_saved_usd,
+                    savings_breakdown=entry.savings_breakdown,
+                    complexity=entry.complexity,
                 )
             )
     except Exception as exc:

@@ -215,6 +215,76 @@ async def by_source(days: int = Query(default=30, ge=1, le=365)) -> dict[str, An
     }
 
 
+@router.get("/savings")
+async def savings(days: int = Query(default=30, ge=1, le=365)) -> dict[str, Any]:
+    """Economia por técnica.
+
+    É isto que separa otimização de token de fé: cada engine aparece com o
+    número que produziu, e a que não aparecer não está justificando o custo de
+    existir.
+    """
+    since = _since(days)
+
+    async with session_scope() as session:
+        rows = (
+            await session.execute(
+                select(RequestLog.savings_breakdown, RequestLog.resolved_model).where(
+                    RequestLog.created_at >= since,
+                    RequestLog.savings_breakdown.is_not(None),
+                )
+            )
+        ).all()
+
+        cache_hits, cache_tokens, cache_cost = (
+            await session.execute(
+                select(
+                    func.count(RequestLog.id),
+                    func.coalesce(func.sum(RequestLog.tokens_saved), 0),
+                    func.coalesce(func.sum(_SAVED), 0),
+                ).where(RequestLog.created_at >= since, RequestLog.cache_hit.is_(True))
+            )
+        ).one()
+
+        por_complexidade = (
+            await session.execute(
+                select(
+                    RequestLog.complexity,
+                    func.count(RequestLog.id),
+                    func.coalesce(func.sum(_COST), 0),
+                )
+                .where(RequestLog.created_at >= since, RequestLog.complexity.is_not(None))
+                .group_by(RequestLog.complexity)
+            )
+        ).all()
+
+    por_tecnica: dict[str, int] = {}
+    for breakdown, _model in rows:
+        for tecnica, tokens in (breakdown or {}).items():
+            por_tecnica[tecnica] = por_tecnica.get(tecnica, 0) + int(tokens)
+
+    # O cache é contabilizado à parte porque economiza a chamada inteira, não
+    # apenas tokens de input.
+    por_tecnica["cache_exato"] = por_tecnica.get("cache_exato", 0) + int(cache_tokens)
+
+    return {
+        "window_days": days,
+        "by_technique": [
+            {"technique": nome, "tokens_saved": tokens}
+            for nome, tokens in sorted(por_tecnica.items(), key=lambda kv: -kv[1])
+            if tokens > 0
+        ],
+        "cache": {
+            "hits": int(cache_hits),
+            "tokens_saved": int(cache_tokens),
+            "cost_saved_usd": float(cache_cost),
+        },
+        "by_complexity": [
+            {"complexity": nivel, "requests": int(qtd), "cost_usd": float(custo)}
+            for nivel, qtd, custo in por_complexidade
+        ],
+    }
+
+
 @router.get("/recent")
 async def recent(limit: int = Query(default=50, ge=1, le=500)) -> dict[str, Any]:
     async with session_scope() as session:

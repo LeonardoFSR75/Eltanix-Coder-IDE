@@ -2,6 +2,7 @@ import { ErrorNotice } from "@/components/ErrorNotice";
 import {
   apiGet,
   type ModelUsage,
+  type Savings,
   type SourceUsage,
   type Summary,
   type TimeseriesPoint,
@@ -10,12 +11,21 @@ import { formatMs, formatPercent, formatTokens, formatUsd } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 
+// Os nomes vêm do backend em snake_case; aqui viram algo legível.
+const TECHNIQUE_LABEL: Record<string, string> = {
+  tool_truncation: "truncamento de saída de comando",
+  file_dedup: "deduplicação de leituras",
+  history_pruning: "poda de histórico",
+  cache_exato: "cache exato",
+};
+
 export default async function DashboardPage() {
-  const [summary, byModel, bySource, series] = await Promise.all([
+  const [summary, byModel, bySource, series, savings] = await Promise.all([
     apiGet<Summary>("/api/metrics/summary?days=30"),
     apiGet<{ models: ModelUsage[] }>("/api/metrics/by-model?days=30"),
     apiGet<{ sources: SourceUsage[] }>("/api/metrics/by-source?days=30"),
     apiGet<{ points: TimeseriesPoint[] }>("/api/metrics/timeseries?days=30"),
+    apiGet<Savings>("/api/metrics/savings?days=30"),
   ]);
 
   if (!summary.ok) return <ErrorNotice error={summary.error} />;
@@ -100,6 +110,60 @@ export default async function DashboardPage() {
               ))}
             </div>
           </div>
+        </section>
+      )}
+
+      {savings.ok && savings.data.by_technique.length > 0 && (
+        <section>
+          <h2>
+            Economia por técnica
+            <span className="sub">tokens que deixaram de ser enviados</span>
+          </h2>
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Técnica</th>
+                  <th className="num">Tokens evitados</th>
+                  <th>Participação</th>
+                </tr>
+              </thead>
+              <tbody>
+                {savings.data.by_technique.map((item) => {
+                  const total = savings.data.by_technique.reduce(
+                    (soma, t) => soma + t.tokens_saved,
+                    0,
+                  );
+                  const share = total > 0 ? item.tokens_saved / total : 0;
+                  return (
+                    <tr key={item.technique}>
+                      <td>
+                        <code>{TECHNIQUE_LABEL[item.technique] ?? item.technique}</code>
+                      </td>
+                      <td className="num">{formatTokens(item.tokens_saved)}</td>
+                      <td style={{ minWidth: 160 }}>
+                        <div className="bar" style={{ marginTop: 0 }}>
+                          <span style={{ width: `${share * 100}%` }} />
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          {savings.data.by_complexity.length > 0 && (
+            <div className="grid" style={{ marginTop: 14 }}>
+              {savings.data.by_complexity.map((item) => (
+                <Stat
+                  key={item.complexity}
+                  label={`Tarefas ${item.complexity}`}
+                  value={formatUsd(item.cost_usd)}
+                  hint={`${item.requests} requests`}
+                />
+              ))}
+            </div>
+          )}
         </section>
       )}
 

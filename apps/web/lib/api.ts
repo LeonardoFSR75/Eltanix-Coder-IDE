@@ -81,6 +81,13 @@ export interface SourceUsage {
   cost_usd: number;
 }
 
+export interface Savings {
+  window_days: number;
+  by_technique: { technique: string; tokens_saved: number }[];
+  cache: { hits: number; tokens_saved: number; cost_saved_usd: number };
+  by_complexity: { complexity: string; requests: number; cost_usd: number }[];
+}
+
 export interface TimeseriesPoint {
   day: string;
   requests: number;

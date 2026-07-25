@@ -96,6 +96,11 @@ class RequestLog(Base):
     cache_hit: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     tokens_saved: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     cost_saved_usd: Mapped[float] = mapped_column(Numeric(14, 8), default=0, nullable=False)
+    # Tokens economizados por técnica. Sem este detalhamento, `tokens_saved`
+    # diz que houve economia mas não qual engine a produziu — e aí não há como
+    # decidir qual delas vale o custo de manter.
+    savings_breakdown: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
+    complexity: Mapped[str | None] = mapped_column(String(16), nullable=True)
 
     __table_args__ = (
         Index("ix_request_log_created_at", "created_at"),

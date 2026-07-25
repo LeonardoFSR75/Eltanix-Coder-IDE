@@ -46,6 +46,9 @@ azure = ["azure-identity>=1.19"]
 dev = [
     "pytest>=8.3",
     "pytest-asyncio>=0.24",
+    # Um teste que trava esperando rede ou banco roda por horas sem timeout.
+    # Melhor falhar em 60s e mostrar onde travou.
+    "pytest-timeout>=2.3",
     "ruff>=0.8",
     "mypy>=1.13",
 ]
@@ -71,6 +74,9 @@ ignore = ["RUF001", "RUF002", "RUF003"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+# Nenhum teste desta suíte deveria levar 60s: os que tocam Git usam repositórios
+# temporários, e os que tocam rede degradam em vez de esperar.
+timeout = 60
 
 [tool.mypy]
 python_version = "3.12"

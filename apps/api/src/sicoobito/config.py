@@ -48,6 +48,12 @@ class Settings(BaseSettings):
     # transforma criatividade pedida em repetição silenciosa.
     cache_only_deterministic: bool = Field(default=True, alias="CACHE_ONLY_DETERMINISTIC")
 
+    # ── Compressão de contexto ──────────────────────────────────────────────
+    compression_enabled: bool = Field(default=True, alias="COMPRESSION_ENABLED")
+    # Desligue para medir: comparar o custo com e sem roteamento por
+    # complexidade é a única forma de saber se ele está ajudando neste uso.
+    complexity_routing_enabled: bool = Field(default=True, alias="COMPLEXITY_ROUTING_ENABLED")
+
     # ── Contexto / indexação ────────────────────────────────────────────────
     # Dimensão do vetor de embedding. Mudar exige migração: o índice HNSW do
     # pgvector é criado sobre uma coluna de dimensão fixa. 768 = nomic-embed-text.
