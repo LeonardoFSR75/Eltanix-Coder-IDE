@@ -15,6 +15,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <header className="topbar">
             <span className="brand">SicoobitoCode</span>
             <nav className="nav">
+              <Link href="/ide">IDE</Link>
               <Link href="/">Custo</Link>
               <Link href="/providers">Provedores</Link>
               <Link href="/requests">Requests</Link>

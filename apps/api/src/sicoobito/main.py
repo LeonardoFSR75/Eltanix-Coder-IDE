@@ -10,7 +10,14 @@ from redis.asyncio import Redis
 
 from sicoobito import __version__
 from sicoobito.agent.runner import AgentRunner
-from sicoobito.api.routes import agent_router, context_router, health_router, metrics_router
+from sicoobito.api.routes import (
+    agent_router,
+    context_router,
+    health_router,
+    metrics_router,
+    workspace_router,
+)
+from sicoobito.api.tickets import TicketStore
 from sicoobito.api.v1 import router as openai_router
 from sicoobito.config import get_settings
 from sicoobito.context.indexer import ContextIndexer
@@ -85,6 +92,7 @@ async def lifespan(app: FastAPI):
 
     app.state.engine = engine
     app.state.redis = redis
+    app.state.tickets = TicketStore(redis)
     app.state.indexer = indexer
     app.state.sandboxes = sandboxes
     app.state.agent_runner = AgentRunner(
@@ -130,6 +138,7 @@ def create_app() -> FastAPI:
     app.include_router(metrics_router)
     app.include_router(context_router)
     app.include_router(agent_router)
+    app.include_router(workspace_router)
 
     @app.get("/", tags=["meta"])
     async def root() -> dict[str, str]:
