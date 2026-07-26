@@ -14,8 +14,10 @@ from sicoobito.agent.runner import AgentRunner
 from sicoobito.api.routes import (
     agent_router,
     context_router,
+    git_router,
     health_router,
     metrics_router,
+    projects_router,
     workspace_router,
     workspace_ws_router,
 )
@@ -32,6 +34,7 @@ from sicoobito.router.engine import RouterEngine
 from sicoobito.router.health import HealthTracker
 from sicoobito.router.pricing import PriceTable
 from sicoobito.sandbox.container import SandboxConfig, SandboxManager
+from sicoobito.sandbox.executor import ExecutorConfig, ExecutorSandboxManager
 
 log = get_logger(__name__)
 
@@ -83,14 +86,31 @@ async def lifespan(app: FastAPI):
     engine.build()
 
     indexer = ContextIndexer(settings=settings, engine=engine)
-    sandboxes = SandboxManager(
-        SandboxConfig(
-            image=settings.sandbox_image,
-            memory_limit=settings.sandbox_memory,
-            network_enabled=settings.sandbox_network,
-            timeout_seconds=settings.sandbox_timeout_seconds,
+
+    # Com EXECUTOR_URL definido, a execução vai por um serviço isolado que é o
+    # único com acesso ao daemon do Docker (ver ADR 0002). É o modo usado
+    # quando a própria API roda em container. Sem ele, cai no daemon local, que
+    # é o que faz sentido rodando direto na máquina de desenvolvimento.
+    if settings.executor_url:
+        sandboxes = ExecutorSandboxManager(
+            ExecutorConfig(
+                base_url=settings.executor_url.rstrip("/"),
+                token=settings.executor_token,
+                image=settings.sandbox_image,
+                network=settings.sandbox_network,
+            )
         )
-    )
+        log.info("sandbox.mode", mode="executor", url=settings.executor_url)
+    else:
+        sandboxes = SandboxManager(
+            SandboxConfig(
+                image=settings.sandbox_image,
+                memory_limit=settings.sandbox_memory,
+                network_enabled=settings.sandbox_network,
+                timeout_seconds=settings.sandbox_timeout_seconds,
+            )
+        )
+        log.info("sandbox.mode", mode="local")
 
     app.state.engine = engine
     app.state.redis = redis
@@ -105,7 +125,11 @@ async def lifespan(app: FastAPI):
     # ninguém mais conhece.
     reaper = asyncio.create_task(sandboxes.run_reaper())
 
-    log.info("app.started", version=__version__, workspace_root=str(settings.workspace_root))
+    log.info(
+        "app.started",
+        version=__version__,
+        projects_root=str(settings.effective_projects_root),
+    )
 
     try:
         yield
@@ -150,6 +174,8 @@ def create_app() -> FastAPI:
     app.include_router(agent_router)
     app.include_router(workspace_router)
     app.include_router(workspace_ws_router)
+    app.include_router(projects_router)
+    app.include_router(git_router)
 
     @app.get("/", tags=["meta"])
     async def root() -> dict[str, str]:

@@ -19,7 +19,7 @@ Postgres com pgvector, Redis e Docker no ar.
 | 1 | Gateway multi-modelo, fallback, contabilidade de custo, dashboard | validada |
 | 2 | Indexação do repositório (tree-sitter + pgvector), busca híbrida | validada |
 | 3 | Agente LangGraph, sandbox Docker, Git/GitHub, PRs | validada |
-| 4 | IDE web (Monaco, diff, agente, terminal) | validada |
+| 4 | IDE web (Monaco, explorer, busca, Git, terminal, palette) | validada |
 | 5 | Compressão de contexto e roteamento por complexidade | construída |
 
 Exercitado de ponta a ponta: as três migrações contra Postgres real (extensão
@@ -31,91 +31,85 @@ workspace e rede desabilitada; e o dashboard renderizando telemetria real.
 Falta apenas uma chamada a um modelo de verdade — depende do Ollama ou de
 credenciais de nuvem.
 
-172 testes (~74s). Ruff, `tsc` e `next build` limpos.
+186 testes (~107s). Ruff, `tsc` e `next build` limpos.
 
 ## Requisitos
 
-- Docker (Postgres + Redis)
-- Python 3.12 (gerenciado pelo `uv`)
-- Node 20+ (para o dashboard)
-- Ollama, opcional mas recomendado — é a base da política `local-first`
-
+- **Docker** — é o único requisito de execução; toda a stack roda em containers
+- Ollama no host, opcional mas recomendado: é a base da política `local-first`
+- `uv` e Node só para rodar testes e lint fora dos containers
 ## Início rápido
 
-Copie o `.env` e defina uma chave (`python -c "import secrets;print(secrets.token_urlsafe(32))"`):
+Tudo roda em containers — um único `docker compose up`. Nenhuma parte fica no host.
+
+Copie o `.env` e ajuste `PROJECTS_ROOT` para a pasta que contém seus projetos:
 
 ```bash
 cp .env.example .env
 ```
 
-Suba a infraestrutura:
+Gere as duas chaves (`SICOOBITO_API_KEY` e `EXECUTOR_TOKEN`):
 
 ```bash
-docker compose up -d postgres redis
-```
-
-Backend (a primeira execução instala o Python 3.12 pelo `uv`):
-
-```bash
-cd apps/api && uv sync --extra azure && uv run alembic upgrade head
+python -c "import secrets;print(secrets.token_urlsafe(32))"
 ```
 
 ```bash
-cd apps/api && uv run uvicorn sicoobito.main:app --reload --port 8000
+docker compose up -d --build
 ```
-
-Modelo local — sem isto, o perfil `local-first` não tem para onde ir:
 
 ```bash
-ollama pull qwen2.5-coder:7b
+docker compose exec api alembic upgrade head
 ```
 
-Dashboard:
+Pronto:
+
+| Serviço | Porta | URL |
+|---|---|---|
+| IDE e dashboard | 5400 | http://localhost:5400/ide |
+| API (gateway OpenAI-compatible) | 5401 | http://localhost:5401/v1 |
+| Executor (interno) | 5402 | — |
+| Postgres | 5403 | — |
+| Redis | 5404 | — |
+
+A faixa 5400–5499 foi escolhida para não disputar 3000, 8000 e 5432 com outros
+projetos.
+
+Modelo local — sem ele o perfil `local-first` não tem para onde ir e a
+indexação fica sem embeddings:
 
 ```bash
-cd apps/web && npm install && npm run dev
+ollama pull qwen2.5-coder:7b && ollama pull nomic-embed-text
 ```
 
-O gateway responde em `http://localhost:8000/v1` com a API da OpenAI. Qualquer ferramenta
+O gateway responde em `http://localhost:5401/v1` com a API da OpenAI. Qualquer ferramenta
 compatível (Cline, Continue, Aider, Claude Code) pode apontar para lá:
 
 ```bash
-curl -s localhost:8000/v1/chat/completions -H "Authorization: Bearer $SICOOBITO_API_KEY" -H "content-type: application/json" -d '{"model":"auto/cheap","messages":[{"role":"user","content":"ping"}]}'
+curl -s localhost:5401/v1/chat/completions -H "Authorization: Bearer $SICOOBITO_API_KEY" -H "content-type: application/json" -d '{"model":"auto/cheap","messages":[{"role":"user","content":"ping"}]}'
 ```
 
 Estado dos provedores, incluindo o motivo de cada indisponibilidade:
 
 ```bash
-curl -s localhost:8000/api/health/providers -H "Authorization: Bearer $SICOOBITO_API_KEY"
+curl -s localhost:5401/api/health/providers -H "Authorization: Bearer $SICOOBITO_API_KEY"
 ```
 
 Testes:
 
 ```bash
-cd apps/api && uv run pytest
+cd apps/api && uv sync --extra azure && uv run pytest
 ```
 
-### Se as portas 8000 ou 3000 estiverem ocupadas
+### Se alguma porta da faixa estiver ocupada
 
-No Windows com Docker Desktop, o proxy do WSL costuma reservar essas portas para
-containers de outros projetos. A colisão é traiçoeira: em vez de recusar a
-conexão, **outro serviço responde no lugar deste** — o backend parece no ar mas
-devolve 404 em todas as rotas.
-
-Para conferir quem está na porta:
+Altere o mapeamento no `docker-compose.yml`. No Windows com Docker Desktop, a
+colisão é traiçoeira: em vez de recusar a conexão, **outro serviço responde no
+lugar** — o backend parece no ar mas devolve 404 em todas as rotas.
 
 ```bash
-netstat -ano | findstr :8000
+netstat -ano | findstr :5401
 ```
-
-Backend em outra porta:
-
-```bash
-cd apps/api && uv run uvicorn sicoobito.main:app --host 127.0.0.1 --port 8010
-```
-
-Front em outra porta: defina `PORT=3010` no `apps/web/.env.local`, junto com
-`SICOOBITO_API_URL` apontando para o backend.
 
 ## Configuração
 
@@ -137,6 +131,7 @@ apps/api/src/sicoobito/
   sandbox/    container efêmero por sessão
   api/        fachada /v1 e rotas de gestão
 apps/web/     dashboard e IDE (Next.js + Monaco)
+services/executor/  único serviço com acesso ao daemon do Docker (ADR 0002)
 config/       providers.yaml, routes.yaml, pricing.yaml
 ```
 

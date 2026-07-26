@@ -1,102 +1,179 @@
-"""Rotas do workspace: árvore de arquivos, leitura, gravação e terminal.
+"""Rotas do workspace: projetos, árvore, arquivos, busca e terminal.
 
-Todas usam o mesmo `WorkspaceFS` do agente. A fronteira de caminho não pode ter
-duas implementações — uma delas acabaria ficando para trás.
+Tudo é escopado por projeto. `PROJECTS_ROOT` é a fronteira externa e o
+`WorkspaceFS` é a interna — o mesmo usado pelo agente, porque a fronteira de
+caminho não pode ter duas implementações.
 """
 
 from __future__ import annotations
 
 import asyncio
+import json
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any
 
-from fastapi import APIRouter, HTTPException, Query, Request, WebSocket, WebSocketDisconnect, status
+from fastapi import (
+    APIRouter,
+    Depends,
+    HTTPException,
+    Query,
+    Request,
+    WebSocket,
+    WebSocketDisconnect,
+    status,
+)
 from pydantic import BaseModel, Field
 
 from sicoobito.api.deps import AuthDep, SettingsDep
 from sicoobito.api.tickets import TICKET_TTL_SECONDS, TicketStore
 from sicoobito.config import Settings, get_settings
 from sicoobito.context.languages import detect_language
-from sicoobito.context.scanner import ALWAYS_IGNORED
 from sicoobito.logging_setup import get_logger
+from sicoobito.workspace import projects as project_ops
+from sicoobito.workspace import search as search_ops
 from sicoobito.workspace.fs import FileTooLargeError, PathEscapeError, WorkspaceFS
+from sicoobito.workspace.projects import ProjectError
 
 log = get_logger(__name__)
 
 router = APIRouter(prefix="/api/workspace", tags=["workspace"], dependencies=[AuthDep])
+projects_router = APIRouter(prefix="/api/projects", tags=["projects"], dependencies=[AuthDep])
 
-# O WebSocket vive num router **sem** a dependência de autenticação por header.
-# `require_api_key` lê `Authorization`, que o browser não consegue enviar ao
-# abrir um WebSocket: a dependência rejeitaria toda conexão antes de o ticket
-# ser avaliado, e o handshake morreria sem resposta HTTP válida. A autenticação
-# desta rota é o ticket de uso único, verificado dentro do próprio handler.
+# O WebSocket vive num router **sem** a dependência de autenticação por header:
+# o browser não consegue enviar `Authorization` ao abrir um WebSocket, e a
+# dependência rejeitaria toda conexão antes de o ticket ser avaliado. A
+# autenticação desta rota é o ticket de uso único.
 ws_router = APIRouter(prefix="/api/workspace", tags=["workspace"])
 
-# Profundidade máxima da árvore numa única resposta. Repositório grande tem
-# dezenas de milhares de arquivos; mandar tudo travaria o browser.
 MAX_TREE_ENTRIES = 2000
 
+_CACHE_PREFIX = "sicoobito:files"
+# Curto de propósito: arquivos criados fora do IDE aparecem em até um minuto,
+# e quem cria por dentro força a atualização com `refresh=true`.
+_CACHE_TTL_SECONDS = 60
 
-def _root(settings: Settings, requested: str | None = None) -> Path:
-    configured = settings.workspace_root
-    if requested is None:
-        if configured is None:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Defina WORKSPACE_ROOT para usar o editor.",
-            )
-        return Path(configured).resolve()
 
-    candidate = Path(requested).expanduser().resolve()
-    if configured is not None and not candidate.is_relative_to(Path(configured).resolve()):
+def _projects_root(settings: Settings) -> Path:
+    raiz = settings.effective_projects_root
+    if raiz is None:
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="Caminho fora de WORKSPACE_ROOT."
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Defina PROJECTS_ROOT para usar o editor.",
         )
-    return candidate
+    return Path(raiz)
 
 
-@router.get("/tree")
-async def tree(
-    settings: SettingsDep, path: str | None = None, subpath: str = "."
-) -> dict[str, Any]:
-    """Lista um nível da árvore. O front expande sob demanda."""
-    fs = WorkspaceFS(_root(settings, path))
+def project_fs(settings: SettingsDep, project: str = Query(min_length=1)) -> WorkspaceFS:
+    """Resolve o projeto e devolve o acesso a arquivos já delimitado."""
     try:
-        entries = await asyncio.to_thread(fs.list_dir, subpath)
-    except (PathEscapeError, NotADirectoryError) as exc:
+        caminho = project_ops.resolve(_projects_root(settings), project)
+    except ProjectError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    return WorkspaceFS(caminho)
+
+
+FsDep = Annotated[WorkspaceFS, Depends(project_fs)]
+
+
+def _fs_from_body(settings: Settings, project: str) -> WorkspaceFS:
+    try:
+        return WorkspaceFS(project_ops.resolve(_projects_root(settings), project))
+    except ProjectError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
+
+def _erro_de_caminho(exc: Exception) -> HTTPException:
+    if isinstance(exc, PathEscapeError):
+        return HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc))
+    if isinstance(exc, FileNotFoundError):
+        return HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+    if isinstance(exc, FileExistsError):
+        return HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
+    return HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+
+
+# ── Projetos ────────────────────────────────────────────────────────────────
+
+
+@projects_router.get("")
+async def list_projects(settings: SettingsDep) -> dict[str, Any]:
+    raiz = _projects_root(settings)
+    projetos = await asyncio.to_thread(project_ops.list_projects, raiz)
     return {
-        "root": str(fs.root),
-        "subpath": subpath,
-        "entries": [
-            {
-                "path": entry.path,
-                "name": entry.path.rsplit("/", 1)[-1],
-                "is_dir": entry.is_dir,
-                "size_bytes": entry.size_bytes,
-                "language": None if entry.is_dir else detect_language(entry.path),
-            }
-            for entry in entries[:MAX_TREE_ENTRIES]
+        "root": str(raiz),
+        "projects": [
+            {"name": p.name, "path": str(p.path), "is_git": p.is_git, "branch": p.branch}
+            for p in projetos
         ],
-        "truncated": len(entries) > MAX_TREE_ENTRIES,
-        "ignored_dirs": sorted(ALWAYS_IGNORED),
     }
 
 
+# ── Árvore e arquivos ───────────────────────────────────────────────────────
+
+
+@router.get("/tree")
+async def tree(fs: FsDep, subpath: str = ".") -> dict[str, Any]:
+    """Um nível da árvore. O front expande sob demanda."""
+    try:
+        entries = await asyncio.to_thread(fs.list_dir, subpath)
+    except (PathEscapeError, NotADirectoryError, FileNotFoundError) as exc:
+        raise _erro_de_caminho(exc) from exc
+
+    return {
+        "subpath": subpath,
+        "entries": [
+            {
+                "path": e.path,
+                "name": e.path.rsplit("/", 1)[-1],
+                "is_dir": e.is_dir,
+                "size_bytes": e.size_bytes,
+                "language": None if e.is_dir else detect_language(e.path),
+            }
+            for e in entries[:MAX_TREE_ENTRIES]
+        ],
+        "truncated": len(entries) > MAX_TREE_ENTRIES,
+    }
+
+
+@router.get("/files")
+async def all_files(fs: FsDep, request: Request, refresh: bool = False) -> dict[str, Any]:
+    """Lista plana para o quick open. O casamento fuzzy é feito no cliente.
+
+    O resultado é cacheado porque o custo não está no nosso código: sobre um
+    bind mount de Windows para container Linux, cada `stat` cruza a fronteira
+    do filesystem e um projeto de mil arquivos leva dezenas de segundos. Um
+    quick open que demora meio minuto não é usável; com cache, só a primeira
+    abertura paga.
+    """
+    chave = f"{_CACHE_PREFIX}:{fs.root.as_posix()}"
+    redis = getattr(request.app.state, "redis", None)
+
+    if redis is not None and not refresh:
+        try:
+            bruto = await redis.get(chave)
+            if bruto:
+                arquivos = json.loads(bruto)
+                return {"files": arquivos, "count": len(arquivos), "cached": True}
+        except Exception as exc:
+            log.warning("workspace.files.cache_unavailable", error=str(exc))
+
+    arquivos = await asyncio.to_thread(search_ops.list_all_files, fs.root)
+
+    if redis is not None:
+        try:
+            await redis.set(chave, json.dumps(arquivos), ex=_CACHE_TTL_SECONDS)
+        except Exception as exc:
+            log.warning("workspace.files.cache_unavailable", error=str(exc))
+
+    return {"files": arquivos, "count": len(arquivos), "cached": False}
+
+
 @router.get("/file")
-async def read_file(
-    settings: SettingsDep, filepath: str = Query(alias="path"), root: str | None = None
-) -> dict[str, Any]:
-    fs = WorkspaceFS(_root(settings, root))
+async def read_file(fs: FsDep, filepath: str = Query(alias="path")) -> dict[str, Any]:
     try:
         content = await asyncio.to_thread(fs.read, filepath)
-    except PathEscapeError as exc:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
-    except FileNotFoundError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
-    except (FileTooLargeError, ValueError) as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except (PathEscapeError, FileNotFoundError, FileTooLargeError, ValueError) as exc:
+        raise _erro_de_caminho(exc) from exc
 
     return {
         "path": filepath,
@@ -107,27 +184,151 @@ async def read_file(
 
 
 class WriteFileRequest(BaseModel):
+    project: str = Field(min_length=1)
     path: str = Field(min_length=1)
     content: str
-    root: str | None = None
 
 
 @router.put("/file")
 async def write_file(payload: WriteFileRequest, settings: SettingsDep) -> dict[str, Any]:
-    fs = WorkspaceFS(_root(settings, payload.root))
+    fs = _fs_from_body(settings, payload.project)
     try:
         written = await asyncio.to_thread(fs.write, payload.path, payload.content)
-    except PathEscapeError as exc:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
-    except OSError as exc:
+    except (PathEscapeError, OSError) as exc:
+        raise _erro_de_caminho(exc) from exc
+    return {"path": payload.path, "bytes": written}
+
+
+class CreateRequest(BaseModel):
+    project: str = Field(min_length=1)
+    path: str = Field(min_length=1)
+    content: str = ""
+    is_dir: bool = False
+
+
+@router.post("/file")
+async def create_entry(payload: CreateRequest, settings: SettingsDep) -> dict[str, Any]:
+    fs = _fs_from_body(settings, payload.project)
+    try:
+        caminho = await asyncio.to_thread(
+            fs.create, payload.path, content=payload.content, is_dir=payload.is_dir
+        )
+    except (PathEscapeError, FileExistsError, OSError) as exc:
+        raise _erro_de_caminho(exc) from exc
+    return {"path": caminho, "is_dir": payload.is_dir}
+
+
+class MoveRequest(BaseModel):
+    project: str = Field(min_length=1)
+    source: str = Field(min_length=1)
+    destination: str = Field(min_length=1)
+
+
+@router.post("/move")
+async def move_entry(payload: MoveRequest, settings: SettingsDep) -> dict[str, Any]:
+    fs = _fs_from_body(settings, payload.project)
+    try:
+        destino = await asyncio.to_thread(fs.move, payload.source, payload.destination)
+    except (PathEscapeError, FileNotFoundError, FileExistsError, ValueError, OSError) as exc:
+        raise _erro_de_caminho(exc) from exc
+    return {"source": payload.source, "destination": destino}
+
+
+@router.delete("/file")
+async def delete_entry(
+    fs: FsDep, filepath: str = Query(alias="path"), recursive: bool = False
+) -> dict[str, Any]:
+    try:
+        await asyncio.to_thread(fs.delete, filepath, recursive=recursive)
+    except (PathEscapeError, IsADirectoryError, ValueError, OSError) as exc:
+        raise _erro_de_caminho(exc) from exc
+    return {"path": filepath, "deleted": True}
+
+
+# ── Busca ───────────────────────────────────────────────────────────────────
+
+
+class SearchRequest(BaseModel):
+    project: str = Field(min_length=1)
+    query: str = Field(min_length=1)
+    regex: bool = False
+    case_sensitive: bool = False
+    whole_word: bool = False
+    path_glob: str | None = None
+    max_matches: int = Field(default=search_ops.MAX_MATCHES, ge=1, le=2000)
+
+
+@router.post("/search")
+async def search_text(payload: SearchRequest, settings: SettingsDep) -> dict[str, Any]:
+    fs = _fs_from_body(settings, payload.project)
+    try:
+        resultado = await asyncio.to_thread(
+            search_ops.search,
+            fs.root,
+            payload.query,
+            regex=payload.regex,
+            case_sensitive=payload.case_sensitive,
+            whole_word=payload.whole_word,
+            path_glob=payload.path_glob,
+            max_matches=payload.max_matches,
+        )
+    except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
-    return {"path": payload.path, "bytes": written}
+    return {
+        "matches": [
+            {
+                "path": m.path,
+                "line": m.line,
+                "column": m.column,
+                "text": m.text,
+                "preview": m.preview,
+            }
+            for m in resultado.matches
+        ],
+        "files_searched": resultado.files_searched,
+        "files_with_matches": resultado.files_with_matches,
+        "truncated": resultado.truncated,
+    }
+
+
+class ReplaceRequest(SearchRequest):
+    replacement: str
+    # Fluxo seguro do editor: o usuário vê os resultados, desmarca o que não
+    # quer e confirma. Vazio significa "em todo o projeto".
+    only_paths: list[str] | None = None
+
+
+@router.post("/replace")
+async def replace_text(payload: ReplaceRequest, settings: SettingsDep) -> dict[str, Any]:
+    fs = _fs_from_body(settings, payload.project)
+    try:
+        resultado = await asyncio.to_thread(
+            search_ops.replace_all,
+            fs.root,
+            payload.query,
+            payload.replacement,
+            regex=payload.regex,
+            case_sensitive=payload.case_sensitive,
+            whole_word=payload.whole_word,
+            path_glob=payload.path_glob,
+            only_paths=payload.only_paths,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    return {
+        "files_changed": resultado.files_changed,
+        "replacements": resultado.replacements,
+        "changed_paths": resultado.changed_paths,
+    }
+
+
+# ── Terminal ────────────────────────────────────────────────────────────────
 
 
 @router.post("/terminal/{session_id}/ticket")
 async def terminal_ticket(session_id: str, request: Request) -> dict[str, Any]:
-    """Emite um ticket de uso único para abrir o WebSocket do terminal."""
     store: TicketStore | None = getattr(request.app.state, "tickets", None)
     if store is None:  # pragma: no cover - só ocorre se o lifespan falhar
         raise HTTPException(
@@ -141,16 +342,12 @@ async def terminal_ticket(session_id: str, request: Request) -> dict[str, Any]:
 async def terminal(websocket: WebSocket, session_id: str) -> None:
     """Terminal ligado ao sandbox da sessão.
 
-    Não é um PTY interativo: cada mensagem é um comando completo, e a resposta
+    Não é um PTY interativo: cada mensagem é um comando completo e a resposta
     volta inteira. Um PTY de verdade exigiria multiplexar o stream do Docker e
-    tratar sequências de escape — trabalho que só se paga se o usuário for
-    realmente digitar comandos longos aqui, em vez de deixar o agente executar.
+    tratar sequências de escape.
     """
     settings = get_settings()
 
-    # O browser não permite header customizado ao abrir um WebSocket, então a
-    # credencial iria na query string — que aparece em log, histórico e Referer.
-    # Por isso vai um ticket de uso único, não a chave principal.
     if settings.api_key:
         store: TicketStore | None = getattr(websocket.app.state, "tickets", None)
         ticket = websocket.query_params.get("ticket", "")
@@ -173,15 +370,13 @@ async def terminal(websocket: WebSocket, session_id: str) -> None:
         await websocket.send_json(
             {
                 "type": "error",
-                "message": sessao.sandbox_error or "Sandbox indisponível — o Docker está rodando?",
+                "message": sessao.sandbox_error or "Sandbox indisponível — o executor está no ar?",
             }
         )
         await websocket.close(code=4503)
         return
 
-    await websocket.send_json(
-        {"type": "ready", "session_id": session_id, "cwd": "/workspace"}
-    )
+    await websocket.send_json({"type": "ready", "session_id": session_id, "cwd": "/workspace"})
 
     try:
         while True:

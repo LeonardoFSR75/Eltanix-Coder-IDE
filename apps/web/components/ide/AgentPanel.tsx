@@ -2,6 +2,7 @@
 
 import { useCallback, useRef, useState } from "react";
 import { post, streamEvents } from "@/lib/client";
+import { useIde } from "@/lib/ide-store";
 
 type Mode = "ask" | "edit" | "agent";
 
@@ -34,7 +35,14 @@ const MODE_HINT: Record<Mode, string> = {
   agent: "Pode editar, executar testes e abrir PR. Cada ação de risco pede aprovação.",
 };
 
-export function AgentPanel({ onFileTouched }: { onFileTouched?: (path: string) => void }) {
+export function AgentPanel({
+  onFileTouched,
+  onSession,
+}: {
+  onFileTouched?: (path: string) => void;
+  onSession?: (sessionId: string | null) => void;
+}) {
+  const { project } = useIde();
   const [task, setTask] = useState("");
   const [mode, setMode] = useState<Mode>("agent");
   const [session, setSession] = useState<Session | null>(null);
@@ -128,8 +136,9 @@ export function AgentPanel({ onFileTouched }: { onFileTouched?: (path: string) =
     setLog([]);
     setPending([]);
     try {
-      const created = await post<Session>("/api/agent/sessions", { task, mode });
+      const created = await post<Session>("/api/agent/sessions", { task, mode, project });
       setSession(created);
+      onSession?.(created.session_id);
       append({ kind: "info", text: `sessão ${created.session_id} · branch ${created.branch || "(nenhum)"}` });
       for (const aviso of created.warnings ?? []) {
         append({ kind: "error", text: aviso });
@@ -138,7 +147,7 @@ export function AgentPanel({ onFileTouched }: { onFileTouched?: (path: string) =
     } catch (err) {
       append({ kind: "error", text: err instanceof Error ? err.message : String(err) });
     }
-  }, [task, mode, append, run]);
+  }, [task, mode, project, append, run, onSession]);
 
   const decide = useCallback(
     async (approved: boolean) => {
@@ -183,7 +192,7 @@ export function AgentPanel({ onFileTouched }: { onFileTouched?: (path: string) =
           rows={4}
           disabled={running}
         />
-        <button type="button" className="primary" onClick={() => void start()} disabled={running || !task.trim()}>
+        <button type="button" className="primary" onClick={() => void start()} disabled={running || !task.trim() || !project}>
           {running ? "trabalhando…" : "iniciar"}
         </button>
       </div>

@@ -23,28 +23,31 @@ AUTH = {"Authorization": "Bearer chave-de-teste"}
 
 @pytest.fixture(scope="module")
 def workspace(tmp_path_factory):
-    root = tmp_path_factory.mktemp("workspace")
+    """Uma raiz de projetos com um projeto dentro — o layout real."""
+    projects_root = tmp_path_factory.mktemp("projetos")
+    root = projects_root / "demo"
+    root.mkdir()
     (root / "src").mkdir()
     # `write_bytes` e não `write_text`: no Windows o segundo traduziria \n para
     # \r\n e o teste passaria a medir a tradução do Python, não a rota.
     (root / "src" / "app.py").write_bytes(b"x = 1\n")
     (root / "README.md").write_bytes(b"# Projeto\n")
     (root.parent / "fora.txt").write_bytes(b"segredo")
-    return root
+    return projects_root
 
 
 @pytest.fixture(scope="module")
 def client(workspace):
-    os.environ["WORKSPACE_ROOT"] = str(workspace)
+    os.environ["PROJECTS_ROOT"] = str(workspace)
     get_settings.cache_clear()
     with TestClient(create_app()) as test_client:
         yield test_client
-    os.environ.pop("WORKSPACE_ROOT", None)
+    os.environ.pop("PROJECTS_ROOT", None)
     get_settings.cache_clear()
 
 
 def test_tree_lists_the_workspace_root(client):
-    resposta = client.get("/api/workspace/tree", headers=AUTH)
+    resposta = client.get("/api/workspace/tree?project=demo", headers=AUTH)
     assert resposta.status_code == 200
 
     nomes = {e["name"] for e in resposta.json()["entries"]}
@@ -52,14 +55,16 @@ def test_tree_lists_the_workspace_root(client):
 
 
 def test_tree_reports_language_per_file(client):
-    entries = client.get("/api/workspace/tree", headers=AUTH).json()["entries"]
+    entries = client.get("/api/workspace/tree?project=demo", headers=AUTH).json()["entries"]
     por_nome = {e["name"]: e for e in entries}
     assert por_nome["README.md"]["language"] == "markdown"
     assert por_nome["src"]["is_dir"] is True
 
 
 def test_read_file_returns_content_and_language(client):
-    resposta = client.get("/api/workspace/file", params={"path": "src/app.py"}, headers=AUTH)
+    resposta = client.get(
+        "/api/workspace/file", params={"project": "demo", "path": "src/app.py"}, headers=AUTH
+    )
     assert resposta.status_code == 200
 
     corpo = resposta.json()
@@ -68,38 +73,44 @@ def test_read_file_returns_content_and_language(client):
 
 
 def test_read_outside_the_workspace_is_forbidden(client):
-    resposta = client.get("/api/workspace/file", params={"path": "../fora.txt"}, headers=AUTH)
+    resposta = client.get(
+        "/api/workspace/file", params={"project": "demo", "path": "../fora.txt"}, headers=AUTH
+    )
     assert resposta.status_code == 403
 
 
 def test_write_then_read_round_trips(client):
     escrita = client.put(
         "/api/workspace/file",
-        json={"path": "src/novo.py", "content": "y = 2\n"},
+        json={"project": "demo", "path": "src/novo.py", "content": "y = 2\n"},
         headers=AUTH,
     )
     assert escrita.status_code == 200
 
-    leitura = client.get("/api/workspace/file", params={"path": "src/novo.py"}, headers=AUTH)
+    leitura = client.get(
+        "/api/workspace/file", params={"project": "demo", "path": "src/novo.py"}, headers=AUTH
+    )
     assert leitura.json()["content"] == "y = 2\n"
 
 
 def test_write_outside_the_workspace_is_forbidden(client):
     resposta = client.put(
         "/api/workspace/file",
-        json={"path": "../invasao.txt", "content": "x"},
+        json={"project": "demo", "path": "../invasao.txt", "content": "x"},
         headers=AUTH,
     )
     assert resposta.status_code == 403
 
 
 def test_missing_file_returns_404(client):
-    resposta = client.get("/api/workspace/file", params={"path": "nao-existe.py"}, headers=AUTH)
+    resposta = client.get(
+        "/api/workspace/file", params={"project": "demo", "path": "nao-existe.py"}, headers=AUTH
+    )
     assert resposta.status_code == 404
 
 
 def test_workspace_routes_require_the_api_key(client):
-    assert client.get("/api/workspace/tree").status_code == 401
+    assert client.get("/api/workspace/tree?project=demo").status_code == 401
 
 
 def test_terminal_ticket_is_issued_for_authenticated_callers(client):
@@ -141,6 +152,133 @@ def test_terminal_websocket_accepts_a_valid_ticket(client):
         mensagem = ws.receive_json()
         assert mensagem["type"] == "error"
         assert "sessao-x" in mensagem["message"]
+
+
+def test_projects_are_discovered(client):
+    resposta = client.get("/api/projects", headers=AUTH)
+    assert resposta.status_code == 200
+    assert "demo" in {p["name"] for p in resposta.json()["projects"]}
+
+
+@pytest.mark.parametrize("nome", ["../fora", "..", "a/b", "a\\b", ""])
+def test_project_name_must_be_a_single_segment(client, nome):
+    # É a fronteira externa: aceitar caminho no lugar do nome tornaria qualquer
+    # pasta da máquina alcançável.
+    resposta = client.get(f"/api/workspace/tree?project={nome}", headers=AUTH)
+    assert resposta.status_code in {400, 422}
+
+
+def test_unknown_project_is_refused(client):
+    assert client.get("/api/workspace/tree?project=inexistente", headers=AUTH).status_code == 400
+
+
+def test_flat_file_list_feeds_quick_open(client):
+    resposta = client.get("/api/workspace/files?project=demo&refresh=true", headers=AUTH)
+    assert resposta.status_code == 200
+
+    caminhos = {f["path"] for f in resposta.json()["files"]}
+    assert "src/app.py" in caminhos
+    assert "README.md" in caminhos
+
+
+def test_create_move_and_delete(client):
+    criado = client.post(
+        "/api/workspace/file",
+        json={"project": "demo", "path": "novo/arquivo.py", "content": "z = 3\n"},
+        headers=AUTH,
+    )
+    assert criado.status_code == 200
+
+    # Criar por cima de algo existente precisa falhar, não sobrescrever.
+    assert client.post(
+        "/api/workspace/file",
+        json={"project": "demo", "path": "novo/arquivo.py"},
+        headers=AUTH,
+    ).status_code == 409
+
+    movido = client.post(
+        "/api/workspace/move",
+        json={"project": "demo", "source": "novo/arquivo.py", "destination": "novo/renomeado.py"},
+        headers=AUTH,
+    )
+    assert movido.status_code == 200
+
+    apagado = client.delete(
+        "/api/workspace/file",
+        params={"project": "demo", "path": "novo", "recursive": True},
+        headers=AUTH,
+    )
+    assert apagado.status_code == 200
+
+
+def test_directory_delete_requires_recursive(client):
+    client.post(
+        "/api/workspace/file",
+        json={"project": "demo", "path": "pasta", "is_dir": True},
+        headers=AUTH,
+    )
+    # Sem `recursive`, apagar pasta precisa falhar: é o clique acidental que
+    # levaria uma árvore inteira junto.
+    assert client.delete(
+        "/api/workspace/file", params={"project": "demo", "path": "pasta"}, headers=AUTH
+    ).status_code == 400
+    client.delete(
+        "/api/workspace/file",
+        params={"project": "demo", "path": "pasta", "recursive": True},
+        headers=AUTH,
+    )
+
+
+def test_create_outside_the_project_is_forbidden(client):
+    assert client.post(
+        "/api/workspace/file",
+        json={"project": "demo", "path": "../invasao.py", "content": "x"},
+        headers=AUTH,
+    ).status_code == 403
+
+
+def test_global_search_finds_content(client):
+    resposta = client.post(
+        "/api/workspace/search", json={"project": "demo", "query": "x = 1"}, headers=AUTH
+    )
+    assert resposta.status_code == 200
+
+    achados = resposta.json()["matches"]
+    assert any(m["path"] == "src/app.py" and m["line"] == 1 for m in achados)
+
+
+def test_invalid_regex_returns_400_not_500(client):
+    resposta = client.post(
+        "/api/workspace/search",
+        json={"project": "demo", "query": "([", "regex": True},
+        headers=AUTH,
+    )
+    assert resposta.status_code == 400
+
+
+def test_replace_rewrites_files(client):
+    client.post(
+        "/api/workspace/file",
+        json={"project": "demo", "path": "trocar.txt", "content": "alfa beta alfa\n"},
+        headers=AUTH,
+    )
+
+    resposta = client.post(
+        "/api/workspace/replace",
+        json={
+            "project": "demo",
+            "query": "alfa",
+            "replacement": "gama",
+            "only_paths": ["trocar.txt"],
+        },
+        headers=AUTH,
+    )
+    assert resposta.json()["replacements"] == 2
+
+    lido = client.get(
+        "/api/workspace/file", params={"project": "demo", "path": "trocar.txt"}, headers=AUTH
+    )
+    assert lido.json()["content"] == "gama beta gama\n"
 
 
 def test_agent_tools_endpoint_exposes_risk_classes(client):

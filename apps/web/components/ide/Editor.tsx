@@ -47,9 +47,11 @@ const EDITOR_OPTIONS = {
 };
 
 export function Editor({
+  project,
   path,
   onDirtyChange,
 }: {
+  project: string | null;
   path: string | null;
   onDirtyChange?: (dirty: boolean) => void;
 }) {
@@ -61,13 +63,25 @@ export function Editor({
   const [dirty, setDirty] = useState(false);
   const originalRef = useRef("");
 
+  // O callback vive numa ref, e não nas dependências do efeito. Quem chama
+  // costuma passar uma arrow inline, que é uma função nova a cada render: como
+  // dependência, ela reexecutaria a carga em laço, e o `setLoading(false)` de
+  // cada execução seria descartado pelo guard de cancelamento da seguinte — o
+  // editor ficava preso em "carregando…" para sempre.
+  const onDirtyRef = useRef(onDirtyChange);
   useEffect(() => {
-    if (!path) return;
+    onDirtyRef.current = onDirtyChange;
+  }, [onDirtyChange]);
+
+  useEffect(() => {
+    if (!path || !project) return;
     let cancelled = false;
 
     setLoading(true);
     setError(null);
-    get<FileResponse>(`/api/workspace/file?path=${encodeURIComponent(path)}`)
+    get<FileResponse>(
+      `/api/workspace/file?project=${encodeURIComponent(project)}&path=${encodeURIComponent(path)}`,
+    )
       .then((data) => {
         // Sem esta guarda, trocar de arquivo rápido faria a resposta lenta do
         // anterior sobrescrever o conteúdo do atual.
@@ -76,7 +90,7 @@ export function Editor({
         originalRef.current = data.content;
         setLanguage(MONACO_LANGUAGE[data.language ?? ""] ?? "plaintext");
         setDirty(false);
-        onDirtyChange?.(false);
+        onDirtyRef.current?.(false);
       })
       .catch((err) => {
         if (!cancelled) setError(err instanceof Error ? err.message : String(err));
@@ -88,23 +102,23 @@ export function Editor({
     return () => {
       cancelled = true;
     };
-  }, [path, onDirtyChange]);
+  }, [project, path]);
 
   const save = useCallback(async () => {
-    if (!path || !dirty) return;
+    if (!path || !project || !dirty) return;
     setSaving(true);
     try {
-      await put("/api/workspace/file", { path, content });
+      await put("/api/workspace/file", { project, path, content });
       originalRef.current = content;
       setDirty(false);
-      onDirtyChange?.(false);
+      onDirtyRef.current?.(false);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setSaving(false);
     }
-  }, [path, content, dirty, onDirtyChange]);
+  }, [project, path, content, dirty]);
 
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
@@ -147,7 +161,7 @@ export function Editor({
             setContent(next);
             const isDirty = next !== originalRef.current;
             setDirty(isDirty);
-            onDirtyChange?.(isDirty);
+            onDirtyRef.current?.(isDirty);
           }}
         />
       )}

@@ -2,7 +2,9 @@
 name = "sicoobito-api"
 version = "0.1.0"
 description = "Gateway multi-modelo e backend agêntico do SicoobitoCode"
-readme = "../../README.md"
+# Sem `readme`: apontar para ../../README.md quebra qualquer build em que só
+# este diretório entra no contexto — o caso da imagem Docker. O pacote não é
+# publicado, então não há o que perder.
 requires-python = ">=3.12,<3.13"
 dependencies = [
     "fastapi>=0.115",

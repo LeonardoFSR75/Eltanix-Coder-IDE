@@ -1,5 +1,15 @@
 name: sicoobito
 
+# Toda a plataforma sobe junto. Faixa de portas 5400–5499 para não disputar
+# 3000/8000/5432 com outros projetos — 5432 e 5489 já estavam ocupadas nesta
+# máquina, então a numeração é sequencial a partir de 5400.
+#
+#   5400  web (Next.js)
+#   5401  api (FastAPI)
+#   5402  executor (interno; exposto só para diagnóstico)
+#   5403  postgres
+#   5404  redis
+
 services:
   postgres:
     image: pgvector/pgvector:pg17
@@ -7,9 +17,8 @@ services:
       POSTGRES_USER: sicoobito
       POSTGRES_PASSWORD: sicoobito
       POSTGRES_DB: sicoobito
-    # Portas deslocadas para não colidir com instâncias locais de Postgres/Redis.
     ports:
-      - "5433:5432"
+      - "5403:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -22,7 +31,7 @@ services:
     image: redis:7-alpine
     command: ["redis-server", "--appendonly", "yes"]
     ports:
-      - "6380:6379"
+      - "5404:6379"
     volumes:
       - redisdata:/data
     healthcheck:
@@ -30,6 +39,94 @@ services:
       interval: 5s
       timeout: 3s
       retries: 20
+
+  # Único serviço com acesso ao daemon do Docker. Fica isolado de propósito:
+  # quem alcança o socket tem poder equivalente a root no host, então essa
+  # capacidade não pode viver no mesmo processo que atende requisições de
+  # usuário e executa código de modelo. Ver docs/adr/0002.
+  executor:
+    build:
+      context: ./services/executor
+    environment:
+      EXECUTOR_TOKEN: ${EXECUTOR_TOKEN:-executor-local}
+      PROJECTS_ROOT_HOST: ${PROJECTS_ROOT:-./projetos}
+      PROJECTS_ROOT_CONTAINER: /projects
+      SANDBOX_IMAGE: ${SANDBOX_IMAGE:-python:3.12-slim}
+      SANDBOX_MEMORY: ${SANDBOX_MEMORY:-2g}
+      SANDBOX_NETWORK: ${SANDBOX_NETWORK:-false}
+    ports:
+      - "5402:5402"
+    volumes:
+      # O socket é a razão de este serviço existir separado.
+      - /var/run/docker.sock:/var/run/docker.sock
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://localhost:5402/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    environment:
+      DATABASE_URL: postgresql+asyncpg://sicoobito:sicoobito@postgres:5432/sicoobito
+      REDIS_URL: redis://redis:6379/0
+      SICOOBITO_API_KEY: ${SICOOBITO_API_KEY:?defina SICOOBITO_API_KEY no .env}
+      # Raiz onde os projetos editáveis vivem, do ponto de vista do container.
+      PROJECTS_ROOT: /projects
+      # O mesmo caminho visto pelo host. O executor precisa dele para montar
+      # volumes: o daemon do Docker resolve caminhos do host, não deste container.
+      PROJECTS_ROOT_HOST: ${PROJECTS_ROOT:-./projetos}
+      EXECUTOR_URL: http://executor:5402
+      EXECUTOR_TOKEN: ${EXECUTOR_TOKEN:-executor-local}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      LITELLM_LOCAL_MODEL_COST_MAP: "True"
+    env_file:
+      - path: .env
+        required: false
+    ports:
+      - "5401:5401"
+    volumes:
+      - ${PROJECTS_ROOT:-./projetos}:/projects
+      - ./config:/app/config:ro
+      # Código montado para reload em desenvolvimento; numa imagem de produção
+      # ele já está dentro e esta linha sai.
+      - ./apps/api/src:/app/src:ro
+    extra_hosts:
+      # Permite alcançar o Ollama rodando no host.
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      executor:
+        condition: service_started
+
+  web:
+    build:
+      context: ./apps/web
+    environment:
+      # O browser fala com o Next; o Next fala com a API pela rede interna.
+      SICOOBITO_API_URL: http://api:5401
+      SICOOBITO_API_KEY: ${SICOOBITO_API_KEY:?defina SICOOBITO_API_KEY no .env}
+      # Usado só para montar a URL do WebSocket, que o browser abre direto.
+      NEXT_PUBLIC_API_ORIGIN: ${PUBLIC_API_ORIGIN:-http://localhost:5401}
+      PORT: "5400"
+      # Bind mount de Windows para container Linux não entrega eventos de
+      # inotify: sem polling, o Next continua servindo o código antigo depois de
+      # cada edição, e o sintoma é uma correção que "não fez efeito".
+      WATCHPACK_POLLING: "true"
+      CHOKIDAR_USEPOLLING: "true"
+    ports:
+      - "5400:5400"
+    volumes:
+      - ./apps/web/app:/app/app
+      - ./apps/web/components:/app/components
+      - ./apps/web/lib:/app/lib
+    depends_on:
+      - api
 
 volumes:
   pgdata:

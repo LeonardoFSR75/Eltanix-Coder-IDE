@@ -11,10 +11,16 @@ ali sugerir um caminho, ele chega até aqui.
 
 from __future__ import annotations
 
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
-from sicoobito.context.scanner import BINARY_EXTENSIONS, MAX_FILE_BYTES, read_text
+from sicoobito.context.scanner import (
+    ALWAYS_IGNORED,
+    BINARY_EXTENSIONS,
+    MAX_FILE_BYTES,
+    read_text,
+)
 from sicoobito.logging_setup import get_logger
 
 log = get_logger(__name__)
@@ -116,12 +122,53 @@ class WorkspaceFS:
         log.info("workspace.write", path=relative, bytes=len(content))
         return len(content)
 
-    def delete(self, relative: str) -> None:
+    def create(self, relative: str, *, content: str = "", is_dir: bool = False) -> str:
+        """Cria arquivo ou pasta. Recusa sobrescrever o que já existe."""
+        target = self.resolve(relative)
+        if target.exists():
+            raise FileExistsError(f"{relative} já existe.")
+
+        if is_dir:
+            target.mkdir(parents=True)
+        else:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            with target.open("w", encoding="utf-8", newline="") as handle:
+                handle.write(content)
+        log.info("workspace.create", path=relative, is_dir=is_dir)
+        return self.relative(target)
+
+    def move(self, origem: str, destino: str) -> str:
+        """Move ou renomeia. As duas pontas passam pela mesma fronteira."""
+        de = self.resolve(origem)
+        para = self.resolve(destino)
+
+        if not de.exists():
+            raise FileNotFoundError(f"{origem} não existe.")
+        if para.exists():
+            raise FileExistsError(f"{destino} já existe.")
+        # Mover uma pasta para dentro de si mesma apagaria a árvore inteira.
+        if de.is_dir() and de in para.parents:
+            raise ValueError(f"Não é possível mover {origem} para dentro dele mesmo.")
+
+        para.parent.mkdir(parents=True, exist_ok=True)
+        de.rename(para)
+        log.info("workspace.move", origem=origem, destino=destino)
+        return self.relative(para)
+
+    def delete(self, relative: str, *, recursive: bool = False) -> None:
         target = self.resolve(relative)
         if target.is_dir():
-            raise IsADirectoryError(f"{relative} é um diretório; remoção de pasta não é suportada.")
-        target.unlink(missing_ok=True)
-        log.info("workspace.delete", path=relative)
+            if not recursive:
+                raise IsADirectoryError(
+                    f"{relative} é um diretório. Confirme a remoção recursiva para excluí-lo."
+                )
+            # A raiz do workspace nunca é apagável, mesmo com recursive.
+            if target == self.root:
+                raise ValueError("A raiz do projeto não pode ser removida.")
+            shutil.rmtree(target)
+        else:
+            target.unlink(missing_ok=True)
+        log.info("workspace.delete", path=relative, recursive=recursive)
 
     def list_dir(self, relative: str = ".") -> list[FileEntry]:
         target = self.resolve(relative) if relative not in {"", "."} else self.root
@@ -130,7 +177,9 @@ class WorkspaceFS:
 
         entries: list[FileEntry] = []
         for child in sorted(target.iterdir(), key=lambda p: (p.is_file(), p.name.lower())):
-            if child.name in {".git", "node_modules", ".venv", "__pycache__"}:
+            # Mesma lista do scanner: divergir faria a árvore mostrar pastas
+            # que a busca e a indexação ignoram.
+            if child.name in ALWAYS_IGNORED:
                 continue
             try:
                 size = child.stat().st_size if child.is_file() else 0

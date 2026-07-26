@@ -16,7 +16,9 @@ from sicoobito.agent.tools import registry
 from sicoobito.api.deps import AuthDep, SettingsDep
 from sicoobito.logging_setup import get_logger
 from sicoobito.workspace import git as git_ops
+from sicoobito.workspace import projects as project_ops
 from sicoobito.workspace.git import GitError
+from sicoobito.workspace.projects import ProjectError
 
 log = get_logger(__name__)
 
@@ -60,7 +62,7 @@ async def list_tools() -> dict[str, Any]:
 
 class CreateSessionRequest(BaseModel):
     task: str = Field(min_length=1, description="O que o agente deve fazer")
-    path: str | None = Field(default=None, description="Raiz do repositório")
+    project: str = Field(min_length=1, description="Nome do projeto em PROJECTS_ROOT")
     mode: Literal["ask", "edit", "agent"] = "agent"
 
 
@@ -68,17 +70,18 @@ class CreateSessionRequest(BaseModel):
 async def create_session(
     payload: CreateSessionRequest, request: Request, settings: SettingsDep
 ) -> dict[str, Any]:
-    # `resolve()` toca o disco, mas é uma syscall única por criação de sessão —
-    # mandar para uma thread custaria mais que o próprio trabalho.
-    root = Path(payload.path or settings.workspace_root or ".").expanduser().resolve()  # noqa: ASYNC240
-
-    if settings.workspace_root is not None:
-        limite = Path(settings.workspace_root).resolve()  # noqa: ASYNC240
-        if not root.is_relative_to(limite):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Caminho fora de WORKSPACE_ROOT ({limite}).",
-            )
+    raiz = settings.effective_projects_root
+    if raiz is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Defina PROJECTS_ROOT para criar sessões de agente.",
+        )
+    try:
+        # Só nome de projeto, nunca caminho: é o que impede o agente de ser
+        # apontado para qualquer diretório da máquina.
+        root = project_ops.resolve(Path(raiz), payload.project)
+    except ProjectError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
     sessao = await _runner(request).create_session(
         task=payload.task, workspace_root=root, mode=payload.mode

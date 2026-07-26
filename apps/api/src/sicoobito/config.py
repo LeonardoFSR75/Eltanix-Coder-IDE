@@ -8,8 +8,24 @@ from pathlib import Path
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-# .../apps/api/src/sicoobito/config.py -> raiz do repositório
-REPO_ROOT = Path(__file__).resolve().parents[4]
+
+def _find_repo_root() -> Path:
+    """Raiz que contém `config/`, procurando para cima.
+
+    Contar níveis fixos (`parents[4]`) só funciona no layout do checkout: numa
+    imagem Docker o pacote fica em `/app/src/sicoobito`, que não tem cinco
+    níveis acima, e a contagem estoura com IndexError no import.
+    """
+    aqui = Path(__file__).resolve()
+    for candidato in aqui.parents:
+        if (candidato / "config" / "providers.yaml").exists():
+            return candidato
+    # Sem `config/` em lugar nenhum, resta um palpite razoável; quem manda de
+    # verdade nesse caso é SICOOBITO_CONFIG_DIR.
+    return aqui.parents[min(2, len(aqui.parents) - 1)]
+
+
+REPO_ROOT = _find_repo_root()
 
 
 class Settings(BaseSettings):
@@ -60,7 +76,25 @@ class Settings(BaseSettings):
     embedding_dim: int = Field(default=768, alias="EMBEDDING_DIM")
     embedding_profile: str = Field(default="embedding", alias="EMBEDDING_PROFILE")
     embedding_batch_size: int = Field(default=32, alias="EMBEDDING_BATCH_SIZE")
+
+    # ── Projetos ────────────────────────────────────────────────────────────
+    # Pasta que contém os projetos editáveis, como este processo a enxerga.
+    # É a fronteira: nada fora dela é alcançável pelo IDE ou pelo agente.
+    projects_root: Path | None = Field(default=None, alias="PROJECTS_ROOT")
+    # O mesmo caminho visto pelo host. Só é necessário quando a API roda em
+    # container: o daemon do Docker resolve bind mounts contra o host.
+    projects_root_host: str = Field(default="", alias="PROJECTS_ROOT_HOST")
+    # Compatibilidade com a configuração de projeto único anterior.
     workspace_root: Path | None = Field(default=None, alias="WORKSPACE_ROOT")
+
+    @property
+    def effective_projects_root(self) -> Path | None:
+        """Raiz de projetos, caindo para o antigo WORKSPACE_ROOT se preciso."""
+        if self.projects_root is not None:
+            return self.projects_root
+        # Um WORKSPACE_ROOT antigo aponta para um projeto, não para a pasta que
+        # os contém; tratamos o pai como raiz para não quebrar quem já usava.
+        return self.workspace_root.parent if self.workspace_root else None
 
     # ── Sandbox de execução ─────────────────────────────────────────────────
     sandbox_image: str = Field(default="python:3.12-slim", alias="SANDBOX_IMAGE")
@@ -70,6 +104,11 @@ class Settings(BaseSettings):
     # executar algo de origem desconhecida. Ligue só quando precisar instalar
     # dependências, e prefira fazê-lo por uma imagem preparada.
     sandbox_network: bool = Field(default=False, alias="SANDBOX_NETWORK")
+    # Quando definido, a execução vai pelo serviço executor em vez do daemon
+    # local. É o modo usado quando a própria API roda em container: só o
+    # executor tem acesso ao socket do Docker (ver ADR 0002).
+    executor_url: str = Field(default="", alias="EXECUTOR_URL")
+    executor_token: str = Field(default="", alias="EXECUTOR_TOKEN")
 
     # ── Credenciais de provedores ───────────────────────────────────────────
     ollama_base_url: str = Field(default="http://localhost:11434", alias="OLLAMA_BASE_URL")

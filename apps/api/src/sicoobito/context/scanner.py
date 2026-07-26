@@ -8,6 +8,7 @@ e não respondem pergunta nenhuma.
 from __future__ import annotations
 
 import hashlib
+import os
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
@@ -98,50 +99,110 @@ def read_text(path: Path) -> str | None:
     return data.decode("utf-8", errors="replace")
 
 
-def scan(root: Path) -> Iterator[ScannedFile]:
+def iter_paths(root: Path) -> Iterator[tuple[str, Path, int]]:
+    """Caminhos do projeto, **sem ler o conteúdo** dos arquivos.
+
+    Existe separado de `scan` porque listar não é indexar. O `scan` lê os bytes
+    de cada arquivo para calcular hash e detectar binário — necessário para
+    indexar, desperdício para preencher um quick open. Sobre bind mount de
+    Windows para Linux a diferença é de segundos para um minuto num projeto de
+    mil arquivos.
+
+    Devolve `(caminho relativo, caminho absoluto, tamanho)`.
+    """
     root = root.resolve()
     spec = _load_ignore_spec(root)
 
-    for absolute in root.rglob("*"):
-        if not absolute.is_file():
-            continue
+    for dirpath, dirnames, filenames in os.walk(root):
+        atual = Path(dirpath)
 
-        try:
-            relative = absolute.relative_to(root)
-        except ValueError:  # pragma: no cover - rglob não deveria sair da raiz
-            continue
+        mantidos = []
+        for nome in dirnames:
+            if nome in ALWAYS_IGNORED:
+                continue
+            relativo = (atual / nome).relative_to(root).as_posix()
+            if spec.match_file(f"{relativo}/") or spec.match_file(relativo):
+                continue
+            mantidos.append(nome)
+        dirnames[:] = mantidos
 
-        parts = set(relative.parts)
-        if parts & ALWAYS_IGNORED:
-            continue
-        if absolute.suffix.lower() in BINARY_EXTENSIONS:
-            continue
+        for nome in filenames:
+            absolute = atual / nome
+            if absolute.suffix.lower() in BINARY_EXTENSIONS:
+                continue
+            relative_posix = absolute.relative_to(root).as_posix()
+            if spec.match_file(relative_posix):
+                continue
+            try:
+                tamanho = absolute.stat().st_size
+            except OSError:
+                continue
+            if tamanho > MAX_FILE_BYTES or tamanho == 0:
+                continue
+            yield relative_posix, absolute, tamanho
 
-        # `as_posix` porque padrões de .gitignore usam barra normal, inclusive
-        # no Windows.
-        relative_posix = relative.as_posix()
-        if spec.match_file(relative_posix):
-            continue
 
-        try:
-            stat = absolute.stat()
-        except OSError:
-            continue
-        if stat.st_size > MAX_FILE_BYTES or stat.st_size == 0:
-            continue
+def scan(root: Path) -> Iterator[ScannedFile]:
+    """Percorre o projeto, **podando** diretórios ignorados antes de descer.
 
-        try:
-            data = absolute.read_bytes()
-        except OSError:
-            continue
-        if _looks_binary(data):
-            continue
+    A poda é o ponto crítico. `Path.rglob("*")` visita tudo e só então filtra:
+    num projeto com `node_modules` e `.venv`, isso significa percorrer centenas
+    de milhares de entradas para descartar quase todas. Sobre um bind mount de
+    Windows para container Linux, onde cada chamada ao filesystem cruza uma
+    fronteira, a varredura passa de segundos para dezenas de minutos.
 
-        yield ScannedFile(
-            path=relative_posix,
-            absolute=absolute,
-            content_hash=hash_bytes(data),
-            size_bytes=stat.st_size,
-            mtime=stat.st_mtime,
-            language=detect_language(absolute.name),
-        )
+    `os.walk` permite alterar a lista de subdiretórios no lugar, e é isso que
+    impede a descida.
+    """
+    root = root.resolve()
+    spec = _load_ignore_spec(root)
+
+    for dirpath, dirnames, filenames in os.walk(root):
+        atual = Path(dirpath)
+
+        # Poda: o que sai daqui não é sequer visitado.
+        mantidos = []
+        for nome in dirnames:
+            if nome in ALWAYS_IGNORED:
+                continue
+            relativo = (atual / nome).relative_to(root).as_posix()
+            # O padrão com barra final é o que casa regra de diretório no
+            # gitignore ("build/" não casa com "build" sozinho).
+            if spec.match_file(f"{relativo}/") or spec.match_file(relativo):
+                continue
+            mantidos.append(nome)
+        dirnames[:] = mantidos
+
+        for nome in filenames:
+            absolute = atual / nome
+            if absolute.suffix.lower() in BINARY_EXTENSIONS:
+                continue
+
+            # `as_posix` porque padrões de .gitignore usam barra normal,
+            # inclusive no Windows.
+            relative_posix = absolute.relative_to(root).as_posix()
+            if spec.match_file(relative_posix):
+                continue
+
+            try:
+                stat = absolute.stat()
+            except OSError:
+                continue
+            if stat.st_size > MAX_FILE_BYTES or stat.st_size == 0:
+                continue
+
+            try:
+                data = absolute.read_bytes()
+            except OSError:
+                continue
+            if _looks_binary(data):
+                continue
+
+            yield ScannedFile(
+                path=relative_posix,
+                absolute=absolute,
+                content_hash=hash_bytes(data),
+                size_bytes=stat.st_size,
+                mtime=stat.st_mtime,
+                language=detect_language(absolute.name),
+            )

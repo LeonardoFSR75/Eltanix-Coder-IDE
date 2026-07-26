@@ -11,6 +11,8 @@ from pydantic import BaseModel, Field
 from sicoobito.api.deps import AuthDep, SettingsDep
 from sicoobito.context.indexer import ContextIndexer
 from sicoobito.context.repomap import DEFAULT_TOKEN_BUDGET, build_repo_map
+from sicoobito.workspace import projects as project_ops
+from sicoobito.workspace.projects import ProjectError
 
 router = APIRouter(prefix="/api/context", tags=["context"], dependencies=[AuthDep])
 
@@ -24,36 +26,32 @@ def _indexer(request: Request) -> ContextIndexer:
     return indexer
 
 
-def _resolve_root(settings: SettingsDep, requested: str | None) -> Path:
-    """Resolve a raiz do workspace.
+def _resolve_root(settings: SettingsDep, project: str | None) -> Path:
+    """Resolve a raiz do projeto a indexar.
 
-    Sem `WORKSPACE_ROOT` configurado, aceitar um caminho arbitrário do corpo da
-    requisição deixaria qualquer diretório da máquina indexável por quem
-    alcançasse a API. Com ele configurado, o caminho pedido precisa estar dentro.
+    Só nomes de projeto são aceitos, nunca caminhos: aceitar caminho arbitrário
+    do corpo da requisição deixaria qualquer diretório da máquina indexável por
+    quem alcançasse a API.
     """
-    configured = settings.workspace_root
-
-    if requested is None:
-        if configured is None:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Defina WORKSPACE_ROOT ou informe `path` explicitamente.",
-            )
-        return Path(configured).resolve()
-
-    candidate = Path(requested).expanduser().resolve()
-    if configured is not None:
-        root = Path(configured).resolve()
-        if not candidate.is_relative_to(root):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Caminho fora de WORKSPACE_ROOT ({root}).",
-            )
-    return candidate
+    raiz = settings.effective_projects_root
+    if raiz is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Defina PROJECTS_ROOT para indexar projetos.",
+        )
+    if not project:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Informe o projeto a indexar.",
+        )
+    try:
+        return project_ops.resolve(Path(raiz), project)
+    except ProjectError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
 
 class IndexRequest(BaseModel):
-    path: str | None = None
+    project: str
     # `force` reindexa tudo, ignorando o hash. Útil depois de trocar o modelo de
     # embedding, quando os vetores antigos deixam de ser comparáveis.
     force: bool = False
@@ -63,7 +61,7 @@ class IndexRequest(BaseModel):
 async def index_workspace(
     payload: IndexRequest, request: Request, settings: SettingsDep
 ) -> dict[str, Any]:
-    root = _resolve_root(settings, payload.path)
+    root = _resolve_root(settings, payload.project)
     report = await _indexer(request).index_workspace(root, force=payload.force)
     return {
         "workspace": report.workspace,
@@ -81,7 +79,7 @@ async def index_workspace(
 
 class SearchRequest(BaseModel):
     query: str = Field(min_length=1)
-    path: str | None = None
+    project: str
     limit: int = Field(default=12, ge=1, le=50)
     path_prefix: str | None = None
     # O conteúdo completo do chunk é grande; por padrão devolvemos só o
@@ -93,7 +91,7 @@ class SearchRequest(BaseModel):
 async def search(
     payload: SearchRequest, request: Request, settings: SettingsDep
 ) -> dict[str, Any]:
-    root = _resolve_root(settings, payload.path)
+    root = _resolve_root(settings, payload.project)
     hits = await _indexer(request).search(
         root=root, query=payload.query, limit=payload.limit, path_prefix=payload.path_prefix
     )
@@ -122,9 +120,9 @@ async def search(
 
 @router.get("/status")
 async def status_(
-    request: Request, settings: SettingsDep, path: str | None = None
+    request: Request, settings: SettingsDep, project: str
 ) -> dict[str, Any]:
-    root = _resolve_root(settings, path)
+    root = _resolve_root(settings, project)
     stats = await _indexer(request).stats(root)
     return {"workspace": str(root), **stats}
 
@@ -133,9 +131,9 @@ async def status_(
 async def repomap(
     request: Request,
     settings: SettingsDep,
-    path: str | None = None,
+    project: str,
     token_budget: int = Query(default=DEFAULT_TOKEN_BUDGET, ge=200, le=32000),
 ) -> dict[str, Any]:
-    root = _resolve_root(settings, path)
+    root = _resolve_root(settings, project)
     workspace = _indexer(request).workspace_key(root)
     return await build_repo_map(workspace, token_budget=token_budget)

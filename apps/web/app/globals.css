@@ -272,21 +272,50 @@ code {
 
 .ide {
   display: grid;
-  grid-template-columns: 250px minmax(0, 1fr) 380px;
+  grid-template-columns: 46px 300px minmax(0, 1fr);
   height: 100vh;
 }
 
-@media (max-width: 1100px) {
+@media (max-width: 900px) {
   .ide {
-    grid-template-columns: 200px minmax(0, 1fr);
+    grid-template-columns: 46px minmax(0, 1fr);
   }
-  .ide-agent {
+  .ide-sidebar {
     display: none;
   }
 }
 
-.ide-sidebar,
-.ide-agent {
+.activity-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 0;
+  background: var(--surface-2);
+  border-right: 1px solid var(--border);
+}
+
+.activity {
+  width: 100%;
+  border: none;
+  background: none;
+  color: var(--text-dim);
+  font-size: 17px;
+  padding: 9px 0;
+  cursor: pointer;
+  border-left: 2px solid transparent;
+  border-radius: 0;
+}
+
+.activity:hover {
+  color: var(--text);
+}
+
+.activity.active {
+  color: var(--accent);
+  border-left-color: var(--accent);
+}
+
+.ide-sidebar {
   border-right: 1px solid var(--border);
   background: var(--surface);
   display: flex;
@@ -295,9 +324,432 @@ code {
   overflow: hidden;
 }
 
-.ide-agent {
-  border-right: none;
-  border-left: 1px solid var(--border);
+.panel-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+
+.panel-error {
+  margin: 8px 10px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+  color: var(--danger);
+  font-size: 12px;
+  word-break: break-word;
+}
+
+.project-picker {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.project-picker select,
+.git-branch select {
+  width: 100%;
+  padding: 5px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 12.5px;
+}
+
+/* Sobreposições: quick open, command palette, diálogos */
+
+.overlay-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  z-index: 50;
+  display: flex;
+  justify-content: center;
+  padding-top: 12vh;
+}
+
+.overlay {
+  width: min(620px, 92vw);
+  max-height: 60vh;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.45);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.overlay > input {
+  border: none;
+  border-bottom: 1px solid var(--border);
+  background: none;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 14px;
+  padding: 12px 14px;
+  outline: none;
+}
+
+.overlay-list {
+  overflow-y: auto;
+}
+
+.overlay-item {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  width: 100%;
+  border: none;
+  border-radius: 0;
+  background: none;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 13px;
+  text-align: left;
+  padding: 7px 14px;
+  cursor: pointer;
+}
+
+.overlay-item.active {
+  background: var(--accent-dim);
+  color: var(--accent);
+}
+
+.overlay-label {
+  flex-shrink: 0;
+}
+
+.overlay-hint {
+  color: var(--text-dim);
+  font-size: 11.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.overlay-item.active .overlay-hint {
+  color: color-mix(in srgb, var(--accent) 70%, var(--text-dim));
+}
+
+.overlay-empty {
+  padding: 18px 14px;
+  color: var(--text-dim);
+  font-size: 13px;
+}
+
+.overlay.prompt {
+  padding: 16px;
+  gap: 12px;
+  max-height: none;
+}
+
+.prompt-title {
+  font-size: 13.5px;
+  line-height: 1.5;
+}
+
+.prompt-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.overlay.prompt > input {
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  font-size: 13px;
+  padding: 8px 10px;
+}
+
+button.danger {
+  background: color-mix(in srgb, var(--danger) 15%, transparent);
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 40%, transparent);
+}
+
+/* Menu de contexto do explorer */
+
+.menu-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+}
+
+.context-menu {
+  position: fixed;
+  z-index: 61;
+  min-width: 168px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.4);
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+}
+
+.context-menu button {
+  border: none;
+  background: none;
+  border-radius: 5px;
+  text-align: left;
+  padding: 7px 10px;
+  font-size: 12.5px;
+  color: var(--text);
+}
+
+.context-menu button:hover {
+  background: var(--surface-2);
+}
+
+.context-menu button.danger {
+  color: var(--danger);
+  background: none;
+}
+
+/* Busca */
+
+.search-form {
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.search-form input[type="text"],
+.search-form input:not([type]) {
+  width: 100%;
+  padding: 6px 9px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 12.5px;
+}
+
+.search-opts {
+  display: flex;
+  gap: 14px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.search-opts label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+}
+
+.search-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.search-actions button {
+  flex: 1;
+}
+
+.match-list {
+  overflow-y: auto;
+}
+
+.match {
+  display: block;
+  width: 100%;
+  border: none;
+  border-radius: 0;
+  background: none;
+  text-align: left;
+  padding: 6px 10px;
+  cursor: pointer;
+  border-bottom: 1px solid var(--border);
+}
+
+.match:hover {
+  background: var(--surface-2);
+}
+
+.match-path {
+  font-size: 11.5px;
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.match-line {
+  color: var(--accent);
+}
+
+.match-preview {
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: 11.5px;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-top: 2px;
+}
+
+/* Git */
+
+.git-branch {
+  display: flex;
+  gap: 6px;
+  padding: 10px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.git-files {
+  overflow-y: auto;
+  flex: 1;
+  min-height: 60px;
+}
+
+.git-file {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 6px 0 0;
+}
+
+.git-file:hover {
+  background: var(--surface-2);
+}
+
+.git-file-path {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  border: none;
+  background: none;
+  border-radius: 0;
+  color: var(--text);
+  font-size: 12.5px;
+  text-align: left;
+  padding: 5px 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.git-badge {
+  flex-shrink: 0;
+  width: 15px;
+  text-align: center;
+  font-size: 10.5px;
+  font-weight: 650;
+  color: var(--warn);
+}
+
+.git-badge.untracked { color: var(--accent); }
+.git-badge.deleted { color: var(--danger); }
+.git-badge.staged { color: var(--accent); }
+
+.git-file-actions button {
+  padding: 2px 7px;
+  font-size: 13px;
+  line-height: 1;
+}
+
+.git-commit {
+  padding: 10px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.git-commit textarea {
+  width: 100%;
+  resize: vertical;
+  padding: 7px 9px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 12.5px;
+}
+
+/* Breadcrumbs e área do editor */
+
+.breadcrumbs {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 5px 12px;
+  border-bottom: 1px solid var(--border);
+  font-size: 11.5px;
+  color: var(--text-dim);
+  overflow-x: auto;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.crumb-sep {
+  margin: 0 4px;
+  opacity: 0.5;
+}
+
+.crumb.current {
+  color: var(--text);
+}
+
+.editor-area {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+/* Terminal */
+
+.terminal-panel {
+  height: 260px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  background: #0b0d10;
+  flex-shrink: 0;
+}
+
+.terminal-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 12px;
+  border-bottom: 1px solid var(--border);
+  font-size: 11.5px;
+  color: var(--text-dim);
+  background: var(--surface);
+  flex-shrink: 0;
+}
+
+.terminal-detail {
+  color: var(--danger);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.terminal-surface {
+  flex: 1;
+  min-height: 0;
+  padding: 6px 8px;
 }
 
 .ide-main {

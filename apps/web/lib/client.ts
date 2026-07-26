@@ -31,6 +31,12 @@ export async function put<T>(path: string, body: unknown): Promise<T> {
   return (await response.json()) as T;
 }
 
+export async function del<T>(path: string): Promise<T> {
+  const response = await fetch(`${GATEWAY}${path}`, { method: "DELETE" });
+  if (!response.ok) throw new Error(await describeError(response));
+  return (await response.json()) as T;
+}
+
 /**
  * Consome um endpoint SSE, entregando cada evento já parseado.
  *
