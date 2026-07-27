@@ -198,3 +198,46 @@ class CodeChunk(Base):
 
     def __repr__(self) -> str:  # pragma: no cover - conveniência de debug
         return f"<CodeChunk {self.path}:{self.start_line}-{self.end_line} {self.symbol or ''}>"
+
+
+class AgentSessionRecord(Base):
+    """Metadados de uma sessão do agente, para o histórico sobreviver a um restart.
+
+    `session_id` é a chave primária, não um UUID sintético: já é o identificador
+    natural usado em todo o resto do sistema (dict em memória do `AgentRunner`,
+    rotas `/api/agent/sessions/{id}`), gerado por `SandboxManager.new_session_id()`
+    como 12 chars hex. Duplicar em UUID só criaria uma tradução sem ganho.
+
+    O grafo em si (mensagens, estado do LangGraph) não mora aqui — isso já é
+    responsabilidade do checkpointer do Postgres. Esta tabela guarda só o que uma
+    lista de histórico precisa mostrar e filtrar sem reconstruir o grafo inteiro.
+    """
+
+    __tablename__ = "agent_session"
+
+    session_id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    project: Mapped[str] = mapped_column(String(255), nullable=False)
+    task: Mapped[str] = mapped_column(Text, nullable=False)
+    mode: Mapped[str] = mapped_column(String(16), nullable=False)
+    profile: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    branch: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    base_branch: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # "open" | "closed" — só muda em close_session(); uma aba fechada sem
+    # encerrar a sessão explicitamente fica "open" pra sempre aqui. Quem
+    # consome esta tabela precisa combinar com o dict em memória do runner
+    # (campo `live` na view da API) para saber o que está realmente ativo.
+    status: Mapped[str] = mapped_column(String(16), default="open", nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+    __table_args__ = (
+        Index("ix_agent_session_project_updated", "project", "updated_at"),
+        Index("ix_agent_session_status", "status"),
+    )
+
+    def __repr__(self) -> str:  # pragma: no cover - conveniência de debug
+        return f"<AgentSessionRecord {self.session_id} {self.status} {self.task[:40]!r}>"

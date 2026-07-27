@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Editor } from "@/components/ide/Editor";
-import { AgentPanel } from "@/components/ide/AgentPanel";
+import { AgentDock } from "@/components/ide/agent/AgentDock";
 import { Explorer, GitPanel, SearchPanel } from "@/components/ide/Panels";
 import { CommandPalette, QuickOpen, type Command } from "@/components/ide/Overlays";
 import { TerminalPanel } from "@/components/ide/Terminal";
@@ -13,7 +13,6 @@ const PAINEIS: { id: PanelId; icone: string; titulo: string }[] = [
   { id: "explorer", icone: "▤", titulo: "Explorer" },
   { id: "search", icone: "⌕", titulo: "Buscar" },
   { id: "git", icone: "⑂", titulo: "Controle de versão" },
-  { id: "agent", icone: "◆", titulo: "Agente" },
 ];
 
 function Shell() {
@@ -28,8 +27,14 @@ function Shell() {
       { id: "explorer", title: "Mostrar Explorer", run: () => ide.setPanel("explorer") },
       { id: "search", title: "Buscar no projeto", shortcut: "Ctrl+Shift+F", run: () => ide.setPanel("search") },
       { id: "git", title: "Mostrar controle de versão", run: () => ide.setPanel("git") },
-      { id: "agent", title: "Mostrar agente", run: () => ide.setPanel("agent") },
+      { id: "agent", title: "Mostrar agente", run: () => ide.setAgentDockOpen(true) },
       { id: "toggle-sidebar", title: "Alternar barra lateral", shortcut: "Ctrl+B", run: () => ide.toggleSidebar() },
+      {
+        id: "toggle-agent-dock",
+        title: "Alternar painel do agente",
+        shortcut: "Ctrl+Shift+A",
+        run: () => ide.toggleAgentDock(),
+      },
       { id: "terminal", title: "Alternar terminal", shortcut: "Ctrl+`", run: () => ide.setTerminalOpen(!ide.terminalOpen) },
       { id: "close", title: "Fechar aba atual", shortcut: "Ctrl+W", run: () => ide.active && ide.closeTab(ide.active) },
       { id: "refresh", title: "Recarregar árvore de arquivos", run: () => ide.bumpRevision() },
@@ -52,6 +57,9 @@ function Shell() {
       } else if (event.shiftKey && event.key.toLowerCase() === "f") {
         event.preventDefault();
         ide.setPanel("search");
+      } else if (event.shiftKey && event.key.toLowerCase() === "a") {
+        event.preventDefault();
+        ide.toggleAgentDock();
       } else if (event.key.toLowerCase() === "p") {
         event.preventDefault();
         setOverlay("quick");
@@ -75,7 +83,7 @@ function Shell() {
 
   return (
     <div className="ide-container">
-      <div className="ide">
+      <div className={`ide${ide.agentDockOpen ? " agent-dock-open" : ""}`}>
         <nav className="activity-bar">
           {PAINEIS.map((p) => (
             <button
@@ -128,11 +136,6 @@ function Shell() {
             {ide.panel === "explorer" && <Explorer />}
             {ide.panel === "search" && <SearchPanel />}
             {ide.panel === "git" && <GitPanel />}
-            {ide.panel === "agent" && (
-              <div className="panel-body">
-                <AgentPanel onFileTouched={ide.openFile} onSession={setSessionId} />
-              </div>
-            )}
           </aside>
         )}
 
@@ -179,6 +182,23 @@ function Shell() {
 
           {ide.terminalOpen && <TerminalPanel sessionId={sessionId} />}
         </main>
+
+        <nav className="activity-bar-right">
+          <button
+            type="button"
+            className={`activity${ide.agentDockOpen ? " active" : ""}`}
+            title={`Alternar painel do agente (Ctrl+Shift+A)`}
+            onClick={() => ide.toggleAgentDock()}
+          >
+            ◆
+          </button>
+        </nav>
+
+        {ide.agentDockOpen && (
+          <aside className="agent-dock">
+            <AgentDock onFileTouched={ide.openFile} onSession={setSessionId} />
+          </aside>
+        )}
 
         {overlay === "quick" && <QuickOpen onClose={() => setOverlay(null)} />}
         {overlay === "palette" && (

@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from sicoobito.agent import session_store
 from sicoobito.agent.graph import DEFAULT_MAX_ITERATIONS, build_graph
 from sicoobito.agent.prompts import build_task_prompt
 from sicoobito.agent.state import AgentMode
@@ -20,6 +21,7 @@ from sicoobito.agent.tools import ToolContext
 from sicoobito.config import Settings
 from sicoobito.context.indexer import ContextIndexer
 from sicoobito.context.repomap import build_repo_map
+from sicoobito.db.session import session_scope
 from sicoobito.logging_setup import get_logger
 from sicoobito.router.engine import RouterEngine
 from sicoobito.sandbox.container import SandboxManager, SandboxUnavailableError
@@ -44,6 +46,9 @@ class AgentSession:
     sandbox_available: bool = False
     sandbox_error: str | None = None
     warnings: list[str] = field(default_factory=list)
+    # Perfil de roteamento escolhido explicitamente pelo usuário; None mantém a
+    # escolha implícita por modo em `_initial_state`.
+    profile: str | None = None
 
 
 class AgentRunner:
@@ -61,6 +66,14 @@ class AgentRunner:
         self.sandboxes = sandboxes
         self._sessions: dict[str, AgentSession] = {}
         self._checkpointer: Any | None = None
+        # `AsyncPostgresSaver.from_conn_string` é um @asynccontextmanager: a
+        # conexão só existe dentro do `async with` que ele abre internamente.
+        # `__aenter__()` devolve o saver, mas o gerenciador de contexto em si
+        # (o gerador assíncrono) precisa continuar referenciado — sem isto, o
+        # GC o finaliza, o que lança `GeneratorExit` no ponto do `yield` e
+        # fecha a conexão por baixo, tipicamente no primeiro uso real do
+        # checkpointer, com o sintoma "the connection is closed".
+        self._checkpointer_cm: Any | None = None
 
     # ── Checkpointer ────────────────────────────────────────────────────────
 
@@ -77,8 +90,8 @@ class AgentRunner:
 
             # O checkpointer fala psycopg; a URL do SQLAlchemy usa asyncpg.
             dsn = self.settings.database_url.replace("postgresql+asyncpg://", "postgresql://")
-            saver = AsyncPostgresSaver.from_conn_string(dsn)
-            self._checkpointer = await saver.__aenter__()
+            self._checkpointer_cm = AsyncPostgresSaver.from_conn_string(dsn)
+            self._checkpointer = await self._checkpointer_cm.__aenter__()
             await self._checkpointer.setup()
             log.info("agent.checkpointer.ready")
         except Exception as exc:
@@ -95,6 +108,7 @@ class AgentRunner:
         workspace_root: Path,
         mode: AgentMode = "agent",
         session_id: str | None = None,
+        profile: str | None = None,
     ) -> AgentSession:
         session_id = session_id or self.sandboxes.new_session_id()
         # Syscall única na criação da sessão; o trabalho pesado de disco desta
@@ -158,8 +172,27 @@ class AgentRunner:
             sandbox_available=sandbox is not None,
             sandbox_error=sandbox_error,
             warnings=avisos,
+            profile=profile,
         )
         self._sessions[session_id] = sessao
+
+        # Não-fatal de propósito, mesmo espírito do checkpointer e do sandbox
+        # acima: um soluço no banco não pode impedir a criação da sessão, só
+        # faz o histórico ficar incompleto para ela.
+        try:
+            async with session_scope() as db:
+                await session_store.create(
+                    db,
+                    session_id=session_id,
+                    project=workspace_root.name,
+                    task=task,
+                    mode=mode,
+                    profile=profile,
+                    branch=branch or None,
+                    base_branch=base,
+                )
+        except Exception as exc:
+            log.warning("agent.session.persist_failed", session=session_id, error=str(exc)[:200])
 
         log.info(
             "agent.session.created",
@@ -186,6 +219,11 @@ class AgentRunner:
                 )
             except GitError as exc:
                 log.warning("agent.session.worktree_cleanup", session=session_id, error=str(exc))
+        try:
+            async with session_scope() as db:
+                await session_store.mark_closed(db, session_id=session_id)
+        except Exception as exc:
+            log.warning("agent.session.persist_close_failed", session=session_id, error=str(exc)[:200])
         log.info("agent.session.closed", session=session_id)
 
     # ── Execução ────────────────────────────────────────────────────────────
@@ -210,7 +248,9 @@ class AgentRunner:
             "session_id": session.session_id,
             "task": session.task,
             "mode": session.mode,
-            "model": "coding" if session.mode == "agent" else "auto",
+            # Um perfil escolhido explicitamente sobrescreve a escolha
+            # implícita por modo; sem ele, comportamento idêntico ao de antes.
+            "model": session.profile or ("coding" if session.mode == "agent" else "auto"),
             "iterations": 0,
             "max_iterations": DEFAULT_MAX_ITERATIONS,
             "finished": False,

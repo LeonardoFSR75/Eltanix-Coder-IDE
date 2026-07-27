@@ -6,8 +6,10 @@ import re
 from typing import Annotated
 
 from fastapi import Depends, Header, HTTPException, Request, status
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from sicoobito.config import Settings, get_settings
+from sicoobito.db.session import get_session
 from sicoobito.router.engine import RouterEngine
 
 
@@ -81,4 +83,5 @@ def identify_source(
 EngineDep = Annotated[RouterEngine, Depends(get_engine)]
 SettingsDep = Annotated[Settings, Depends(get_settings)]
 SourceDep = Annotated[str, Depends(identify_source)]
+DbSessionDep = Annotated[AsyncSession, Depends(get_session)]
 AuthDep = Depends(require_api_key)

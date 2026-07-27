@@ -38,7 +38,7 @@ export interface FileEntry {
   size_bytes: number;
 }
 
-export type PanelId = "explorer" | "search" | "git" | "agent";
+export type PanelId = "explorer" | "search" | "git";
 
 /** Onde posicionar o cursor ao abrir — usado por "ir para definição" e busca. */
 export interface Reveal {
@@ -72,6 +72,11 @@ interface IdeState {
   toggleSidebar: () => void;
   terminalOpen: boolean;
   setTerminalOpen: (open: boolean) => void;
+
+  // Dock do agente, à direita — persistente, independente da barra esquerda.
+  agentDockOpen: boolean;
+  setAgentDockOpen: (open: boolean) => void;
+  toggleAgentDock: () => void;
 
   files: FileEntry[];
   reloadFiles: () => Promise<void>;
@@ -110,6 +115,7 @@ export function IdeProvider({ children }: { children: ReactNode }) {
   const [panel, setPanelState] = useState<PanelId>("explorer");
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [terminalOpen, setTerminalOpen] = useState(false);
+  const [agentDockOpen, setAgentDockOpen] = useState(true);
   const [files, setFiles] = useState<FileEntry[]>([]);
   const [revision, setRevision] = useState(0);
   const [reveal, setReveal] = useState<Reveal | null>(null);
@@ -117,6 +123,10 @@ export function IdeProvider({ children }: { children: ReactNode }) {
 
   const toggleSidebar = useCallback(() => {
     setSidebarOpen((prev) => !prev);
+  }, []);
+
+  const toggleAgentDock = useCallback(() => {
+    setAgentDockOpen((prev) => !prev);
   }, []);
 
   const setPanel = useCallback((newPanel: PanelId) => {
@@ -241,6 +251,9 @@ export function IdeProvider({ children }: { children: ReactNode }) {
       toggleSidebar,
       terminalOpen,
       setTerminalOpen,
+      agentDockOpen,
+      setAgentDockOpen,
+      toggleAgentDock,
       files,
       reloadFiles,
       revision,
@@ -249,7 +262,8 @@ export function IdeProvider({ children }: { children: ReactNode }) {
     [
       project, projects, projectsError, setProject, reloadProjects,
       tabs, active, dirty, openFile, reveal, clearReveal, closeTab, markDirty,
-      panel, setPanel, sidebarOpen, toggleSidebar, terminalOpen, files, reloadFiles, revision, bumpRevision,
+      panel, setPanel, sidebarOpen, toggleSidebar, terminalOpen,
+      agentDockOpen, toggleAgentDock, files, reloadFiles, revision, bumpRevision,
     ],
   );
 

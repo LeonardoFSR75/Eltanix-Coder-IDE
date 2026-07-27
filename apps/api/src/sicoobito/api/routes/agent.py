@@ -11,9 +11,10 @@ from fastapi import APIRouter, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
+from sicoobito.agent import session_store
 from sicoobito.agent.runner import AgentRunner, AgentSession
 from sicoobito.agent.tools import registry
-from sicoobito.api.deps import AuthDep, SettingsDep
+from sicoobito.api.deps import AuthDep, DbSessionDep, EngineDep, SettingsDep
 from sicoobito.logging_setup import get_logger
 from sicoobito.workspace import git as git_ops
 from sicoobito.workspace import projects as project_ops
@@ -64,11 +65,15 @@ class CreateSessionRequest(BaseModel):
     task: str = Field(min_length=1, description="O que o agente deve fazer")
     project: str = Field(min_length=1, description="Nome do projeto em PROJECTS_ROOT")
     mode: Literal["ask", "edit", "agent", "plan", "auto"] = "agent"
+    # Perfil de roteamento (config/routes.yaml). None mantém a escolha
+    # implícita por modo — não é Literal porque os perfis são definidos em
+    # YAML, e um Literal fixo aqui ficaria defasado sozinho.
+    profile: str | None = None
 
 
 @router.post("/sessions")
 async def create_session(
-    payload: CreateSessionRequest, request: Request, settings: SettingsDep
+    payload: CreateSessionRequest, request: Request, settings: SettingsDep, engine: EngineDep
 ) -> dict[str, Any]:
     raiz = settings.effective_projects_root
     if raiz is None:
@@ -76,6 +81,13 @@ async def create_session(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Defina PROJECTS_ROOT para criar sessões de agente.",
         )
+    if payload.profile is not None:
+        # `embedding` existe no catálogo mas não é perfil de chat/codificação.
+        if payload.profile == "embedding" or payload.profile not in engine.catalog.profiles:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Perfil desconhecido: {payload.profile}",
+            )
     try:
         # Só nome de projeto, nunca caminho: é o que impede o agente de ser
         # apontado para qualquer diretório da máquina.
@@ -84,9 +96,44 @@ async def create_session(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
     sessao = await _runner(request).create_session(
-        task=payload.task, workspace_root=root, mode=payload.mode
+        task=payload.task, workspace_root=root, mode=payload.mode, profile=payload.profile
     )
     return _session_view(sessao)
+
+
+@router.get("/sessions")
+async def list_sessions(
+    request: Request,
+    db: DbSessionDep,
+    project: str | None = None,
+    status_filtro: Literal["open", "closed", "all"] = "all",
+    limit: int = 50,
+) -> dict[str, Any]:
+    """Histórico persistido, para a lista de sessões do painel sobreviver a um restart."""
+    runner = _runner(request)
+    registros = await session_store.list_sessions(
+        db, project=project, status=None if status_filtro == "all" else status_filtro, limit=limit
+    )
+    return {
+        "sessions": [
+            {
+                "session_id": r.session_id,
+                "project": r.project,
+                "task": r.task,
+                "mode": r.mode,
+                "profile": r.profile,
+                "branch": r.branch,
+                "status": r.status,
+                "created_at": r.created_at,
+                "updated_at": r.updated_at,
+                # Único jeito confiável de saber se ainda está rodando neste
+                # processo: `status` só reflete close_session() explícito, e
+                # uma aba fechada sem isso fica "open" pra sempre no banco.
+                "live": runner.get_session(r.session_id) is not None,
+            }
+            for r in registros
+        ]
+    }
 
 
 @router.get("/sessions/{session_id}")
@@ -172,6 +219,7 @@ def _session_view(sessao: AgentSession) -> dict[str, Any]:
     return {
         "session_id": sessao.session_id,
         "mode": sessao.mode,
+        "profile": sessao.profile,
         "task": sessao.task,
         "workspace_root": str(sessao.workspace_root),
         "worktree_path": str(sessao.worktree_path),
