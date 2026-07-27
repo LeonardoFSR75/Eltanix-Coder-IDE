@@ -45,7 +45,17 @@ def test_absolute_paths_are_refused(fs, tmp_path):
         fs.read(str(tmp_path / "src" / "app.py"))
     with pytest.raises(PathEscapeError):
         fs.read("/etc/passwd")
-    with pytest.raises(PathEscapeError):
+
+
+def test_windows_style_absolute_path_never_escapes(fs):
+    """`C:/...` só é absoluto no Windows.
+
+    Em Linux — onde a API roda — é um caminho *relativo* cujo primeiro segmento
+    tem dois-pontos no nome. A propriedade que importa não é qual exceção sai,
+    e sim que a leitura não alcance nada fora da raiz: no Windows a fronteira
+    recusa; em Linux o caminho fica dentro do workspace, onde não existe.
+    """
+    with pytest.raises((PathEscapeError, FileNotFoundError)):
         fs.read("C:/Windows/System32/drivers/etc/hosts")
 
 

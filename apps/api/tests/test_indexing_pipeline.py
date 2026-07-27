@@ -11,13 +11,19 @@ busca híbrida exigem Postgres com pgvector e estão cobertas pelo runbook.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
-from sicoobito.config import REPO_ROOT
+import sicoobito
 from sicoobito.context.chunker import chunk_file
 from sicoobito.context.scanner import read_text, scan
 
-API_SRC = REPO_ROOT / "apps" / "api" / "src"
+# Localizado pelo próprio pacote, e não contado a partir da raiz do repositório:
+# no checkout ele fica em `apps/api/src/sicoobito`, na imagem em `/app/src/
+# sicoobito`. Contar níveis fixos faria estes testes sumirem em silêncio dentro
+# do container — sem falhar, sem pular, apenas varrendo um diretório vazio.
+API_SRC = Path(sicoobito.__file__).resolve().parent.parent
 
 
 @pytest.fixture(scope="module")

@@ -12,6 +12,7 @@ import { useCallback, useEffect, useState } from "react";
 import { del, get, post } from "@/lib/client";
 import { useIde } from "@/lib/ide-store";
 import { ConfirmDialog, PromptDialog } from "@/components/ide/Overlays";
+import { FileIcon } from "@/components/ide/FileIcons";
 
 // ── Explorer ────────────────────────────────────────────────────────────────
 
@@ -131,9 +132,12 @@ export function Explorer() {
           }}
           title={entry.path}
         >
-          <span className="tree-icon">
-            {entry.is_dir ? (expanded.has(entry.path) ? "▾" : "▸") : "·"}
-          </span>
+          {entry.is_dir ? (
+            <span className={`tree-chevron ${expanded.has(entry.path) ? "open" : ""}`}>▸</span>
+          ) : (
+            <span className="tree-chevron-space" />
+          )}
+          <FileIcon filename={entry.name} isFolder={entry.is_dir} isOpen={expanded.has(entry.path)} />
           <span className="tree-name">{entry.name}</span>
         </button>
         {entry.is_dir && expanded.has(entry.path) && renderar(entry.path, profundidade + 1)}
@@ -150,6 +154,35 @@ export function Explorer() {
         }
       }}
     >
+      <div className="panel-actions-bar">
+        <button
+          type="button"
+          className="icon-action-btn"
+          title="Novo Arquivo"
+          onClick={() => setDialogo({ tipo: "novo-arquivo", base: "", inicial: "" })}
+        >
+          + File
+        </button>
+        <button
+          type="button"
+          className="icon-action-btn"
+          title="Nova Pasta"
+          onClick={() => setDialogo({ tipo: "nova-pasta", base: "", inicial: "" })}
+        >
+          + Folder
+        </button>
+
+        <button
+          type="button"
+          className="icon-action-btn"
+          title="Recarregar"
+          onClick={() => bumpRevision()}
+          style={{ marginLeft: "auto" }}
+        >
+          ↻
+        </button>
+      </div>
+
       {erro && <div className="panel-error">{erro}</div>}
       <div className="tree">{renderar(".", 0)}</div>
 
@@ -348,7 +381,7 @@ interface GitFile {
 }
 
 export function GitPanel() {
-  const { project, openFile, revision, bumpRevision } = useIde();
+  const { project, openFile, revision, bumpRevision, reloadProjects } = useIde();
   const [estado, setEstado] = useState<{ branch: string; dirty: boolean; files: GitFile[] } | null>(null);
   const [branches, setBranches] = useState<string[]>([]);
   const [mensagem, setMensagem] = useState("");
@@ -380,6 +413,9 @@ export function GitPanel() {
       setErro(null);
       if (sucesso) setAviso(sucesso);
       await recarregar();
+      // `ide.projects` guarda o branch mostrado na status bar; sem isto, um
+      // checkout deixaria a status bar presa no branch antigo.
+      void reloadProjects();
       bumpRevision();
     } catch (err) {
       setErro(err instanceof Error ? err.message : String(err));

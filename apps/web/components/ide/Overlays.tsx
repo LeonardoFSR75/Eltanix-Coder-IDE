@@ -94,7 +94,15 @@ function Overlay({
               }}
             >
               <span className="overlay-label">{item.label}</span>
-              {item.hint && <span className="overlay-hint">{item.hint}</span>}
+              {item.hint && (
+                <span className="overlay-hint">
+                  {item.hint.includes("+") || item.hint.includes("Ctrl") ? (
+                    <kbd className="kbd-badge">{item.hint}</kbd>
+                  ) : (
+                    item.hint
+                  )}
+                </span>
+              )}
             </button>
           ))}
           {visible.length === 0 && <div className="overlay-empty">{empty}</div>}

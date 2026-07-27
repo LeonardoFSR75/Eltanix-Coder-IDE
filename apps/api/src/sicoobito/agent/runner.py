@@ -206,7 +206,7 @@ class AgentRunner:
             log.debug("agent.repomap.unavailable", error=str(exc)[:200])
 
         return {
-            "messages": [{"role": "user", "content": build_task_prompt(session.task, mapa)}],
+            "messages": [{"role": "user", "content": build_task_prompt(session.task, mapa, session.mode)}],
             "session_id": session.session_id,
             "task": session.task,
             "mode": session.mode,

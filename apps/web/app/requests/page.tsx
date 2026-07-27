@@ -9,49 +9,51 @@ export default async function RequestsPage() {
   if (!recent.ok) return <ErrorNotice error={recent.error} />;
 
   return (
-    <section>
-      <h2>
-        Requests recentes<span className="sub">últimos 100</span>
-      </h2>
-      <div className="table-wrap">
-        {recent.data.requests.length > 0 ? (
-          <table>
-            <thead>
-              <tr>
-                <th>Quando</th>
-                <th>Origem</th>
-                <th>Pedido</th>
-                <th>Resolvido</th>
-                <th className="num">Latência</th>
-                <th className="num">Tokens</th>
-                <th className="num">Custo</th>
-                <th>Notas</th>
-              </tr>
-            </thead>
-            <tbody>
-              {recent.data.requests.map((r) => (
-                <tr key={r.id}>
-                  <td>{formatDateTime(r.created_at)}</td>
-                  <td>{r.source}</td>
-                  <td>
-                    <code>{r.requested_model}</code>
-                  </td>
-                  <td>{r.resolved_model ? <code>{r.resolved_model}</code> : "—"}</td>
-                  <td className="num">{formatMs(r.latency_ms)}</td>
-                  <td className="num">{formatTokens(r.total_tokens)}</td>
-                  <td className="num">{r.cost_known ? formatUsd(r.cost_usd) : "?"}</td>
-                  <td style={{ whiteSpace: "normal" }}>
-                    <Notes request={r} />
-                  </td>
+    <div className="shell">
+      <section>
+        <h2>
+          Requests recentes<span className="sub">últimos 100</span>
+        </h2>
+        <div className="table-wrap">
+          {recent.data.requests.length > 0 ? (
+            <table>
+              <thead>
+                <tr>
+                  <th>Quando</th>
+                  <th>Origem</th>
+                  <th>Pedido</th>
+                  <th>Resolvido</th>
+                  <th className="num">Latência</th>
+                  <th className="num">Tokens</th>
+                  <th className="num">Custo</th>
+                  <th>Notas</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        ) : (
-          <div className="empty">Nenhum request registrado ainda.</div>
-        )}
-      </div>
-    </section>
+              </thead>
+              <tbody>
+                {recent.data.requests.map((r) => (
+                  <tr key={r.id}>
+                    <td>{formatDateTime(r.created_at)}</td>
+                    <td>{r.source}</td>
+                    <td>
+                      <code>{r.requested_model}</code>
+                    </td>
+                    <td>{r.resolved_model ? <code>{r.resolved_model}</code> : "—"}</td>
+                    <td className="num">{formatMs(r.latency_ms)}</td>
+                    <td className="num">{formatTokens(r.total_tokens)}</td>
+                    <td className="num">{r.cost_known ? formatUsd(r.cost_usd) : "?"}</td>
+                    <td style={{ whiteSpace: "normal" }}>
+                      <Notes request={r} />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : (
+            <div className="empty">Nenhum request registrado ainda.</div>
+          )}
+        </div>
+      </section>
+    </div>
   );
 }
 

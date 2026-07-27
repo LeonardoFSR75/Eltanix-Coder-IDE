@@ -92,5 +92,10 @@ def test_unknown_model_falls_back_to_default_profile_not_404(client):
         headers={"Authorization": "Bearer chave-de-teste"},
         json={"model": "modelo-inexistente", "messages": [{"role": "user", "content": "oi"}]},
     )
-    # 503 (nenhum provedor no ar neste ambiente) e não 404: o perfil padrão assumiu.
-    assert response.status_code in {502, 503}
+    # O que importa é **não** ser 404: o perfil padrão assumiu o modelo
+    # desconhecido em vez de recusar. O código exato depende do ambiente — 503
+    # quando não há provedor no ar, 200 quando o Ollama do compose responde —, e
+    # amarrar o teste a um deles o faz falhar justamente quando a plataforma
+    # passa a funcionar.
+    assert response.status_code != 404
+    assert response.status_code in {200, 502, 503}

@@ -15,6 +15,9 @@ node_modules/
 out/
 *.tsbuildinfo
 
+# Assets do Monaco copiados pelo postinstall (apps/web/scripts/copy-monaco.mjs)
+apps/web/public/vs/
+
 # Ambiente / segredos
 .env
 .env.local

@@ -63,7 +63,7 @@ async def list_tools() -> dict[str, Any]:
 class CreateSessionRequest(BaseModel):
     task: str = Field(min_length=1, description="O que o agente deve fazer")
     project: str = Field(min_length=1, description="Nome do projeto em PROJECTS_ROOT")
-    mode: Literal["ask", "edit", "agent"] = "agent"
+    mode: Literal["ask", "edit", "agent", "plan", "auto"] = "agent"
 
 
 @router.post("/sessions")

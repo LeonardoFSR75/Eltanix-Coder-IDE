@@ -9,6 +9,7 @@ name: sicoobito
 #   5402  executor (interno; exposto só para diagnóstico)
 #   5403  postgres
 #   5404  redis
+#   5405  ollama
 
 services:
   postgres:
@@ -39,6 +40,59 @@ services:
       interval: 5s
       timeout: 3s
       retries: 20
+
+  # Inferência local. Vive no compose, não no host: é o que sustenta a promessa
+  # de que a plataforma inteira sobe com um comando, e o que torna o perfil
+  # `local-first` real em vez de decorativo.
+  ollama:
+    # Versão fixada: `latest` reinstala 4,7 GB a cada mudança de tag remota.
+    image: ollama/ollama:${OLLAMA_VERSION:-0.31.2}
+    ports:
+      # Exposto para diagnóstico e para quem quiser apontar outra ferramenta.
+      - "5405:11434"
+    environment:
+      # Manter o modelo carregado entre requisições. Sem GPU, o custo de subir os
+      # pesos para a RAM domina a latência — descarregar a cada 5min (o padrão)
+      # faz a primeira mensagem de toda sessão parecer travada.
+      OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:-30m}
+      # Um modelo por vez: com 16 GB e sem GPU, dois residentes disputam RAM e
+      # levam o sistema para o swap.
+      OLLAMA_MAX_LOADED_MODELS: "1"
+    volumes:
+      # Os pesos são o volume mais caro do projeto: sem persistência, cada
+      # recriação do container rebaixa gigabytes.
+      - ollamadata:/root/.ollama
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  # Baixa os modelos uma vez e sai. Roda separado do serviço para que a API não
+  # fique bloqueada esperando gigabytes de download na primeira subida.
+  ollama-init:
+    # Versão fixada: `latest` reinstala 4,7 GB a cada mudança de tag remota.
+    image: ollama/ollama:${OLLAMA_VERSION:-0.31.2}
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        for modelo in $${OLLAMA_PULL_MODELS}; do
+          echo "== baixando $$modelo"
+          ollama pull "$$modelo" || exit 1
+        done
+        echo "== modelos prontos"
+        ollama list
+    environment:
+      # Cliente, não servidor: aponta para o serviço acima.
+      OLLAMA_HOST: http://ollama:11434
+      # Ordem importa: os pequenos primeiro, para que indexação e tarefas
+      # utilitárias funcionem antes de o modelo de 4,7 GB terminar.
+      OLLAMA_PULL_MODELS: ${OLLAMA_PULL_MODELS:-nomic-embed-text qwen2.5-coder:1.5b qwen2.5-coder:7b}
+    depends_on:
+      ollama:
+        condition: service_healthy
+    restart: "no"
 
   # Único serviço com acesso ao daemon do Docker. Fica isolado de propósito:
   # quem alcança o socket tem poder equivalente a root no host, então essa
@@ -80,7 +134,9 @@ services:
       PROJECTS_ROOT_HOST: ${PROJECTS_ROOT:-./projetos}
       EXECUTOR_URL: http://executor:5402
       EXECUTOR_TOKEN: ${EXECUTOR_TOKEN:-executor-local}
-      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      # O Ollama é um serviço do compose; `host.docker.internal` só entra se você
+      # sobrescrever isto para usar uma instalação do host.
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://ollama:11434}
       LITELLM_LOCAL_MODEL_COST_MAP: "True"
     env_file:
       - path: .env
@@ -103,6 +159,9 @@ services:
         condition: service_healthy
       executor:
         condition: service_started
+      # Só que esteja no ar — não que os modelos já tenham sido baixados.
+      ollama:
+        condition: service_healthy
 
   web:
     build:
@@ -131,3 +190,4 @@ services:
 volumes:
   pgdata:
   redisdata:
+  ollamadata:

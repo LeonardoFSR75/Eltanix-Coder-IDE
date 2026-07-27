@@ -1,3 +1,4 @@
+import { CostChart } from "@/components/CostChart";
 import { ErrorNotice } from "@/components/ErrorNotice";
 import {
   apiGet,
@@ -32,14 +33,13 @@ export default async function DashboardPage() {
 
   const s = summary.data;
   const points = series.ok ? series.data.points : [];
-  const maxCost = Math.max(...points.map((p) => p.cost_usd), 0.0001);
 
   return (
-    <>
+    <div className="shell">
       <div className="grid">
         <Stat label="Custo (30d)" value={formatUsd(s.cost_usd)} hint={`${s.requests} requests`} />
         <Stat
-          label="Tokens"
+          label="Tokens Total"
           value={formatTokens(s.total_tokens)}
           hint={`${formatTokens(s.prompt_tokens)} in · ${formatTokens(s.completion_tokens)} out`}
         />
@@ -96,20 +96,7 @@ export default async function DashboardPage() {
 
       {points.length > 0 && (
         <section>
-          <h2>
-            Custo por dia<span className="sub">últimos 30 dias</span>
-          </h2>
-          <div className="card">
-            <div className="sparkline">
-              {points.map((p) => (
-                <div
-                  key={p.day}
-                  style={{ height: `${Math.max(4, (p.cost_usd / maxCost) * 100)}%` }}
-                  title={`${p.day}: ${formatUsd(p.cost_usd)} · ${p.requests} requests`}
-                />
-              ))}
-            </div>
-          </div>
+          <CostChart points={points} />
         </section>
       )}
 
@@ -243,7 +230,7 @@ export default async function DashboardPage() {
           )}
         </div>
       </section>
-    </>
+    </div>
   );
 }
 

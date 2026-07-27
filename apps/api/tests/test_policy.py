@@ -38,8 +38,10 @@ async def test_local_first_prefers_ollama(policy):
 async def test_cheap_profile_orders_by_estimated_cost(policy):
     decision = await policy.select(requested_model="cheap", estimated_prompt_tokens=1000)
     assert decision.strategy == "cost"
-    # O local custa zero, então tem de vir na frente do gpt-4o-mini.
-    assert decision.order[0] == "ollama/qwen2.5-coder:7b"
+    # O local custa zero, então tem de vir na frente do gpt-4o-mini. Qual modelo
+    # local o perfil usa é escolha de `routes.yaml`; o que o teste protege é a
+    # ordenação por custo, não a linha do arquivo de configuração.
+    assert decision.order[0].startswith("ollama/")
 
 
 async def test_oversized_prompt_skips_small_context_models(policy):

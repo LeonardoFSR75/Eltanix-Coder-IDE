@@ -3,8 +3,9 @@
 import { useCallback, useRef, useState } from "react";
 import { post, streamEvents } from "@/lib/client";
 import { useIde } from "@/lib/ide-store";
+import { useToast } from "@/components/Toast";
 
-type Mode = "ask" | "edit" | "agent";
+type Mode = "ask" | "edit" | "agent" | "plan" | "auto";
 
 interface PendingAction {
   tool_call_id: string;
@@ -32,8 +33,18 @@ interface LogLine {
 const MODE_HINT: Record<Mode, string> = {
   ask: "Só leitura: o agente responde sem tocar em nada.",
   edit: "Pode editar arquivos, mas não executar comandos.",
-  agent: "Pode editar, executar testes e abrir PR. Cada ação de risco pede aprovação.",
+  agent: "Agente interativo: edita e roda testes pedindo aprovação.",
+  plan: "Modo Planejar: gera um plano passo a passo detalhado antes de alterar arquivos.",
+  auto: "Modo Automático: executa tarefas ponta a ponta autonomamente (edição, testes e fixes).",
 };
+
+const PRESET_PROMPTS = [
+  { label: "💡 Explicar", prompt: "Explicar a arquitetura e o funcionamento do código deste projeto." },
+  { label: "⚡ Refatorar", prompt: "Refatorar o código do módulo para melhorar legibilidade e modularidade." },
+  { label: "🧪 Testes", prompt: "Escrever suíte de testes unitários cobrindo cenários e limites." },
+  { label: "🐞 Bugs", prompt: "Analisar e corrigir eventuais falhas, exceções ou gargalos de memória." },
+  { label: "📋 Plano", prompt: "Criar um plano de execução detalhado para a implementação." },
+];
 
 export function AgentPanel({
   onFileTouched,
@@ -42,9 +53,11 @@ export function AgentPanel({
   onFileTouched?: (path: string) => void;
   onSession?: (sessionId: string | null) => void;
 }) {
-  const { project } = useIde();
+  const { project, active } = useIde();
+  const { toast } = useToast();
   const [task, setTask] = useState("");
-  const [mode, setMode] = useState<Mode>("agent");
+  const [mode, setMode] = useState<Mode>("auto");
+  const [showAdvanced, setShowAdvanced] = useState(false);
   const [session, setSession] = useState<Session | null>(null);
   const [log, setLog] = useState<LogLine[]>([]);
   const [pending, setPending] = useState<PendingAction[]>([]);
@@ -54,6 +67,11 @@ export function AgentPanel({
   const append = useCallback((line: LogLine) => {
     setLog((prev) => [...prev, line]);
   }, []);
+
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text);
+    toast("Código copiado para a área de transferência!", "success");
+  };
 
   const consume = useCallback(
     (event: unknown) => {
@@ -65,7 +83,6 @@ export function AgentPanel({
         return;
       }
 
-      // O grafo parou pedindo aprovação: mostramos as ações e esperamos.
       if (node === "interrupt" || update.type === "approval_required") {
         const actions = (update.actions ?? []) as PendingAction[];
         setPending(actions);
@@ -170,25 +187,74 @@ export function AgentPanel({
   return (
     <div className="agent">
       <div className="agent-controls">
-        <div className="mode-row">
-          {(["ask", "edit", "agent"] as Mode[]).map((option) => (
+        {/* Seletor Duplo Principal de Modo */}
+        <div className="dual-mode-wrap" style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+          <button
+            type="button"
+            className={`mode-btn-large ${mode === "auto" || mode === "agent" || mode === "plan" || mode === "edit" ? "active" : ""}`}
+            onClick={() => setMode("auto")}
+            disabled={running}
+            style={{ flex: 1, padding: "8px 12px", fontSize: 13, borderRadius: 8, cursor: "pointer" }}
+          >
+            ⚡ Agente Autônomo
+          </button>
+          <button
+            type="button"
+            className={`mode-btn-large ${mode === "ask" ? "active" : ""}`}
+            onClick={() => setMode("ask")}
+            disabled={running}
+            style={{ flex: 1, padding: "8px 12px", fontSize: 13, borderRadius: 8, cursor: "pointer" }}
+          >
+            ❓ Pergunta & Leitura
+          </button>
+        </div>
+
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+          <span className="mode-hint" style={{ fontSize: 12, color: "var(--text-dim)" }}>{MODE_HINT[mode]}</span>
+          <button
+            type="button"
+            className="text-btn"
+            style={{ fontSize: 11, background: "none", border: "none", color: "var(--accent)", cursor: "pointer" }}
+            onClick={() => setShowAdvanced(!showAdvanced)}
+          >
+            {showAdvanced ? "Esconder avançados ▲" : "Modos avançados ▼"}
+          </button>
+        </div>
+
+        {showAdvanced && (
+          <div className="mode-row" style={{ marginBottom: 10 }}>
+            {(["plan", "auto", "ask", "edit", "agent"] as Mode[]).map((option) => (
+              <button
+                key={option}
+                type="button"
+                className={`mode${mode === option ? " active" : ""}`}
+                onClick={() => setMode(option)}
+                disabled={running}
+              >
+                {option === "plan" ? "📋 planejar" : option === "auto" ? "⚡ auto" : option}
+              </button>
+            ))}
+          </div>
+        )}
+
+        <div className="agent-presets">
+          {PRESET_PROMPTS.map((p) => (
             <button
-              key={option}
+              key={p.label}
               type="button"
-              className={`mode${mode === option ? " active" : ""}`}
-              onClick={() => setMode(option)}
+              className="preset-chip"
               disabled={running}
+              onClick={() => setTask(p.prompt)}
             >
-              {option}
+              {p.label}
             </button>
           ))}
         </div>
-        <div className="mode-hint">{MODE_HINT[mode]}</div>
 
         <textarea
           value={task}
           onChange={(event) => setTask(event.target.value)}
-          placeholder="O que o agente deve fazer? Ex.: adicionar tratamento de rate limit no adaptador Databricks, com testes."
+          placeholder="O que o agente deve fazer? Ex.: refatorar função e criar testes."
           rows={4}
           disabled={running}
         />
@@ -236,7 +302,19 @@ export function AgentPanel({
       <div className="agent-log">
         {log.map((line, index) => (
           <div key={index} className={`log-line ${line.kind}`}>
-            {line.text}
+            <div className="log-line-content">{line.text}</div>
+            {line.kind === "assistant" && (
+              <div className="log-line-actions" style={{ marginTop: 4, display: "flex", gap: 6 }}>
+                <button
+                  type="button"
+                  className="log-btn"
+                  style={{ fontSize: 11, padding: "2px 8px", borderRadius: 4, cursor: "pointer" }}
+                  onClick={() => copyToClipboard(line.text)}
+                >
+                  📋 Copiar
+                </button>
+              </div>
+            )}
           </div>
         ))}
         {log.length === 0 && <div className="tree-hint">Nenhuma sessão iniciada.</div>}

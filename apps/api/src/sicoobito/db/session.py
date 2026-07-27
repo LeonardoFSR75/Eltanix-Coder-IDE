@@ -27,8 +27,9 @@ def init_engine(database_url: str, *, echo: bool = False) -> AsyncEngine:
             database_url,
             echo=echo,
             pool_pre_ping=True,
-            pool_size=5,
+            pool_size=20,
             max_overflow=10,
+            pool_recycle=1800,
         )
         _sessionmaker = async_sessionmaker(_engine, expire_on_commit=False)
         log.debug("db.engine.created")

@@ -46,7 +46,7 @@ preâmbulo nem repetir o pedido. Quando não tiver certeza de algo que muda o \
 resultado, pergunte antes de agir."""
 
 
-def build_task_prompt(task: str, repo_map: str | None = None) -> str:
+def build_task_prompt(task: str, repo_map: str | None = None, mode: str = "agent") -> str:
     """Monta a mensagem inicial da tarefa.
 
     O mapa do repositório vem antes da tarefa porque é a parte estável: manter o
@@ -58,6 +58,18 @@ def build_task_prompt(task: str, repo_map: str | None = None) -> str:
             "Estrutura do repositório (esqueleto, para orientar a busca):\n"
             f"```\n{repo_map}\n```"
         )
+    
+    if mode == "plan":
+        partes.append(
+            "MODO PLANEJAR ATIVO:\n"
+            "Analise os arquivos do projeto e produza primeiramente um plano detalhado de execução (com os arquivos a modificar e os passos propostos) antes de prosseguir com alterações."
+        )
+    elif mode == "auto":
+        partes.append(
+            "MODO AUTOMÁTICO ATIVO:\n"
+            "Resolva a tarefa de forma autônoma ponta a ponta: investigue o problema, edite os arquivos e execute testes para verificar e corrigir eventuais erros."
+        )
+
     partes.append(f"Tarefa:\n{task}")
     return "\n\n".join(partes)
 
@@ -66,3 +78,16 @@ APPROVAL_DENIED_TEMPLATE = (
     "O usuário recusou a ação `{tool}`. Motivo: {reason}\n"
     "Não tente a mesma ação de novo. Proponha outro caminho ou peça esclarecimento."
 )
+
+
+def wrap_untrusted_content(content: str, source_label: str = "dados_externos") -> str:
+    """Envolve conteúdos lidos de arquivos, saídas de comandos e terceiros em delimitadores
+    seguros que previnem Indirect Prompt Injection e Tool Poisoning.
+    """
+    clean_content = content.replace("</untrusted_content>", "&lt;/untrusted_content&gt;")
+    return (
+        f'<{source_label}_untrusted_content trust_level="zero">\n'
+        f"{clean_content}\n"
+        f"</{source_label}_untrusted_content>"
+    )
+

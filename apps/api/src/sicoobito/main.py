@@ -16,6 +16,8 @@ from sicoobito.api.routes import (
     context_router,
     git_router,
     health_router,
+    lsp_router,
+    lsp_ws_router,
     metrics_router,
     projects_router,
     workspace_router,
@@ -176,6 +178,8 @@ def create_app() -> FastAPI:
     app.include_router(workspace_ws_router)
     app.include_router(projects_router)
     app.include_router(git_router)
+    app.include_router(lsp_router)
+    app.include_router(lsp_ws_router)
 
     @app.get("/", tags=["meta"])
     async def root() -> dict[str, str]:

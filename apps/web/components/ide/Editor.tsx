@@ -1,8 +1,11 @@
 "use client";
 
 import MonacoEditor, { DiffEditor } from "@monaco-editor/react";
+import "@/lib/monaco-loader";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { get, put } from "@/lib/client";
+import { get, post, put } from "@/lib/client";
+import { useLsp, type LspStatus } from "@/lib/use-lsp";
+import { useTheme } from "@/lib/theme";
 
 interface FileResponse {
   path: string;
@@ -46,32 +49,76 @@ const EDITOR_OPTIONS = {
   automaticLayout: true,
 };
 
+function autoDetectLanguage(filePath: string, fileContent?: string): string {
+  const lower = filePath.toLowerCase();
+  if (lower.endsWith(".py")) return "python";
+  if (lower.endsWith(".tsx") || lower.endsWith(".ts")) return "typescript";
+  if (lower.endsWith(".jsx") || lower.endsWith(".js")) return "javascript";
+  if (lower.endsWith(".go")) return "go";
+  if (lower.endsWith(".rs")) return "rust";
+  if (lower.endsWith(".json")) return "json";
+  if (lower.endsWith(".yaml") || lower.endsWith(".yml")) return "yaml";
+  if (lower.endsWith(".sql")) return "sql";
+  if (lower.endsWith(".md")) return "markdown";
+  if (lower.endsWith(".css") || lower.endsWith(".scss")) return "css";
+  if (lower.endsWith(".html")) return "html";
+  if (lower.endsWith(".sh") || lower.endsWith(".bash")) return "shell";
+  if (lower.includes("dockerfile")) return "dockerfile";
+
+  if (fileContent) {
+    if (fileContent.includes("import React") || fileContent.includes("export default")) return "typescript";
+    if (fileContent.includes("def ") || fileContent.includes("import os")) return "python";
+    if (fileContent.includes("package main") || fileContent.includes("func ")) return "go";
+  }
+  return "plaintext";
+}
+
 export function Editor({
   project,
   path,
   onDirtyChange,
+  onNavigate,
+  reveal,
+  onRevealed,
+  onCursorPositionChange,
 }: {
   project: string | null;
   path: string | null;
   onDirtyChange?: (dirty: boolean) => void;
+  onNavigate?: (path: string, line: number, column: number) => void;
+  reveal?: { line: number; column: number } | null;
+  onRevealed?: () => void;
+  onCursorPositionChange?: (pos: { line: number; column: number }) => void;
 }) {
+  const { theme } = useTheme();
   const [content, setContent] = useState("");
   const [language, setLanguage] = useState("plaintext");
+  const [rawLanguage, setRawLanguage] = useState<string | null>(null);
+  const [loadedPath, setLoadedPath] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [dirty, setDirty] = useState(false);
+  const [showDiff, setShowDiff] = useState(false);
+  const [headContent, setHeadContent] = useState<string | null>(null);
   const originalRef = useRef("");
 
-  // O callback vive numa ref, e não nas dependências do efeito. Quem chama
-  // costuma passar uma arrow inline, que é uma função nova a cada render: como
-  // dependência, ela reexecutaria a carga em laço, e o `setLoading(false)` de
-  // cada execução seria descartado pelo guard de cancelamento da seguinte — o
-  // editor ficava preso em "carregando…" para sempre.
   const onDirtyRef = useRef(onDirtyChange);
   useEffect(() => {
     onDirtyRef.current = onDirtyChange;
   }, [onDirtyChange]);
+
+  const lsp = useLsp({
+    project,
+    path: loadedPath,
+    language: rawLanguage,
+    onNavigate: (destino, linha, coluna) => {
+      if (destino === path) lsp.revealAt(linha, coluna);
+      else onNavigate?.(destino, linha, coluna);
+    },
+  });
+
+  const monacoTheme = theme === "dark" ? "vs-dark" : "vs";
 
   useEffect(() => {
     if (!path || !project) return;
@@ -79,17 +126,19 @@ export function Editor({
 
     setLoading(true);
     setError(null);
+    setShowDiff(false);
     get<FileResponse>(
       `/api/workspace/file?project=${encodeURIComponent(project)}&path=${encodeURIComponent(path)}`,
     )
       .then((data) => {
-        // Sem esta guarda, trocar de arquivo rápido faria a resposta lenta do
-        // anterior sobrescrever o conteúdo do atual.
         if (cancelled) return;
         setContent(data.content);
         originalRef.current = data.content;
-        setLanguage(MONACO_LANGUAGE[data.language ?? ""] ?? "plaintext");
+        const detected = data.language || autoDetectLanguage(path, data.content);
+        setRawLanguage(detected);
+        setLanguage(MONACO_LANGUAGE[detected] ?? "plaintext");
         setDirty(false);
+        setLoadedPath(path);
         onDirtyRef.current?.(false);
       })
       .catch((err) => {
@@ -113,12 +162,52 @@ export function Editor({
       setDirty(false);
       onDirtyRef.current?.(false);
       setError(null);
+      lsp.onSave();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setSaving(false);
     }
-  }, [project, path, content, dirty]);
+  }, [project, path, content, dirty, lsp]);
+
+  const discardChanges = useCallback(async () => {
+    if (!path || !project) return;
+    // Descarta alterações locais na memória
+    setContent(originalRef.current);
+    setDirty(false);
+    onDirtyRef.current?.(false);
+
+    // Se houver alteração registrada no Git, chama endpoint de discard
+    try {
+      await post("/api/git/discard", { project, paths: [path] });
+    } catch {
+      // Ignora erro se arquivo não estava sob controle do Git
+    }
+  }, [path, project]);
+
+  const toggleDiffView = useCallback(async () => {
+    if (showDiff) {
+      setShowDiff(false);
+      return;
+    }
+    if (!path || !project) return;
+    try {
+      const res = await get<{ original: string; modified: string }>(
+        `/api/git/file-versions?project=${encodeURIComponent(project)}&path=${encodeURIComponent(path)}`,
+      );
+      setHeadContent(res.original);
+      setShowDiff(true);
+    } catch {
+      setHeadContent(originalRef.current);
+      setShowDiff(true);
+    }
+  }, [showDiff, path, project]);
+
+  useEffect(() => {
+    if (!reveal || loadedPath !== path) return;
+    lsp.revealAt(reveal.line, reveal.column);
+    onRevealed?.();
+  }, [reveal, loadedPath, path, lsp, onRevealed]);
 
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
@@ -142,30 +231,104 @@ export function Editor({
           {path}
           {dirty && <span className="dot" title="não salvo" />}
         </span>
-        <button type="button" onClick={() => void save()} disabled={!dirty || saving}>
-          {saving ? "salvando…" : "salvar (Ctrl+S)"}
-        </button>
+
+        <LspBadge status={lsp.status} />
+
+        <div className="editor-bar-actions" style={{ marginLeft: "auto", display: "flex", gap: 8, alignItems: "center" }}>
+          <span className="kbd-badge" title="Linguagem detectada automaticamente">
+            ⚡ {language}
+          </span>
+
+          <button
+            type="button"
+            className="theme-btn"
+            onClick={() => void toggleDiffView()}
+            title="Revisar alterações lado a lado"
+          >
+            {showDiff ? "Editor" : "Ver Diff"}
+          </button>
+
+          {dirty && (
+            <button
+              type="button"
+              className="theme-btn"
+              style={{ color: "var(--danger)" }}
+              onClick={() => void discardChanges()}
+              title="Descartar alterações locais e reverter"
+            >
+              Descartar
+            </button>
+          )}
+
+          <button
+            type="button"
+            className="primary"
+            onClick={() => void save()}
+            disabled={!dirty || saving}
+          >
+            {saving ? "salvando…" : "Manter (Ctrl+S)"}
+          </button>
+        </div>
       </div>
+
       {error && <div className="editor-error">{error}</div>}
+
       {loading ? (
         <div className="editor-empty">carregando…</div>
+      ) : showDiff ? (
+        <DiffView
+          original={headContent ?? originalRef.current}
+          modified={content}
+          language={rawLanguage}
+        />
       ) : (
         <MonacoEditor
           height="100%"
-          theme="vs-dark"
+          theme={monacoTheme}
           language={language}
           value={content}
           options={EDITOR_OPTIONS}
-          onChange={(value) => {
+          onMount={(editor, monaco) => {
+            lsp.onMount(editor, monaco);
+            editor.onDidChangeCursorPosition((e) => {
+              onCursorPositionChange?.({
+                line: e.position.lineNumber,
+                column: e.position.column,
+              });
+            });
+          }}
+          onChange={(value, evento) => {
             const next = value ?? "";
             setContent(next);
             const isDirty = next !== originalRef.current;
             setDirty(isDirty);
             onDirtyRef.current?.(isDirty);
+            lsp.onChange(evento);
           }}
         />
       )}
     </div>
+  );
+}
+
+/**
+ * Estado do language server, na barra do editor.
+ */
+function LspBadge({ status }: { status: LspStatus }) {
+  if (!status.language) return null;
+  if (status.error) {
+    return (
+      <span className="lsp-badge lsp-error" title={status.error}>
+        <span className="lsp-dot err-dot" />
+        LSP falhou
+      </span>
+    );
+  }
+  return (
+    <span className={`lsp-badge ${status.ready ? "lsp-ok" : "lsp-loading"}`}>
+      <span className={`lsp-dot ${status.ready ? "ok-dot" : "pulse-dot"}`} />
+      {status.ready ? status.language : `${status.language}…`}
+    </span>
   );
 }
 
@@ -179,10 +342,11 @@ export function DiffView({
   modified: string;
   language?: string | null;
 }) {
+  const { theme } = useTheme();
   return (
     <DiffEditor
       height="100%"
-      theme="vs-dark"
+      theme={theme === "dark" ? "vs-dark" : "vs"}
       language={MONACO_LANGUAGE[language ?? ""] ?? "plaintext"}
       original={original}
       modified={modified}

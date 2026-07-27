@@ -40,6 +40,13 @@ export interface FileEntry {
 
 export type PanelId = "explorer" | "search" | "git" | "agent";
 
+/** Onde posicionar o cursor ao abrir — usado por "ir para definição" e busca. */
+export interface Reveal {
+  path: string;
+  line: number;
+  column: number;
+}
+
 interface IdeState {
   project: string | null;
   projects: Project[];
@@ -50,13 +57,19 @@ interface IdeState {
   tabs: string[];
   active: string | null;
   dirty: Set<string>;
-  openFile: (path: string) => void;
+  openFile: (path: string, reveal?: { line: number; column: number }) => void;
+  /** Posição pendente. O editor consome e chama `clearReveal`. */
+  reveal: Reveal | null;
+  clearReveal: () => void;
   closeTab: (path: string) => void;
   setActive: (path: string | null) => void;
   markDirty: (path: string, isDirty: boolean) => void;
 
   panel: PanelId;
   setPanel: (panel: PanelId) => void;
+  sidebarOpen: boolean;
+  setSidebarOpen: (open: boolean) => void;
+  toggleSidebar: () => void;
   terminalOpen: boolean;
   setTerminalOpen: (open: boolean) => void;
 
@@ -94,11 +107,22 @@ export function IdeProvider({ children }: { children: ReactNode }) {
   const [tabs, setTabs] = useState<string[]>([]);
   const [active, setActive] = useState<string | null>(null);
   const [dirty, setDirty] = useState<Set<string>>(new Set());
-  const [panel, setPanel] = useState<PanelId>("explorer");
+  const [panel, setPanelState] = useState<PanelId>("explorer");
+  const [sidebarOpen, setSidebarOpen] = useState(true);
   const [terminalOpen, setTerminalOpen] = useState(false);
   const [files, setFiles] = useState<FileEntry[]>([]);
   const [revision, setRevision] = useState(0);
+  const [reveal, setReveal] = useState<Reveal | null>(null);
   const [hydrated, setHydrated] = useState(false);
+
+  const toggleSidebar = useCallback(() => {
+    setSidebarOpen((prev) => !prev);
+  }, []);
+
+  const setPanel = useCallback((newPanel: PanelId) => {
+    setPanelState(newPanel);
+    setSidebarOpen(true);
+  }, []);
 
   // A restauração acontece só no cliente: ler localStorage durante o render do
   // servidor causaria divergência de hidratação.
@@ -160,10 +184,15 @@ export function IdeProvider({ children }: { children: ReactNode }) {
     setDirty(new Set());
   }, []);
 
-  const openFile = useCallback((path: string) => {
+  const openFile = useCallback((path: string, posicao?: { line: number; column: number }) => {
     setTabs((prev) => (prev.includes(path) ? prev : [...prev, path]));
     setActive(path);
+    // Guardado com o caminho junto: sem isso, abrir A e depois B faria o
+    // cursor de B parar na linha pedida para A.
+    setReveal(posicao ? { path, ...posicao } : null);
   }, []);
+
+  const clearReveal = useCallback(() => setReveal(null), []);
 
   const closeTab = useCallback((path: string) => {
     setTabs((prev) => {
@@ -200,11 +229,16 @@ export function IdeProvider({ children }: { children: ReactNode }) {
       active,
       dirty,
       openFile,
+      reveal,
+      clearReveal,
       closeTab,
       setActive,
       markDirty,
       panel,
       setPanel,
+      sidebarOpen,
+      setSidebarOpen,
+      toggleSidebar,
       terminalOpen,
       setTerminalOpen,
       files,
@@ -214,8 +248,8 @@ export function IdeProvider({ children }: { children: ReactNode }) {
     }),
     [
       project, projects, projectsError, setProject, reloadProjects,
-      tabs, active, dirty, openFile, closeTab, markDirty,
-      panel, terminalOpen, files, reloadFiles, revision, bumpRevision,
+      tabs, active, dirty, openFile, reveal, clearReveal, closeTab, markDirty,
+      panel, setPanel, sidebarOpen, toggleSidebar, terminalOpen, files, reloadFiles, revision, bumpRevision,
     ],
   );
 

@@ -133,13 +133,28 @@ class ContextIndexer:
             report.embedding_failures += failures
             report.embedded += sum(1 for v in vectors if v is not None)
 
+            # Um arquivo cujo embedding falhou não pode ser marcado como em dia.
+            # Gravar o hash real faria a próxima passagem pulá-lo — e os chunks
+            # ficariam sem vetor **para sempre**, encontráveis só por full-text,
+            # sem nada na saída indicando isso.
+            #
+            # O corte em 64 é o tamanho da coluna, que o sha256 já ocupa
+            # inteira. Não há colisão possível: um hash hexadecimal nunca começa
+            # com letras fora de a-f, então o marcador jamais casa com um hash
+            # de verdade — que é a única propriedade de que este valor precisa.
+            hash_registrado = (
+                scanned.content_hash
+                if failures == 0
+                else f"pendente:{scanned.content_hash}"[:64]
+            )
+
             try:
                 async with session_scope() as session:
                     await store.upsert_file(
                         session,
                         workspace=workspace,
                         path=scanned.path,
-                        content_hash=scanned.content_hash,
+                        content_hash=hash_registrado,
                         language=scanned.language,
                         size_bytes=scanned.size_bytes,
                         mtime=scanned.mtime,

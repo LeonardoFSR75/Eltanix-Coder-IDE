@@ -31,12 +31,12 @@ workspace e rede desabilitada; e o dashboard renderizando telemetria real.
 Falta apenas uma chamada a um modelo de verdade — depende do Ollama ou de
 credenciais de nuvem.
 
-186 testes (~107s). Ruff, `tsc` e `next build` limpos.
+207 testes. Pytest, `tsc` e `next build` limpos.
 
 ## Requisitos
 
-- **Docker** — é o único requisito de execução; toda a stack roda em containers
-- Ollama no host, opcional mas recomendado: é a base da política `local-first`
+- **Docker** — é o único requisito de execução; toda a stack roda em containers,
+  Ollama e language servers inclusive
 - `uv` e Node só para rodar testes e lint fora dos containers
 ## Início rápido
 
@@ -71,15 +71,29 @@ Pronto:
 | Executor (interno) | 5402 | — |
 | Postgres | 5403 | — |
 | Redis | 5404 | — |
+| Ollama | 5405 | http://localhost:5405 |
 
 A faixa 5400–5499 foi escolhida para não disputar 3000, 8000 e 5432 com outros
 projetos.
 
-Modelo local — sem ele o perfil `local-first` não tem para onde ir e a
-indexação fica sem embeddings:
+### Modelos locais
+
+O Ollama é um serviço do compose — não há nada a instalar no host. O serviço
+`ollama-init` baixa os modelos de `OLLAMA_PULL_MODELS` na primeira subida e sai;
+os pesos ficam num volume, então recriar containers não rebaixa nada.
 
 ```bash
-ollama pull qwen2.5-coder:7b && ollama pull nomic-embed-text
+docker compose logs -f ollama-init
+```
+
+**Sem GPU, o tamanho do modelo é a variável que decide se isto é usável.** Numa
+máquina com gráficos integrados e 8 GB alocados ao Docker, o `qwen2.5-coder:1.5b`
+responde em segundos e o `7b` entra em swap. Os perfis `auto` e `cheap` usam o
+pequeno por isso; `local-first` e `coding` pedem o 7b, e só valem a pena com RAM
+sobrando ou GPU. Para GPU NVIDIA, adicione ao serviço `ollama`:
+
+```yaml
+    deploy: { resources: { reservations: { devices: [{ capabilities: [gpu] }] } } }
 ```
 
 O gateway responde em `http://localhost:5401/v1` com a API da OpenAI. Qualquer ferramenta
@@ -129,6 +143,7 @@ apps/api/src/sicoobito/
   agent/      grafo LangGraph, ferramentas com classe de risco
   workspace/  fs com fronteira, git, github
   sandbox/    container efêmero por sessão
+  lsp/        ponte entre o editor e os language servers
   api/        fachada /v1 e rotas de gestão
 apps/web/     dashboard e IDE (Next.js + Monaco)
 services/executor/  único serviço com acesso ao daemon do Docker (ADR 0002)
