@@ -537,7 +537,7 @@ code {
 .ide-container {
   display: flex;
   flex-direction: column;
-  height: 100vh;
+  height: calc(100vh - 46px);
   width: 100vw;
   overflow: hidden;
   background: var(--bg);
@@ -921,10 +921,13 @@ code {
    invisível, com o fundo escuro do container por cima parecendo uma tela
    preta cobrindo o código. */
 .ide-main {
+  flex: 1;
   display: flex;
   flex-direction: column;
   min-height: 0;
   min-width: 0;
+  height: 100%;
+  overflow: hidden;
 }
 
 .editor-area {
