@@ -11,7 +11,7 @@ interface StatusBarProps {
 }
 
 export function StatusBar({ lspStatus, cursorPosition }: StatusBarProps) {
-  const { project, projects } = useIde();
+  const { project, projects, routerLatency, routerStatus } = useIde();
   const { theme, toggleTheme } = useTheme();
 
   const activeProjObj = projects.find((p) => p.name === project);
@@ -30,6 +30,14 @@ export function StatusBar({ lspStatus, cursorPosition }: StatusBarProps) {
             {activeProjObj.branch ?? "—"}
           </span>
         )}
+
+        <span
+          className={`statusbar-item router-item ${routerStatus}`}
+          title="Status de conexão com o Gateway Router de IA"
+        >
+          <span className={`pulse-dot ${routerStatus === "online" ? "ok" : "err"}`} />
+          Router: {routerLatency !== null ? `${routerLatency}ms` : routerStatus}
+        </span>
 
         {lspStatus.language && (
           <span

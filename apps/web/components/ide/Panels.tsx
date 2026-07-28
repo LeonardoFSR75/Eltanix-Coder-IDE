@@ -28,6 +28,7 @@ export function Explorer() {
   const [levels, setLevels] = useState<Record<string, Entry[]>>({});
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [erro, setErro] = useState<string | null>(null);
+  const [filterText, setFilterText] = useState("");
   const [menu, setMenu] = useState<{ x: number; y: number; entry: Entry | null } | null>(null);
   const [dialogo, setDialogo] = useState<
     | { tipo: "novo-arquivo" | "nova-pasta" | "renomear"; base: string; inicial: string }
@@ -51,15 +52,11 @@ export function Explorer() {
     [project],
   );
 
-  // Recarrega a raiz e todos os níveis abertos quando algo muda no disco.
   useEffect(() => {
     if (!project) return;
     setLevels({});
     void carregar(".");
     for (const dir of expanded) void carregar(dir);
-    // `expanded` de propósito fora das dependências: incluí-lo recarregaria a
-    // árvore inteira a cada pasta aberta.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [project, carregar, revision]);
 
   const alternar = (entry: Entry) => {
@@ -118,13 +115,18 @@ export function Explorer() {
     }
   };
 
-  const renderar = (subpath: string, profundidade: number) =>
-    (levels[subpath] ?? []).map((entry) => (
-      <div key={entry.path}>
+  const renderar = (subpath: string, profundidade: number) => {
+    const list = levels[subpath] ?? [];
+    const filtered = filterText
+      ? list.filter((e) => e.name.toLowerCase().includes(filterText.toLowerCase()) || e.is_dir)
+      : list;
+
+    return filtered.map((entry) => (
+      <div key={entry.path} className="tree-node">
         <button
           type="button"
           className={`tree-row${active === entry.path ? " active" : ""}`}
-          style={{ paddingLeft: 8 + profundidade * 13 }}
+          style={{ paddingLeft: 10 + profundidade * 14 }}
           onClick={() => alternar(entry)}
           onContextMenu={(e) => {
             e.preventDefault();
@@ -133,7 +135,11 @@ export function Explorer() {
           title={entry.path}
         >
           {entry.is_dir ? (
-            <span className={`tree-chevron ${expanded.has(entry.path) ? "open" : ""}`}>▸</span>
+            <span className={`tree-chevron ${expanded.has(entry.path) ? "open" : ""}`}>
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M8 5v14l11-7z" />
+              </svg>
+            </span>
           ) : (
             <span className="tree-chevron-space" />
           )}
@@ -143,6 +149,7 @@ export function Explorer() {
         {entry.is_dir && expanded.has(entry.path) && renderar(entry.path, profundidade + 1)}
       </div>
     ));
+  };
 
   return (
     <div
@@ -161,7 +168,12 @@ export function Explorer() {
           title="Novo Arquivo"
           onClick={() => setDialogo({ tipo: "novo-arquivo", base: "", inicial: "" })}
         >
-          + File
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+            <polyline points="14 2 14 8 20 8" />
+            <line x1="12" y1="11" x2="12" y2="17" />
+            <line x1="9" y1="14" x2="15" y2="14" />
+          </svg>
         </button>
         <button
           type="button"
@@ -169,18 +181,47 @@ export function Explorer() {
           title="Nova Pasta"
           onClick={() => setDialogo({ tipo: "nova-pasta", base: "", inicial: "" })}
         >
-          + Folder
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+            <line x1="12" y1="11" x2="12" y2="17" />
+            <line x1="9" y1="14" x2="15" y2="14" />
+          </svg>
         </button>
-
         <button
           type="button"
           className="icon-action-btn"
-          title="Recarregar"
+          title="Colapsar Pastas"
+          onClick={() => setExpanded(new Set())}
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <polyline points="4 14 10 14 10 20" />
+            <polyline points="20 10 14 10 14 4" />
+            <line x1="14" y1="10" x2="21" y2="3" />
+            <line x1="3" y1="21" x2="10" y2="14" />
+          </svg>
+        </button>
+        <button
+          type="button"
+          className="icon-action-btn"
+          title="Recarregar Árvore"
           onClick={() => bumpRevision()}
           style={{ marginLeft: "auto" }}
         >
-          ↻
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <polyline points="23 4 23 10 17 10" />
+            <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
+          </svg>
         </button>
+      </div>
+
+      <div className="tree-quick-filter">
+        <input
+          type="text"
+          placeholder="Filtrar arquivos..."
+          value={filterText}
+          onChange={(e) => setFilterText(e.target.value)}
+          className="tree-filter-input"
+        />
       </div>
 
       {erro && <div className="panel-error">{erro}</div>}
@@ -191,18 +232,24 @@ export function Explorer() {
           <div className="menu-backdrop" onClick={() => setMenu(null)} onContextMenu={(e) => { e.preventDefault(); setMenu(null); }} />
           <div className="context-menu" style={{ left: menu.x, top: menu.y }}>
             <button type="button" onClick={() => { setDialogo({ tipo: "novo-arquivo", base: pastaDe(menu.entry), inicial: "" }); setMenu(null); }}>
-              Novo arquivo
+              📄 Novo Arquivo
             </button>
             <button type="button" onClick={() => { setDialogo({ tipo: "nova-pasta", base: pastaDe(menu.entry), inicial: "" }); setMenu(null); }}>
-              Nova pasta
+              📁 Nova Pasta
             </button>
             {menu.entry && (
               <>
+                <button type="button" onClick={() => {
+                  navigator.clipboard?.writeText(menu.entry!.path);
+                  setMenu(null);
+                }}>
+                  📋 Copiar Caminho
+                </button>
                 <button type="button" onClick={() => { setDialogo({ tipo: "renomear", base: menu.entry!.path, inicial: menu.entry!.name }); setMenu(null); }}>
-                  Renomear
+                  ✏️ Renomear
                 </button>
                 <button type="button" className="danger" onClick={() => { setDialogo({ tipo: "excluir", alvo: menu.entry! }); setMenu(null); }}>
-                  Excluir
+                  🗑️ Excluir
                 </button>
               </>
             )}
@@ -267,6 +314,7 @@ export function SearchPanel() {
   const { project, openFile, bumpRevision } = useIde();
   const [query, setQuery] = useState("");
   const [replacement, setReplacement] = useState("");
+  const [showReplace, setShowReplace] = useState(false);
   const [regex, setRegex] = useState(false);
   const [caseSensitive, setCaseSensitive] = useState(false);
   const [matches, setMatches] = useState<Match[]>([]);
@@ -319,28 +367,60 @@ export function SearchPanel() {
   return (
     <div className="panel-body">
       <div className="search-form">
-        <input
-          value={query}
-          placeholder="Buscar no projeto"
-          onChange={(e) => setQuery(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && void buscar()}
-        />
-        <input
-          value={replacement}
-          placeholder="Substituir por (opcional)"
-          onChange={(e) => setReplacement(e.target.value)}
-        />
-        <div className="search-opts">
-          <label><input type="checkbox" checked={regex} onChange={(e) => setRegex(e.target.checked)} /> regex</label>
-          <label><input type="checkbox" checked={caseSensitive} onChange={(e) => setCaseSensitive(e.target.checked)} /> Aa</label>
+        <div className="search-input-wrapper">
+          <input
+            value={query}
+            placeholder="Localizar no código..."
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && void buscar()}
+          />
+          <button
+            type="button"
+            className={`search-toggle-replace ${showReplace ? "active" : ""}`}
+            onClick={() => setShowReplace(!showReplace)}
+            title="Alternar Substituir"
+          >
+            ↔
+          </button>
         </div>
+
+        {showReplace && (
+          <input
+            value={replacement}
+            placeholder="Substituir por..."
+            onChange={(e) => setReplacement(e.target.value)}
+            className="replace-input"
+          />
+        )}
+
+        <div className="search-opts-bar">
+          <button
+            type="button"
+            className={`search-opt-chip ${caseSensitive ? "active" : ""}`}
+            onClick={() => setCaseSensitive(!caseSensitive)}
+            title="Diferenciar maiúsculas/minúsculas (Aa)"
+          >
+            Aa
+          </button>
+          <button
+            type="button"
+            className={`search-opt-chip ${regex ? "active" : ""}`}
+            onClick={() => setRegex(!regex)}
+            title="Usar Expressão Regular (.*)"
+          >
+            .*
+          </button>
+        </div>
+
         <div className="search-actions">
           <button type="button" className="primary" onClick={() => void buscar()} disabled={buscando || !query.trim()}>
-            {buscando ? "buscando…" : "buscar"}
+            {buscando ? "buscando..." : "Buscar"}
           </button>
-          <button type="button" className="danger" onClick={() => setConfirmar(true)} disabled={!query.trim() || matches.length === 0}>
-            substituir tudo
-          </button>
+          {showReplace && (
+            <button type="button" className="danger" onClick={() => setConfirmar(true)} disabled={!query.trim() || matches.length === 0}>
+              Substituir Tudo
+            </button>
+          )}
         </div>
       </div>
 
@@ -349,8 +429,15 @@ export function SearchPanel() {
 
       <div className="match-list">
         {matches.map((m, i) => (
-          <button key={`${m.path}:${m.line}:${m.column}:${i}`} type="button" className="match" onClick={() => openFile(m.path)}>
-            <div className="match-path">{m.path}<span className="match-line">:{m.line}</span></div>
+          <button
+            key={`${m.path}:${m.line}:${m.column}:${i}`}
+            type="button"
+            className="match"
+            onClick={() => openFile(m.path, { line: m.line, column: m.column })}
+          >
+            <div className="match-path">
+              {m.path}<span className="match-line">:{m.line}:{m.column}</span>
+            </div>
             <div className="match-preview">{m.preview}</div>
           </button>
         ))}
@@ -413,8 +500,6 @@ export function GitPanel() {
       setErro(null);
       if (sucesso) setAviso(sucesso);
       await recarregar();
-      // `ide.projects` guarda o branch mostrado na status bar; sem isto, um
-      // checkout deixaria a status bar presa no branch antigo.
       void reloadProjects();
       bumpRevision();
     } catch (err) {
@@ -424,6 +509,9 @@ export function GitPanel() {
 
   if (!project) return <div className="tree-hint">Selecione um projeto.</div>;
 
+  const stagedFiles = estado?.files.filter((f) => f.status === "staged") ?? [];
+  const unstagedFiles = estado?.files.filter((f) => f.status !== "staged") ?? [];
+
   return (
     <div className="panel-body">
       {erro && <div className="panel-error">{erro}</div>}
@@ -431,55 +519,118 @@ export function GitPanel() {
 
       {estado && (
         <>
-          <div className="git-branch">
-            <select
-              value={estado.branch}
-              onChange={(e) => void acao(() => post("/api/git/checkout", { project, branch: e.target.value }))}
-            >
-              {branches.map((b) => <option key={b} value={b}>{b}</option>)}
-              {!branches.includes(estado.branch) && <option value={estado.branch}>{estado.branch}</option>}
-            </select>
-            <button type="button" onClick={() => setNovoBranch(true)} title="Novo branch">+</button>
+          <div className="git-header-bar">
+            <div className="git-branch">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <line x1="6" y1="3" x2="6" y2="15" />
+                <circle cx="18" cy="6" r="3" />
+                <circle cx="6" cy="18" r="3" />
+                <path d="M18 9a9 9 0 0 1-9 9" />
+              </svg>
+              <select
+                value={estado.branch}
+                onChange={(e) => void acao(() => post("/api/git/checkout", { project, branch: e.target.value }))}
+              >
+                {branches.map((b) => <option key={b} value={b}>{b}</option>)}
+                {!branches.includes(estado.branch) && <option value={estado.branch}>{estado.branch}</option>}
+              </select>
+              <button type="button" onClick={() => setNovoBranch(true)} title="Novo Branch" className="icon-action-btn">+</button>
+            </div>
           </div>
 
-          <div className="git-files">
-            {estado.files.length === 0 && <div className="tree-hint">Árvore limpa.</div>}
-            {estado.files.map((f) => (
-              <div key={`${f.path}:${f.status}`} className="git-file">
-                <button type="button" className="git-file-path" onClick={() => openFile(f.path)} title={f.path}>
-                  <span className={`git-badge ${f.status}`}>{f.status.slice(0, 1).toUpperCase()}</span>
-                  {f.path}
-                </button>
-                <div className="git-file-actions">
-                  {f.status !== "staged" ? (
-                    <button type="button" onClick={() => void acao(() => post("/api/git/stage", { project, paths: [f.path] }))} title="Stage">+</button>
-                  ) : (
-                    <button type="button" onClick={() => void acao(() => post("/api/git/unstage", { project, paths: [f.path] }))} title="Unstage">−</button>
-                  )}
+          <div className="git-files-container">
+            {stagedFiles.length > 0 && (
+              <div className="git-group">
+                <div className="git-group-title">
+                  <span>Alterações Preparadas (Staged - {stagedFiles.length})</span>
+                  <button
+                    type="button"
+                    className="git-action-sm"
+                    title="Unstage All"
+                    onClick={() => void acao(() => post("/api/git/unstage", { project, paths: stagedFiles.map((f) => f.path) }))}
+                  >
+                    −
+                  </button>
                 </div>
+                {stagedFiles.map((f) => (
+                  <div key={`staged:${f.path}`} className="git-file">
+                    <button type="button" className="git-file-path" onClick={() => openFile(f.path)} title={f.path}>
+                      <span className="git-badge staged">S</span>
+                      {f.path}
+                    </button>
+                    <button
+                      type="button"
+                      className="git-action-sm"
+                      title="Unstage"
+                      onClick={() => void acao(() => post("/api/git/unstage", { project, paths: [f.path] }))}
+                    >
+                      −
+                    </button>
+                  </div>
+                ))}
               </div>
-            ))}
+            )}
+
+            <div className="git-group">
+              <div className="git-group-title">
+                <span>Alterações ({unstagedFiles.length})</span>
+                {unstagedFiles.length > 0 && (
+                  <button
+                    type="button"
+                    className="git-action-sm"
+                    title="Stage All"
+                    onClick={() => void acao(() => post("/api/git/stage", { project, paths: unstagedFiles.map((f) => f.path) }))}
+                  >
+                    +
+                  </button>
+                )}
+              </div>
+              {unstagedFiles.length === 0 && stagedFiles.length === 0 && (
+                <div className="tree-hint">Nenhuma alteração pendente. Árvore limpa.</div>
+              )}
+              {unstagedFiles.map((f) => (
+                <div key={`unstaged:${f.path}`} className="git-file">
+                  <button type="button" className="git-file-path" onClick={() => openFile(f.path)} title={f.path}>
+                    <span className={`git-badge ${f.status}`}>
+                      {f.status === "modified" ? "M" : f.status === "untracked" ? "U" : f.status.slice(0, 1).toUpperCase()}
+                    </span>
+                    {f.path}
+                  </button>
+                  <button
+                    type="button"
+                    className="git-action-sm"
+                    title="Stage"
+                    onClick={() => void acao(() => post("/api/git/stage", { project, paths: [f.path] }))}
+                  >
+                    +
+                  </button>
+                </div>
+              ))}
+            </div>
           </div>
 
           <div className="git-commit">
             <textarea
               value={mensagem}
-              placeholder="Mensagem de commit — explique o porquê, não o quê"
+              placeholder="Mensagem de commit (ex: feat: adiciona suporte a resizing)"
               rows={3}
               onChange={(e) => setMensagem(e.target.value)}
             />
             <button
               type="button"
-              className="primary"
+              className="primary git-commit-btn"
               disabled={!mensagem.trim() || !estado.dirty}
               onClick={() =>
                 void acao(async () => {
+                  if (stagedFiles.length === 0 && unstagedFiles.length > 0) {
+                    await post("/api/git/stage", { project, paths: unstagedFiles.map((f) => f.path) });
+                  }
                   await post("/api/git/commit", { project, message: mensagem });
                   setMensagem("");
-                }, "commit criado")
+                }, "Commit realizado com sucesso!")
               }
             >
-              commit
+              ✓ Commit & Sync
             </button>
           </div>
         </>
@@ -488,7 +639,7 @@ export function GitPanel() {
       {novoBranch && (
         <PromptDialog
           title="Nome do novo branch"
-          confirmLabel="criar"
+          confirmLabel="Criar Branch"
           onConfirm={(nome) => void acao(() => post("/api/git/checkout", { project, branch: nome, create: true }))}
           onClose={() => setNovoBranch(false)}
         />

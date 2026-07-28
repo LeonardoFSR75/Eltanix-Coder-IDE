@@ -73,10 +73,35 @@ interface IdeState {
   terminalOpen: boolean;
   setTerminalOpen: (open: boolean) => void;
 
-  // Dock do agente, à direita — persistente, independente da barra esquerda.
+  // Dock do agente
   agentDockOpen: boolean;
   setAgentDockOpen: (open: boolean) => void;
   toggleAgentDock: () => void;
+
+  // Resizing e Layout
+  sidebarWidth: number;
+  setSidebarWidth: (width: number) => void;
+  agentDockWidth: number;
+  setAgentDockWidth: (width: number) => void;
+  terminalHeight: number;
+  setTerminalHeight: (height: number) => void;
+
+  // Modos de Edição
+  splitMode: boolean;
+  setSplitMode: (split: boolean) => void;
+  toggleSplitMode: () => void;
+  splitActive: string | null;
+  setSplitActive: (path: string | null) => void;
+
+  // Inserção de código via IA
+  codeToInsert: { code: string; timestamp: number } | null;
+  insertCode: (code: string) => void;
+  clearInsertedCode: () => void;
+
+  // Telemetria do Gateway Router
+  routerLatency: number | null;
+  routerStatus: "online" | "degraded" | "offline";
+  checkRouterHealth: () => Promise<void>;
 
   files: FileEntry[];
   reloadFiles: () => Promise<void>;
@@ -94,6 +119,9 @@ interface Persisted {
   project?: string | null;
   tabs?: string[];
   active?: string | null;
+  sidebarWidth?: number;
+  agentDockWidth?: number;
+  terminalHeight?: number;
 }
 
 function load(): Persisted {
@@ -116,6 +144,14 @@ export function IdeProvider({ children }: { children: ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [terminalOpen, setTerminalOpen] = useState(false);
   const [agentDockOpen, setAgentDockOpen] = useState(true);
+  const [sidebarWidth, setSidebarWidth] = useState(260);
+  const [agentDockWidth, setAgentDockWidth] = useState(360);
+  const [terminalHeight, setTerminalHeight] = useState(220);
+  const [splitMode, setSplitMode] = useState(false);
+  const [splitActive, setSplitActive] = useState<string | null>(null);
+  const [codeToInsert, setCodeToInsert] = useState<{ code: string; timestamp: number } | null>(null);
+  const [routerLatency, setRouterLatency] = useState<number | null>(null);
+  const [routerStatus, setRouterStatus] = useState<"online" | "degraded" | "offline">("online");
   const [files, setFiles] = useState<FileEntry[]>([]);
   const [revision, setRevision] = useState(0);
   const [reveal, setReveal] = useState<Reveal | null>(null);
@@ -129,25 +165,59 @@ export function IdeProvider({ children }: { children: ReactNode }) {
     setAgentDockOpen((prev) => !prev);
   }, []);
 
+  const toggleSplitMode = useCallback(() => {
+    setSplitMode((prev) => !prev);
+  }, []);
+
+  const insertCode = useCallback((code: string) => {
+    setCodeToInsert({ code, timestamp: Date.now() });
+  }, []);
+
+  const clearInsertedCode = useCallback(() => setCodeToInsert(null), []);
+
+  const checkRouterHealth = useCallback(async () => {
+    const t0 = performance.now();
+    try {
+      await get("/api/health/providers");
+      const elapsed = Math.round(performance.now() - t0);
+      setRouterLatency(elapsed);
+      setRouterStatus("online");
+    } catch {
+      setRouterLatency(null);
+      setRouterStatus("offline");
+    }
+  }, []);
+
+  useEffect(() => {
+    void checkRouterHealth();
+    const timer = setInterval(() => void checkRouterHealth(), 30000);
+    return () => clearInterval(timer);
+  }, [checkRouterHealth]);
+
   const setPanel = useCallback((newPanel: PanelId) => {
     setPanelState(newPanel);
     setSidebarOpen(true);
   }, []);
 
-  // A restauração acontece só no cliente: ler localStorage durante o render do
-  // servidor causaria divergência de hidratação.
+  // A restauração acontece só no cliente
   useEffect(() => {
     const saved = load();
     if (saved.project) setProjectState(saved.project);
     if (saved.tabs?.length) setTabs(saved.tabs);
     if (saved.active) setActive(saved.active);
+    if (saved.sidebarWidth) setSidebarWidth(saved.sidebarWidth);
+    if (saved.agentDockWidth) setAgentDockWidth(saved.agentDockWidth);
+    if (saved.terminalHeight) setTerminalHeight(saved.terminalHeight);
     setHydrated(true);
   }, []);
 
   useEffect(() => {
     if (!hydrated) return;
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ project, tabs, active }));
-  }, [hydrated, project, tabs, active]);
+    window.localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({ project, tabs, active, sidebarWidth, agentDockWidth, terminalHeight }),
+    );
+  }, [hydrated, project, tabs, active, sidebarWidth, agentDockWidth, terminalHeight]);
 
   const reloadProjects = useCallback(async () => {
     try {
@@ -254,6 +324,23 @@ export function IdeProvider({ children }: { children: ReactNode }) {
       agentDockOpen,
       setAgentDockOpen,
       toggleAgentDock,
+      sidebarWidth,
+      setSidebarWidth,
+      agentDockWidth,
+      setAgentDockWidth,
+      terminalHeight,
+      setTerminalHeight,
+      splitMode,
+      setSplitMode,
+      toggleSplitMode,
+      splitActive,
+      setSplitActive,
+      codeToInsert,
+      insertCode,
+      clearInsertedCode,
+      routerLatency,
+      routerStatus,
+      checkRouterHealth,
       files,
       reloadFiles,
       revision,
@@ -263,7 +350,9 @@ export function IdeProvider({ children }: { children: ReactNode }) {
       project, projects, projectsError, setProject, reloadProjects,
       tabs, active, dirty, openFile, reveal, clearReveal, closeTab, markDirty,
       panel, setPanel, sidebarOpen, toggleSidebar, terminalOpen,
-      agentDockOpen, toggleAgentDock, files, reloadFiles, revision, bumpRevision,
+      agentDockOpen, toggleAgentDock, sidebarWidth, agentDockWidth, terminalHeight,
+      splitMode, splitActive, toggleSplitMode, codeToInsert, insertCode, clearInsertedCode,
+      routerLatency, routerStatus, checkRouterHealth, files, reloadFiles, revision, bumpRevision,
     ],
   );
 

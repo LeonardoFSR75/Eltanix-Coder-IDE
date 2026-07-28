@@ -10,6 +10,7 @@
  */
 
 import { useToast } from "@/components/Toast";
+import { useIde } from "@/lib/ide-store";
 import type { LogLine, PendingAction, Session } from "./agent/useAgentSession";
 
 export function AgentPanel({
@@ -24,10 +25,19 @@ export function AgentPanel({
   onDecide: (approved: boolean) => void;
 }) {
   const { toast } = useToast();
+  const { insertCode } = useIde();
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
     toast("Código copiado para a área de transferência!", "success");
+  };
+
+  const insertIntoEditor = (text: string) => {
+    // Extrai o bloco de código se houver sintaxe ```code```
+    const match = text.match(/```(?:\w+)?\n([\s\S]*?)```/);
+    const codeToUse = match ? match[1] : text;
+    insertCode(codeToUse);
+    toast("Código inserido no editor ativo!", "success");
   };
 
   return (
@@ -73,7 +83,7 @@ export function AgentPanel({
           <div key={index} className={`log-line ${line.kind}`}>
             <div className="log-line-content">{line.text}</div>
             {line.kind === "assistant" && (
-              <div className="log-line-actions" style={{ marginTop: 4, display: "flex", gap: 6 }}>
+              <div className="log-line-actions" style={{ marginTop: 6, display: "flex", gap: 6 }}>
                 <button
                   type="button"
                   className="log-btn"
@@ -81,6 +91,15 @@ export function AgentPanel({
                   onClick={() => copyToClipboard(line.text)}
                 >
                   📋 Copiar
+                </button>
+                <button
+                  type="button"
+                  className="log-btn primary"
+                  style={{ fontSize: 11, padding: "2px 8px", borderRadius: 4, cursor: "pointer" }}
+                  onClick={() => insertIntoEditor(line.text)}
+                  title="Inserir snippet no arquivo aberto no editor"
+                >
+                  📥 Inserir no Editor
                 </button>
               </div>
             )}

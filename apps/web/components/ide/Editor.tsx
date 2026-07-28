@@ -6,6 +6,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { get, post, put } from "@/lib/client";
 import { useLsp, type LspStatus } from "@/lib/use-lsp";
 import { useTheme } from "@/lib/theme";
+import { useIde } from "@/lib/ide-store";
 
 interface FileResponse {
   path: string;
@@ -39,7 +40,7 @@ const MONACO_LANGUAGE: Record<string, string> = {
   toml: "ini",
 };
 
-const EDITOR_OPTIONS = {
+export const EDITOR_OPTIONS = {
   fontSize: 13,
   fontFamily: 'ui-monospace, "SF Mono", Menlo, Consolas, monospace',
   minimap: { enabled: false },
@@ -49,7 +50,7 @@ const EDITOR_OPTIONS = {
   automaticLayout: true,
 };
 
-function autoDetectLanguage(filePath: string, fileContent?: string): string {
+export function autoDetectLanguage(filePath: string, fileContent?: string): string {
   const lower = filePath.toLowerCase();
   if (lower.endsWith(".py")) return "python";
   if (lower.endsWith(".tsx") || lower.endsWith(".ts")) return "typescript";
@@ -91,6 +92,7 @@ export function Editor({
   onCursorPositionChange?: (pos: { line: number; column: number }) => void;
 }) {
   const { theme } = useTheme();
+  const { codeToInsert, clearInsertedCode, splitMode, toggleSplitMode } = useIde();
   const [content, setContent] = useState("");
   const [language, setLanguage] = useState("plaintext");
   const [rawLanguage, setRawLanguage] = useState<string | null>(null);
@@ -100,8 +102,10 @@ export function Editor({
   const [saving, setSaving] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [showDiff, setShowDiff] = useState(false);
+  const [showMinimap, setShowMinimap] = useState(false);
   const [headContent, setHeadContent] = useState<string | null>(null);
   const originalRef = useRef("");
+  const editorInstanceRef = useRef<any>(null);
 
   const onDirtyRef = useRef(onDirtyChange);
   useEffect(() => {
@@ -119,6 +123,21 @@ export function Editor({
   });
 
   const monacoTheme = theme === "dark" ? "vs-dark" : "vs";
+
+  useEffect(() => {
+    if (!codeToInsert || !editorInstanceRef.current) return;
+    const editor = editorInstanceRef.current;
+    const selection = editor.getSelection();
+    const id = { major: 1, minor: 1 };
+    const op = {
+      identifier: id,
+      range: selection,
+      text: codeToInsert.code,
+      forceMoveMarkers: true,
+    };
+    editor.executeEdits("ai-insert", [op]);
+    clearInsertedCode();
+  }, [codeToInsert, clearInsertedCode]);
 
   useEffect(() => {
     if (!path || !project) return;
@@ -172,12 +191,10 @@ export function Editor({
 
   const discardChanges = useCallback(async () => {
     if (!path || !project) return;
-    // Descarta alterações locais na memória
     setContent(originalRef.current);
     setDirty(false);
     onDirtyRef.current?.(false);
 
-    // Se houver alteração registrada no Git, chama endpoint de discard
     try {
       await post("/api/git/discard", { project, paths: [path] });
     } catch {
@@ -221,8 +238,18 @@ export function Editor({
   }, [save]);
 
   if (!path) {
-    return <div className="editor-empty">Selecione um arquivo na árvore à esquerda.</div>;
+    return <div className="editor-empty">Selecione um arquivo na árvore à esquerda para editar.</div>;
   }
+
+  const editorOptions = {
+    fontSize: 13,
+    fontFamily: 'ui-monospace, "SF Mono", Menlo, Consolas, monospace',
+    minimap: { enabled: showMinimap },
+    scrollBeyondLastLine: false,
+    renderWhitespace: "selection" as const,
+    tabSize: 2,
+    automaticLayout: true,
+  };
 
   return (
     <div className="editor-wrap">
@@ -234,10 +261,28 @@ export function Editor({
 
         <LspBadge status={lsp.status} />
 
-        <div className="editor-bar-actions" style={{ marginLeft: "auto", display: "flex", gap: 8, alignItems: "center" }}>
-          <span className="kbd-badge" title="Linguagem detectada automaticamente">
+        <div className="editor-bar-actions" style={{ marginLeft: "auto", display: "flex", gap: 6, alignItems: "center" }}>
+          <span className="kbd-badge" title="Linguagem detectada">
             ⚡ {language}
           </span>
+
+          <button
+            type="button"
+            className={`theme-btn ${showMinimap ? "active" : ""}`}
+            onClick={() => setShowMinimap(!showMinimap)}
+            title="Alternar Minimapa"
+          >
+            🗺️ Minimap
+          </button>
+
+          <button
+            type="button"
+            className={`theme-btn ${splitMode ? "active" : ""}`}
+            onClick={() => toggleSplitMode()}
+            title="Alternar Editor Lado a Lado (Split View)"
+          >
+            ⚖️ Split
+          </button>
 
           <button
             type="button"
@@ -266,7 +311,7 @@ export function Editor({
             onClick={() => void save()}
             disabled={!dirty || saving}
           >
-            {saving ? "salvando…" : "Manter (Ctrl+S)"}
+            {saving ? "salvando…" : "Salvar (Ctrl+S)"}
           </button>
         </div>
       </div>
@@ -282,30 +327,47 @@ export function Editor({
           language={rawLanguage}
         />
       ) : (
-        <MonacoEditor
-          height="100%"
-          theme={monacoTheme}
-          language={language}
-          value={content}
-          options={EDITOR_OPTIONS}
-          onMount={(editor, monaco) => {
-            lsp.onMount(editor, monaco);
-            editor.onDidChangeCursorPosition((e) => {
-              onCursorPositionChange?.({
-                line: e.position.lineNumber,
-                column: e.position.column,
-              });
-            });
-          }}
-          onChange={(value, evento) => {
-            const next = value ?? "";
-            setContent(next);
-            const isDirty = next !== originalRef.current;
-            setDirty(isDirty);
-            onDirtyRef.current?.(isDirty);
-            lsp.onChange(evento);
-          }}
-        />
+        <div className={`editor-container-grid ${splitMode ? "split-mode" : ""}`}>
+          <div className="editor-pane">
+            <MonacoEditor
+              height="100%"
+              theme={monacoTheme}
+              language={language}
+              value={content}
+              options={editorOptions}
+              onMount={(editor, monaco) => {
+                editorInstanceRef.current = editor;
+                lsp.onMount(editor, monaco);
+                editor.onDidChangeCursorPosition((e) => {
+                  onCursorPositionChange?.({
+                    line: e.position.lineNumber,
+                    column: e.position.column,
+                  });
+                });
+              }}
+              onChange={(value, evento) => {
+                const next = value ?? "";
+                setContent(next);
+                const isDirty = next !== originalRef.current;
+                setDirty(isDirty);
+                onDirtyRef.current?.(isDirty);
+                lsp.onChange(evento);
+              }}
+            />
+          </div>
+          {splitMode && (
+            <div className="editor-pane split-pane">
+              <div className="split-pane-header">Cópia de Referência</div>
+              <MonacoEditor
+                height="100%"
+                theme={monacoTheme}
+                language={language}
+                value={content}
+                options={{ ...editorOptions, readOnly: true }}
+              />
+            </div>
+          )}
+        </div>
       )}
     </div>
   );

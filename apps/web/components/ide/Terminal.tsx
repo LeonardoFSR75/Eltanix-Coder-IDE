@@ -119,7 +119,7 @@ export function TerminalPanel({ sessionId }: { sessionId: string | null }) {
           bufferRef.current = "";
           if (comando) socket.send(JSON.stringify({ command: comando }));
           else term.write(`\r\n${PROMPT}`);
-        } else if (data === "") {
+        } else if (data === "\x7f" || data === "\b") {
           if (bufferRef.current) {
             bufferRef.current = bufferRef.current.slice(0, -1);
             term.write("\b \b");
@@ -148,14 +148,64 @@ export function TerminalPanel({ sessionId }: { sessionId: string | null }) {
     if (sessionId) void conectar();
   }, [sessionId, conectar]);
 
+  const enviarComando = (cmd: string) => {
+    const socket = socketRef.current;
+    if (!socket || socket.readyState !== WebSocket.OPEN) return;
+    termRef.current?.write(cmd);
+    socket.send(JSON.stringify({ command: cmd }));
+  };
+
   return (
     <div className="terminal-panel">
       <div className="terminal-bar">
-        <span>Terminal</span>
+        <div className="terminal-tabs">
+          <button type="button" className="terminal-tab active">
+            💻 Terminal (Sandbox)
+          </button>
+        </div>
+
         <span className={`pill ${estado === "pronto" ? "ok" : estado === "erro" ? "bad" : ""}`}>
           {estado}
         </span>
         {detalhe && <span className="terminal-detail">{detalhe}</span>}
+
+        <div className="terminal-quick-cmds" style={{ marginLeft: "auto", display: "flex", gap: 4 }}>
+          <button
+            type="button"
+            className="term-chip"
+            onClick={() => enviarComando("npm run build")}
+            disabled={estado !== "pronto"}
+            title="Executar npm run build"
+          >
+            build
+          </button>
+          <button
+            type="button"
+            className="term-chip"
+            onClick={() => enviarComando("pytest")}
+            disabled={estado !== "pronto"}
+            title="Executar testes com pytest"
+          >
+            pytest
+          </button>
+          <button
+            type="button"
+            className="term-chip"
+            onClick={() => enviarComando("git status")}
+            disabled={estado !== "pronto"}
+            title="Executar git status"
+          >
+            git status
+          </button>
+          <button
+            type="button"
+            className="term-chip"
+            onClick={() => termRef.current?.clear()}
+            title="Limpar tela"
+          >
+            clear
+          </button>
+        </div>
       </div>
       <div className="terminal-surface" ref={containerRef} />
     </div>
