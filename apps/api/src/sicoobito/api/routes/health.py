@@ -3,11 +3,17 @@
 from __future__ import annotations
 
 import asyncio
+import re
+from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, status
+from pydantic import BaseModel, Field
 
-from sicoobito.api.deps import AuthDep, EngineDep
+from sicoobito.api.deps import AuthDep, EngineDep, SettingsDep
+from sicoobito.logging_setup import get_logger
+
+log = get_logger(__name__)
 
 router = APIRouter(prefix="/api", tags=["health"], dependencies=[AuthDep])
 
@@ -91,6 +97,64 @@ def _price_view(engine: EngineDep, model_id: str) -> dict[str, float | None] | N
         "output": float(price.output) if price.output is not None else None,
         "cache_read": float(price.cache_read) if price.cache_read is not None else None,
         "cache_write": float(price.cache_write) if price.cache_write is not None else None,
+    }
+
+
+class SetDefaultProfileRequest(BaseModel):
+    profile: str = Field(min_length=1)
+
+
+_DEFAULT_PROFILE_LINE = re.compile(r"^default_profile:\s*.*$", re.MULTILINE)
+
+
+def _persist_default_profile(routes_file: Path, profile: str) -> None:
+    """Atualiza só a chave `default_profile` no routes.yaml.
+
+    Um round-trip via `yaml.safe_dump` reescreveria o arquivo inteiro e
+    apagaria todos os comentários que documentam cada perfil; como é um
+    escalar único de topo, basta substituir essa linha e preservar o resto.
+    """
+    text = routes_file.read_text(encoding="utf-8")
+    if not _DEFAULT_PROFILE_LINE.search(text):
+        raise ValueError("chave default_profile não encontrada em routes.yaml")
+    novo_texto = _DEFAULT_PROFILE_LINE.sub(f"default_profile: {profile}", text, count=1)
+    routes_file.write_text(novo_texto, encoding="utf-8")
+
+
+@router.post("/providers/default-profile")
+async def set_default_profile(
+    payload: SetDefaultProfileRequest, engine: EngineDep, settings: SettingsDep
+) -> dict[str, Any]:
+    """Troca o perfil padrão (o que responde a `model: "auto"`).
+
+    Some efeito imediato em memória; a gravação em disco é best-effort — se
+    falhar (ex.: arquivo somente leitura), a troca continua valendo até a
+    próxima subida da API, e o log registra o motivo.
+    """
+    if engine.catalog.profile(payload.profile) is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Perfil desconhecido: {payload.profile}",
+        )
+
+    engine.catalog.default_profile = payload.profile
+    try:
+        _persist_default_profile(settings.routes_file, payload.profile)
+    except Exception as exc:  # persistência é best-effort
+        log.warning("providers.default_profile.persist_failed", error=str(exc))
+
+    return {
+        "default_profile": engine.catalog.default_profile,
+        "profiles": [
+            {
+                "name": name,
+                "strategy": profile.strategy,
+                "models": profile.models,
+                "weights": profile.weights,
+                "is_default": name == engine.catalog.default_profile,
+            }
+            for name, profile in engine.catalog.profiles.items()
+        ],
     }
 
 

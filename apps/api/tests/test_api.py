@@ -74,6 +74,81 @@ def test_providers_catalog_exposes_availability_reasons(client):
     assert "AZURE_API_BASE" in (foundry["unavailable_reason"] or "")
 
 
+def test_persist_default_profile_replaces_only_target_line(tmp_path):
+    from sicoobito.api.routes.health import _persist_default_profile
+
+    routes_file = tmp_path / "routes.yaml"
+    routes_file.write_text(
+        "# comentário explicando os perfis\n"
+        "default_profile: auto\n"
+        "\n"
+        "profiles:\n"
+        "  auto:\n"
+        "    strategy: score\n",
+        encoding="utf-8",
+    )
+
+    _persist_default_profile(routes_file, "cheap")
+
+    content = routes_file.read_text(encoding="utf-8")
+    assert "default_profile: cheap" in content
+    # O resto do arquivo (comentários, perfis) não pode ser tocado.
+    assert "# comentário explicando os perfis" in content
+    assert "strategy: score" in content
+
+
+def test_persist_default_profile_missing_key_raises(tmp_path):
+    from sicoobito.api.routes.health import _persist_default_profile
+
+    routes_file = tmp_path / "routes.yaml"
+    routes_file.write_text("profiles:\n  auto:\n    strategy: score\n", encoding="utf-8")
+
+    with pytest.raises(ValueError):
+        _persist_default_profile(routes_file, "cheap")
+
+
+def test_set_default_profile_updates_memory_and_disk(client, tmp_path):
+    """Não pode escrever no `config/routes.yaml` real do repositório: a
+    persistência é redirecionada para uma cópia em tmp_path via override de
+    `get_settings`, e o catálogo em memória é restaurado no final para não
+    vazar estado entre testes."""
+    from sicoobito.config import Settings, get_settings
+
+    engine = client.app.state.engine
+    original_default = engine.catalog.default_profile
+    routes_copy = tmp_path / "routes.yaml"
+    routes_copy.write_text(
+        get_settings().routes_file.read_text(encoding="utf-8"), encoding="utf-8"
+    )
+
+    fake_settings = Settings(SICOOBITO_CONFIG_DIR=tmp_path)
+    client.app.dependency_overrides[get_settings] = lambda: fake_settings
+    try:
+        response = client.post(
+            "/api/providers/default-profile",
+            headers={"Authorization": "Bearer chave-de-teste"},
+            json={"profile": "cheap"},
+        )
+        assert response.status_code == 200
+        body = response.json()
+        assert body["default_profile"] == "cheap"
+        assert next(p for p in body["profiles"] if p["name"] == "cheap")["is_default"] is True
+        assert engine.catalog.default_profile == "cheap"
+        assert "default_profile: cheap" in routes_copy.read_text(encoding="utf-8")
+    finally:
+        engine.catalog.default_profile = original_default
+        client.app.dependency_overrides.pop(get_settings, None)
+
+
+def test_set_default_profile_rejects_unknown_profile(client):
+    response = client.post(
+        "/api/providers/default-profile",
+        headers={"Authorization": "Bearer chave-de-teste"},
+        json={"profile": "perfil-que-nao-existe"},
+    )
+    assert response.status_code == 404
+
+
 def test_chat_without_any_reachable_provider_returns_503_not_500(client):
     # Sem Ollama no ar e sem credenciais de nuvem, nenhum candidato é elegível.
     # O cliente precisa ver "sem provedor", não um stack trace.

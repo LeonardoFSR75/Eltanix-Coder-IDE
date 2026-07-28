@@ -13,8 +13,25 @@ interface ProviderStudioProps {
 export function ProviderStudio({ initialHealth, initialCatalog }: ProviderStudioProps) {
   const [activeTab, setActiveTab] = useState<"catalog" | "credentials" | "profiles">("catalog");
   const [healthData, setHealthData] = useState(initialHealth);
+  const [profiles, setProfiles] = useState(initialCatalog.profiles);
   const [resettingModel, setResettingModel] = useState<string | null>(null);
+  const [settingDefault, setSettingDefault] = useState<string | null>(null);
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
+
+  const handleSetDefaultProfile = async (profileName: string) => {
+    setSettingDefault(profileName);
+    try {
+      const data = await post<{ profiles: CatalogProfile[] }>("/api/providers/default-profile", {
+        profile: profileName,
+      });
+      setProfiles(data.profiles);
+      setStatusMsg(`Perfil "${profileName}" agora é o padrão (usado quando o modelo pedido é "auto").`);
+    } catch (err) {
+      setStatusMsg(`Erro ao trocar o perfil padrão: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setSettingDefault(null);
+    }
+  };
 
   // Configurações Locais de Credenciais simuladas/editáveis
   const [credentials, setCredentials] = useState({
@@ -245,6 +262,10 @@ export function ProviderStudio({ initialHealth, initialCatalog }: ProviderStudio
 
       {activeTab === "profiles" && (
         <div className="studio-section">
+          <div className="hint" style={{ marginBottom: 12 }}>
+            O perfil padrão é usado quando o cliente pede o modelo <code>&quot;auto&quot;</code> (ou não
+            especifica nenhum). A troca vale na hora e é salva em <code>config/routes.yaml</code>.
+          </div>
           <div className="table-wrap">
             <table>
               <thead>
@@ -252,10 +273,11 @@ export function ProviderStudio({ initialHealth, initialCatalog }: ProviderStudio
                   <th>Perfil</th>
                   <th>Estratégia de Roteamento</th>
                   <th>Cadeia de Fallback Dinâmica</th>
+                  <th>Ação</th>
                 </tr>
               </thead>
               <tbody>
-                {initialCatalog.profiles.map((p) => (
+                {profiles.map((p) => (
                   <tr key={p.name}>
                     <td>
                       <code>{p.name}</code> {p.is_default && <span className="pill ok">padrão</span>}
@@ -275,6 +297,18 @@ export function ProviderStudio({ initialHealth, initialCatalog }: ProviderStudio
                         </div>
                       ) : (
                         <em>vazio</em>
+                      )}
+                    </td>
+                    <td>
+                      {!p.is_default && (
+                        <button
+                          type="button"
+                          className="theme-btn"
+                          disabled={settingDefault === p.name}
+                          onClick={() => void handleSetDefaultProfile(p.name)}
+                        >
+                          {settingDefault === p.name ? "aplicando..." : "Tornar padrão"}
+                        </button>
                       )}
                     </td>
                   </tr>
