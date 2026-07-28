@@ -189,7 +189,6 @@ export function IdeProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    void checkRouterHealth();
     const timer = setInterval(() => void checkRouterHealth(), 30000);
     return () => clearInterval(timer);
   }, [checkRouterHealth]);
@@ -236,8 +235,10 @@ export function IdeProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    if (hydrated) void reloadProjects();
-  }, [hydrated, reloadProjects]);
+    // Um único bootstrap em vez de dois efeitos concorrentes: evita duas
+    // idas à rede disputando a mesma conexão logo no primeiro paint.
+    if (hydrated) void Promise.all([reloadProjects(), checkRouterHealth()]);
+  }, [hydrated, reloadProjects, checkRouterHealth]);
 
   const reloadFiles = useCallback(async () => {
     if (!project) return;

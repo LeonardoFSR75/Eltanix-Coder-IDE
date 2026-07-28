@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hmac
 import re
 from typing import Annotated
 
@@ -41,7 +42,7 @@ def require_api_key(
         scheme, _, token = authorization.partition(" ")
         presented = token.strip() if scheme.lower() == "bearer" else authorization.strip()
 
-    if presented != settings.api_key:
+    if not presented or not hmac.compare_digest(presented, settings.api_key):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Chave de API inválida ou ausente.",

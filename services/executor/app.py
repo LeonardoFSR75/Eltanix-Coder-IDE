@@ -13,6 +13,7 @@ chamador não consegue afrouxá-las.
 
 from __future__ import annotations
 
+import hmac
 import os
 import shlex
 import time
@@ -57,7 +58,7 @@ def require_token(authorization: Annotated[str | None, Header()] = None) -> None
     if authorization:
         scheme, _, valor = authorization.partition(" ")
         presented = valor.strip() if scheme.lower() == "bearer" else authorization.strip()
-    if presented != TOKEN:
+    if not presented or not hmac.compare_digest(presented, TOKEN):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="token inválido")
 
 

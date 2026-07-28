@@ -10,6 +10,13 @@ name: sicoobito
 #   5403  postgres
 #   5404  redis
 #   5405  ollama
+#
+# Todas as portas publicadas são vinculadas a 127.0.0.1: nenhum destes
+# serviços tem autenticação forte o suficiente para ficar alcançável pela
+# rede (o executor tem acesso ao docker.sock, e o `web` reencaminha
+# SICOOBITO_API_KEY automaticamente para quem alcançar a porta). Quem
+# precisar de acesso pela LAN deve trocar por um binding explícito e reforçar
+# a autenticação antes.
 
 services:
   postgres:
@@ -19,7 +26,7 @@ services:
       POSTGRES_PASSWORD: sicoobito
       POSTGRES_DB: sicoobito
     ports:
-      - "5403:5432"
+      - "127.0.0.1:5403:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -32,7 +39,7 @@ services:
     image: redis:7-alpine
     command: ["redis-server", "--appendonly", "yes"]
     ports:
-      - "5404:6379"
+      - "127.0.0.1:5404:6379"
     volumes:
       - redisdata:/data
     healthcheck:
@@ -49,7 +56,7 @@ services:
     image: ollama/ollama:${OLLAMA_VERSION:-0.31.2}
     ports:
       # Exposto para diagnóstico e para quem quiser apontar outra ferramenta.
-      - "5405:11434"
+      - "127.0.0.1:5405:11434"
     environment:
       # Manter o modelo carregado entre requisições. Sem GPU, o custo de subir os
       # pesos para a RAM domina a latência — descarregar a cada 5min (o padrão)
@@ -109,7 +116,7 @@ services:
       SANDBOX_MEMORY: ${SANDBOX_MEMORY:-2g}
       SANDBOX_NETWORK: ${SANDBOX_NETWORK:-false}
     ports:
-      - "5402:5402"
+      - "127.0.0.1:5402:5402"
     volumes:
       # O socket é a razão de este serviço existir separado.
       - /var/run/docker.sock:/var/run/docker.sock
@@ -142,7 +149,7 @@ services:
       - path: .env
         required: false
     ports:
-      - "5401:5401"
+      - "127.0.0.1:5401:5401"
     volumes:
       - ${PROJECTS_ROOT:-./projetos}:/projects
       - ./config:/app/config:ro
@@ -179,7 +186,7 @@ services:
       WATCHPACK_POLLING: "true"
       CHOKIDAR_USEPOLLING: "true"
     ports:
-      - "5400:5400"
+      - "127.0.0.1:5400:5400"
     volumes:
       - ./apps/web/app:/app/app
       - ./apps/web/components:/app/components

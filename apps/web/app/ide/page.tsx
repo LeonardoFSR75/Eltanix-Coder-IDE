@@ -1,13 +1,31 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Editor } from "@/components/ide/Editor";
-import { AgentDock } from "@/components/ide/agent/AgentDock";
 import { Explorer, GitPanel, SearchPanel } from "@/components/ide/Panels";
-import { CommandPalette, QuickOpen, type Command } from "@/components/ide/Overlays";
-import { TerminalPanel } from "@/components/ide/Terminal";
 import { StatusBar } from "@/components/ide/StatusBar";
 import { IdeProvider, useIde, type PanelId } from "@/lib/ide-store";
+import type { Command } from "@/components/ide/Overlays";
+
+// Cada um destes é um bundle pesado (Monaco, xterm, dock do agente, overlays)
+// que só é útil depois que o usuário interage — carregá-los estaticamente
+// atrasaria o primeiro paint interativo da rota inteira.
+const Editor = dynamic(() => import("@/components/ide/Editor").then((m) => m.Editor), {
+  ssr: false,
+  loading: () => <div className="editor-empty">carregando editor…</div>,
+});
+const AgentDock = dynamic(() => import("@/components/ide/agent/AgentDock").then((m) => m.AgentDock), {
+  ssr: false,
+});
+const TerminalPanel = dynamic(() => import("@/components/ide/Terminal").then((m) => m.TerminalPanel), {
+  ssr: false,
+});
+const CommandPalette = dynamic(() => import("@/components/ide/Overlays").then((m) => m.CommandPalette), {
+  ssr: false,
+});
+const QuickOpen = dynamic(() => import("@/components/ide/Overlays").then((m) => m.QuickOpen), {
+  ssr: false,
+});
 
 function Shell() {
   const ide = useIde();

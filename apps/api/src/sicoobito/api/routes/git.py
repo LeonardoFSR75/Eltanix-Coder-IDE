@@ -188,9 +188,9 @@ async def checkout(payload: CheckoutRequest, settings: SettingsDep) -> dict[str,
                 "Há alterações não commitadas. Faça commit ou descarte antes de trocar de branch."
             )
         if payload.create:
-            repo.git.checkout("-b", payload.branch)
+            repo.git.checkout("-b", payload.branch, "--")
         else:
-            repo.git.checkout(payload.branch)
+            repo.git.checkout(payload.branch, "--")
         return repo.active_branch.name
 
     try:
