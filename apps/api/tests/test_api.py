@@ -149,6 +149,312 @@ def test_set_default_profile_rejects_unknown_profile(client):
     assert response.status_code == 404
 
 
+def _routes_copy(tmp_path):
+    from sicoobito.config import get_settings
+
+    routes_file = tmp_path / "routes.yaml"
+    routes_file.write_text(
+        get_settings().routes_file.read_text(encoding="utf-8"), encoding="utf-8"
+    )
+    return routes_file
+
+
+def test_routes_editor_upsert_new_profile_preserves_comments(tmp_path):
+    """A garantia real deste módulo: um perfil novo não pode deslocar o
+    comentário de rodapé do arquivo para dentro do bloco `profiles`."""
+    from sicoobito.router import routes_editor
+
+    routes_file = _routes_copy(tmp_path)
+
+    data = routes_editor.load(routes_file)
+    routes_editor.upsert_profile(
+        data,
+        "meu-teste",
+        strategy="priority",
+        models=["ollama/qwen2.5-coder:1.5b"],
+        weights=None,
+    )
+    routes_editor.dump(routes_file, data)
+
+    updated = routes_file.read_text(encoding="utf-8")
+    footer = "# Resiliência aplicada a todos os perfis."
+    assert footer in updated
+
+    new_profile_idx = updated.index("meu-teste:")
+    footer_idx = updated.index(footer)
+    resilience_idx = updated.index("resilience:")
+    assert new_profile_idx < footer_idx < resilience_idx
+
+    # Perfis pré-existentes (conteúdo e comentários) continuam intactos.
+    assert "auto:" in updated and "embedding:" in updated
+    assert "# O maior redutor de custo do projeto" in updated
+
+
+def test_routes_editor_upsert_existing_profile_replaces_in_place(tmp_path):
+    from sicoobito.router import routes_editor
+
+    routes_file = _routes_copy(tmp_path)
+
+    data = routes_editor.load(routes_file)
+    routes_editor.upsert_profile(
+        data,
+        "cheap",
+        strategy="cost",
+        models=["ollama/qwen2.5-coder:1.5b", "foundry/gpt-4o"],
+        weights=None,
+    )
+    routes_editor.dump(routes_file, data)
+
+    updated = routes_file.read_text(encoding="utf-8")
+    assert "- foundry/gpt-4o\n" in updated
+    assert "# O maior redutor de custo do projeto" in updated
+    assert "# Resiliência aplicada a todos os perfis." in updated
+
+
+def test_routes_editor_delete_profile(tmp_path):
+    from sicoobito.router import routes_editor
+
+    routes_file = _routes_copy(tmp_path)
+
+    data = routes_editor.load(routes_file)
+    routes_editor.delete_profile(data, "fast")
+    routes_editor.dump(routes_file, data)
+
+    updated = routes_file.read_text(encoding="utf-8")
+    assert "fast:" not in updated
+    assert "# Resiliência aplicada a todos os perfis." in updated
+
+
+def test_upsert_profile_endpoint_creates_and_persists(client, tmp_path):
+    from sicoobito.config import Settings, get_settings
+
+    engine = client.app.state.engine
+    routes_copy = _routes_copy(tmp_path)
+    fake_settings = Settings(SICOOBITO_CONFIG_DIR=tmp_path)
+    client.app.dependency_overrides[get_settings] = lambda: fake_settings
+    try:
+        response = client.put(
+            "/api/providers/profiles/meu-teste",
+            headers={"Authorization": "Bearer chave-de-teste"},
+            json={
+                "strategy": "score",
+                "models": ["ollama/qwen2.5-coder:1.5b", "foundry/gpt-4o-mini"],
+                "weights": {"health": 0.5, "cost": 0.5},
+            },
+        )
+        assert response.status_code == 200
+        criado = next(p for p in response.json()["profiles"] if p["name"] == "meu-teste")
+        assert criado["strategy"] == "score"
+        assert criado["models"] == ["ollama/qwen2.5-coder:1.5b", "foundry/gpt-4o-mini"]
+        assert criado["weights"] == {"health": 0.5, "cost": 0.5}
+        assert engine.catalog.profile("meu-teste") is not None
+
+        persisted = routes_copy.read_text(encoding="utf-8")
+        assert "meu-teste:" in persisted
+        assert "# Resiliência aplicada a todos os perfis." in persisted
+    finally:
+        engine.catalog.profiles.pop("meu-teste", None)
+        client.app.dependency_overrides.pop(get_settings, None)
+
+
+def test_upsert_profile_rejects_unknown_model(client):
+    response = client.put(
+        "/api/providers/profiles/meu-teste-2",
+        headers={"Authorization": "Bearer chave-de-teste"},
+        json={"strategy": "priority", "models": ["modelo-que-nao-existe"]},
+    )
+    assert response.status_code == 400
+    assert client.app.state.engine.catalog.profile("meu-teste-2") is None
+
+
+def test_upsert_profile_rejects_invalid_name(client):
+    response = client.put(
+        "/api/providers/profiles/Nome Inválido!",
+        headers={"Authorization": "Bearer chave-de-teste"},
+        json={"strategy": "priority", "models": ["ollama/qwen2.5-coder:1.5b"]},
+    )
+    assert response.status_code == 400
+
+
+def test_upsert_profile_rejects_invalid_strategy(client):
+    response = client.put(
+        "/api/providers/profiles/meu-teste-3",
+        headers={"Authorization": "Bearer chave-de-teste"},
+        json={"strategy": "roleta-russa", "models": ["ollama/qwen2.5-coder:1.5b"]},
+    )
+    assert response.status_code == 422
+
+
+def test_delete_profile_requires_switching_default_first(client):
+    engine = client.app.state.engine
+    response = client.delete(
+        f"/api/providers/profiles/{engine.catalog.default_profile}",
+        headers={"Authorization": "Bearer chave-de-teste"},
+    )
+    assert response.status_code == 400
+
+
+def test_delete_profile_rejects_unknown_profile(client):
+    response = client.delete(
+        "/api/providers/profiles/perfil-que-nao-existe",
+        headers={"Authorization": "Bearer chave-de-teste"},
+    )
+    assert response.status_code == 404
+
+
+def test_delete_profile_endpoint_removes_custom_profile(client, tmp_path):
+    from sicoobito.config import Settings, get_settings
+    from sicoobito.router import routes_editor
+    from sicoobito.router.catalog import RouteProfile
+
+    engine = client.app.state.engine
+    engine.catalog.profiles["descartavel"] = RouteProfile(
+        name="descartavel", strategy="priority", models=["ollama/qwen2.5-coder:1.5b"]
+    )
+    routes_copy = _routes_copy(tmp_path)
+    data = routes_editor.load(routes_copy)
+    routes_editor.upsert_profile(
+        data, "descartavel", strategy="priority", models=["ollama/qwen2.5-coder:1.5b"], weights=None
+    )
+    routes_editor.dump(routes_copy, data)
+
+    fake_settings = Settings(SICOOBITO_CONFIG_DIR=tmp_path)
+    client.app.dependency_overrides[get_settings] = lambda: fake_settings
+    try:
+        response = client.delete(
+            "/api/providers/profiles/descartavel",
+            headers={"Authorization": "Bearer chave-de-teste"},
+        )
+        assert response.status_code == 200
+        assert all(p["name"] != "descartavel" for p in response.json()["profiles"])
+        assert engine.catalog.profile("descartavel") is None
+        assert "descartavel:" not in routes_copy.read_text(encoding="utf-8")
+    finally:
+        engine.catalog.profiles.pop("descartavel", None)
+        client.app.dependency_overrides.pop(get_settings, None)
+
+
+def test_env_editor_write_and_read_roundtrip(tmp_path):
+    from sicoobito.router import env_editor
+
+    env_file = tmp_path / ".env"
+    env_file.write_text("# comentário\nEXISTENTE=valor-antigo\nOUTRA=fica\n", encoding="utf-8")
+
+    env_editor.write_values(env_file, {"EXISTENTE": "valor-novo", "NOVA": "recem-criada"})
+
+    content = env_file.read_text(encoding="utf-8")
+    assert "EXISTENTE=valor-novo" in content
+    assert "NOVA=recem-criada" in content
+    assert "# comentário" in content
+    assert "OUTRA=fica" in content
+    assert "EXISTENTE=valor-antigo" not in content
+
+    values = env_editor.read_values(env_file, ["EXISTENTE", "NOVA", "AUSENTE"])
+    assert values == {"EXISTENTE": "valor-novo", "NOVA": "recem-criada", "AUSENTE": ""}
+
+
+def test_env_editor_read_values_missing_file(tmp_path):
+    from sicoobito.router import env_editor
+
+    values = env_editor.read_values(tmp_path / "nao-existe.env", ["A", "B"])
+    assert values == {"A": "", "B": ""}
+
+
+def test_get_credentials_never_exposes_secret_values(client):
+    response = client.get(
+        "/api/providers/credentials", headers={"Authorization": "Bearer chave-de-teste"}
+    )
+    assert response.status_code == 200
+    creds = response.json()["credentials"]
+    campos_secretos = (
+        "azure_api_key",
+        "databricks_token",
+        "openai_api_key",
+        "anthropic_api_key",
+        "github_token",
+    )
+    for campo in campos_secretos:
+        assert creds[campo]["value"] is None
+    for campo in ("ollama_base_url", "azure_api_base", "databricks_host"):
+        assert "value" in creds[campo]
+        assert creds[campo]["masked"] is None
+
+
+def test_update_credentials_applies_immediately_and_persists(client, tmp_path):
+    """A gravação é redirecionada para um `.env` em tmp_path via override de
+    `get_settings` — sem isso o teste escreveria no `.env` real do projeto."""
+    from sicoobito.config import Settings, get_settings
+
+    engine = client.app.state.engine
+    original_ollama = engine.settings.ollama_base_url
+    original_openai_key = engine.settings.openai_api_key
+
+    env_copy = tmp_path / ".env"
+    env_copy.write_text("SOME_OTHER_VAR=mantido\n", encoding="utf-8")
+
+    fake_settings = Settings(SICOOBITO_ENV_FILE=env_copy)
+    client.app.dependency_overrides[get_settings] = lambda: fake_settings
+    try:
+        response = client.put(
+            "/api/providers/credentials",
+            headers={"Authorization": "Bearer chave-de-teste"},
+            json={"ollama_base_url": "http://localhost:22222", "openai_api_key": "sk-teste-1234"},
+        )
+        assert response.status_code == 200
+        creds = response.json()["credentials"]
+        assert creds["ollama_base_url"]["value"] == "http://localhost:22222"
+        assert creds["openai_api_key"]["configured"] is True
+        assert creds["openai_api_key"]["masked"] == "••••1234"
+        assert creds["openai_api_key"]["value"] is None
+
+        # Efeito imediato: nada disso exige restart da API.
+        assert engine.settings.ollama_base_url == "http://localhost:22222"
+        assert engine.settings.openai_api_key == "sk-teste-1234"
+
+        persisted = env_copy.read_text(encoding="utf-8")
+        assert "OLLAMA_BASE_URL=http://localhost:22222" in persisted
+        assert "OPENAI_API_KEY=sk-teste-1234" in persisted
+        assert "SOME_OTHER_VAR=mantido" in persisted
+    finally:
+        engine.settings.ollama_base_url = original_ollama
+        engine.settings.openai_api_key = original_openai_key
+        engine.resolve_catalog()
+        engine.build()
+        client.app.dependency_overrides.pop(get_settings, None)
+
+
+def test_update_credentials_partial_update_preserves_other_fields(client, tmp_path):
+    from sicoobito.config import Settings, get_settings
+
+    engine = client.app.state.engine
+    original_github = engine.settings.github_token
+    original_anthropic = engine.settings.anthropic_api_key
+
+    fake_settings = Settings(SICOOBITO_ENV_FILE=tmp_path / ".env")
+    client.app.dependency_overrides[get_settings] = lambda: fake_settings
+    try:
+        client.put(
+            "/api/providers/credentials",
+            headers={"Authorization": "Bearer chave-de-teste"},
+            json={"github_token": "ghp_primeiro"},
+        )
+        response = client.put(
+            "/api/providers/credentials",
+            headers={"Authorization": "Bearer chave-de-teste"},
+            json={"anthropic_api_key": "sk-ant-segundo"},
+        )
+        assert response.status_code == 200
+        # O segundo PUT não menciona github_token — tem que continuar valendo.
+        assert engine.settings.github_token == "ghp_primeiro"
+        assert engine.settings.anthropic_api_key == "sk-ant-segundo"
+    finally:
+        engine.settings.github_token = original_github
+        engine.settings.anthropic_api_key = original_anthropic
+        engine.resolve_catalog()
+        engine.build()
+        client.app.dependency_overrides.pop(get_settings, None)
+
+
 def test_chat_without_any_reachable_provider_returns_503_not_500(client):
     # Sem Ollama no ar e sem credenciais de nuvem, nenhum candidato é elegível.
     # O cliente precisa ver "sem provedor", não um stack trace.

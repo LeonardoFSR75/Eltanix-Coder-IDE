@@ -8,14 +8,32 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from sicoobito.api.deps import AuthDep, EngineDep, SettingsDep
 from sicoobito.logging_setup import get_logger
+from sicoobito.router import env_editor, routes_editor
+from sicoobito.router.catalog import RouteProfile
 
 log = get_logger(__name__)
 
 router = APIRouter(prefix="/api", tags=["health"], dependencies=[AuthDep])
+
+_VALID_STRATEGIES = {"priority", "cost", "latency", "score"}
+_VALID_WEIGHT_KEYS = {"health", "cost", "latency", "success_rate", "context_fit"}
+_PROFILE_NAME_RE = re.compile(r"^[a-z][a-z0-9_-]{0,31}$")
+
+# (campo no JSON/UI, atributo em Settings, variável no .env, é segredo)
+_CREDENTIAL_FIELDS: list[tuple[str, str, str, bool]] = [
+    ("ollama_base_url", "ollama_base_url", "OLLAMA_BASE_URL", False),
+    ("azure_api_base", "azure_api_base", "AZURE_API_BASE", False),
+    ("azure_api_key", "azure_api_key", "AZURE_API_KEY", True),
+    ("databricks_host", "databricks_host", "DATABRICKS_HOST", False),
+    ("databricks_token", "databricks_token", "DATABRICKS_TOKEN", True),
+    ("openai_api_key", "openai_api_key", "OPENAI_API_KEY", True),
+    ("anthropic_api_key", "anthropic_api_key", "ANTHROPIC_API_KEY", True),
+    ("github_token", "github_token", "GITHUB_TOKEN", True),
+]
 
 
 @router.get("/health")
@@ -75,17 +93,21 @@ async def list_providers(engine: EngineDep) -> dict[str, Any]:
             }
             for spec in engine.catalog.models.values()
         ],
-        "profiles": [
-            {
-                "name": name,
-                "strategy": profile.strategy,
-                "models": profile.models,
-                "weights": profile.weights,
-                "is_default": name == engine.catalog.default_profile,
-            }
-            for name, profile in engine.catalog.profiles.items()
-        ],
+        "profiles": _profiles_view(engine),
     }
+
+
+def _profiles_view(engine: EngineDep) -> list[dict[str, Any]]:
+    return [
+        {
+            "name": name,
+            "strategy": profile.strategy,
+            "models": profile.models,
+            "weights": profile.weights,
+            "is_default": name == engine.catalog.default_profile,
+        }
+        for name, profile in engine.catalog.profiles.items()
+    ]
 
 
 def _price_view(engine: EngineDep, model_id: str) -> dict[str, float | None] | None:
@@ -145,17 +167,179 @@ async def set_default_profile(
 
     return {
         "default_profile": engine.catalog.default_profile,
-        "profiles": [
-            {
-                "name": name,
-                "strategy": profile.strategy,
-                "models": profile.models,
-                "weights": profile.weights,
-                "is_default": name == engine.catalog.default_profile,
-            }
-            for name, profile in engine.catalog.profiles.items()
-        ],
+        "profiles": _profiles_view(engine),
     }
+
+
+class UpsertProfileRequest(BaseModel):
+    strategy: str
+    models: list[str] = Field(min_length=1)
+    weights: dict[str, float] | None = None
+
+    @field_validator("strategy")
+    @classmethod
+    def _valida_strategy(cls, value: str) -> str:
+        if value not in _VALID_STRATEGIES:
+            raise ValueError(f"strategy deve ser um de {sorted(_VALID_STRATEGIES)}")
+        return value
+
+    @field_validator("weights")
+    @classmethod
+    def _valida_weights(cls, value: dict[str, float] | None) -> dict[str, float] | None:
+        if value is None:
+            return value
+        desconhecidos = set(value) - _VALID_WEIGHT_KEYS
+        if desconhecidos:
+            raise ValueError(f"pesos desconhecidos: {sorted(desconhecidos)}")
+        negativos = [k for k, v in value.items() if v < 0]
+        if negativos:
+            raise ValueError(f"pesos não podem ser negativos: {sorted(negativos)}")
+        return value
+
+
+@router.put("/providers/profiles/{name}")
+async def upsert_profile(
+    name: str, payload: UpsertProfileRequest, engine: EngineDep, settings: SettingsDep
+) -> dict[str, Any]:
+    """Cria um perfil novo ou substitui um existente por completo.
+
+    Não dá pra criar um perfil de roteamento sem que os modelos citados já
+    existam no catálogo — apontar pra um id inexistente só falharia depois,
+    na hora de rotear de verdade.
+    """
+    if not _PROFILE_NAME_RE.match(name):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Nome de perfil inválido: use letras minúsculas, números, '-' ou '_', "
+            "começando com letra (até 32 caracteres).",
+        )
+
+    desconhecidos = [m for m in payload.models if engine.catalog.get(m) is None]
+    if desconhecidos:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Modelo(s) desconhecido(s) no catálogo: {', '.join(desconhecidos)}",
+        )
+
+    engine.catalog.profiles[name] = RouteProfile(
+        name=name,
+        strategy=payload.strategy,
+        models=list(payload.models),
+        weights=dict(payload.weights or {}),
+    )
+
+    try:
+        data = routes_editor.load(settings.routes_file)
+        routes_editor.upsert_profile(
+            data, name, strategy=payload.strategy, models=payload.models, weights=payload.weights
+        )
+        routes_editor.dump(settings.routes_file, data)
+    except Exception as exc:  # persistência é best-effort
+        log.warning("providers.profile.persist_failed", profile=name, error=str(exc))
+
+    return {"profiles": _profiles_view(engine)}
+
+
+@router.delete("/providers/profiles/{name}")
+async def delete_profile(name: str, engine: EngineDep, settings: SettingsDep) -> dict[str, Any]:
+    """Remove um perfil de roteamento.
+
+    Trocar o padrão antes é obrigatório: apagar o perfil que `auto` resolveria
+    deixaria todo pedido genérico sem destino até a próxima subida da API.
+    """
+    if engine.catalog.profile(name) is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=f"Perfil desconhecido: {name}"
+        )
+    if name == engine.catalog.default_profile:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Esse é o perfil padrão atual — troque o padrão antes de excluí-lo.",
+        )
+    if len(engine.catalog.profiles) <= 1:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Não dá pra remover o último perfil de roteamento.",
+        )
+
+    del engine.catalog.profiles[name]
+
+    try:
+        data = routes_editor.load(settings.routes_file)
+        routes_editor.delete_profile(data, name)
+        routes_editor.dump(settings.routes_file, data)
+    except Exception as exc:  # persistência é best-effort
+        log.warning("providers.profile.delete_persist_failed", profile=name, error=str(exc))
+
+    return {"profiles": _profiles_view(engine)}
+
+
+def _mask_secret(value: str) -> str | None:
+    if not value:
+        return None
+    if len(value) <= 4:
+        return "••••"
+    return f"••••{value[-4:]}"
+
+
+def _credentials_view(engine: EngineDep) -> dict[str, Any]:
+    """Nunca devolve o valor de um campo-segredo — só se está configurado e os
+    últimos 4 caracteres, para o usuário reconhecer qual chave é qual."""
+    view: dict[str, Any] = {}
+    for json_key, attr, _alias, secret in _CREDENTIAL_FIELDS:
+        value = getattr(engine.settings, attr)
+        view[json_key] = {
+            "configured": bool(value),
+            "value": None if secret else value,
+            "masked": _mask_secret(value) if secret else None,
+        }
+    return view
+
+
+@router.get("/providers/credentials")
+async def get_credentials(engine: EngineDep) -> dict[str, Any]:
+    return {"credentials": _credentials_view(engine)}
+
+
+class UpdateCredentialsRequest(BaseModel):
+    ollama_base_url: str | None = None
+    azure_api_base: str | None = None
+    azure_api_key: str | None = None
+    databricks_host: str | None = None
+    databricks_token: str | None = None
+    openai_api_key: str | None = None
+    anthropic_api_key: str | None = None
+    github_token: str | None = None
+
+
+@router.put("/providers/credentials")
+async def update_credentials(
+    payload: UpdateCredentialsRequest, engine: EngineDep, settings: SettingsDep
+) -> dict[str, Any]:
+    """Atualiza credenciais de provedor. Só os campos enviados são tocados —
+    campo omitido (`None`) mantém o valor atual; string vazia limpa a chave.
+
+    Aplica na hora: reconstrói a disponibilidade de cada modelo e o router do
+    litellm a partir do `engine.settings` já atualizado, sem exigir restart. A
+    gravação no `.env` é best-effort, igual ao resto da tela de configuração.
+    """
+    updates = payload.model_dump(exclude_none=True)
+    if updates:
+        env_updates: dict[str, str] = {}
+        for json_key, attr, alias, _secret in _CREDENTIAL_FIELDS:
+            if json_key in updates:
+                setattr(engine.settings, attr, updates[json_key])
+                env_updates[alias] = updates[json_key]
+
+        engine.resolve_catalog()
+        engine.build()
+
+        try:
+            env_editor.write_values(settings.env_file_path, env_updates)
+        except Exception as exc:  # persistência é best-effort
+            log.warning("providers.credentials.persist_failed", error=str(exc))
+
+    return {"credentials": _credentials_view(engine)}
 
 
 @router.post("/providers/{model_id:path}/reset")

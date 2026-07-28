@@ -137,6 +137,24 @@ export interface CatalogProfile {
   is_default: boolean;
 }
 
+/** Campo-segredo nunca traz `value`; campo de endpoint/URL nunca traz `masked`. */
+export interface CredentialField {
+  configured: boolean;
+  value: string | null;
+  masked: string | null;
+}
+
+export interface CredentialsView {
+  ollama_base_url: CredentialField;
+  azure_api_base: CredentialField;
+  azure_api_key: CredentialField;
+  databricks_host: CredentialField;
+  databricks_token: CredentialField;
+  openai_api_key: CredentialField;
+  anthropic_api_key: CredentialField;
+  github_token: CredentialField;
+}
+
 export interface RecentRequest {
   id: string;
   created_at: string;

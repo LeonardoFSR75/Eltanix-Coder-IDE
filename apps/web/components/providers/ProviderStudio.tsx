@@ -1,22 +1,30 @@
 "use client";
 
 import React, { useState } from "react";
-import { post } from "@/lib/client";
+import { del, post, put } from "@/lib/client";
 import { formatMs } from "@/lib/format";
-import type { CatalogModel, CatalogProfile, ProviderCheck } from "@/lib/api";
+import { ProfileEditor, type ProfileFormValue } from "@/components/providers/ProfileEditor";
+import { CredentialsForm } from "@/components/providers/CredentialsForm";
+import type { CatalogModel, CatalogProfile, CredentialsView, ProviderCheck } from "@/lib/api";
+
+const NEW_PROFILE = "__new__";
 
 interface ProviderStudioProps {
   initialHealth: { healthy: number; total: number; providers: ProviderCheck[] };
   initialCatalog: { models: CatalogModel[]; profiles: CatalogProfile[] };
+  initialCredentials: CredentialsView;
 }
 
-export function ProviderStudio({ initialHealth, initialCatalog }: ProviderStudioProps) {
+export function ProviderStudio({ initialHealth, initialCatalog, initialCredentials }: ProviderStudioProps) {
   const [activeTab, setActiveTab] = useState<"catalog" | "credentials" | "profiles">("catalog");
   const [healthData, setHealthData] = useState(initialHealth);
   const [profiles, setProfiles] = useState(initialCatalog.profiles);
   const [resettingModel, setResettingModel] = useState<string | null>(null);
   const [settingDefault, setSettingDefault] = useState<string | null>(null);
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
+  const [editingProfile, setEditingProfile] = useState<string | null>(null);
+  const [savingProfile, setSavingProfile] = useState(false);
+  const [deletingProfile, setDeletingProfile] = useState<string | null>(null);
 
   const handleSetDefaultProfile = async (profileName: string) => {
     setSettingDefault(profileName);
@@ -33,17 +41,44 @@ export function ProviderStudio({ initialHealth, initialCatalog }: ProviderStudio
     }
   };
 
-  // Configurações Locais de Credenciais simuladas/editáveis
-  const [credentials, setCredentials] = useState({
-    ollamaUrl: "http://localhost:5405",
-    azureEndpoint: "https://my-resource.openai.azure.com",
-    azureKey: "••••••••••••••••",
-    databricksHost: "https://adb-12345678.azuredatabricks.net",
-    databricksToken: "dapi••••••••••••••••",
-    openaiKey: "sk-proj-••••••••••••••••",
-    anthropicKey: "sk-ant-••••••••••••••••",
-    githubToken: "ghp_••••••••••••••••",
-  });
+  const handleSaveProfile = async (value: ProfileFormValue) => {
+    setSavingProfile(true);
+    try {
+      const data = await put<{ profiles: CatalogProfile[] }>(
+        `/api/providers/profiles/${encodeURIComponent(value.name)}`,
+        {
+          strategy: value.strategy,
+          models: value.models,
+          weights: value.strategy === "score" ? value.weights : undefined,
+        },
+      );
+      setProfiles(data.profiles);
+      setStatusMsg(`Perfil "${value.name}" salvo.`);
+      setEditingProfile(null);
+    } catch (err) {
+      setStatusMsg(`Erro ao salvar o perfil: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setSavingProfile(false);
+    }
+  };
+
+  const handleDeleteProfile = async (profileName: string) => {
+    if (!window.confirm(`Excluir o perfil "${profileName}"? Essa ação não tem volta.`)) return;
+    setDeletingProfile(profileName);
+    try {
+      const data = await del<{ profiles: CatalogProfile[] }>(
+        `/api/providers/profiles/${encodeURIComponent(profileName)}`,
+      );
+      setProfiles(data.profiles);
+      setStatusMsg(`Perfil "${profileName}" excluído.`);
+    } catch (err) {
+      setStatusMsg(`Erro ao excluir o perfil: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setDeletingProfile(null);
+    }
+  };
+
+  const [credentials, setCredentials] = useState(initialCredentials);
 
   const checks = new Map(healthData.providers.map((p) => [p.model, p]));
 
@@ -179,84 +214,14 @@ export function ProviderStudio({ initialHealth, initialCatalog }: ProviderStudio
 
       {activeTab === "credentials" && (
         <div className="studio-section">
-          <div className="credentials-form grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 20 }}>
-            <div className="card">
-              <h3>🦙 Ollama Local</h3>
-              <label style={{ display: "block", fontSize: 12, marginBottom: 4, color: "var(--text-dim)" }}>
-                URL Base
-              </label>
-              <input
-                className="studio-input"
-                value={credentials.ollamaUrl}
-                onChange={(e) => setCredentials({ ...credentials, ollamaUrl: e.target.value })}
-              />
-              <div className="hint" style={{ marginTop: 8 }}>Porta padrão Docker: 5405 / Local: 11434</div>
-            </div>
-
-            <div className="card">
-              <h3>☁️ Azure AI Foundry / OpenAI</h3>
-              <label style={{ display: "block", fontSize: 12, marginBottom: 4, color: "var(--text-dim)" }}>
-                Endpoint Azure
-              </label>
-              <input
-                className="studio-input"
-                value={credentials.azureEndpoint}
-                onChange={(e) => setCredentials({ ...credentials, azureEndpoint: e.target.value })}
-              />
-              <label style={{ display: "block", fontSize: 12, margin: "12px 0 4px", color: "var(--text-dim)" }}>
-                API Key Azure
-              </label>
-              <input
-                type="password"
-                className="studio-input"
-                value={credentials.azureKey}
-                onChange={(e) => setCredentials({ ...credentials, azureKey: e.target.value })}
-              />
-            </div>
-
-            <div className="card">
-              <h3>🧱 Databricks Vector Search</h3>
-              <label style={{ display: "block", fontSize: 12, marginBottom: 4, color: "var(--text-dim)" }}>
-                Host Workspace
-              </label>
-              <input
-                className="studio-input"
-                value={credentials.databricksHost}
-                onChange={(e) => setCredentials({ ...credentials, databricksHost: e.target.value })}
-              />
-              <label style={{ display: "block", fontSize: 12, margin: "12px 0 4px", color: "var(--text-dim)" }}>
-                Token PAT
-              </label>
-              <input
-                type="password"
-                className="studio-input"
-                value={credentials.databricksToken}
-                onChange={(e) => setCredentials({ ...credentials, databricksToken: e.target.value })}
-              />
-            </div>
-
-            <div className="card">
-              <h3>🔑 OpenAI & Anthropic</h3>
-              <label style={{ display: "block", fontSize: 12, marginBottom: 4, color: "var(--text-dim)" }}>
-                OpenAI Key
-              </label>
-              <input
-                type="password"
-                className="studio-input"
-                value={credentials.openaiKey}
-                onChange={(e) => setCredentials({ ...credentials, openaiKey: e.target.value })}
-              />
-              <label style={{ display: "block", fontSize: 12, margin: "12px 0 4px", color: "var(--text-dim)" }}>
-                Anthropic Key
-              </label>
-              <input
-                type="password"
-                className="studio-input"
-                value={credentials.anthropicKey}
-                onChange={(e) => setCredentials({ ...credentials, anthropicKey: e.target.value })}
-              />
-            </div>
-          </div>
+          <CredentialsForm
+            initial={credentials}
+            onSaved={(updated) => {
+              setCredentials(updated);
+              setStatusMsg("Credenciais salvas — já valendo para a próxima chamada, sem restart.");
+            }}
+            onError={(message) => setStatusMsg(`Erro ao salvar credenciais: ${message}`)}
+          />
         </div>
       )}
 
@@ -264,7 +229,18 @@ export function ProviderStudio({ initialHealth, initialCatalog }: ProviderStudio
         <div className="studio-section">
           <div className="hint" style={{ marginBottom: 12 }}>
             O perfil padrão é usado quando o cliente pede o modelo <code>&quot;auto&quot;</code> (ou não
-            especifica nenhum). A troca vale na hora e é salva em <code>config/routes.yaml</code>.
+            especifica nenhum). Estratégia, cadeia de fallback e pesos são salvos em{" "}
+            <code>config/routes.yaml</code> na hora.
+          </div>
+          <div style={{ marginBottom: 12 }}>
+            <button
+              type="button"
+              className="theme-btn"
+              disabled={editingProfile !== null}
+              onClick={() => setEditingProfile(NEW_PROFILE)}
+            >
+              + Novo perfil
+            </button>
           </div>
           <div className="table-wrap">
             <table>
@@ -277,42 +253,84 @@ export function ProviderStudio({ initialHealth, initialCatalog }: ProviderStudio
                 </tr>
               </thead>
               <tbody>
-                {profiles.map((p) => (
-                  <tr key={p.name}>
-                    <td>
-                      <code>{p.name}</code> {p.is_default && <span className="pill ok">padrão</span>}
-                    </td>
-                    <td>
-                      <span className="pill">{p.strategy}</span>
-                    </td>
-                    <td style={{ whiteSpace: "normal" }}>
-                      {p.models.length > 0 ? (
-                        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-                          {p.models.map((m, idx) => (
-                            <React.Fragment key={m}>
-                              {idx > 0 && <span style={{ color: "var(--accent)" }}>➔</span>}
-                              <code className="kbd-badge">{m}</code>
-                            </React.Fragment>
-                          ))}
+                {editingProfile === NEW_PROFILE && (
+                  <ProfileEditor
+                    mode="create"
+                    initial={{ name: "", strategy: "priority", models: [], weights: {} }}
+                    availableModels={initialCatalog.models}
+                    saving={savingProfile}
+                    onCancel={() => setEditingProfile(null)}
+                    onSave={(value) => void handleSaveProfile(value)}
+                  />
+                )}
+                {profiles.map((p) =>
+                  editingProfile === p.name ? (
+                    <ProfileEditor
+                      key={p.name}
+                      mode="edit"
+                      initial={{ name: p.name, strategy: p.strategy, models: p.models, weights: p.weights }}
+                      availableModels={initialCatalog.models}
+                      saving={savingProfile}
+                      onCancel={() => setEditingProfile(null)}
+                      onSave={(value) => void handleSaveProfile(value)}
+                    />
+                  ) : (
+                    <tr key={p.name}>
+                      <td>
+                        <code>{p.name}</code> {p.is_default && <span className="pill ok">padrão</span>}
+                      </td>
+                      <td>
+                        <span className="pill">{p.strategy}</span>
+                      </td>
+                      <td style={{ whiteSpace: "normal" }}>
+                        {p.models.length > 0 ? (
+                          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                            {p.models.map((m, idx) => (
+                              <React.Fragment key={m}>
+                                {idx > 0 && <span style={{ color: "var(--accent)" }}>➔</span>}
+                                <code className="kbd-badge">{m}</code>
+                              </React.Fragment>
+                            ))}
+                          </div>
+                        ) : (
+                          <em>vazio</em>
+                        )}
+                      </td>
+                      <td>
+                        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                          {!p.is_default && (
+                            <button
+                              type="button"
+                              className="theme-btn"
+                              disabled={settingDefault === p.name || editingProfile !== null}
+                              onClick={() => void handleSetDefaultProfile(p.name)}
+                            >
+                              {settingDefault === p.name ? "aplicando..." : "Tornar padrão"}
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            className="theme-btn"
+                            disabled={editingProfile !== null}
+                            onClick={() => setEditingProfile(p.name)}
+                          >
+                            Editar
+                          </button>
+                          {!p.is_default && (
+                            <button
+                              type="button"
+                              className="theme-btn"
+                              disabled={editingProfile !== null || deletingProfile === p.name}
+                              onClick={() => void handleDeleteProfile(p.name)}
+                            >
+                              {deletingProfile === p.name ? "excluindo..." : "Excluir"}
+                            </button>
+                          )}
                         </div>
-                      ) : (
-                        <em>vazio</em>
-                      )}
-                    </td>
-                    <td>
-                      {!p.is_default && (
-                        <button
-                          type="button"
-                          className="theme-btn"
-                          disabled={settingDefault === p.name}
-                          onClick={() => void handleSetDefaultProfile(p.name)}
-                        >
-                          {settingDefault === p.name ? "aplicando..." : "Tornar padrão"}
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                ))}
+                      </td>
+                    </tr>
+                  ),
+                )}
               </tbody>
             </table>
           </div>

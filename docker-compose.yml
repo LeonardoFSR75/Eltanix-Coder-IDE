@@ -152,7 +152,10 @@ services:
       - "127.0.0.1:5401:5401"
     volumes:
       - ${PROJECTS_ROOT:-./projetos}:/projects
-      - ./config:/app/config:ro
+      # Sem `:ro`: a tela de Provedores grava perfis de roteamento (routes.yaml)
+      # e credenciais (.env) direto do container — precisa poder escrever de volta.
+      - ./config:/app/config
+      - ./.env:/app/.env
       # Código montado para reload em desenvolvimento; numa imagem de produção
       # ele já está dentro e esta linha sai.
       - ./apps/api/src:/app/src:ro

@@ -41,6 +41,9 @@ class Settings(BaseSettings):
     log_level: str = Field(default="INFO", alias="SICOOBITO_LOG_LEVEL")
     log_json: bool = Field(default=False, alias="SICOOBITO_LOG_JSON")
     config_dir: Path = Field(default=REPO_ROOT / "config", alias="SICOOBITO_CONFIG_DIR")
+    # Só para testes/deploys incomuns redirecionarem onde a tela de
+    # credenciais escreve; no dia a dia o padrão (`.env` da raiz) já basta.
+    env_file_override: Path | None = Field(default=None, alias="SICOOBITO_ENV_FILE")
 
     # ── Infra ───────────────────────────────────────────────────────────────
     database_url: str = Field(
@@ -140,6 +143,15 @@ class Settings(BaseSettings):
         if isinstance(value, str):
             return [item.strip() for item in value.split(",") if item.strip()]
         return value
+
+    @property
+    def env_file_path(self) -> Path:
+        """`.env` da raiz — mesmo arquivo que o `env_file` acima já carrega.
+
+        Existe como propriedade porque quem *escreve* de volta (a tela de
+        credenciais) precisa do caminho sem duplicar `REPO_ROOT` espalhado.
+        """
+        return self.env_file_override or (REPO_ROOT / ".env")
 
     @property
     def providers_file(self) -> Path:
