@@ -276,6 +276,12 @@ function Shell() {
           />
         )}
 
+        {ide.agentDockOpen && (
+          <aside className="agent-dock" style={{ width: ide.agentDockWidth }}>
+            <AgentDock onFileTouched={ide.openFile} onSession={setSessionId} />
+          </aside>
+        )}
+
         <nav className="activity-bar-right">
           <button
             type="button"
@@ -289,12 +295,6 @@ function Shell() {
             </svg>
           </button>
         </nav>
-
-        {ide.agentDockOpen && (
-          <aside className="agent-dock" style={{ width: ide.agentDockWidth }}>
-            <AgentDock onFileTouched={ide.openFile} onSession={setSessionId} />
-          </aside>
-        )}
 
         {overlay === "quick" && <QuickOpen onClose={() => setOverlay(null)} />}
         {overlay === "palette" && (

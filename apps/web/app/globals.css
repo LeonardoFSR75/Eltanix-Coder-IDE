@@ -644,8 +644,10 @@ code {
   background: var(--surface);
   display: flex;
   flex-direction: column;
+  height: 100%;
   min-height: 0;
   overflow: hidden;
+  flex-shrink: 0;
 }
 
 .panel-title {
@@ -1930,6 +1932,20 @@ button.primary:hover:not(:disabled) {
   display: flex;
   width: 100%;
   height: 100%;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.editor-pane {
+  flex: 1;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .editor-container-grid.split-mode .editor-pane {
