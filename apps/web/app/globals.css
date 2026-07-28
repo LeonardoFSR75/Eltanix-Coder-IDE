@@ -534,29 +534,32 @@ code {
   background: var(--bg);
 }
 
-.ide {
-  display: grid;
-  /* A quarta faixa (40px) é a régua do dock do agente — fica sempre presente,
-     como a barra de atividades da esquerda, então o auto-placement do grid
-     nunca precisa decidir sozinho onde ela cai quando a barra esquerda some. */
-  grid-template-columns: 48px 300px minmax(0, 1fr) 40px;
+.ide-container {
+  display: flex;
+  flex-direction: column;
   height: 100vh;
+  width: 100vw;
   overflow: hidden;
+  background: var(--bg);
 }
 
-.ide.agent-dock-open {
-  grid-template-columns: 48px 300px minmax(0, 1fr) 40px 360px;
+.ide {
+  display: flex;
+  flex-direction: row;
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  overflow: hidden;
+  position: relative;
 }
 
 @media (max-width: 900px) {
-  .ide,
-  .ide.agent-dock-open {
-    grid-template-columns: 48px minmax(0, 1fr);
-  }
   .ide-sidebar,
   .activity-bar-right,
-  .agent-dock {
-    display: none;
+  .agent-dock,
+  .resizer-sidebar,
+  .resizer-agent {
+    display: none !important;
   }
 }
 
@@ -1211,7 +1214,7 @@ button.primary:hover:not(:disabled) {
 
 /* Terminal Panel */
 .terminal-panel {
-  height: 260px;
+  height: var(--term-h, 220px);
   border-top: 1px solid var(--border);
   display: flex;
   flex-direction: column;
