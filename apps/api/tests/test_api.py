@@ -360,6 +360,25 @@ def test_env_editor_read_values_missing_file(tmp_path):
     assert values == {"A": "", "B": ""}
 
 
+def test_env_editor_write_values_rejects_newline_injection(tmp_path):
+    """Um valor com `\\n` inseriria uma linha nova no `.env` — na prática,
+    permitiria sobrescrever SICOOBITO_API_KEY ou qualquer outra variável."""
+    from sicoobito.router import env_editor
+
+    env_file = tmp_path / ".env"
+    env_file.write_text("SICOOBITO_API_KEY=segredo\n", encoding="utf-8")
+
+    with pytest.raises(ValueError):
+        env_editor.write_values(
+            env_file, {"OLLAMA_BASE_URL": "abc\nSICOOBITO_API_KEY=comprometido"}
+        )
+    with pytest.raises(ValueError):
+        env_editor.write_values(env_file, {"OLLAMA_BASE_URL": "abc\rcomprometido"})
+
+    # Nada foi escrito: a chave original continua intacta.
+    assert env_file.read_text(encoding="utf-8") == "SICOOBITO_API_KEY=segredo\n"
+
+
 def test_get_credentials_never_exposes_secret_values(client):
     response = client.get(
         "/api/providers/credentials", headers={"Authorization": "Bearer chave-de-teste"}
@@ -453,6 +472,17 @@ def test_update_credentials_partial_update_preserves_other_fields(client, tmp_pa
         engine.resolve_catalog()
         engine.build()
         client.app.dependency_overrides.pop(get_settings, None)
+
+
+def test_update_credentials_rejects_newline_in_value(client):
+    """422 esperado: sem isso, `\\n` no valor injetaria uma linha nova no
+    `.env` na hora da persistência (ver test_env_editor_write_values_rejects_newline_injection)."""
+    response = client.put(
+        "/api/providers/credentials",
+        headers={"Authorization": "Bearer chave-de-teste"},
+        json={"openai_api_key": "sk-teste\nSICOOBITO_API_KEY=comprometido"},
+    )
+    assert response.status_code == 422
 
 
 def test_chat_without_any_reachable_provider_returns_503_not_500(client):

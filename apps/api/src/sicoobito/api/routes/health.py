@@ -311,6 +311,22 @@ class UpdateCredentialsRequest(BaseModel):
     anthropic_api_key: str | None = None
     github_token: str | None = None
 
+    @field_validator(
+        "ollama_base_url",
+        "azure_api_base",
+        "azure_api_key",
+        "databricks_host",
+        "databricks_token",
+        "openai_api_key",
+        "anthropic_api_key",
+        "github_token",
+    )
+    @classmethod
+    def _sem_quebra_de_linha(cls, value: str | None) -> str | None:
+        if value is not None and ("\n" in value or "\r" in value):
+            raise ValueError("credencial não pode conter quebra de linha")
+        return value
+
 
 @router.put("/providers/credentials")
 async def update_credentials(

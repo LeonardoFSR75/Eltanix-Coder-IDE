@@ -13,6 +13,7 @@ chamador não consegue afrouxá-las.
 
 from __future__ import annotations
 
+import asyncio
 import hmac
 import os
 import shlex
@@ -171,7 +172,14 @@ async def exec_command(session_id: str, payload: ExecRequest) -> dict[str, Any]:
         ) from exc
 
     inicio = time.perf_counter()
-    try:
+
+    # `exec_create`/`exec_start`/`exec_inspect` são chamadas síncronas e
+    # bloqueantes do docker-py. Rodá-las direto na coroutine travaria o único
+    # event loop do processo (uvicorn sobe sem `--workers`) até o comando
+    # terminar, derrubando /health e todas as outras sessões junto. Por isso
+    # a chamada vai para uma thread do pool via `asyncio.to_thread`, com o
+    # mesmo padrão usado em `Sandbox.exec` (apps/api/src/sicoobito/sandbox/container.py).
+    def _run() -> tuple[int, bytes, bytes]:
         handle = client().api.exec_create(
             container.id,
             ["sh", "-c", payload.command],
@@ -182,16 +190,30 @@ async def exec_command(session_id: str, payload: ExecRequest) -> dict[str, Any]:
         )
         saida = client().api.exec_start(handle["Id"], demux=True)
         info = client().api.exec_inspect(handle["Id"])
+        stdout, stderr = saida if isinstance(saida, tuple) else (saida, b"")
+        return info.get("ExitCode", -1), stdout or b"", stderr or b""
+
+    try:
+        exit_code, stdout, stderr = await asyncio.wait_for(
+            asyncio.to_thread(_run), timeout=payload.timeout
+        )
+    except TimeoutError:
+        return {
+            "exit_code": 124,
+            "stdout": "",
+            "stderr": f"Comando excedeu {payload.timeout}s e foi interrompido.",
+            "duration_ms": int((time.perf_counter() - inicio) * 1000),
+            "timed_out": True,
+        }
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY, detail=f"falha ao executar: {exc}"
         ) from exc
 
-    stdout, stderr = saida if isinstance(saida, tuple) else (saida, b"")
     return {
-        "exit_code": info.get("ExitCode", -1),
-        "stdout": (stdout or b"").decode("utf-8", "replace"),
-        "stderr": (stderr or b"").decode("utf-8", "replace"),
+        "exit_code": exit_code,
+        "stdout": stdout.decode("utf-8", "replace"),
+        "stderr": stderr.decode("utf-8", "replace"),
         "duration_ms": int((time.perf_counter() - inicio) * 1000),
         "timed_out": False,
     }

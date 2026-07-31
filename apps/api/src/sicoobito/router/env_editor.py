@@ -37,6 +37,8 @@ def write_values(env_file: Path, values: dict[str, str]) -> None:
     """
     text = env_file.read_text(encoding="utf-8") if env_file.exists() else ""
     for key, value in values.items():
+        if "\n" in key or "\r" in key or "\n" in value or "\r" in value:
+            raise ValueError(f"chave ou valor de env não pode conter quebra de linha: {key!r}")
         pattern = _key_pattern(key)
         linha = f"{key}={value}"
         if pattern.search(text):
