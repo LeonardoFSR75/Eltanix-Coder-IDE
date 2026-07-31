@@ -334,6 +334,85 @@ def test_delete_profile_endpoint_removes_custom_profile(client, tmp_path):
         client.app.dependency_overrides.pop(get_settings, None)
 
 
+def _providers_copy(tmp_path):
+    from sicoobito.config import get_settings
+
+    providers_file = tmp_path / "providers.yaml"
+    providers_file.write_text(
+        get_settings().providers_file.read_text(encoding="utf-8"), encoding="utf-8"
+    )
+    return providers_file
+
+
+def test_providers_editor_append_models_preserves_comments(tmp_path):
+    """A garantia real deste módulo: acrescentar um modelo não pode apagar os
+    comentários de seção nem as entradas já existentes."""
+    from sicoobito.router import providers_editor
+
+    providers_file = _providers_copy(tmp_path)
+
+    data = providers_editor.load(providers_file)
+    providers_editor.append_models(
+        data,
+        [
+            {
+                "id": "ollama/meu-modelo-teste:1b",
+                "provider": "ollama",
+                "model": "meu-modelo-teste:1b",
+                "context_window": 8192,
+                "tags": ["local", "detected"],
+                "capabilities": ["chat", "tools"],
+                "enabled": True,
+            }
+        ],
+    )
+    providers_editor.dump(providers_file, data)
+
+    updated = providers_file.read_text(encoding="utf-8")
+    assert "id: ollama/meu-modelo-teste:1b" in updated
+    # Comentários de seção e entradas antigas continuam intactos.
+    assert "# ── Local ──" in updated
+    assert "id: ollama/qwen2.5-coder:7b" in updated
+    assert "id: anthropic/claude-sonnet-4-5" in updated
+
+    # A entrada nova entra depois da última já existente, não no meio.
+    last_existing_idx = updated.index("id: openai/gpt-4o-mini")
+    new_idx = updated.index("id: ollama/meu-modelo-teste:1b")
+    assert last_existing_idx < new_idx
+
+
+def test_providers_editor_append_models_multiple_entries(tmp_path):
+    from sicoobito.router import providers_editor
+
+    providers_file = _providers_copy(tmp_path)
+
+    data = providers_editor.load(providers_file)
+    providers_editor.append_models(
+        data,
+        [
+            {"id": "databricks/novo-a", "provider": "databricks", "endpoint": "novo-a",
+             "capabilities": ["chat"]},
+            {"id": "databricks/novo-b", "provider": "databricks", "endpoint": "novo-b",
+             "capabilities": ["embedding"]},
+        ],
+    )
+    providers_editor.dump(providers_file, data)
+
+    updated = providers_file.read_text(encoding="utf-8")
+    assert "id: databricks/novo-a" in updated
+    assert "id: databricks/novo-b" in updated
+
+    # Reload via load_catalog real, para garantir que o resultado é YAML válido
+    # e que o carregador enxerga as duas entradas novas junto das antigas.
+    from sicoobito.config import get_settings
+    from sicoobito.router.catalog import load_catalog
+
+    reloaded = load_catalog(providers_file, get_settings().routes_file)
+    assert "databricks/novo-a" in reloaded.models
+    assert "databricks/novo-b" in reloaded.models
+    assert "ollama/qwen2.5-coder:7b" in reloaded.models
+
+
 def test_env_editor_write_and_read_roundtrip(tmp_path):
     from sicoobito.router import env_editor
 
@@ -483,6 +562,196 @@ def test_update_credentials_rejects_newline_in_value(client):
         json={"openai_api_key": "sk-teste\nSICOOBITO_API_KEY=comprometido"},
     )
     assert response.status_code == 422
+
+
+def test_discover_unknown_provider_returns_404(client):
+    response = client.post(
+        "/api/providers/nao-existe/discover",
+        headers={"Authorization": "Bearer chave-de-teste"},
+    )
+    assert response.status_code == 404
+
+
+def test_discover_unsupported_adapter_returns_501(client):
+    # azure_foundry não sobrescreve discover_models (default = None).
+    response = client.post(
+        "/api/providers/azure_foundry/discover",
+        headers={"Authorization": "Bearer chave-de-teste"},
+    )
+    assert response.status_code == 501
+
+
+def test_discover_missing_credentials_returns_error_field_not_exception(client):
+    # databricks não tem host/token configurados no ambiente de teste
+    # (conftest.py garante isso) — a falta de credencial não deve virar 500.
+    response = client.post(
+        "/api/providers/databricks/discover",
+        headers={"Authorization": "Bearer chave-de-teste"},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["new"] == []
+    assert body["already_cataloged"] == []
+    assert "credenciais ausentes" in body["error"]
+
+
+def test_discover_splits_new_from_already_cataloged(client):
+    """Um candidato cujo `model` bruto já existe no catálogo (ainda que sob
+    outro id) não pode aparecer como novo — é a garantia central do merge."""
+    from sicoobito.router.adapters.base import DiscoveredModel
+
+    engine = client.app.state.engine
+    original = engine.adapters["ollama"].discover_models
+
+    async def fake_discover():
+        return [
+            DiscoveredModel(  # já existe no catálogo real (ollama/qwen2.5-coder:7b)
+                suggested_id="ollama/ja-existente",
+                provider="ollama",
+                raw_name="qwen2.5-coder:7b",
+                model="qwen2.5-coder:7b",
+            ),
+            DiscoveredModel(
+                suggested_id="ollama/qwen2.5-coder:32b",
+                provider="ollama",
+                raw_name="qwen2.5-coder:32b",
+                model="qwen2.5-coder:32b",
+                capabilities=["chat", "tools"],
+                estimated_fields=["context_window"],
+            ),
+        ]
+
+    engine.adapters["ollama"].discover_models = fake_discover
+    try:
+        response = client.post(
+            "/api/providers/ollama/discover",
+            headers={"Authorization": "Bearer chave-de-teste"},
+        )
+        assert response.status_code == 200
+        body = response.json()
+        assert body["error"] is None
+        assert len(body["already_cataloged"]) == 1
+        assert body["already_cataloged"][0]["existing_id"] == "ollama/qwen2.5-coder:7b"
+        assert len(body["new"]) == 1
+        assert body["new"][0]["suggested_id"] == "ollama/qwen2.5-coder:32b"
+    finally:
+        engine.adapters["ollama"].discover_models = original
+
+
+def test_discover_propagates_discovery_error_as_502(client):
+    from sicoobito.router.adapters.base import DiscoveryError
+
+    engine = client.app.state.engine
+    original = engine.adapters["ollama"].discover_models
+
+    async def fake_discover():
+        raise DiscoveryError("Ollama: conexão recusada")
+
+    engine.adapters["ollama"].discover_models = fake_discover
+    try:
+        response = client.post(
+            "/api/providers/ollama/discover",
+            headers={"Authorization": "Bearer chave-de-teste"},
+        )
+        assert response.status_code == 502
+    finally:
+        engine.adapters["ollama"].discover_models = original
+
+
+def test_confirm_discovery_unknown_provider_returns_404(client):
+    response = client.post(
+        "/api/providers/nao-existe/discover/confirm",
+        headers={"Authorization": "Bearer chave-de-teste"},
+        json={"models": [{"id": "nao-existe/algo", "model": "algo"}]},
+    )
+    assert response.status_code == 404
+
+
+def test_confirm_discovery_rejects_duplicate_ids_in_payload(client):
+    response = client.post(
+        "/api/providers/ollama/discover/confirm",
+        headers={"Authorization": "Bearer chave-de-teste"},
+        json={
+            "models": [
+                {"id": "ollama/repetido", "model": "repetido"},
+                {"id": "ollama/repetido", "model": "repetido"},
+            ]
+        },
+    )
+    assert response.status_code == 400
+
+
+def test_confirm_discovery_rejects_id_already_in_catalog(client):
+    response = client.post(
+        "/api/providers/ollama/discover/confirm",
+        headers={"Authorization": "Bearer chave-de-teste"},
+        json={"models": [{"id": "ollama/qwen2.5-coder:7b", "model": "qwen2.5-coder:7b"}]},
+    )
+    assert response.status_code == 409
+
+
+def test_confirm_discovery_rejects_invalid_id_format(client):
+    response = client.post(
+        "/api/providers/ollama/discover/confirm",
+        headers={"Authorization": "Bearer chave-de-teste"},
+        json={"models": [{"id": "id com espaço", "model": "x"}]},
+    )
+    assert response.status_code == 422
+
+
+def test_confirm_discovery_rejects_unknown_capability(client):
+    response = client.post(
+        "/api/providers/ollama/discover/confirm",
+        headers={"Authorization": "Bearer chave-de-teste"},
+        json={
+            "models": [
+                {"id": "ollama/teste-cap", "model": "teste-cap", "capabilities": ["voo"]}
+            ]
+        },
+    )
+    assert response.status_code == 422
+
+
+def test_confirm_discovery_adds_model_and_persists(client, tmp_path):
+    """Ponta a ponta: confirma um candidato novo, e ele aparece em memória
+    (catálogo do engine) e em disco (cópia de providers.yaml em tmp_path)."""
+    from sicoobito.config import Settings, get_settings
+
+    engine = client.app.state.engine
+    new_id = "ollama/teste-discovery:1b"
+    providers_copy = _providers_copy(tmp_path)
+    fake_settings = Settings(SICOOBITO_CONFIG_DIR=tmp_path)
+    client.app.dependency_overrides[get_settings] = lambda: fake_settings
+    try:
+        response = client.post(
+            "/api/providers/ollama/discover/confirm",
+            headers={"Authorization": "Bearer chave-de-teste"},
+            json={
+                "models": [
+                    {
+                        "id": new_id,
+                        "model": "teste-discovery:1b",
+                        "context_window": 4096,
+                        "tags": ["local", "detected"],
+                        "capabilities": ["chat"],
+                    }
+                ]
+            },
+        )
+        assert response.status_code == 200
+        body = response.json()
+        assert body["added"] == [new_id]
+        assert any(m["id"] == new_id for m in body["models"])
+        assert engine.catalog.get(new_id) is not None
+
+        persisted = providers_copy.read_text(encoding="utf-8")
+        assert f"id: {new_id}" in persisted
+        assert "id: ollama/qwen2.5-coder:7b" in persisted  # nada antigo foi apagado
+    finally:
+        engine.catalog.models.pop(new_id, None)
+        engine.resolve_catalog()
+        engine.build()
+        client.app.dependency_overrides.pop(get_settings, None)
 
 
 def test_chat_without_any_reachable_provider_returns_503_not_500(client):

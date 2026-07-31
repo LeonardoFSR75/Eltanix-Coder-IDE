@@ -12,8 +12,9 @@ from pydantic import BaseModel, Field, field_validator
 
 from sicoobito.api.deps import AuthDep, EngineDep, SettingsDep
 from sicoobito.logging_setup import get_logger
-from sicoobito.router import env_editor, routes_editor
-from sicoobito.router.catalog import RouteProfile
+from sicoobito.router import env_editor, providers_editor, routes_editor
+from sicoobito.router.adapters.base import DiscoveredModel, DiscoveryError
+from sicoobito.router.catalog import ModelSpec, RouteProfile
 
 log = get_logger(__name__)
 
@@ -22,6 +23,8 @@ router = APIRouter(prefix="/api", tags=["health"], dependencies=[AuthDep])
 _VALID_STRATEGIES = {"priority", "cost", "latency", "score"}
 _VALID_WEIGHT_KEYS = {"health", "cost", "latency", "success_rate", "context_fit"}
 _PROFILE_NAME_RE = re.compile(r"^[a-z][a-z0-9_-]{0,31}$")
+_MODEL_ID_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_\-./:]{0,127}$")
+_VALID_CAPABILITIES = {"chat", "tools", "vision", "prompt_cache", "embedding"}
 
 # (campo no JSON/UI, atributo em Settings, variável no .env, é segredo)
 _CREDENTIAL_FIELDS: list[tuple[str, str, str, bool]] = [
@@ -79,21 +82,22 @@ async def providers_health(engine: EngineDep) -> dict[str, Any]:
 @router.get("/providers")
 async def list_providers(engine: EngineDep) -> dict[str, Any]:
     return {
-        "models": [
-            {
-                "id": spec.id,
-                "provider": spec.provider,
-                "context_window": spec.context_window,
-                "tags": spec.tags,
-                "capabilities": spec.capabilities,
-                "enabled": spec.enabled,
-                "available": spec.available,
-                "unavailable_reason": spec.unavailable_reason,
-                "price": _price_view(engine, spec.id),
-            }
-            for spec in engine.catalog.models.values()
-        ],
+        "models": [_model_view(spec, engine) for spec in engine.catalog.models.values()],
         "profiles": _profiles_view(engine),
+    }
+
+
+def _model_view(spec: ModelSpec, engine: EngineDep) -> dict[str, Any]:
+    return {
+        "id": spec.id,
+        "provider": spec.provider,
+        "context_window": spec.context_window,
+        "tags": spec.tags,
+        "capabilities": spec.capabilities,
+        "enabled": spec.enabled,
+        "available": spec.available,
+        "unavailable_reason": spec.unavailable_reason,
+        "price": _price_view(engine, spec.id),
     }
 
 
@@ -356,6 +360,201 @@ async def update_credentials(
             log.warning("providers.credentials.persist_failed", error=str(exc))
 
     return {"credentials": _credentials_view(engine)}
+
+
+def _discovery_identity(spec: ModelSpec) -> str | None:
+    """Chave de comparação contra o catálogo — não é o `id`, que o usuário
+    pode ter escolhido livremente na hora de cadastrar o modelo à mão."""
+    return spec.endpoint or spec.deployment or spec.model
+
+
+def _split_discovered(
+    catalog: Any, discovered: list[DiscoveredModel]
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    by_identity = {
+        (spec.provider, _discovery_identity(spec)): spec.id for spec in catalog.models.values()
+    }
+
+    new: list[dict[str, Any]] = []
+    already: list[dict[str, Any]] = []
+    for candidate in discovered:
+        raw = candidate.endpoint or candidate.deployment or candidate.model or candidate.raw_name
+        existing_id = by_identity.get((candidate.provider, raw))
+        payload = {
+            "suggested_id": candidate.suggested_id,
+            "provider": candidate.provider,
+            "raw_name": candidate.raw_name,
+            "model": candidate.model,
+            "deployment": candidate.deployment,
+            "endpoint": candidate.endpoint,
+            "mode": candidate.mode,
+            "context_window": candidate.context_window,
+            "tags": candidate.tags,
+            "capabilities": candidate.capabilities,
+            "estimated_fields": candidate.estimated_fields,
+        }
+        if existing_id:
+            already.append({**payload, "existing_id": existing_id})
+        else:
+            new.append(payload)
+    return new, already
+
+
+@router.post("/providers/{provider}/discover")
+async def discover_provider_models(provider: str, engine: EngineDep) -> dict[str, Any]:
+    """Consulta a API de listagem do provedor e devolve o que ainda não está
+    no catálogo. Nunca escreve nada — é só a etapa de revisão; a gravação
+    fica a cargo de `discover/confirm`, com o usuário escolhendo o que entra.
+    """
+    adapter = engine.adapters.get(provider)
+    if adapter is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=f"Provedor desconhecido: {provider}"
+        )
+
+    # A chamada é incondicional de propósito: cada adaptador que suporta
+    # descoberta já se guarda contra credencial ausente (devolve [] sem rede),
+    # e o default (não suportado) devolve None sem tocar em `self.settings`.
+    # Checar credencial antes faria "sem suporte + sem credencial" virar 200
+    # em vez de 501 — a falta de suporte é um fato estrutural, independente
+    # de credencial estar configurada ou não.
+    try:
+        discovered = await adapter.discover_models()
+    except DiscoveryError as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+
+    if discovered is None:
+        raise HTTPException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            detail=f"Descoberta automática não é suportada para '{provider}'.",
+        )
+
+    missing = adapter.missing_credentials(ModelSpec(id="__discovery_probe__", provider=provider))
+    if missing:
+        return {
+            "provider": provider,
+            "new": [],
+            "already_cataloged": [],
+            "error": f"credenciais ausentes: {', '.join(missing)}",
+        }
+
+    new, already_cataloged = _split_discovered(engine.catalog, discovered)
+    return {"provider": provider, "new": new, "already_cataloged": already_cataloged, "error": None}
+
+
+class DiscoveredModelIn(BaseModel):
+    id: str
+    model: str | None = None
+    deployment: str | None = None
+    endpoint: str | None = None
+    mode: str | None = None
+    context_window: int = Field(default=8192, gt=0)
+    tags: list[str] = Field(default_factory=list)
+    capabilities: list[str] = Field(default_factory=lambda: ["chat"])
+    enabled: bool = True
+
+    @field_validator("id")
+    @classmethod
+    def _valida_id(cls, value: str) -> str:
+        if not _MODEL_ID_RE.match(value):
+            raise ValueError(
+                "id inválido: use letras, números e '_ - . / :', começando por letra ou número."
+            )
+        return value
+
+    @field_validator("capabilities")
+    @classmethod
+    def _valida_capabilities(cls, value: list[str]) -> list[str]:
+        desconhecidas = set(value) - _VALID_CAPABILITIES
+        if desconhecidas:
+            raise ValueError(f"capabilities desconhecidas: {sorted(desconhecidas)}")
+        return value
+
+
+class ConfirmDiscoveryRequest(BaseModel):
+    models: list[DiscoveredModelIn] = Field(min_length=1)
+
+
+@router.post("/providers/{provider}/discover/confirm")
+async def confirm_discovered_models(
+    provider: str,
+    payload: ConfirmDiscoveryRequest,
+    engine: EngineDep,
+    settings: SettingsDep,
+) -> dict[str, Any]:
+    """Grava no catálogo os candidatos que o usuário revisou e confirmou.
+
+    Nunca sobrescreve um `id` já existente — o cliente vê 409 e resolve
+    renomeando na tela de revisão; sobrescrever um modelo cadastrado à mão é
+    uma operação diferente, fora do escopo desta tela.
+    """
+    if provider not in engine.adapters:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=f"Provedor desconhecido: {provider}"
+        )
+
+    ids = [m.id for m in payload.models]
+    if len(ids) != len(set(ids)):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="ids repetidos no mesmo envio."
+        )
+
+    colisoes = [i for i in ids if engine.catalog.get(i) is not None]
+    if colisoes:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"id(s) já existentes no catálogo: {', '.join(colisoes)}",
+        )
+
+    new_specs = [
+        ModelSpec(
+            id=m.id,
+            provider=provider,
+            model=m.model,
+            deployment=m.deployment,
+            endpoint=m.endpoint,
+            mode=m.mode,
+            context_window=m.context_window,
+            tags=m.tags,
+            capabilities=m.capabilities or ["chat"],
+            enabled=m.enabled,
+        )
+        for m in payload.models
+    ]
+    for spec in new_specs:
+        engine.catalog.models[spec.id] = spec
+
+    engine.resolve_catalog()
+    engine.build()
+
+    try:
+        data = providers_editor.load(settings.providers_file)
+        providers_editor.append_models(
+            data,
+            [
+                {
+                    "id": spec.id,
+                    "provider": spec.provider,
+                    "model": spec.model,
+                    "deployment": spec.deployment,
+                    "endpoint": spec.endpoint,
+                    "mode": spec.mode,
+                    "context_window": spec.context_window,
+                    "tags": spec.tags,
+                    "capabilities": spec.capabilities,
+                    "enabled": spec.enabled,
+                }
+                for spec in new_specs
+            ],
+        )
+        providers_editor.dump(settings.providers_file, data)
+    except Exception as exc:  # persistência é best-effort
+        log.warning("providers.discover.persist_failed", provider=provider, error=str(exc))
+
+    return {
+        "added": [spec.id for spec in new_specs],
+        "models": [_model_view(spec, engine) for spec in engine.catalog.models.values()],
+    }
 
 
 @router.post("/providers/{model_id:path}/reset")

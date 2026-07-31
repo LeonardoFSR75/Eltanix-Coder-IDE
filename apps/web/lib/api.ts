@@ -155,6 +155,31 @@ export interface CredentialsView {
   github_token: CredentialField;
 }
 
+/** Um modelo visto na API de listagem do provedor, ainda fora do catálogo. */
+export interface DiscoveredModelCandidate {
+  suggested_id: string;
+  provider: string;
+  raw_name: string;
+  model: string | null;
+  deployment: string | null;
+  endpoint: string | null;
+  mode: string | null;
+  context_window: number;
+  tags: string[];
+  capabilities: string[];
+  /** Campos que são palpite, não dado confirmado pelo provedor — a revisão avisa sobre esses. */
+  estimated_fields: string[];
+  /** Presente só em `already_cataloged`: sob qual id o modelo já está cadastrado. */
+  existing_id?: string;
+}
+
+export interface DiscoverResponse {
+  provider: string;
+  new: DiscoveredModelCandidate[];
+  already_cataloged: DiscoveredModelCandidate[];
+  error: string | null;
+}
+
 export interface RecentRequest {
   id: string;
   created_at: string;

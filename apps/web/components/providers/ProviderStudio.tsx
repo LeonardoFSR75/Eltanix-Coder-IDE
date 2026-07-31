@@ -5,6 +5,7 @@ import { del, post, put } from "@/lib/client";
 import { formatMs } from "@/lib/format";
 import { ProfileEditor, type ProfileFormValue } from "@/components/providers/ProfileEditor";
 import { CredentialsForm } from "@/components/providers/CredentialsForm";
+import { ModelDiscovery } from "@/components/providers/ModelDiscovery";
 import type { CatalogModel, CatalogProfile, CredentialsView, ProviderCheck } from "@/lib/api";
 
 const NEW_PROFILE = "__new__";
@@ -18,6 +19,7 @@ interface ProviderStudioProps {
 export function ProviderStudio({ initialHealth, initialCatalog, initialCredentials }: ProviderStudioProps) {
   const [activeTab, setActiveTab] = useState<"catalog" | "credentials" | "profiles">("catalog");
   const [healthData, setHealthData] = useState(initialHealth);
+  const [models, setModels] = useState(initialCatalog.models);
   const [profiles, setProfiles] = useState(initialCatalog.profiles);
   const [resettingModel, setResettingModel] = useState<string | null>(null);
   const [settingDefault, setSettingDefault] = useState<string | null>(null);
@@ -109,7 +111,7 @@ export function ProviderStudio({ initialHealth, initialCatalog, initialCredentia
           className={`studio-tab ${activeTab === "catalog" ? "active" : ""}`}
           onClick={() => setActiveTab("catalog")}
         >
-          📊 Catálogo & Saúde ({initialHealth.healthy}/{initialCatalog.models.length})
+          📊 Catálogo & Saúde ({initialHealth.healthy}/{models.length})
         </button>
         <button
           type="button"
@@ -135,6 +137,10 @@ export function ProviderStudio({ initialHealth, initialCatalog, initialCredentia
 
       {activeTab === "catalog" && (
         <div className="studio-section">
+          <ModelDiscovery
+            onModelsAdded={(updated) => setModels(updated)}
+            onStatus={(message) => setStatusMsg(message)}
+          />
           <div className="grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 16, marginBottom: 24 }}>
             <div className="card">
               <div className="label">Provedores Online</div>
@@ -145,7 +151,7 @@ export function ProviderStudio({ initialHealth, initialCatalog, initialCredentia
             </div>
             <div className="card">
               <div className="label">Modelos Cadastrados</div>
-              <div className="value">{initialCatalog.models.length}</div>
+              <div className="value">{models.length}</div>
               <div className="hint">catalogo ativo</div>
             </div>
           </div>
@@ -164,7 +170,7 @@ export function ProviderStudio({ initialHealth, initialCatalog, initialCredentia
                 </tr>
               </thead>
               <tbody>
-                {initialCatalog.models.map((m) => {
+                {models.map((m) => {
                   const check = checks.get(m.id);
                   const isCircuitOpen = check?.circuit_open;
 
@@ -257,7 +263,7 @@ export function ProviderStudio({ initialHealth, initialCatalog, initialCredentia
                   <ProfileEditor
                     mode="create"
                     initial={{ name: "", strategy: "priority", models: [], weights: {} }}
-                    availableModels={initialCatalog.models}
+                    availableModels={models}
                     saving={savingProfile}
                     onCancel={() => setEditingProfile(null)}
                     onSave={(value) => void handleSaveProfile(value)}
@@ -269,7 +275,7 @@ export function ProviderStudio({ initialHealth, initialCatalog, initialCredentia
                       key={p.name}
                       mode="edit"
                       initial={{ name: p.name, strategy: p.strategy, models: p.models, weights: p.weights }}
-                      availableModels={initialCatalog.models}
+                      availableModels={models}
                       saving={savingProfile}
                       onCancel={() => setEditingProfile(null)}
                       onSave={(value) => void handleSaveProfile(value)}

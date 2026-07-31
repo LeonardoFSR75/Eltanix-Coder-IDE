@@ -7,8 +7,12 @@ from typing import Any
 
 import httpx
 
-from sicoobito.router.adapters.base import HealthResult, ProviderAdapter
+from sicoobito.router.adapters.base import DiscoveredModel, DiscoveryError, HealthResult, ProviderAdapter
 from sicoobito.router.catalog import ModelSpec
+
+# Pistas no nome que indicam modelo de embedding — o Ollama não expõe essa
+# distinção em /api/tags, então é heurística, não fato (ver DiscoveredModel).
+_EMBEDDING_NAME_HINTS = ("embed", "bge", "nomic", "minilm", "e5-")
 
 
 class OllamaAdapter(ProviderAdapter):
@@ -27,17 +31,21 @@ class OllamaAdapter(ProviderAdapter):
             "api_base": self.settings.ollama_base_url,
         }
 
-    async def healthcheck(self, spec: ModelSpec) -> HealthResult:
+    async def _fetch_tags(self) -> list[dict[str, Any]]:
         url = f"{self.settings.ollama_base_url.rstrip('/')}/api/tags"
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            response = await client.get(url)
+            response.raise_for_status()
+            return list(response.json().get("models", []))
+
+    async def healthcheck(self, spec: ModelSpec) -> HealthResult:
         started = time.perf_counter()
         try:
-            async with httpx.AsyncClient(timeout=5.0) as client:
-                response = await client.get(url)
-                response.raise_for_status()
-                installed = {m.get("name", "") for m in response.json().get("models", [])}
+            tags = await self._fetch_tags()
         except Exception as exc:
             return HealthResult(ok=False, detail=f"{type(exc).__name__}: {exc}")
 
+        installed = {m.get("name", "") for m in tags}
         latency = int((time.perf_counter() - started) * 1000)
         wanted = spec.model or ""
         # O Ollama reporta "modelo:tag"; aceitar o nome sem tag evita falso negativo.
@@ -49,3 +57,29 @@ class OllamaAdapter(ProviderAdapter):
                 latency_ms=latency,
             )
         return HealthResult(ok=True, detail="online", latency_ms=latency)
+
+    async def discover_models(self) -> list[DiscoveredModel]:
+        if not self.settings.ollama_base_url:
+            return []
+        try:
+            tags = await self._fetch_tags()
+        except Exception as exc:
+            raise DiscoveryError(f"Ollama: {exc}") from exc
+
+        discovered: list[DiscoveredModel] = []
+        for entry in tags:
+            name = entry.get("name", "")
+            if not name:
+                continue
+            is_embedding = any(hint in name.lower() for hint in _EMBEDDING_NAME_HINTS)
+            discovered.append(
+                DiscoveredModel(
+                    suggested_id=f"ollama/{name}",
+                    provider="ollama",
+                    raw_name=name,
+                    model=name,
+                    capabilities=["embedding"] if is_embedding else ["chat", "tools"],
+                    estimated_fields=["context_window", "capabilities"],
+                )
+            )
+        return discovered

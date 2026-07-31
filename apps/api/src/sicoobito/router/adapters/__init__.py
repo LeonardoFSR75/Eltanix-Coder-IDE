@@ -2,7 +2,12 @@ from __future__ import annotations
 
 from sicoobito.config import Settings
 from sicoobito.router.adapters.azure_foundry import AzureFoundryAdapter
-from sicoobito.router.adapters.base import HealthResult, ProviderAdapter
+from sicoobito.router.adapters.base import (
+    DiscoveredModel,
+    DiscoveryError,
+    HealthResult,
+    ProviderAdapter,
+)
 from sicoobito.router.adapters.databricks import DatabricksAdapter
 from sicoobito.router.adapters.direct import AnthropicAdapter, OpenAIAdapter
 from sicoobito.router.adapters.ollama import OllamaAdapter
@@ -25,6 +30,8 @@ __all__ = [
     "AnthropicAdapter",
     "AzureFoundryAdapter",
     "DatabricksAdapter",
+    "DiscoveredModel",
+    "DiscoveryError",
     "HealthResult",
     "OllamaAdapter",
     "OpenAIAdapter",

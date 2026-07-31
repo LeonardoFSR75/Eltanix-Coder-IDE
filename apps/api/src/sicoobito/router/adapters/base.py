@@ -8,7 +8,7 @@ de fornecedor é permitido (ver ADR 0001).
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from sicoobito.config import Settings
@@ -20,6 +20,34 @@ class HealthResult:
     ok: bool
     detail: str | None = None
     latency_ms: int | None = None
+
+
+class DiscoveryError(RuntimeError):
+    """Falha ao consultar a API de listagem de modelos de um provedor."""
+
+
+@dataclass(slots=True)
+class DiscoveredModel:
+    """Um modelo visto na API de listagem do provedor, ainda fora do catálogo.
+
+    Espelha os campos de `ModelSpec` que fazem sentido propor de antemão;
+    `estimated_fields` marca quais deles são palpite (a UI de revisão avisa
+    sobre esses em vez de tratá-los como fato) — nem toda API de provedor
+    devolve contexto ou capacidade, e fingir certeza aí seria pior que
+    admitir a lacuna.
+    """
+
+    suggested_id: str
+    provider: str
+    raw_name: str
+    model: str | None = None
+    deployment: str | None = None
+    endpoint: str | None = None
+    mode: str | None = None
+    context_window: int = 8192
+    tags: list[str] = field(default_factory=list)
+    capabilities: list[str] = field(default_factory=lambda: ["chat"])
+    estimated_fields: list[str] = field(default_factory=list)
 
 
 class ProviderAdapter(ABC):
@@ -59,3 +87,14 @@ class ProviderAdapter(ABC):
         spec.unavailable_reason = None
         spec.litellm_params = self.build_params(spec)
         return spec
+
+    async def discover_models(self) -> list[DiscoveredModel] | None:
+        """Lista modelos disponíveis na API do provedor, quando suportado.
+
+        `None` significa "este provedor não tem descoberta automática" (ex.:
+        Azure managed exige credencial de management-plane que não
+        modelamos) — o chamador trata isso como "não implementado", não como
+        erro. Lista vazia significa "suportado, mas sem credencial ou sem
+        modelos encontrados".
+        """
+        return None

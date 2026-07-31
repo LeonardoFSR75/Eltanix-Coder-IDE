@@ -22,19 +22,15 @@ profiles:
   auto:
     strategy: score
     weights:
-      health: 0.30
+      health: 0.3
       cost: 0.25
-      latency: 0.20
+      latency: 0.2
       success_rate: 0.15
-      context_fit: 0.10
+      context_fit: 0.1
     models:
+      - anthropic/claude-haiku-4-5-20251001
+      - anthropic/claude-sonnet-4-6
       - ollama/qwen2.5-coder:1.5b
-      - foundry/gpt-4o-mini
-      - foundry/gpt-4o
-
-  # O maior redutor de custo do projeto: só sobe para a nuvem quando o local falha
-  # ou o contexto não cabe. Exige ~6 GB livres no Docker para o 7b; abaixo disso
-  # ele carrega, mas o sistema entra em swap e a latência explode.
   local-first:
     strategy: priority
     models:

@@ -92,3 +92,21 @@ providers:
     tags: [cloud, cheap, fast]
     capabilities: [chat, tools, prompt_cache]
     enabled: false
+  - id: anthropic/claude-sonnet-4-6
+    provider: anthropic
+    model: claude-sonnet-4-6
+    context_window: 200000
+    tags: []
+    capabilities:
+      - chat
+      - tools
+    enabled: true
+  - id: anthropic/claude-haiku-4-5-20251001
+    provider: anthropic
+    model: claude-haiku-4-5-20251001
+    context_window: 200000
+    tags: []
+    capabilities:
+      - chat
+      - tools
+    enabled: true
