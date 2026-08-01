@@ -18,6 +18,7 @@ from sicoobito.api.deps import AuthDep, DbSessionDep, EngineDep, SettingsDep
 from sicoobito.logging_setup import get_logger
 from sicoobito.workspace import git as git_ops
 from sicoobito.workspace import projects as project_ops
+from sicoobito.workspace.fs import PathEscapeError
 from sicoobito.workspace.git import GitError
 from sicoobito.workspace.projects import ProjectError
 
@@ -69,6 +70,8 @@ class CreateSessionRequest(BaseModel):
     # implícita por modo — não é Literal porque os perfis são definidos em
     # YAML, e um Literal fixo aqui ficaria defasado sozinho.
     profile: str | None = None
+    focus_files: list[str] = Field(default_factory=list, description="Lista de arquivos para focar/editar")
+    focus_folder: str | None = Field(default=None, description="Pasta do projeto para focar")
 
 
 @router.post("/sessions")
@@ -96,7 +99,12 @@ async def create_session(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
     sessao = await _runner(request).create_session(
-        task=payload.task, workspace_root=root, mode=payload.mode, profile=payload.profile
+        task=payload.task,
+        workspace_root=root,
+        mode=payload.mode,
+        profile=payload.profile,
+        focus_files=payload.focus_files,
+        focus_folder=payload.focus_folder,
     )
     return _session_view(sessao)
 
@@ -182,6 +190,15 @@ async def run_session(session_id: str, payload: RunRequest, request: Request):
     )
 
 
+@router.get("/sessions/{session_id}/messages")
+async def session_messages(session_id: str, request: Request) -> dict[str, Any]:
+    """Transcript persistido no checkpoint — permite ao Agent Manager reabrir
+    uma sessão e mostrar a conversa real, não só repreencher o campo de tarefa."""
+    sessao = _session(request, session_id)
+    mensagens = await _runner(request).get_messages(sessao)
+    return {"session_id": session_id, "branch": sessao.branch, "messages": mensagens}
+
+
 @router.get("/sessions/{session_id}/diff")
 async def session_diff(session_id: str, request: Request) -> dict[str, Any]:
     """Diff acumulado no worktree da sessão — o que o humano vai revisar."""
@@ -198,6 +215,34 @@ async def session_diff(session_id: str, request: Request) -> dict[str, Any]:
         "files": [{"path": f.path, "status": f.status} for f in estado.files],
         "diff": diff,
     }
+
+
+class RevertFileRequest(BaseModel):
+    path: str = Field(min_length=1)
+
+
+@router.post("/sessions/{session_id}/files/revert")
+async def revert_file(
+    session_id: str, payload: RevertFileRequest, request: Request
+) -> dict[str, Any]:
+    """Rejeita uma edição do agente: devolve o arquivo ao estado do HEAD no
+    worktree da sessão. É o lado 'Rejeitar' do card de diff — aceitar não
+    precisa de rota nenhuma, a mudança já está gravada."""
+    sessao = _session(request, session_id)
+    try:
+        # Mesma fronteira de path-escape usada pelas ferramentas do agente:
+        # o path vem de um card do frontend, mas confiar cegamente nele
+        # abriria a mesma classe de furo que os tools de arquivo já fecham.
+        sessao.context.fs.resolve(payload.path)
+    except PathEscapeError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    try:
+        git_ops.revert_path(sessao.worktree_path, payload.path)
+    except GitError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    return {"path": payload.path, "reverted": True}
 
 
 class CloseRequest(BaseModel):
