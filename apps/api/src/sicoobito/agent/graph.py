@@ -135,6 +135,7 @@ def build_graph(engine: RouterEngine, context: ToolContext):
 
         respostas: list[dict[str, Any]] = []
         alterados: list[str] = []
+        todos_atualizados: list[dict[str, Any]] | None = None
 
         for chamada in tool_calls:
             call_id = chamada.get("id", "")
@@ -143,7 +144,7 @@ def build_graph(engine: RouterEngine, context: ToolContext):
 
             if ferramenta is None:
                 respostas.append(
-                    _tool_message(call_id, nome, f"ERRO: ferramenta desconhecida: {nome}")
+                    _tool_message(call_id, nome, f"ERRO: ferramenta desconhecida: {nome}", ok=False)
                 )
                 continue
 
@@ -155,6 +156,8 @@ def build_graph(engine: RouterEngine, context: ToolContext):
                         APPROVAL_DENIED_TEMPLATE.format(
                             tool=nome, reason=motivos.get(call_id) or "não informado"
                         ),
+                        ok=False,
+                        data={"denied": True, "reason": motivos.get(call_id) or ""},
                     )
                 )
                 continue
@@ -164,14 +167,28 @@ def build_graph(engine: RouterEngine, context: ToolContext):
                 resultado = await ferramenta.handler(context, argumentos)
             except Exception as exc:
                 log.warning("agent.tool.failed", tool=nome, error=str(exc)[:200])
-                respostas.append(_tool_message(call_id, nome, f"ERRO: {exc}"))
+                respostas.append(_tool_message(call_id, nome, f"ERRO: {exc}", ok=False))
                 continue
 
-            respostas.append(_tool_message(call_id, nome, resultado.content))
+            respostas.append(
+                _tool_message(call_id, nome, resultado.content, ok=resultado.ok, data=resultado.data)
+            )
             if caminho := resultado.data.get("path"):
                 alterados.append(str(caminho))
+            if "todos" in resultado.data:
+                todos_atualizados = resultado.data["todos"]
 
-        return {"messages": respostas, "files_changed": alterados, "approvals": {}}
+        atualizacao: dict[str, Any] = {
+            "messages": respostas,
+            "files_changed": alterados,
+            "approvals": {},
+        }
+        # Ausente na maioria dos turnos: sem `write_todos` nesta rodada, o
+        # checklist da sessão fica como estava — omitir a chave preserva o
+        # valor anterior em vez de apagá-lo.
+        if todos_atualizados is not None:
+            atualizacao["todos"] = todos_atualizados
+        return atualizacao
 
     def route_after_think(state: AgentState) -> str:
         if state.get("finished"):
@@ -207,8 +224,25 @@ def _parse_arguments(chamada: dict[str, Any]) -> dict[str, Any]:
     return parsed if isinstance(parsed, dict) else {}
 
 
-def _tool_message(call_id: str, name: str, content: str) -> dict[str, Any]:
-    return {"role": "tool", "tool_call_id": call_id, "name": name, "content": content}
+def _tool_message(
+    call_id: str,
+    name: str,
+    content: str,
+    *,
+    ok: bool = True,
+    data: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    # `data` carrega o que a ferramenta produziu de estruturado (diff, exit
+    # code, hits de busca...) — é o que permite a UI renderizar um card por
+    # tipo de ferramenta em vez de uma linha de texto truncado.
+    return {
+        "role": "tool",
+        "tool_call_id": call_id,
+        "name": name,
+        "content": content,
+        "ok": ok,
+        "data": data or {},
+    }
 
 
 __all__ = ["DEFAULT_MAX_ITERATIONS", "RiskClass", "build_graph"]

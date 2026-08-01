@@ -18,6 +18,13 @@ class PendingApproval(TypedDict):
     summary: str
 
 
+class TodoItem(TypedDict):
+    """Um passo do checklist mantido pelo modelo via `write_todos`."""
+
+    content: str
+    status: Literal["pending", "in_progress", "completed"]
+
+
 class AgentState(TypedDict, total=False):
     # Histórico no formato OpenAI. `operator.add` faz o LangGraph acumular em
     # vez de sobrescrever a cada nó.
@@ -33,6 +40,11 @@ class AgentState(TypedDict, total=False):
     # Decisões do humano, indexadas por `tool_call_id`: True aprova.
     approvals: dict[str, bool]
     approval_reasons: dict[str, str]
+
+    # Checklist da sessão. Sem `Annotated`/`operator.add` de propósito: cada
+    # chamada de `write_todos` reenvia a lista inteira e substitui a anterior,
+    # não acumula.
+    todos: list[TodoItem]
 
     iterations: int
     max_iterations: int

@@ -14,13 +14,17 @@ num repositório de verdade.
 
 1. Entenda antes de mudar. Use `search_code` para localizar o que importa em vez \
 de ler arquivos no escuro — o índice devolve o trecho certo com arquivo e linha.
-2. Faça a menor mudança que resolve o problema. Não reformate código que não faz \
+2. Se a tarefa tiver várias etapas, chame `write_todos` no início com o plano e \
+atualize os status (`pending` → `in_progress` → `completed`) conforme avança. Não \
+use para tarefas de um passo só — o checklist existe para acompanhar progresso, \
+não para narrar cada chamada de ferramenta.
+3. Faça a menor mudança que resolve o problema. Não reformate código que não faz \
 parte da tarefa, não renomeie o que não precisa ser renomeado.
-3. Prefira `edit_file` a `write_file`. Substituição pontual produz diff revisável; \
+4. Prefira `edit_file` a `write_file`. Substituição pontual produz diff revisável; \
 reescrever o arquivo inteiro esconde o que de fato mudou.
-4. Depois de alterar, rode os testes com `run_command`. Uma mudança que você não \
+5. Depois de alterar, rode os testes com `run_command`. Uma mudança que você não \
 verificou não está pronta.
-5. Escreva no estilo do código ao redor: mesma densidade de comentários, mesmas \
+6. Escreva no estilo do código ao redor: mesma densidade de comentários, mesmas \
 convenções de nome, mesmos idiomas.
 
 ## Limites
@@ -46,7 +50,13 @@ preâmbulo nem repetir o pedido. Quando não tiver certeza de algo que muda o \
 resultado, pergunte antes de agir."""
 
 
-def build_task_prompt(task: str, repo_map: str | None = None, mode: str = "agent") -> str:
+def build_task_prompt(
+    task: str,
+    repo_map: str | None = None,
+    mode: str = "agent",
+    focus_files: list[str] | None = None,
+    focus_folder: str | None = None,
+) -> str:
     """Monta a mensagem inicial da tarefa.
 
     O mapa do repositório vem antes da tarefa porque é a parte estável: manter o
@@ -59,15 +69,30 @@ def build_task_prompt(task: str, repo_map: str | None = None, mode: str = "agent
             f"```\n{repo_map}\n```"
         )
     
+    if focus_files or focus_folder:
+        foco_parts: list[str] = ["PASTA E ARQUIVOS EM FOCO (ATENÇÃO PRINCIPAL):"]
+        if focus_folder:
+            foco_parts.append(f"- Pasta alvo: `{focus_folder}`")
+        if focus_files:
+            foco_parts.append("- Arquivos selecionados pelo usuário para considerar e editar:")
+            for f in focus_files:
+                foco_parts.append(f"  • `{f}`")
+        partes.append("\n".join(foco_parts))
+
     if mode == "plan":
         partes.append(
             "MODO PLANEJAR ATIVO:\n"
-            "Analise os arquivos do projeto e produza primeiramente um plano detalhado de execução (com os arquivos a modificar e os passos propostos) antes de prosseguir com alterações."
+            "Analise os arquivos do projeto e chame `write_todos` com o plano detalhado de "
+            "execução (arquivos a modificar e passos propostos) antes de prosseguir com "
+            "alterações. Atualize o checklist conforme cada passo avança."
         )
     elif mode == "auto":
         partes.append(
             "MODO AUTOMÁTICO ATIVO:\n"
-            "Resolva a tarefa de forma autônoma ponta a ponta: investigue o problema, edite os arquivos e execute testes para verificar e corrigir eventuais erros."
+            "Resolva a tarefa de forma autônoma ponta a ponta: se envolver várias etapas, "
+            "chame `write_todos` no início e mantenha o checklist atualizado; investigue o "
+            "problema, edite os arquivos e execute testes para verificar e corrigir eventuais "
+            "erros."
         )
 
     partes.append(f"Tarefa:\n{task}")
