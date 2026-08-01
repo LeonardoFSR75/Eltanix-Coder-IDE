@@ -8,7 +8,7 @@
  * praticamente iguais.
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { del, get, post } from "@/lib/client";
 import { useIde } from "@/lib/ide-store";
 import { ConfirmDialog, PromptDialog } from "@/components/ide/Overlays";
@@ -24,17 +24,22 @@ interface Entry {
 }
 
 export function Explorer() {
-  const { project, openFile, active, bumpRevision, revision } = useIde();
+  const { project, openFile, previewFile, pinTab, active, bumpRevision, revision } = useIde();
   const [levels, setLevels] = useState<Record<string, Entry[]>>({});
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [lastClicked, setLastClicked] = useState<string | null>(null);
+  const [dragOverPath, setDragOverPath] = useState<string | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [filterText, setFilterText] = useState("");
   const [menu, setMenu] = useState<{ x: number; y: number; entry: Entry | null } | null>(null);
   const [dialogo, setDialogo] = useState<
     | { tipo: "novo-arquivo" | "nova-pasta" | "renomear"; base: string; inicial: string }
     | { tipo: "excluir"; alvo: Entry }
+    | { tipo: "excluir-lote"; alvos: string[] }
     | null
   >(null);
+  const treeRef = useRef<HTMLDivElement>(null);
 
   const carregar = useCallback(
     async (subpath: string) => {
@@ -59,9 +64,94 @@ export function Explorer() {
     for (const dir of expanded) void carregar(dir);
   }, [project, carregar, revision]);
 
-  const alternar = (entry: Entry) => {
+  // Revela o arquivo ativo: expande as pastas-pai (navegação por "ir para
+  // definição", Quick Open etc. não passa pelo clique na árvore, então sem
+  // isto o arquivo abriria sem a árvore acompanhar).
+  useEffect(() => {
+    if (!active) return;
+    const partes = active.split("/");
+    partes.pop();
+    let acumulado = "";
+    const paraExpandir: string[] = [];
+    for (const parte of partes) {
+      acumulado = acumulado ? `${acumulado}/${parte}` : parte;
+      paraExpandir.push(acumulado);
+    }
+    if (paraExpandir.length === 0) return;
+
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      let mudou = false;
+      for (const dir of paraExpandir) {
+        if (!next.has(dir)) {
+          next.add(dir);
+          mudou = true;
+        }
+      }
+      return mudou ? next : prev;
+    });
+    for (const dir of paraExpandir) {
+      if (!levels[dir]) void carregar(dir);
+    }
+    // Só reage à troca do arquivo ativo — `levels`/`carregar` mudando não
+    // deve reexpandir tudo de novo.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active]);
+
+  useEffect(() => {
+    if (!active || !treeRef.current) return;
+    const seletor = `[data-path="${CSS.escape(active)}"]`;
+    treeRef.current.querySelector(seletor)?.scrollIntoView({ block: "nearest" });
+  }, [active, levels, expanded]);
+
+  // Ordem visual atual (mesmos filtros de `renderar`), usada só para
+  // resolver o intervalo de um shift-click — não vale a pena manter em
+  // estado, a árvore raramente passa de algumas centenas de linhas visíveis.
+  const ordemVisivel = useCallback((): string[] => {
+    const out: string[] = [];
+    const percorrer = (subpath: string) => {
+      const list = levels[subpath] ?? [];
+      const filtered = filterText
+        ? list.filter((e) => e.name.toLowerCase().includes(filterText.toLowerCase()) || e.is_dir)
+        : list;
+      for (const entry of filtered) {
+        out.push(entry.path);
+        if (entry.is_dir && expanded.has(entry.path)) percorrer(entry.path);
+      }
+    };
+    percorrer(".");
+    return out;
+  }, [levels, filterText, expanded]);
+
+  const alternar = (entry: Entry, e: React.MouseEvent) => {
+    if (e.ctrlKey || e.metaKey) {
+      setSelected((prev) => {
+        const next = new Set(prev);
+        if (next.has(entry.path)) next.delete(entry.path);
+        else next.add(entry.path);
+        return next;
+      });
+      setLastClicked(entry.path);
+      return;
+    }
+    if (e.shiftKey && lastClicked) {
+      const ordem = ordemVisivel();
+      const i1 = ordem.indexOf(lastClicked);
+      const i2 = ordem.indexOf(entry.path);
+      if (i1 !== -1 && i2 !== -1) {
+        const [ini, fim] = i1 < i2 ? [i1, i2] : [i2, i1];
+        setSelected(new Set(ordem.slice(ini, fim + 1)));
+        return;
+      }
+    }
+
+    setSelected(new Set([entry.path]));
+    setLastClicked(entry.path);
+
     if (!entry.is_dir) {
-      openFile(entry.path);
+      // Clique único abre em "preview" (substitui a aba preview anterior);
+      // duplo-clique (abaixo) fixa.
+      previewFile(entry.path);
       return;
     }
     setExpanded((prev) => {
@@ -115,6 +205,51 @@ export function Explorer() {
     }
   };
 
+  const excluirLote = async (alvos: string[]) => {
+    if (!project) return;
+    // `recursive=true` incondicional é seguro aqui: para um arquivo o
+    // backend simplesmente ignora a flag (fs.delete só usa `recursive`
+    // quando o alvo é diretório).
+    for (const path of alvos) {
+      try {
+        await del(
+          `/api/workspace/file?project=${encodeURIComponent(project)}&path=${encodeURIComponent(path)}&recursive=true`,
+        );
+      } catch (err) {
+        setErro(err instanceof Error ? err.message : String(err));
+      }
+    }
+    setSelected(new Set());
+    bumpRevision();
+  };
+
+  const iniciarDrag = (e: React.DragEvent, entry: Entry) => {
+    const paths = selected.has(entry.path) && selected.size > 1 ? Array.from(selected) : [entry.path];
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("application/x-sicoobito-paths", JSON.stringify(paths));
+  };
+
+  const soltarEm = async (e: React.DragEvent, destFolder: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragOverPath(null);
+    const raw = e.dataTransfer.getData("application/x-sicoobito-paths");
+    if (!raw) return;
+    let paths: string[];
+    try {
+      paths = JSON.parse(raw);
+    } catch {
+      return;
+    }
+    for (const origem of paths) {
+      const nome = origem.split("/").pop();
+      if (!nome) continue;
+      const destino = destFolder ? `${destFolder}/${nome}` : nome;
+      if (destino === origem || destFolder === origem) continue;
+      await renomear(origem, destino);
+    }
+  };
+
   const renderar = (subpath: string, profundidade: number) => {
     const list = levels[subpath] ?? [];
     const filtered = filterText
@@ -125,13 +260,34 @@ export function Explorer() {
       <div key={entry.path} className="tree-node">
         <button
           type="button"
-          className={`tree-row${active === entry.path ? " active" : ""}`}
+          data-path={entry.path}
+          className={[
+            "tree-row",
+            active === entry.path && "active",
+            selected.has(entry.path) && "selected",
+            dragOverPath === entry.path && "drag-over",
+          ]
+            .filter(Boolean)
+            .join(" ")}
           style={{ paddingLeft: 10 + profundidade * 14 }}
-          onClick={() => alternar(entry)}
+          onClick={(e) => alternar(entry, e)}
+          onDoubleClick={() => {
+            if (!entry.is_dir) pinTab(entry.path);
+          }}
           onContextMenu={(e) => {
             e.preventDefault();
+            if (!selected.has(entry.path)) setSelected(new Set([entry.path]));
             setMenu({ x: e.clientX, y: e.clientY, entry });
           }}
+          draggable
+          onDragStart={(e) => iniciarDrag(e, entry)}
+          onDragOver={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            setDragOverPath(entry.is_dir ? entry.path : pastaDe(entry));
+          }}
+          onDragLeave={() => setDragOverPath((p) => (p === entry.path ? null : p))}
+          onDrop={(e) => void soltarEm(e, entry.is_dir ? entry.path : pastaDe(entry))}
           title={entry.path}
         >
           {entry.is_dir ? (
@@ -225,7 +381,24 @@ export function Explorer() {
       </div>
 
       {erro && <div className="panel-error">{erro}</div>}
-      <div className="tree">{renderar(".", 0)}</div>
+      <div
+        className={`tree${dragOverPath === "" ? " drag-over-root" : ""}`}
+        ref={treeRef}
+        onDragOver={(e) => {
+          if (e.target !== e.currentTarget) return;
+          e.preventDefault();
+          setDragOverPath("");
+        }}
+        onDragLeave={(e) => {
+          if (e.target === e.currentTarget) setDragOverPath((p) => (p === "" ? null : p));
+        }}
+        onDrop={(e) => {
+          if (e.target !== e.currentTarget) return;
+          void soltarEm(e, "");
+        }}
+      >
+        {renderar(".", 0)}
+      </div>
 
       {menu && (
         <>
@@ -237,7 +410,18 @@ export function Explorer() {
             <button type="button" onClick={() => { setDialogo({ tipo: "nova-pasta", base: pastaDe(menu.entry), inicial: "" }); setMenu(null); }}>
               📁 Nova Pasta
             </button>
-            {menu.entry && (
+            {menu.entry && selected.size > 1 && selected.has(menu.entry.path) ? (
+              <button
+                type="button"
+                className="danger"
+                onClick={() => {
+                  setDialogo({ tipo: "excluir-lote", alvos: Array.from(selected) });
+                  setMenu(null);
+                }}
+              >
+                🗑️ Excluir {selected.size} itens selecionados
+              </button>
+            ) : menu.entry && (
               <>
                 <button type="button" onClick={() => {
                   navigator.clipboard?.writeText(menu.entry!.path);
@@ -293,6 +477,14 @@ export function Explorer() {
             </>
           }
           onConfirm={() => void excluir(dialogo.alvo)}
+          onClose={() => setDialogo(null)}
+        />
+      )}
+      {dialogo?.tipo === "excluir-lote" && (
+        <ConfirmDialog
+          danger
+          message={`Excluir ${dialogo.alvos.length} itens selecionados? Pastas são removidas com todo o conteúdo.`}
+          onConfirm={() => void excluirLote(dialogo.alvos)}
           onClose={() => setDialogo(null)}
         />
       )}
@@ -644,6 +836,107 @@ export function GitPanel() {
           onClose={() => setNovoBranch(false)}
         />
       )}
+    </div>
+  );
+}
+
+// ── Debugger ────────────────────────────────────────────────────────────────
+
+export function DebugPanel() {
+  const { project, active, setTerminalOpen } = useIde();
+  const [argsInput, setArgsInput] = useState("");
+
+  if (!project) return <div className="tree-hint">Selecione um projeto.</div>;
+
+  const getRunCommand = (file: string | null, debugMode: boolean = false) => {
+    if (!file) return "python -m pytest";
+    const lower = file.toLowerCase();
+    const args = argsInput.trim() ? ` ${argsInput.trim()}` : "";
+    if (lower.endsWith(".py")) {
+      return debugMode ? `python -m pdb ${file}${args}` : `python ${file}${args}`;
+    }
+    if (lower.endsWith(".js") || lower.endsWith(".ts") || lower.endsWith(".tsx")) {
+      return debugMode ? `node --inspect ${file}${args}` : `node ${file}${args}`;
+    }
+    if (lower.endsWith(".go")) {
+      return `go run ${file}${args}`;
+    }
+    if (lower.endsWith(".sh") || lower.endsWith(".bash")) {
+      return `bash ${file}${args}`;
+    }
+    return `./${file}${args}`;
+  };
+
+  const executeCommandInTerminal = (cmd: string) => {
+    setTerminalOpen(true);
+    // Dispara via evento global para o terminal capturar e rodar
+    const evt = new CustomEvent("sicoobito:terminal:exec", { detail: { command: cmd } });
+    window.dispatchEvent(evt);
+  };
+
+  return (
+    <div className="panel-body" style={{ padding: "10px", gap: "10px", display: "flex", flexDirection: "column" }}>
+      <div style={{ background: "var(--surface-2)", padding: "8px 10px", borderRadius: "5px", border: "1px solid var(--border)" }}>
+        <div style={{ fontSize: "10px", color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: "2px" }}>
+          Arquivo em Execução
+        </div>
+        <div style={{ fontWeight: 600, color: "#4ade80", fontFamily: "var(--font-mono)", fontSize: "12px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={active ?? ""}>
+          {active ? active.split("/").pop() : "(nenhum arquivo aberto)"}
+        </div>
+        {active && active.includes("/") && (
+          <div style={{ fontSize: "10px", color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {active}
+          </div>
+        )}
+      </div>
+
+      <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+        <button
+          type="button"
+          className="primary"
+          style={{ padding: "6px 10px", fontSize: "11.5px", display: "flex", alignItems: "center", justifyContent: "center", gap: "6px", background: "#16a34a", border: "none", borderRadius: "4px", fontWeight: 500 }}
+          onClick={() => executeCommandInTerminal(getRunCommand(active, false))}
+          disabled={!active}
+        >
+          ▶ Executar Arquivo Ativo
+        </button>
+
+        <button
+          type="button"
+          className="theme-btn"
+          style={{ padding: "6px 10px", fontSize: "11.5px", display: "flex", alignItems: "center", justifyContent: "center", gap: "6px", background: "#7c3aed", color: "#fff", border: "none", borderRadius: "4px", fontWeight: 500 }}
+          onClick={() => executeCommandInTerminal(getRunCommand(active, true))}
+          disabled={!active}
+        >
+          🐞 Depurar (PDB / Inspect)
+        </button>
+
+        <button
+          type="button"
+          className="theme-btn"
+          style={{ padding: "5px 10px", fontSize: "11px", display: "flex", alignItems: "center", justifyContent: "center", gap: "6px", borderRadius: "4px" }}
+          onClick={() => executeCommandInTerminal("python -m pytest")}
+        >
+          🧪 Rodar Testes (pytest)
+        </button>
+      </div>
+
+      <div style={{ marginTop: "4px" }}>
+        <label style={{ fontSize: "10.5px", color: "#94a3b8", display: "block", marginBottom: "3px" }}>
+          Argumentos adicionais:
+        </label>
+        <input
+          type="text"
+          value={argsInput}
+          onChange={(e) => setArgsInput(e.target.value)}
+          placeholder="ex: --verbose arg1"
+          style={{ width: "100%", padding: "4px 8px", borderRadius: "4px", background: "var(--surface)", border: "1px solid var(--border)", color: "var(--text)", fontSize: "11px" }}
+        />
+      </div>
+
+      <div style={{ marginTop: "auto", fontSize: "10.5px", color: "var(--text-muted)", background: "rgba(255,255,255,0.02)", border: "1px solid var(--border)", padding: "6px 8px", borderRadius: "4px", lineHeight: "1.4" }}>
+        💡 Saída stdout/stderr exibida em tempo real no terminal do sandbox abaixo.
+      </div>
     </div>
   );
 }
