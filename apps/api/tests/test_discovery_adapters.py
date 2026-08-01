@@ -16,7 +16,7 @@ import pytest
 from sicoobito.config import Settings
 from sicoobito.router.adapters.base import DiscoveryError
 from sicoobito.router.adapters.databricks import DatabricksAdapter
-from sicoobito.router.adapters.direct import AnthropicAdapter
+from sicoobito.router.adapters.direct import AnthropicAdapter, GroqAdapter, OpenAIAdapter
 from sicoobito.router.adapters.ollama import OllamaAdapter
 
 
@@ -155,9 +155,61 @@ async def test_anthropic_discover_lists_models_with_estimated_fields(monkeypatch
     assert all(set(d.estimated_fields) == {"context_window", "capabilities"} for d in discovered)
 
 
-async def test_anthropic_discover_raises_discovery_error_on_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_groq_discover_raises_discovery_error_on_failure(monkeypatch: pytest.MonkeyPatch) -> None:
     _patch_client(monkeypatch, error=httpx.ConnectError("recusado"))
-    adapter = AnthropicAdapter(Settings(_env_file=None, ANTHROPIC_API_KEY="sk-ant-teste"))
+    adapter = GroqAdapter(Settings(_env_file=None, GROQ_API_KEY="gsk_teste"))
+
+    with pytest.raises(DiscoveryError):
+        await adapter.discover_models()
+
+
+# ── OpenAI ──────────────────────────────────────────────────────────────────
+
+
+async def test_openai_discover_without_credentials_returns_empty() -> None:
+    adapter = OpenAIAdapter(Settings(_env_file=None, OPENAI_API_KEY=""))
+    assert await adapter.discover_models() == []
+
+
+async def test_openai_discover_lists_models(monkeypatch: pytest.MonkeyPatch) -> None:
+    _patch_client(
+        monkeypatch,
+        payload={"data": [{"id": "gpt-4o"}, {"id": "gpt-4o-mini"}, {"id": "text-embedding-3-small"}]},
+    )
+    adapter = OpenAIAdapter(Settings(_env_file=None, OPENAI_API_KEY="sk-teste"))
+
+    discovered = await adapter.discover_models()
+
+    ids = {d.suggested_id for d in discovered}
+    assert ids == {"openai/gpt-4o", "openai/gpt-4o-mini"}
+
+
+# ── Groq ───────────────────────────────────────────────────────────────────
+
+
+async def test_groq_discover_without_credentials_returns_empty() -> None:
+    adapter = GroqAdapter(Settings(_env_file=None, GROQ_API_KEY=""))
+    assert await adapter.discover_models() == []
+
+
+async def test_groq_discover_lists_models(monkeypatch: pytest.MonkeyPatch) -> None:
+    _patch_client(
+        monkeypatch,
+        payload={"data": [{"id": "llama-3.3-70b-versatile", "context_window": 128000}]},
+    )
+    adapter = GroqAdapter(Settings(_env_file=None, GROQ_API_KEY="gsk_teste"))
+
+    discovered = await adapter.discover_models()
+
+    assert len(discovered) == 1
+    assert discovered[0].suggested_id == "groq/llama-3.3-70b-versatile"
+    assert discovered[0].provider == "groq"
+    assert discovered[0].context_window == 128000
+
+
+async def test_groq_discover_raises_discovery_error_on_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    _patch_client(monkeypatch, error=httpx.ConnectError("recusado"))
+    adapter = GroqAdapter(Settings(_env_file=None, GROQ_API_KEY="gsk_teste"))
 
     with pytest.raises(DiscoveryError):
         await adapter.discover_models()

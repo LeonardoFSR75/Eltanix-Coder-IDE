@@ -42,6 +42,11 @@ def test_content_policy_is_fatal():
     assert classify(ContentPolicyViolationError("blocked")) is FailureKind.FATAL
 
 
+def test_credit_balance_low_is_transient_allowing_fallback():
+    exc = BadRequestError("Your credit balance is too low to access the Anthropic API.")
+    assert classify(exc) is FailureKind.TRANSIENT
+
+
 def test_cache_is_disabled_without_redis():
     cache = ResponseCache(None)
     assert cache.enabled is False

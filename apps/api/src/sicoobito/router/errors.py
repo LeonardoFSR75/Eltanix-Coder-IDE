@@ -44,15 +44,16 @@ def classify(exc: Exception) -> FailureKind:
     if name == "ContextWindowExceededError":
         return FailureKind.SKIP
 
-    if name in {"ContentPolicyViolationError", "UnsupportedParamsError", "NotFoundError"}:
+    if name in {"ContentPolicyViolationError", "UnsupportedParamsError"}:
         return FailureKind.FATAL
 
-    if name == "BadRequestError":
-        # O litellm envolve "contexto estourado" em BadRequestError em alguns
-        # provedores; a mensagem é o único sinal disponível.
+    if name in {"BadRequestError", "NotFoundError", "AuthenticationError", "PermissionDeniedError"}:
         text = str(exc).lower()
         if "context" in text and ("length" in text or "window" in text or "maximum" in text):
             return FailureKind.SKIP
+        # Falhas de saldo, chave, quota ou cobrança são do provedor específico, não do prompt.
+        if any(w in text for w in ("credit", "balance", "quota", "billing", "plan", "key", "auth", "payment", "unauthorized", "invalid_request_error")):
+            return FailureKind.TRANSIENT
         return FailureKind.FATAL
 
     return FailureKind.TRANSIENT

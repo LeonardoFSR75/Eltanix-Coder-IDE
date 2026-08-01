@@ -76,14 +76,19 @@ Pronto:
 A faixa 5400–5499 foi escolhida para não disputar 3000, 8000 e 5432 com outros
 projetos.
 
-### Modelos locais
+### Modelos locais (Ollama opcional)
 
-O Ollama é um serviço do compose — não há nada a instalar no host. O serviço
-`ollama-init` baixa os modelos de `OLLAMA_PULL_MODELS` na primeira subida e sai;
-os pesos ficam num volume, então recriar containers não rebaixa nada.
+Por padrão, a plataforma sobe leve usando provedores cloud (**Anthropic** ou **Databricks**, dependendo das chaves no `.env`). O Ollama local roda como um serviço opcional via perfil do Docker Compose — nada precisa ser instalado no host.
+
+Para iniciar a plataforma **com o Ollama local**:
+```bash
+docker compose --profile ollama up -d
+```
+
+O serviço `ollama-init` baixa os modelos de `OLLAMA_PULL_MODELS` na primeira subida e sai; os pesos ficam num volume, então recriar containers não rebaixa nada.
 
 ```bash
-docker compose logs -f ollama-init
+docker compose --profile ollama logs -f ollama-init
 ```
 
 **Sem GPU, o tamanho do modelo é a variável que decide se isto é usável.** Numa

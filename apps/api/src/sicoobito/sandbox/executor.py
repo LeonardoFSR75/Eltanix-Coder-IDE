@@ -34,10 +34,17 @@ class ExecutorConfig:
 class RemoteSandbox:
     """Um sandbox operado pelo executor."""
 
-    def __init__(self, session_id: str, workspace: Path, config: ExecutorConfig) -> None:
+    def __init__(
+        self,
+        session_id: str,
+        workspace: Path,
+        config: ExecutorConfig,
+        client: httpx.AsyncClient | None = None,
+    ) -> None:
         self.session_id = session_id
         self.workspace = workspace
         self.config = config
+        self._client = client
         self.created_at = 0.0
         self._started = False
 
@@ -48,6 +55,11 @@ class RemoteSandbox:
     def _headers(self) -> dict[str, str]:
         return {"Authorization": f"Bearer {self.config.token}"} if self.config.token else {}
 
+    async def _get_client(self, timeout: float = 120.0) -> tuple[httpx.AsyncClient, bool]:
+        if self._client is not None and not self._client.is_closed:
+            return self._client, False
+        return httpx.AsyncClient(timeout=timeout), True
+
     async def start(self) -> str:
         payload = {
             "session_id": self.session_id,
@@ -57,15 +69,18 @@ class RemoteSandbox:
             "image": self.config.image,
             "network": self.config.network,
         }
+        client, is_owned = await self._get_client(timeout=120.0)
         try:
-            async with httpx.AsyncClient(timeout=120.0) as client:
-                resposta = await client.post(
-                    f"{self.config.base_url}/sandboxes", json=payload, headers=self._headers()
-                )
+            resposta = await client.post(
+                f"{self.config.base_url}/sandboxes", json=payload, headers=self._headers()
+            )
         except httpx.HTTPError as exc:
             raise SandboxUnavailableError(
                 f"executor inacessível em {self.config.base_url}: {exc}"
             ) from exc
+        finally:
+            if is_owned:
+                await client.aclose()
 
         if resposta.status_code >= 400:
             raise SandboxError(f"executor recusou criar o sandbox: {resposta.text[:300]}")
@@ -95,15 +110,14 @@ class RemoteSandbox:
         payload = {"command": command, "timeout": limite, "workdir": workdir}
         inicio = time.perf_counter()
 
+        client, is_owned = await self._get_client(timeout=limite + _TIMEOUT_MARGEM)
         try:
-            # A margem existe porque o executor aplica o timeout do comando; o
-            # HTTP precisa sobreviver um pouco mais para receber a resposta.
-            async with httpx.AsyncClient(timeout=limite + _TIMEOUT_MARGEM) as client:
-                resposta = await client.post(
-                    f"{self.config.base_url}/sandboxes/{self.session_id}/exec",
-                    json=payload,
-                    headers=self._headers(),
-                )
+            resposta = await client.post(
+                f"{self.config.base_url}/sandboxes/{self.session_id}/exec",
+                json=payload,
+                headers=self._headers(),
+                timeout=limite + _TIMEOUT_MARGEM,
+            )
         except httpx.TimeoutException:
             duracao = int((time.perf_counter() - inicio) * 1000)
             return ExecResult(
@@ -115,6 +129,9 @@ class RemoteSandbox:
             )
         except httpx.HTTPError as exc:
             raise SandboxError(f"falha ao falar com o executor: {exc}") from exc
+        finally:
+            if is_owned:
+                await client.aclose()
 
         if resposta.status_code >= 400:
             raise SandboxError(f"executor retornou erro: {resposta.text[:300]}")
@@ -138,14 +155,18 @@ class RemoteSandbox:
         if not self._started:
             return
         self._started = False
+        client, is_owned = await self._get_client(timeout=60.0)
         try:
-            async with httpx.AsyncClient(timeout=60.0) as client:
-                await client.delete(
-                    f"{self.config.base_url}/sandboxes/{self.session_id}",
-                    headers=self._headers(),
-                )
+            await client.delete(
+                f"{self.config.base_url}/sandboxes/{self.session_id}",
+                headers=self._headers(),
+                timeout=60.0,
+            )
         except httpx.HTTPError as exc:
             log.warning("sandbox.stop.failed", session=self.session_id, error=str(exc))
+        finally:
+            if is_owned:
+                await client.aclose()
         log.info("sandbox.stopped", session=self.session_id)
 
 
@@ -155,6 +176,15 @@ class ExecutorSandboxManager:
     def __init__(self, config: ExecutorConfig) -> None:
         self._config = config
         self._sandboxes: dict[str, RemoteSandbox] = {}
+        self._http_client: httpx.AsyncClient | None = None
+
+    def _get_http_client(self) -> httpx.AsyncClient:
+        if self._http_client is None or self._http_client.is_closed:
+            self._http_client = httpx.AsyncClient(
+                timeout=httpx.Timeout(60.0, connect=10.0),
+                limits=httpx.Limits(max_keepalive_connections=20, max_connections=50),
+            )
+        return self._http_client
 
     def new_session_id(self) -> str:
         return uuid.uuid4().hex[:12]
@@ -162,7 +192,9 @@ class ExecutorSandboxManager:
     async def acquire(self, session_id: str, workspace: Path) -> RemoteSandbox:
         sandbox = self._sandboxes.get(session_id)
         if sandbox is None:
-            sandbox = RemoteSandbox(session_id, workspace, self._config)
+            sandbox = RemoteSandbox(
+                session_id, workspace, self._config, client=self._get_http_client()
+            )
             self._sandboxes[session_id] = sandbox
         await sandbox.start()
         return sandbox
@@ -189,13 +221,14 @@ class ExecutorSandboxManager:
     async def reap_orphans(self) -> int:
         """Pede ao executor que descarte tudo que este processo não conhece."""
         headers = {"Authorization": f"Bearer {self._config.token}"} if self._config.token else {}
+        client = self._get_http_client()
         try:
-            async with httpx.AsyncClient(timeout=60.0) as client:
-                resposta = await client.post(
-                    f"{self._config.base_url}/sandboxes/reap",
-                    json=list(self._sandboxes),
-                    headers=headers,
-                )
+            resposta = await client.post(
+                f"{self._config.base_url}/sandboxes/reap",
+                json=list(self._sandboxes),
+                headers=headers,
+                timeout=60.0,
+            )
         except httpx.HTTPError as exc:
             log.debug("sandbox.reap_orphans.unavailable", error=str(exc))
             return 0
@@ -222,3 +255,5 @@ class ExecutorSandboxManager:
     async def shutdown(self) -> None:
         for sid in list(self._sandboxes):
             await self.release(sid)
+        if self._http_client is not None and not self._http_client.is_closed:
+            await self._http_client.aclose()

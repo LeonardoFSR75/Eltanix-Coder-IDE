@@ -30,49 +30,68 @@ profiles:
     models:
       - anthropic/claude-haiku-4-5-20251001
       - anthropic/claude-sonnet-4-6
+      - groq/llama-3.3-70b-versatile
+      - databricks/llama-3.3-70b
+      - foundry/gpt-4o-mini
+      - groq/llama-3.1-8b-instant
       - ollama/qwen2.5-coder:1.5b
+
   local-first:
     strategy: priority
     models:
       - ollama/qwen2.5-coder:7b
       - ollama/qwen2.5-coder:1.5b
+      - anthropic/claude-haiku-4-5-20251001
+      - databricks/llama-3.3-70b
       - foundry/gpt-4o-mini
-      - foundry/gpt-4o
 
   # Tarefas de codificação de verdade: qualidade primeiro.
   coding:
     strategy: priority
     models:
-      - foundry/gpt-4o
+      - anthropic/claude-sonnet-4-6
+      - groq/llama-3.3-70b-versatile
+      - groq/deepseek-r1-distill-llama-70b
       - databricks/llama-3.3-70b
+      - foundry/gpt-4o
       - ollama/qwen2.5-coder:7b
 
   cheap:
     strategy: cost
     models:
-      - ollama/qwen2.5-coder:1.5b
+      - groq/llama-3.1-8b-instant
+      - anthropic/claude-haiku-4-5-20251001
+      - databricks/llama-3.3-70b
       - foundry/gpt-4o-mini
       - openai/gpt-4o-mini
+      - ollama/qwen2.5-coder:1.5b
 
   fast:
     strategy: latency
     models:
-      - ollama/qwen2.5-coder:1.5b
+      - groq/llama-3.1-8b-instant
+      - groq/llama-3.3-70b-versatile
+      - anthropic/claude-haiku-4-5-20251001
+      - databricks/llama-3.3-70b
       - foundry/gpt-4o-mini
+      - ollama/qwen2.5-coder:1.5b
 
   # Trabalho auxiliar barato: mensagem de commit, título de PR, classificação,
-  # sumarização de histórico. Nunca deveria custar dinheiro.
+  # sumarização de histórico.
   utility:
     strategy: priority
     models:
-      - ollama/qwen2.5-coder:1.5b
+      - groq/llama-3.1-8b-instant
+      - anthropic/claude-haiku-4-5-20251001
+      - databricks/llama-3.3-70b
       - foundry/gpt-4o-mini
+      - ollama/qwen2.5-coder:1.5b
 
   embedding:
     strategy: priority
     models:
-      - ollama/nomic-embed-text
       - databricks/bge-large-en
+      - ollama/nomic-embed-text
 
 # Resiliência aplicada a todos os perfis.
 resilience:

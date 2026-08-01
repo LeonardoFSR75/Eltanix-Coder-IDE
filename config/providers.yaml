@@ -66,7 +66,7 @@ providers:
     context_window: 128000
     tags: [cloud, coding]
     capabilities: [chat, tools]
-    enabled: false
+    enabled: true
 
   - id: databricks/bge-large-en
     provider: databricks
@@ -74,7 +74,7 @@ providers:
     context_window: 512
     tags: [cloud, embedding]
     capabilities: [embedding]
-    enabled: false
+    enabled: true
 
   # ── Provedores diretos (comparação de qualidade/custo) ───────────────────
   - id: anthropic/claude-sonnet-4-5
@@ -83,7 +83,7 @@ providers:
     context_window: 200000
     tags: [cloud, coding, strong]
     capabilities: [chat, tools, vision, prompt_cache]
-    enabled: false
+    enabled: true
 
   - id: openai/gpt-4o-mini
     provider: openai
@@ -105,6 +105,156 @@ providers:
     provider: anthropic
     model: claude-haiku-4-5-20251001
     context_window: 200000
+    tags: []
+    capabilities:
+      - chat
+      - tools
+    enabled: true
+
+  # ── GroqCloud ─────────────────────────────────────────────────────────────
+  - id: groq/llama-3.3-70b-versatile
+    provider: groq
+    model: llama-3.3-70b-versatile
+    context_window: 128000
+    tags: [cloud, coding, ultra-fast]
+    capabilities: [chat, tools]
+    enabled: true
+
+  - id: groq/llama-3.1-8b-instant
+    provider: groq
+    model: llama-3.1-8b-instant
+    context_window: 131072
+    tags: [cloud, cheap, ultra-fast, utility]
+    capabilities: [chat, tools]
+    enabled: true
+
+  - id: groq/mixtral-8x7b-32768
+    provider: groq
+    model: mixtral-8x7b-32768
+    context_window: 32768
+    tags: [cloud, fast]
+    capabilities: [chat, tools]
+    enabled: true
+
+  - id: groq/deepseek-r1-distill-llama-70b
+    provider: groq
+    model: deepseek-r1-distill-llama-70b
+    context_window: 128000
+    tags: [cloud, coding, reasoning]
+    capabilities: [chat, tools]
+    enabled: true
+  - id: groq/allam-2-7b
+    provider: groq
+    model: allam-2-7b
+    context_window: 4096
+    tags: []
+    capabilities:
+      - chat
+      - tools
+    enabled: true
+  - id: groq/openai/gpt-oss-20b
+    provider: groq
+    model: openai/gpt-oss-20b
+    context_window: 131072
+    tags: []
+    capabilities:
+      - chat
+      - tools
+    enabled: true
+  - id: groq/groq/compound-mini
+    provider: groq
+    model: groq/compound-mini
+    context_window: 131072
+    tags: []
+    capabilities:
+      - chat
+      - tools
+    enabled: true
+  - id: groq/whisper-large-v3
+    provider: groq
+    model: whisper-large-v3
+    context_window: 448
+    tags: []
+    capabilities:
+      - chat
+      - tools
+    enabled: true
+  - id: groq/whisper-large-v3-turbo
+    provider: groq
+    model: whisper-large-v3-turbo
+    context_window: 448
+    tags: []
+    capabilities:
+      - chat
+      - tools
+    enabled: true
+  - id: groq/openai/gpt-oss-safeguard-20b
+    provider: groq
+    model: openai/gpt-oss-safeguard-20b
+    context_window: 131072
+    tags: []
+    capabilities:
+      - chat
+      - tools
+    enabled: true
+  - id: groq/groq/compound
+    provider: groq
+    model: groq/compound
+    context_window: 131072
+    tags: []
+    capabilities:
+      - chat
+      - tools
+    enabled: true
+  - id: groq/meta-llama/llama-prompt-guard-2-86m
+    provider: groq
+    model: meta-llama/llama-prompt-guard-2-86m
+    context_window: 512
+    tags: []
+    capabilities:
+      - chat
+      - tools
+    enabled: true
+  - id: groq/openai/gpt-oss-120b
+    provider: groq
+    model: openai/gpt-oss-120b
+    context_window: 131072
+    tags: []
+    capabilities:
+      - chat
+      - tools
+    enabled: true
+  - id: groq/canopylabs/orpheus-arabic-saudi
+    provider: groq
+    model: canopylabs/orpheus-arabic-saudi
+    context_window: 4000
+    tags: []
+    capabilities:
+      - chat
+      - tools
+    enabled: true
+  - id: groq/qwen/qwen3.6-27b
+    provider: groq
+    model: qwen/qwen3.6-27b
+    context_window: 131072
+    tags: []
+    capabilities:
+      - chat
+      - tools
+    enabled: true
+  - id: groq/canopylabs/orpheus-v1-english
+    provider: groq
+    model: canopylabs/orpheus-v1-english
+    context_window: 4000
+    tags: []
+    capabilities:
+      - chat
+      - tools
+    enabled: true
+  - id: groq/meta-llama/llama-prompt-guard-2-22m
+    provider: groq
+    model: meta-llama/llama-prompt-guard-2-22m
+    context_window: 512
     tags: []
     capabilities:
       - chat

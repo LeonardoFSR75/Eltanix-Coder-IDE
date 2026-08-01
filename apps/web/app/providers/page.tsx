@@ -19,6 +19,7 @@ const EMPTY_CREDENTIALS: CredentialsView = {
   databricks_token: EMPTY_CREDENTIAL,
   openai_api_key: EMPTY_CREDENTIAL,
   anthropic_api_key: EMPTY_CREDENTIAL,
+  groq_api_key: EMPTY_CREDENTIAL,
   github_token: EMPTY_CREDENTIAL,
 };
 

@@ -35,6 +35,7 @@ _CREDENTIAL_FIELDS: list[tuple[str, str, str, bool]] = [
     ("databricks_token", "databricks_token", "DATABRICKS_TOKEN", True),
     ("openai_api_key", "openai_api_key", "OPENAI_API_KEY", True),
     ("anthropic_api_key", "anthropic_api_key", "ANTHROPIC_API_KEY", True),
+    ("groq_api_key", "groq_api_key", "GROQ_API_KEY", True),
     ("github_token", "github_token", "GITHUB_TOKEN", True),
 ]
 
@@ -313,6 +314,7 @@ class UpdateCredentialsRequest(BaseModel):
     databricks_token: str | None = None
     openai_api_key: str | None = None
     anthropic_api_key: str | None = None
+    groq_api_key: str | None = None
     github_token: str | None = None
 
     @field_validator(
@@ -323,6 +325,7 @@ class UpdateCredentialsRequest(BaseModel):
         "databricks_token",
         "openai_api_key",
         "anthropic_api_key",
+        "groq_api_key",
         "github_token",
     )
     @classmethod

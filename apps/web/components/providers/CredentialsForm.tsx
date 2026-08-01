@@ -12,6 +12,7 @@ type FieldKey =
   | "databricks_token"
   | "openai_api_key"
   | "anthropic_api_key"
+  | "groq_api_key"
   | "github_token";
 
 interface CredentialsFormProps {
@@ -29,6 +30,7 @@ function buildValues(view: CredentialsView): Record<FieldKey, string> {
     databricks_token: "",
     openai_api_key: "",
     anthropic_api_key: "",
+    groq_api_key: "",
     github_token: "",
   };
 }
@@ -150,6 +152,21 @@ export function CredentialsForm({ initial, onSaved, onError }: CredentialsFormPr
             placeholder={secretPlaceholder("anthropic_api_key")}
             onChange={(e) => setField("anthropic_api_key", e.target.value)}
           />
+        </div>
+
+        <div className="card">
+          <h3>⚡ GroqCloud</h3>
+          <label style={labelStyle}>Groq API Key</label>
+          <input
+            type="password"
+            className="studio-input"
+            value={values.groq_api_key}
+            placeholder={secretPlaceholder("groq_api_key")}
+            onChange={(e) => setField("groq_api_key", e.target.value)}
+          />
+          <div className="hint" style={{ marginTop: 8 }}>
+            Obtenha sua chave em <code>console.groq.com/keys</code>
+          </div>
         </div>
 
         <div className="card">

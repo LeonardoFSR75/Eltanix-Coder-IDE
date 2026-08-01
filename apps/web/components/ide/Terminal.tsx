@@ -17,7 +17,15 @@ import { post } from "@/lib/client";
 
 const PROMPT = "\x1b[32m$\x1b[0m ";
 
-export function TerminalPanel({ sessionId }: { sessionId: string | null }) {
+export function TerminalPanel({
+  sessionId,
+  project,
+  onSessionCreated,
+}: {
+  sessionId: string | null;
+  project?: string | null;
+  onSessionCreated?: (id: string) => void;
+}) {
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<import("@xterm/xterm").Terminal | null>(null);
   const socketRef = useRef<WebSocket | null>(null);
@@ -26,13 +34,35 @@ export function TerminalPanel({ sessionId }: { sessionId: string | null }) {
   const [detalhe, setDetalhe] = useState<string | null>(null);
 
   const conectar = useCallback(async () => {
-    if (!sessionId || socketRef.current) return;
+    if (socketRef.current) return;
     setEstado("conectando");
     setDetalhe(null);
 
+    let targetSessionId = sessionId;
+    if (!targetSessionId) {
+      if (!project) {
+        setEstado("parado");
+        setDetalhe("Selecione um projeto para abrir o terminal.");
+        return;
+      }
+      try {
+        const s = await post<{ session_id: string }>("/api/agent/sessions", {
+          project,
+          task: "Sessão do Terminal Interativo",
+          mode: "auto",
+        });
+        targetSessionId = s.session_id;
+        onSessionCreated?.(s.session_id);
+      } catch (err) {
+        setEstado("erro");
+        setDetalhe("Falha ao inicializar o sandbox do terminal.");
+        return;
+      }
+    }
+
     let ticket: string;
     try {
-      const r = await post<{ ticket: string }>(`/api/workspace/terminal/${sessionId}/ticket`);
+      const r = await post<{ ticket: string }>(`/api/workspace/terminal/${targetSessionId}/ticket`);
       ticket = r.ticket;
     } catch (err) {
       setEstado("erro");
@@ -40,10 +70,9 @@ export function TerminalPanel({ sessionId }: { sessionId: string | null }) {
       return;
     }
 
-    // O WebSocket não passa pelo proxy do Next: o browser abre direto na API.
     const origem =
       process.env.NEXT_PUBLIC_API_ORIGIN ?? `${window.location.protocol}//${window.location.hostname}:5401`;
-    const url = `${origem.replace(/^http/, "ws")}/api/workspace/terminal/${sessionId}?ticket=${encodeURIComponent(ticket)}`;
+    const url = `${origem.replace(/^http/, "ws")}/api/workspace/terminal/${targetSessionId}?ticket=${encodeURIComponent(ticket)}`;
 
     const socket = new WebSocket(url);
     socketRef.current = socket;
@@ -145,22 +174,46 @@ export function TerminalPanel({ sessionId }: { sessionId: string | null }) {
   }, []);
 
   useEffect(() => {
-    if (sessionId) void conectar();
-  }, [sessionId, conectar]);
+    void conectar();
+  }, [sessionId, project, conectar]);
 
-  const enviarComando = (cmd: string) => {
+  const [aba, setAba] = useState<"terminal" | "debugger">("terminal");
+
+  const enviarComando = useCallback((cmd: string) => {
     const socket = socketRef.current;
     if (!socket || socket.readyState !== WebSocket.OPEN) return;
-    termRef.current?.write(cmd);
+    termRef.current?.write(`${cmd}\r\n`);
     socket.send(JSON.stringify({ command: cmd }));
-  };
+  }, []);
+
+  useEffect(() => {
+    const handleCustomExec = (e: Event) => {
+      const customEvt = e as CustomEvent<{ command: string }>;
+      if (customEvt.detail?.command) {
+        enviarComando(customEvt.detail.command);
+      }
+    };
+    window.addEventListener("sicoobito:terminal:exec", handleCustomExec);
+    return () => window.removeEventListener("sicoobito:terminal:exec", handleCustomExec);
+  }, [enviarComando]);
 
   return (
     <div className="terminal-panel">
       <div className="terminal-bar">
         <div className="terminal-tabs">
-          <button type="button" className="terminal-tab active">
-            💻 Terminal (Sandbox)
+          <button
+            type="button"
+            className={`terminal-tab ${aba === "terminal" ? "active" : ""}`}
+            onClick={() => setAba("terminal")}
+          >
+            💻 Terminal Interativo
+          </button>
+          <button
+            type="button"
+            className={`terminal-tab ${aba === "debugger" ? "active" : ""}`}
+            onClick={() => setAba("debugger")}
+          >
+            🐞 Saída & Debugger
           </button>
         </div>
 
@@ -173,27 +226,18 @@ export function TerminalPanel({ sessionId }: { sessionId: string | null }) {
           <button
             type="button"
             className="term-chip"
-            onClick={() => enviarComando("npm run build")}
+            onClick={() => enviarComando("python -m pytest")}
             disabled={estado !== "pronto"}
-            title="Executar npm run build"
+            title="Executar testes automatizados"
           >
-            build
-          </button>
-          <button
-            type="button"
-            className="term-chip"
-            onClick={() => enviarComando("pytest")}
-            disabled={estado !== "pronto"}
-            title="Executar testes com pytest"
-          >
-            pytest
+            ▶ Rodar Testes
           </button>
           <button
             type="button"
             className="term-chip"
             onClick={() => enviarComando("git status")}
             disabled={estado !== "pronto"}
-            title="Executar git status"
+            title="Verificar estado do git"
           >
             git status
           </button>
@@ -201,13 +245,33 @@ export function TerminalPanel({ sessionId }: { sessionId: string | null }) {
             type="button"
             className="term-chip"
             onClick={() => termRef.current?.clear()}
-            title="Limpar tela"
+            title="Limpar terminal"
           >
-            clear
+            limpar
           </button>
         </div>
       </div>
-      <div className="terminal-surface" ref={containerRef} />
+
+      <div
+        className="terminal-surface"
+        ref={containerRef}
+        style={{ display: aba === "terminal" ? "block" : "none" }}
+      />
+
+      {aba === "debugger" && (
+        <div style={{ padding: "12px", background: "#0b0d10", color: "#4ade80", fontFamily: "monospace", fontSize: "12px", height: "100%", overflowY: "auto" }}>
+          <div>[DEBUGGER] Console de Saída e Rastreio do Agente</div>
+          <div style={{ color: "#94a3b8", marginTop: "4px" }}>
+            - Sessão de execução ativa: {sessionId ?? "nenhuma sessão selecionada"}
+          </div>
+          <div style={{ color: "#94a3b8" }}>
+            - Estado do Sandbox: {estado === "pronto" ? "Conectado e operacional" : "Aguardando inicialização..."}
+          </div>
+          <div style={{ marginTop: "12px", color: "#e2e8f0", borderTop: "1px solid #1e293b", paddingTop: "8px" }}>
+            Execute comandos no terminal interativo acima para visualizar a saída bruta e códigos de erro de execução.
+          </div>
+        </div>
+      )}
     </div>
   );
 }

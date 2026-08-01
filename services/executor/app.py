@@ -118,16 +118,30 @@ async def health() -> dict[str, Any]:
     }
 
 
+_container_cache: dict[str, str] = {}
+
+
 @app.post("/sandboxes", dependencies=[Auth])
 async def create_sandbox(payload: CreateRequest) -> dict[str, Any]:
     nome = f"sicoobito-{payload.session_id}"
     host_path = to_host_path(payload.workspace)
+
+    cid = _container_cache.get(payload.session_id)
+    if cid:
+        try:
+            container = client().containers.get(cid)
+            if container.status != "running":
+                container.start()
+            return {"id": container.id, "name": nome, "reused": True}
+        except Exception:  # noqa: BLE001
+            _container_cache.pop(payload.session_id, None)
 
     existentes = client().containers.list(all=True, filters={"name": nome})
     if existentes:
         container = existentes[0]
         if container.status != "running":
             container.start()
+        _container_cache[payload.session_id] = container.id
         return {"id": container.id, "name": nome, "reused": True}
 
     rede = NETWORK_ENABLED if payload.network is None else payload.network
@@ -153,6 +167,7 @@ async def create_sandbox(payload: CreateRequest) -> dict[str, Any]:
             cap_drop=["ALL"],
             auto_remove=False,
         )
+        _container_cache[payload.session_id] = container.id
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY, detail=f"falha ao criar sandbox: {exc}"
@@ -164,24 +179,22 @@ async def create_sandbox(payload: CreateRequest) -> dict[str, Any]:
 @app.post("/sandboxes/{session_id}/exec", dependencies=[Auth])
 async def exec_command(session_id: str, payload: ExecRequest) -> dict[str, Any]:
     nome = f"sicoobito-{session_id}"
-    try:
-        container = client().containers.get(nome)
-    except docker.errors.NotFound as exc:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail=f"sandbox {session_id} não existe"
-        ) from exc
+    cid = _container_cache.get(session_id)
+    if cid is None:
+        try:
+            container = client().containers.get(nome)
+            cid = container.id
+            _container_cache[session_id] = cid
+        except docker.errors.NotFound as exc:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail=f"sandbox {session_id} não existe"
+            ) from exc
 
     inicio = time.perf_counter()
 
-    # `exec_create`/`exec_start`/`exec_inspect` são chamadas síncronas e
-    # bloqueantes do docker-py. Rodá-las direto na coroutine travaria o único
-    # event loop do processo (uvicorn sobe sem `--workers`) até o comando
-    # terminar, derrubando /health e todas as outras sessões junto. Por isso
-    # a chamada vai para uma thread do pool via `asyncio.to_thread`, com o
-    # mesmo padrão usado em `Sandbox.exec` (apps/api/src/sicoobito/sandbox/container.py).
     def _run() -> tuple[int, bytes, bytes]:
         handle = client().api.exec_create(
-            container.id,
+            cid,
             ["sh", "-c", payload.command],
             workdir=payload.workdir or WORKDIR,
             stdout=True,
@@ -205,6 +218,11 @@ async def exec_command(session_id: str, payload: ExecRequest) -> dict[str, Any]:
             "duration_ms": int((time.perf_counter() - inicio) * 1000),
             "timed_out": True,
         }
+    except docker.errors.NotFound as exc:
+        _container_cache.pop(session_id, None)
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=f"sandbox {session_id} não existe"
+        ) from exc
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY, detail=f"falha ao executar: {exc}"
@@ -221,6 +239,7 @@ async def exec_command(session_id: str, payload: ExecRequest) -> dict[str, Any]:
 
 @app.delete("/sandboxes/{session_id}", dependencies=[Auth])
 async def destroy_sandbox(session_id: str) -> dict[str, Any]:
+    _container_cache.pop(session_id, None)
     nome = f"sicoobito-{session_id}"
     try:
         container = client().containers.get(nome)

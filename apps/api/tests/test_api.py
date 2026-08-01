@@ -187,7 +187,7 @@ def test_routes_editor_upsert_new_profile_preserves_comments(tmp_path):
 
     # Perfis pré-existentes (conteúdo e comentários) continuam intactos.
     assert "auto:" in updated and "embedding:" in updated
-    assert "# O maior redutor de custo do projeto" in updated
+    assert "# Trabalho auxiliar barato:" in updated
 
 
 def test_routes_editor_upsert_existing_profile_replaces_in_place(tmp_path):
@@ -207,7 +207,7 @@ def test_routes_editor_upsert_existing_profile_replaces_in_place(tmp_path):
 
     updated = routes_file.read_text(encoding="utf-8")
     assert "- foundry/gpt-4o\n" in updated
-    assert "# O maior redutor de custo do projeto" in updated
+    assert "# Trabalho auxiliar barato:" in updated
     assert "# Resiliência aplicada a todos os perfis." in updated
 
 
@@ -469,6 +469,7 @@ def test_get_credentials_never_exposes_secret_values(client):
         "databricks_token",
         "openai_api_key",
         "anthropic_api_key",
+        "groq_api_key",
         "github_token",
     )
     for campo in campos_secretos:

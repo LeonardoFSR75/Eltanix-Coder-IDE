@@ -9,7 +9,7 @@ from sicoobito.router.adapters.base import (
     ProviderAdapter,
 )
 from sicoobito.router.adapters.databricks import DatabricksAdapter
-from sicoobito.router.adapters.direct import AnthropicAdapter, OpenAIAdapter
+from sicoobito.router.adapters.direct import AnthropicAdapter, GroqAdapter, OpenAIAdapter
 from sicoobito.router.adapters.ollama import OllamaAdapter
 
 _ADAPTER_TYPES: list[type[ProviderAdapter]] = [
@@ -18,6 +18,7 @@ _ADAPTER_TYPES: list[type[ProviderAdapter]] = [
     DatabricksAdapter,
     OpenAIAdapter,
     AnthropicAdapter,
+    GroqAdapter,
 ]
 
 
@@ -32,6 +33,7 @@ __all__ = [
     "DatabricksAdapter",
     "DiscoveredModel",
     "DiscoveryError",
+    "GroqAdapter",
     "HealthResult",
     "OllamaAdapter",
     "OpenAIAdapter",

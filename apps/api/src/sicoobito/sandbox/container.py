@@ -70,12 +70,24 @@ class ExecResult:
         return self.exit_code == 0 and not self.timed_out
 
 
+_cached_docker_client = None
+
+
 def _docker_client():
+    global _cached_docker_client
+    if _cached_docker_client is not None:
+        try:
+            _cached_docker_client.ping()
+            return _cached_docker_client
+        except Exception:  # noqa: BLE001
+            _cached_docker_client = None
+
     try:
         import docker
 
         client = docker.from_env()
         client.ping()
+        _cached_docker_client = client
         return client
     except Exception as exc:
         raise SandboxUnavailableError(

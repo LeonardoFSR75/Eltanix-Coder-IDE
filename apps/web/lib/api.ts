@@ -152,6 +152,7 @@ export interface CredentialsView {
   databricks_token: CredentialField;
   openai_api_key: CredentialField;
   anthropic_api_key: CredentialField;
+  groq_api_key: CredentialField;
   github_token: CredentialField;
 }
 

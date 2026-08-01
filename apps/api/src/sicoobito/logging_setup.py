@@ -21,6 +21,7 @@ _SECRET_KEYS = {
     "azure_api_key",
     "openai_api_key",
     "anthropic_api_key",
+    "groq_api_key",
     "github_token",
 }
 

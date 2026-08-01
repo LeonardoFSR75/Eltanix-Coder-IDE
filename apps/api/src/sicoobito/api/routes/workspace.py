@@ -92,7 +92,9 @@ def _erro_de_caminho(exc: Exception) -> HTTPException:
     return HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
 
 
-# ── Projetos ────────────────────────────────────────────────────────────────
+class CreateProjectPayload(BaseModel):
+    name: str = Field(min_length=1, description="Nome da pasta do projeto")
+    git_init: bool = Field(default=False, description="Inicializar repositório Git local")
 
 
 @projects_router.get("")
@@ -105,6 +107,36 @@ async def list_projects(settings: SettingsDep) -> dict[str, Any]:
             {"name": p.name, "path": str(p.path), "is_git": p.is_git, "branch": p.branch}
             for p in projetos
         ],
+    }
+
+
+@projects_router.post("")
+async def create_project(payload: CreateProjectPayload, settings: SettingsDep) -> dict[str, Any]:
+    raiz = _projects_root(settings)
+    nome_limpo = project_ops.validate_name(payload.name)
+    pasta_destino = raiz / nome_limpo
+
+    try:
+        pasta_destino.mkdir(parents=True, exist_ok=True)
+        if payload.git_init and not (pasta_destino / ".git").exists():
+            import subprocess
+
+            subprocess.run(["git", "init", str(pasta_destino)], check=False, capture_output=True)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Falha ao criar/vincular pasta de projeto: {exc}",
+        ) from exc
+
+    eh_git = (pasta_destino / ".git").exists()
+    branch = project_ops._branch_of(pasta_destino) if eh_git else None
+
+    return {
+        "name": nome_limpo,
+        "path": str(pasta_destino),
+        "is_git": eh_git,
+        "branch": branch,
+        "created": True,
     }
 
 
