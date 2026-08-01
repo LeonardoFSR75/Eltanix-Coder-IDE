@@ -43,6 +43,7 @@ class ToolContext:
     repo_ref: Any | None = None  # RepoRef
     base_branch: str = "main"
     branch: str = ""
+    browser: Any | None = None  # BrowserClient
 
 
 @dataclass(slots=True)

@@ -25,6 +25,7 @@ from sicoobito.api.routes import (
 )
 from sicoobito.api.tickets import TicketStore
 from sicoobito.api.v1 import router as openai_router
+from sicoobito.browser.client import BrowserConfig
 from sicoobito.config import get_settings
 from sicoobito.context.indexer import ContextIndexer
 from sicoobito.db.session import init_engine, shutdown_engine
@@ -114,13 +115,25 @@ async def lifespan(app: FastAPI):
         )
         log.info("sandbox.mode", mode="local")
 
+    # Igual ao executor: vazio desliga a ferramenta (ela responde
+    # "indisponível" em vez de tentar falar com uma URL vazia).
+    browser_config = (
+        BrowserConfig(base_url=settings.browser_url.rstrip("/"), token=settings.browser_token)
+        if settings.browser_url
+        else None
+    )
+
     app.state.engine = engine
     app.state.redis = redis
     app.state.tickets = TicketStore(redis)
     app.state.indexer = indexer
     app.state.sandboxes = sandboxes
     app.state.agent_runner = AgentRunner(
-        settings=settings, engine=engine, indexer=indexer, sandboxes=sandboxes
+        settings=settings,
+        engine=engine,
+        indexer=indexer,
+        sandboxes=sandboxes,
+        browser_config=browser_config,
     )
     # O desligamento ordenado abaixo cobre o caso normal; este laço cobre o
     # anormal (kill -9, queda), varrendo containers de execuções anteriores que
@@ -142,6 +155,7 @@ async def lifespan(app: FastAPI):
         # Containers da sessão não podem sobreviver ao processo que os criou:
         # ficariam órfãos consumindo memória até alguém notar.
         await sandboxes.shutdown()
+        await app.state.agent_runner.aclose()
         if redis is not None:
             await redis.aclose()
         await shutdown_engine()

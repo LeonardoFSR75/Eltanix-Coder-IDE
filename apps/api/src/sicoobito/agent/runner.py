@@ -13,11 +13,14 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+import httpx
+
 from sicoobito.agent import session_store
 from sicoobito.agent.graph import DEFAULT_MAX_ITERATIONS, build_graph
 from sicoobito.agent.prompts import build_task_prompt
 from sicoobito.agent.state import AgentMode
 from sicoobito.agent.tools import ToolContext
+from sicoobito.browser.client import BrowserClient, BrowserConfig
 from sicoobito.config import Settings
 from sicoobito.context.indexer import ContextIndexer
 from sicoobito.context.repomap import build_repo_map
@@ -49,6 +52,8 @@ class AgentSession:
     # Perfil de roteamento escolhido explicitamente pelo usuário; None mantém a
     # escolha implícita por modo em `_initial_state`.
     profile: str | None = None
+    focus_files: list[str] = field(default_factory=list)
+    focus_folder: str | None = None
 
 
 class AgentRunner:
@@ -59,11 +64,14 @@ class AgentRunner:
         engine: RouterEngine,
         indexer: ContextIndexer,
         sandboxes: SandboxManager,
+        browser_config: BrowserConfig | None = None,
     ) -> None:
         self.settings = settings
         self.engine = engine
         self.indexer = indexer
         self.sandboxes = sandboxes
+        self.browser_config = browser_config
+        self._browser_http: httpx.AsyncClient | None = None
         self._sessions: dict[str, AgentSession] = {}
         self._checkpointer: Any | None = None
         # `AsyncPostgresSaver.from_conn_string` é um @asynccontextmanager: a
@@ -99,6 +107,15 @@ class AgentRunner:
             self._checkpointer = None
         return self._checkpointer
 
+    # ── Navegador (Fase 7) ──────────────────────────────────────────────────
+
+    def _get_browser_http(self) -> httpx.AsyncClient:
+        if self._browser_http is None or self._browser_http.is_closed:
+            self._browser_http = httpx.AsyncClient(
+                limits=httpx.Limits(max_keepalive_connections=10, max_connections=30)
+            )
+        return self._browser_http
+
     # ── Sessão ──────────────────────────────────────────────────────────────
 
     async def create_session(
@@ -109,6 +126,8 @@ class AgentRunner:
         mode: AgentMode = "agent",
         session_id: str | None = None,
         profile: str | None = None,
+        focus_files: list[str] | None = None,
+        focus_folder: str | None = None,
     ) -> AgentSession:
         session_id = session_id or self.sandboxes.new_session_id()
         # Syscall única na criação da sessão; o trabalho pesado de disco desta
@@ -146,7 +165,14 @@ class AgentRunner:
                 try:
                     github = GitHubClient(token)
                 except GitHubError as exc:
-                    avisos.append(str(exc))
+                    log.debug("agent.github.unavailable", error=str(exc))
+
+        # 4. Navegador: opcional, só necessário para a ferramenta de
+        # verificação visual. Não testamos a conexão aqui — igual ao sandbox,
+        # falha (se falhar) só quando a ferramenta for de fato chamada.
+        browser = None
+        if self.browser_config is not None:
+            browser = BrowserClient(session_id, self.browser_config, self._get_browser_http())
 
         contexto = ToolContext(
             session_id=session_id,
@@ -158,6 +184,7 @@ class AgentRunner:
             repo_ref=repo_ref,
             base_branch=base,
             branch=branch,
+            browser=browser,
         )
 
         sessao = AgentSession(
@@ -173,6 +200,8 @@ class AgentRunner:
             sandbox_error=sandbox_error,
             warnings=avisos,
             profile=profile,
+            focus_files=focus_files or [],
+            focus_folder=focus_folder,
         )
         self._sessions[session_id] = sessao
 
@@ -212,6 +241,8 @@ class AgentRunner:
         if sessao is None:
             return
         await self.sandboxes.release(session_id)
+        if sessao.context.browser is not None:
+            await sessao.context.browser.stop()
         if sessao.branch:
             try:
                 git_ops.remove_worktree(
@@ -243,8 +274,16 @@ class AgentRunner:
         except Exception as exc:
             log.debug("agent.repomap.unavailable", error=str(exc)[:200])
 
+        prompt_text = build_task_prompt(
+            session.task,
+            mapa,
+            session.mode,
+            focus_files=session.focus_files,
+            focus_folder=session.focus_folder,
+        )
+
         return {
-            "messages": [{"role": "user", "content": build_task_prompt(session.task, mapa, session.mode)}],
+            "messages": [{"role": "user", "content": prompt_text}],
             "session_id": session.session_id,
             "task": session.task,
             "mode": session.mode,
@@ -258,6 +297,11 @@ class AgentRunner:
             "total_cost_usd": 0.0,
             "total_tokens": 0,
         }
+
+    async def aclose(self) -> None:
+        """Fecha o cliente HTTP compartilhado do navegador, no desligamento do processo."""
+        if self._browser_http is not None and not self._browser_http.is_closed:
+            await self._browser_http.aclose()
 
     async def stream_run(self, session: AgentSession, *, resume: Any = None):
         """Executa o grafo emitindo eventos. Cede o controle na aprovação."""
@@ -281,6 +325,22 @@ class AgentRunner:
             for tarefa in estado.tasks:
                 for interrupcao in getattr(tarefa, "interrupts", []) or []:
                     yield {"node": "interrupt", "update": _serializable(interrupcao.value)}
+
+    async def get_messages(self, session: AgentSession) -> list[dict[str, Any]]:
+        """Mensagens acumuladas no checkpoint — reabre o transcript real de uma
+        sessão, em vez de só repetir o texto da tarefa original.
+
+        Sem checkpointer (Postgres indisponível), não há o que devolver: o
+        estado do grafo nunca saiu da memória do processo que rodou a sessão.
+        """
+        compilado = await self._compiled_graph(session)
+        if not compilado.checkpointer:
+            return []
+        config = {"configurable": {"thread_id": session.session_id}}
+        estado = await compilado.aget_state(config)
+        if estado is None:
+            return []
+        return _serializable(estado.values.get("messages", []))
 
 
 def _serializable(valor: Any) -> Any:

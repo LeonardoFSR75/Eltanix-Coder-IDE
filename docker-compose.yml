@@ -10,6 +10,7 @@ name: sicoobito
 #   5403  postgres
 #   5404  redis
 #   5405  ollama
+#   5406  browser (interno; exposto só para diagnóstico)
 #
 # Todas as portas publicadas são vinculadas a 127.0.0.1: nenhum destes
 # serviços tem autenticação forte o suficiente para ficar alcançável pela
@@ -17,6 +18,21 @@ name: sicoobito
 # SICOOBITO_API_KEY automaticamente para quem alcançar a porta). Quem
 # precisar de acesso pela LAN deve trocar por um binding explícito e reforçar
 # a autenticação antes.
+#
+# Duas redes: a `default` (implícita, com saída para a internet — provedores
+# de LLM, `docker pull`, etc.) e `browser_net` (`internal: true`, sem rota
+# nenhuma para fora). O serviço `browser` só entra em `browser_net`: o
+# Chromium que ele roda para a ferramenta de verificação visual do agente
+# (browser_action) precisa de rede de verdade para alcançar `web`/`api`, mas
+# não deve conseguir alcançar a internet pública nem qualquer outro serviço
+# deste compose. `api` e `web` entram nas duas — continuam com acesso normal
+# a postgres/redis/ollama/internet pela `default`, e adicionalmente
+# alcançáveis pelo `browser` pela `browser_net`.
+
+networks:
+  default: {}
+  browser_net:
+    internal: true
 
 services:
   postgres:
@@ -52,6 +68,8 @@ services:
   # de que a plataforma inteira sobe com um comando, e o que torna o perfil
   # `local-first` real em vez de decorativo.
   ollama:
+    profiles:
+      - ollama
     # Versão fixada: `latest` reinstala 4,7 GB a cada mudança de tag remota.
     image: ollama/ollama:${OLLAMA_VERSION:-0.31.2}
     ports:
@@ -79,6 +97,8 @@ services:
   # Baixa os modelos uma vez e sai. Roda separado do serviço para que a API não
   # fique bloqueada esperando gigabytes de download na primeira subida.
   ollama-init:
+    profiles:
+      - ollama
     # Versão fixada: `latest` reinstala 4,7 GB a cada mudança de tag remota.
     image: ollama/ollama:${OLLAMA_VERSION:-0.31.2}
     entrypoint: ["/bin/sh", "-c"]
@@ -126,10 +146,32 @@ services:
       timeout: 5s
       retries: 10
 
+  # Roda o Chromium headless para `browser_action` (Fase 7). Isolado do
+  # sandbox de execução de comando de propósito — ver o comentário na rede
+  # `browser_net` acima e o docstring de `services/browser/app.py`.
+  browser:
+    build:
+      context: ./services/browser
+    environment:
+      BROWSER_TOKEN: ${BROWSER_TOKEN:-browser-local}
+    ports:
+      - "127.0.0.1:5406:5406"
+    networks:
+      - browser_net
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://localhost:5406/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
   api:
     build:
       context: .
       dockerfile: apps/api/Dockerfile
+    networks:
+      - default
+      - browser_net
     environment:
       DATABASE_URL: postgresql+asyncpg://sicoobito:sicoobito@postgres:5432/sicoobito
       REDIS_URL: redis://redis:6379/0
@@ -141,6 +183,10 @@ services:
       PROJECTS_ROOT_HOST: ${PROJECTS_ROOT:-./projetos}
       EXECUTOR_URL: http://executor:5402
       EXECUTOR_TOKEN: ${EXECUTOR_TOKEN:-executor-local}
+      # Vazio (padrão) desliga a ferramenta de verificação visual; defina só
+      # se o serviço `browser` estiver de pé (ele está, neste compose).
+      BROWSER_URL: ${BROWSER_URL:-http://browser:5406}
+      BROWSER_TOKEN: ${BROWSER_TOKEN:-browser-local}
       # O Ollama é um serviço do compose; `host.docker.internal` só entra se você
       # sobrescrever isto para usar uma instalação do host.
       OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://ollama:11434}
@@ -156,8 +202,6 @@ services:
       # e credenciais (.env) direto do container — precisa poder escrever de volta.
       - ./config:/app/config
       - ./.env:/app/.env
-      # Código montado para reload em desenvolvimento; numa imagem de produção
-      # ele já está dentro e esta linha sai.
       - ./apps/api/src:/app/src:ro
     extra_hosts:
       # Permite alcançar o Ollama rodando no host.
@@ -169,13 +213,15 @@ services:
         condition: service_healthy
       executor:
         condition: service_started
-      # Só que esteja no ar — não que os modelos já tenham sido baixados.
-      ollama:
-        condition: service_healthy
+      browser:
+        condition: service_started
 
   web:
     build:
       context: ./apps/web
+    networks:
+      - default
+      - browser_net
     environment:
       # O browser fala com o Next; o Next fala com a API pela rede interna.
       SICOOBITO_API_URL: http://api:5401

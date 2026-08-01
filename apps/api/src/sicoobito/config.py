@@ -113,6 +113,14 @@ class Settings(BaseSettings):
     executor_url: str = Field(default="", alias="EXECUTOR_URL")
     executor_token: str = Field(default="", alias="EXECUTOR_TOKEN")
 
+    # ── Navegador para verificação visual (Fase 7) ──────────────────────────
+    # Serviço à parte, numa rede restrita própria (ver docker-compose.yml,
+    # `browser_net`) — o sandbox de execução acima continua sem rede nenhuma.
+    # Vazio faz a ferramenta responder "indisponível" (mesmo padrão de
+    # `run_command` sem sandbox), não desregistra nada.
+    browser_url: str = Field(default="", alias="BROWSER_URL")
+    browser_token: str = Field(default="", alias="BROWSER_TOKEN")
+
     # ── Credenciais de provedores ───────────────────────────────────────────
     ollama_base_url: str = Field(default="http://localhost:11434", alias="OLLAMA_BASE_URL")
 
@@ -128,6 +136,7 @@ class Settings(BaseSettings):
 
     openai_api_key: str = Field(default="", alias="OPENAI_API_KEY")
     anthropic_api_key: str = Field(default="", alias="ANTHROPIC_API_KEY")
+    groq_api_key: str = Field(default="", alias="GROQ_API_KEY")
 
     github_token: str = Field(default="", alias="GITHUB_TOKEN")
 

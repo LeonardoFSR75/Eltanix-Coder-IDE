@@ -30,7 +30,15 @@ def ctx(tmp_path):
 
 
 def test_read_tools_do_not_require_approval():
-    for nome in ("read_file", "list_files", "search_code", "git_status", "git_diff", "read_issue"):
+    for nome in (
+        "read_file",
+        "list_files",
+        "search_code",
+        "git_status",
+        "git_diff",
+        "read_issue",
+        "write_todos",
+    ):
         ferramenta = registry.get(nome)
         assert ferramenta is not None, nome
         assert ferramenta.risk is RiskClass.READ
@@ -47,6 +55,15 @@ def test_mutating_tools_require_approval():
 
 def test_command_execution_is_its_own_risk_class():
     ferramenta = registry.get("run_command")
+    assert ferramenta.risk is RiskClass.EXEC
+    assert ferramenta.risk.requires_approval is True
+
+
+def test_browser_action_is_exec_risk():
+    # Mesma classe de run_command: uma URL vem do modelo, e conteúdo externo
+    # manipulado poderia tentar fazer o agente navegar para um destino que
+    # não é da tarefa — a aprovação humana é a barreira.
+    ferramenta = registry.get("browser_action")
     assert ferramenta.risk is RiskClass.EXEC
     assert ferramenta.risk.requires_approval is True
 
@@ -109,6 +126,24 @@ async def test_edit_file_replaces_and_returns_a_diff(ctx):
     assert "return 2" in ctx.fs.read("app.py")
 
 
+async def test_edit_file_exposes_before_and_after_for_diff_review(ctx):
+    # A revisão de diff no frontend usa before/after direto, sem parsear o
+    # unified diff.
+    resultado = await registry.get("edit_file").handler(
+        ctx, {"path": "app.py", "old_text": "return 1", "new_text": "return 2"}
+    )
+    assert "return 1" in resultado.data["before"]
+    assert "return 2" in resultado.data["after"]
+
+
+async def test_write_file_exposes_before_and_after_for_diff_review(ctx):
+    resultado = await registry.get("write_file").handler(
+        ctx, {"path": "app.py", "content": "conteudo novo"}
+    )
+    assert "def f()" in resultado.data["before"]
+    assert resultado.data["after"] == "conteudo novo"
+
+
 async def test_edit_file_matches_across_line_ending_conventions(ctx, tmp_path):
     # O modelo escreve `old_text` com \n; um arquivo criado no Windows tem \r\n.
     # Comparar cru faria toda edição falhar com "trecho não encontrado", de
@@ -168,12 +203,127 @@ async def test_run_command_without_sandbox_explains_why(ctx):
     assert "Docker" in resultado.content
 
 
+# ── browser_action ──────────────────────────────────────────────────────────
+
+
+class _FakeBrowser:
+    """Stub do BrowserClient — nunca fala com um serviço de verdade."""
+
+    def __init__(self):
+        self.calls: list[dict] = []
+
+    async def action(self, payload, *, timeout_ms=15_000):
+        self.calls.append(payload)
+        if payload["action"] == "navigate":
+            return {"ok": True, "url": payload["url"], "title": "Título", "status": 200}
+        if payload["action"] == "screenshot":
+            return {"ok": True, "image_base64": "ZmFrZQ==", "url": "http://web:5400"}
+        if payload["action"] == "content":
+            return {"ok": True, "text": "conteúdo da página"}
+        return {"ok": True}
+
+
+async def test_browser_action_without_browser_explains_why(ctx):
+    resultado = await registry.get("browser_action").handler(ctx, {"action": "screenshot"})
+    assert resultado.ok is False
+    assert "indisponível" in resultado.content
+
+
+async def test_browser_action_rejects_non_http_navigate(ctx):
+    ctx.browser = _FakeBrowser()
+    resultado = await registry.get("browser_action").handler(
+        ctx, {"action": "navigate", "url": "file:///etc/passwd"}
+    )
+    assert resultado.ok is False
+    assert "http" in resultado.content
+
+
+async def test_browser_action_click_requires_selector_or_coordinates(ctx):
+    ctx.browser = _FakeBrowser()
+    resultado = await registry.get("browser_action").handler(ctx, {"action": "click"})
+    assert resultado.ok is False
+
+
+async def test_browser_action_type_requires_selector_and_text(ctx):
+    ctx.browser = _FakeBrowser()
+    resultado = await registry.get("browser_action").handler(
+        ctx, {"action": "type", "selector": "#campo"}
+    )
+    assert resultado.ok is False
+
+
+async def test_browser_action_navigate_reports_title_and_status(ctx):
+    fake = _FakeBrowser()
+    ctx.browser = fake
+    resultado = await registry.get("browser_action").handler(
+        ctx, {"action": "navigate", "url": "http://web:5400/ide"}
+    )
+    assert resultado.ok
+    assert "Título" in resultado.content
+    assert fake.calls[0]["url"] == "http://web:5400/ide"
+
+
+async def test_browser_action_screenshot_returns_base64_in_data(ctx):
+    ctx.browser = _FakeBrowser()
+    resultado = await registry.get("browser_action").handler(ctx, {"action": "screenshot"})
+    assert resultado.ok
+    assert resultado.data["image_base64"] == "ZmFrZQ=="
+
+
 async def test_open_pr_without_github_explains_what_is_missing(ctx):
     resultado = await registry.get("open_pull_request").handler(
         ctx, {"title": "t", "body": "b"}
     )
     assert resultado.ok is False
     assert "GITHUB_TOKEN" in resultado.content
+
+
+# ── write_todos ─────────────────────────────────────────────────────────────
+
+
+async def test_write_todos_echoes_items_in_structured_data(ctx):
+    resultado = await registry.get("write_todos").handler(
+        ctx,
+        {
+            "items": [
+                {"content": "ler o arquivo", "status": "completed"},
+                {"content": "escrever o teste", "status": "in_progress"},
+            ]
+        },
+    )
+    assert resultado.ok
+    assert resultado.data["todos"] == [
+        {"content": "ler o arquivo", "status": "completed"},
+        {"content": "escrever o teste", "status": "in_progress"},
+    ]
+
+
+async def test_write_todos_defaults_invalid_status_to_pending(ctx):
+    resultado = await registry.get("write_todos").handler(
+        ctx, {"items": [{"content": "algo", "status": "concluido"}]}
+    )
+    assert resultado.data["todos"] == [{"content": "algo", "status": "pending"}]
+
+
+async def test_write_todos_drops_items_without_content(ctx):
+    resultado = await registry.get("write_todos").handler(
+        ctx, {"items": [{"content": "  ", "status": "pending"}, {"content": "ok", "status": "pending"}]}
+    )
+    assert resultado.data["todos"] == [{"content": "ok", "status": "pending"}]
+
+
+async def test_write_todos_replaces_list_entirely_each_call(ctx):
+    # Cada chamada substitui a lista inteira — o modelo reenvia todos os
+    # itens, não só o que mudou.
+    primeira = await registry.get("write_todos").handler(
+        ctx, {"items": [{"content": "a", "status": "pending"}, {"content": "b", "status": "pending"}]}
+    )
+    assert len(primeira.data["todos"]) == 2
+
+    segunda = await registry.get("write_todos").handler(
+        ctx, {"items": [{"content": "a", "status": "completed"}]}
+    )
+    assert segunda.data["todos"] == [{"content": "a", "status": "completed"}]
 
 
 # ── Truncamento de saída de comando ─────────────────────────────────────────
