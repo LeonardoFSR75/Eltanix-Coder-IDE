@@ -1,0 +1,69 @@
+"use client";
+
+/**
+ * Faixa de abas de UM grupo do editor: rolável, arrastável para reordenar
+ * dentro do grupo (e para servir de origem do drag-to-split entre grupos —
+ * ver EditorGroupView), com distinção visual entre aba "preview" (itálico) e
+ * aba fixada (duplo-clique ou edição promove).
+ */
+
+import { useRef } from "react";
+import { useIde } from "@/lib/ide-store";
+
+// Payload usado tanto para reordenar dentro do grupo quanto para o
+// drag-to-split entre grupos (EditorGroupView lê o mesmo formato).
+export const TAB_DRAG_MIME = "application/x-sicoobito-tab";
+
+export function TabStrip({ groupId }: { groupId: string }) {
+  const { groups, setActive, closeTab, pinTab, reorderTabs } = useIde();
+  const group = groups[groupId];
+  const dragPath = useRef<string | null>(null);
+
+  if (!group) return null;
+
+  return (
+    <div
+      className="tabs"
+      onWheel={(e) => {
+        // A maioria dos mouses só manda scroll vertical; a faixa de abas é
+        // horizontal, então convertemos em vez de depender de shift+scroll.
+        if (e.deltaY === 0) return;
+        e.currentTarget.scrollLeft += e.deltaY;
+      }}
+    >
+      {group.tabs.map((tab) => (
+        <div
+          key={tab}
+          className={`tab${group.active === tab ? " active" : ""}${group.previewTab === tab ? " preview" : ""}`}
+          draggable
+          onDragStart={(e) => {
+            dragPath.current = tab;
+            e.dataTransfer.effectAllowed = "move";
+            e.dataTransfer.setData(TAB_DRAG_MIME, JSON.stringify({ path: tab, groupId }));
+          }}
+          onDragOver={(e) => e.preventDefault()}
+          onDrop={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            if (dragPath.current) reorderTabs(dragPath.current, tab, groupId);
+            dragPath.current = null;
+          }}
+        >
+          <button
+            type="button"
+            onClick={() => setActive(tab, groupId)}
+            onDoubleClick={() => pinTab(tab, groupId)}
+            title={tab}
+          >
+            {tab.split("/").pop()}
+            {group.dirty.has(tab) && <span className="dot" />}
+          </button>
+          <button type="button" className="tab-close" onClick={() => closeTab(tab, groupId)}>
+            ×
+          </button>
+        </div>
+      ))}
+      {group.tabs.length === 0 && <div className="tabs-empty">Pressione Ctrl+P para abrir um arquivo</div>}
+    </div>
+  );
+}

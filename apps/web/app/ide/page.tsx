@@ -2,7 +2,7 @@
 
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Explorer, GitPanel, SearchPanel } from "@/components/ide/Panels";
+import { DebugPanel, Explorer, GitPanel, SearchPanel } from "@/components/ide/Panels";
 import { StatusBar } from "@/components/ide/StatusBar";
 import { IdeProvider, useIde, type PanelId } from "@/lib/ide-store";
 import type { Command } from "@/components/ide/Overlays";
@@ -10,7 +10,7 @@ import type { Command } from "@/components/ide/Overlays";
 // Cada um destes é um bundle pesado (Monaco, xterm, dock do agente, overlays)
 // que só é útil depois que o usuário interage — carregá-los estaticamente
 // atrasaria o primeiro paint interativo da rota inteira.
-const Editor = dynamic(() => import("@/components/ide/Editor").then((m) => m.Editor), {
+const PaneLayout = dynamic(() => import("@/components/ide/PaneLayout").then((m) => m.PaneLayout), {
   ssr: false,
   loading: () => <div className="editor-empty">carregando editor…</div>,
 });
@@ -35,6 +35,17 @@ function Shell() {
   const [isResizingSidebar, setIsResizingSidebar] = useState(false);
   const [isResizingAgent, setIsResizingAgent] = useState(false);
   const [isResizingTerminal, setIsResizingTerminal] = useState(false);
+
+  const handleCreateProject = async () => {
+    const nome = window.prompt("Nome da pasta do projeto (será criada ou vinculada dentro do PROJECTS_ROOT):");
+    if (!nome || !nome.trim()) return;
+    const gitInit = window.confirm("Deseja inicializar um repositório Git nesta pasta?");
+    try {
+      await ide.createProject(nome.trim(), gitInit);
+    } catch (err) {
+      alert(`Falha ao criar/vincular projeto: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  };
 
   const comandos = useMemo<Command[]>(
     () => [
@@ -125,8 +136,6 @@ function Shell() {
     };
   }, [isResizingSidebar, isResizingAgent, isResizingTerminal, ide]);
 
-  const trilha = ide.active ? ide.active.split("/") : [];
-
   return (
     <div
       className="ide-container"
@@ -176,7 +185,10 @@ function Shell() {
             title="Controle de Versão Git"
             onClick={() => {
               if (ide.panel === "git" && ide.sidebarOpen) ide.toggleSidebar();
-              else ide.setPanel("git");
+              else {
+                ide.setPanel("git");
+                ide.setSidebarOpen(true);
+              }
             }}
           >
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -185,6 +197,21 @@ function Shell() {
               <circle cx="6" cy="18" r="3" />
               <path d="M18 9a9 9 0 0 1-9 9" />
             </svg>
+          </button>
+
+          <button
+            type="button"
+            className={`activity${ide.panel === "debug" && ide.sidebarOpen ? " active" : ""}`}
+            title="Executar & Debugar (Ctrl+Shift+D)"
+            onClick={() => {
+              if (ide.panel === "debug" && ide.sidebarOpen) ide.toggleSidebar();
+              else {
+                ide.setPanel("debug");
+                ide.setSidebarOpen(true);
+              }
+            }}
+          >
+            🐞
           </button>
 
           <button
@@ -200,11 +227,12 @@ function Shell() {
 
         {ide.sidebarOpen && (
           <aside className="ide-sidebar" style={{ width: ide.sidebarWidth }}>
-            <div className="project-picker">
+            <div className="project-picker" style={{ display: "flex", gap: "6px", padding: "6px" }}>
               <select
                 value={ide.project ?? ""}
                 onChange={(e) => ide.setProject(e.target.value)}
                 title="Projeto aberto"
+                style={{ flex: 1 }}
               >
                 {ide.projects.length === 0 && <option value="">nenhum projeto</option>}
                 {ide.projects.map((p) => (
@@ -213,15 +241,40 @@ function Shell() {
                   </option>
                 ))}
               </select>
+              <button
+                type="button"
+                onClick={handleCreateProject}
+                style={{
+                  fontSize: "11.5px",
+                  padding: "3px 8px",
+                  borderRadius: "4px",
+                  background: "var(--surface-2)",
+                  color: "var(--text)",
+                  border: "1px solid var(--border)",
+                  cursor: "pointer",
+                  whiteSpace: "nowrap",
+                  fontWeight: 500,
+                }}
+                title="Criar ou vincular nova pasta de projeto"
+              >
+                + Novo
+              </button>
             </div>
             {ide.projectsError && <div className="panel-error">{ide.projectsError}</div>}
 
             <div className="panel-title">
-              {ide.panel === "explorer" ? "Explorer" : ide.panel === "search" ? "Busca & Substituição" : "Controle Git"}
+              {ide.panel === "explorer"
+                ? "Explorer"
+                : ide.panel === "search"
+                ? "Busca & Substituição"
+                : ide.panel === "git"
+                ? "Controle Git"
+                : "Executar & Debugar"}
             </div>
             {ide.panel === "explorer" && <Explorer />}
             {ide.panel === "search" && <SearchPanel />}
             {ide.panel === "git" && <GitPanel />}
+            {ide.panel === "debug" && <DebugPanel />}
           </aside>
         )}
 
@@ -234,45 +287,7 @@ function Shell() {
         )}
 
         <main className="ide-main">
-          <div className="tabs">
-            {ide.tabs.map((tab) => (
-              <div key={tab} className={`tab${ide.active === tab ? " active" : ""}`}>
-                <button type="button" onClick={() => ide.setActive(tab)} title={tab}>
-                  {tab.split("/").pop()}
-                  {ide.dirty.has(tab) && <span className="dot" />}
-                </button>
-                <button type="button" className="tab-close" onClick={() => ide.closeTab(tab)}>×</button>
-              </div>
-            ))}
-            {ide.tabs.length === 0 && (
-              <div className="tabs-empty">Pressione Ctrl+P para abrir um arquivo</div>
-            )}
-          </div>
-
-          {trilha.length > 0 && (
-            <div className="breadcrumbs">
-              {trilha.map((parte, i) => (
-                <span key={`${parte}-${i}`}>
-                  {i > 0 && <span className="crumb-sep">›</span>}
-                  <span className={i === trilha.length - 1 ? "crumb current" : "crumb"}>{parte}</span>
-                </span>
-              ))}
-            </div>
-          )}
-
-          <div className="editor-area">
-            <Editor
-              project={ide.project}
-              path={ide.active}
-              onDirtyChange={(d) => ide.active && ide.markDirty(ide.active, d)}
-              onNavigate={(destino, linha, coluna) =>
-                ide.openFile(destino, { line: linha, column: coluna })
-              }
-              reveal={ide.reveal?.path === ide.active ? ide.reveal : null}
-              onRevealed={ide.clearReveal}
-              onCursorPositionChange={setCursorPos}
-            />
-          </div>
+          <PaneLayout onCursorPositionChange={setCursorPos} />
 
           {ide.terminalOpen && (
             <>
@@ -281,7 +296,7 @@ function Shell() {
                 onMouseDown={() => setIsResizingTerminal(true)}
                 title="Arrastar para redimensionar altura do terminal"
               />
-              <TerminalPanel sessionId={sessionId} />
+              <TerminalPanel sessionId={sessionId} project={ide.project} onSessionCreated={setSessionId} />
             </>
           )}
         </main>

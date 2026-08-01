@@ -11,6 +11,15 @@
  * A escolha de projeto e as abas abertas persistem no `localStorage` — reabrir
  * o editor e encontrar tudo fechado é a diferença entre uma ferramenta e uma
  * demonstração.
+ *
+ * Editor em grupos (Fase 6): cada painel do split view é um `EditorGroup`
+ * independente (abas, aba ativa, aba preview, dirty próprios); `layout`
+ * descreve como os grupos se distribuem na tela (árvore de splits). Os
+ * getters `tabs`/`active`/`dirty`/`previewTab` no topo do estado continuam
+ * existindo e refletem o GRUPO ATIVO — é o que permite Explorer, Quick Open,
+ * Command Palette, o painel do agente etc. continuarem chamando `openFile`
+ * sem saber nada sobre grupos: eles sempre abrem "no grupo com foco agora",
+ * exatamente como antes de existir mais de um grupo.
  */
 
 import {
@@ -22,7 +31,8 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { get } from "@/lib/client";
+import { get, post } from "@/lib/client";
+import { clearBuffer } from "@/lib/editor-buffer-cache";
 
 export interface Project {
   name: string;
@@ -38,7 +48,7 @@ export interface FileEntry {
   size_bytes: number;
 }
 
-export type PanelId = "explorer" | "search" | "git";
+export type PanelId = "explorer" | "search" | "git" | "debug";
 
 /** Onde posicionar o cursor ao abrir — usado por "ir para definição" e busca. */
 export interface Reveal {
@@ -47,23 +57,97 @@ export interface Reveal {
   column: number;
 }
 
+export interface EditorGroup {
+  id: string;
+  tabs: string[];
+  active: string | null;
+  previewTab: string | null;
+  dirty: Set<string>;
+}
+
+export type PaneNode =
+  | { type: "leaf"; groupId: string }
+  | { type: "split"; direction: "row" | "column"; children: PaneNode[] };
+
+export const DEFAULT_GROUP_ID = "main";
+
+function newGroup(id: string): EditorGroup {
+  return { id, tabs: [], active: null, previewTab: null, dirty: new Set() };
+}
+
+function insertSplit(
+  node: PaneNode,
+  targetGroupId: string,
+  newGroupId: string,
+  direction: "row" | "column",
+): PaneNode {
+  if (node.type === "leaf") {
+    if (node.groupId !== targetGroupId) return node;
+    return { type: "split", direction, children: [node, { type: "leaf", groupId: newGroupId }] };
+  }
+  return { ...node, children: node.children.map((c) => insertSplit(c, targetGroupId, newGroupId, direction)) };
+}
+
+function removeGroupFromLayout(node: PaneNode, groupId: string): PaneNode | null {
+  if (node.type === "leaf") return node.groupId === groupId ? null : node;
+  const children = node.children
+    .map((c) => removeGroupFromLayout(c, groupId))
+    .filter((c): c is PaneNode => c !== null);
+  if (children.length === 0) return null;
+  // Só sobrou um lado do split: ele toma o lugar do nó de split inteiro, em
+  // vez de deixar um grupo "sozinho dentro de um split de um item só".
+  if (children.length === 1) return children[0];
+  return { ...node, children };
+}
+
+function firstLeafGroupId(node: PaneNode): string {
+  return node.type === "leaf" ? node.groupId : firstLeafGroupId(node.children[0]);
+}
+
 interface IdeState {
   project: string | null;
   projects: Project[];
   projectsError: string | null;
   setProject: (name: string) => void;
   reloadProjects: () => Promise<void>;
+  createProject: (name: string, gitInit?: boolean) => Promise<Project>;
 
+  /** Abas/ativa/dirty/preview do GRUPO ATIVO — ver nota no topo do arquivo. */
   tabs: string[];
   active: string | null;
   dirty: Set<string>;
-  openFile: (path: string, reveal?: { line: number; column: number }) => void;
+  previewTab: string | null;
+
+  /** Todo grupo aceita um `groupId` opcional; omitido, usa o grupo ativo. */
+  openFile: (path: string, reveal?: { line: number; column: number }, groupId?: string) => void;
+  previewFile: (path: string, reveal?: { line: number; column: number }, groupId?: string) => void;
+  pinTab: (path: string, groupId?: string) => void;
+  reorderTabs: (from: string, to: string, groupId?: string) => void;
+  closeTab: (path: string, groupId?: string) => void;
+  setActive: (path: string, groupId?: string) => void;
+  markDirty: (path: string, isDirty: boolean, groupId?: string) => void;
+
   /** Posição pendente. O editor consome e chama `clearReveal`. */
   reveal: Reveal | null;
   clearReveal: () => void;
-  closeTab: (path: string) => void;
-  setActive: (path: string | null) => void;
-  markDirty: (path: string, isDirty: boolean) => void;
+
+  groups: Record<string, EditorGroup>;
+  activeGroupId: string;
+  layout: PaneNode;
+  setActiveGroup: (groupId: string) => void;
+  /** Cria um novo grupo na posição de `targetGroupId`, movendo `path` para
+   * ele — de `sourceGroupId` (padrão: o próprio `targetGroupId`, o caso do
+   * botão "Dividir" no editor) ou de outro grupo (arrastar uma aba até a
+   * borda de um painel diferente). */
+  splitGroup: (
+    targetGroupId: string,
+    path: string,
+    direction?: "row" | "column",
+    sourceGroupId?: string,
+  ) => void;
+  moveTabToGroup: (path: string, fromGroupId: string, toGroupId: string) => void;
+  /** Sem efeito se `groupId` for o único grupo restante. */
+  closeGroup: (groupId: string) => void;
 
   panel: PanelId;
   setPanel: (panel: PanelId) => void;
@@ -86,13 +170,6 @@ interface IdeState {
   terminalHeight: number;
   setTerminalHeight: (height: number) => void;
 
-  // Modos de Edição
-  splitMode: boolean;
-  setSplitMode: (split: boolean) => void;
-  toggleSplitMode: () => void;
-  splitActive: string | null;
-  setSplitActive: (path: string | null) => void;
-
   // Inserção de código via IA
   codeToInsert: { code: string; timestamp: number } | null;
   insertCode: (code: string) => void;
@@ -109,6 +186,12 @@ interface IdeState {
   // Incrementado quando algo muda no disco; painéis observam para recarregar.
   revision: number;
   bumpRevision: () => void;
+
+  // Um arquivo mudou no disco por fora do editor (ex.: a revisão de diff do
+  // agente reverteu uma edição) — o Editor, se tiver aquele path aberto,
+  // recarrega o conteúdo em vez de mostrar a versão antiga em memória.
+  fileSyncVersion: Record<string, number>;
+  notifyFileChanged: (path: string) => void;
 }
 
 const Ctx = createContext<IdeState | null>(null);
@@ -137,9 +220,11 @@ export function IdeProvider({ children }: { children: ReactNode }) {
   const [project, setProjectState] = useState<string | null>(null);
   const [projects, setProjects] = useState<Project[]>([]);
   const [projectsError, setProjectsError] = useState<string | null>(null);
-  const [tabs, setTabs] = useState<string[]>([]);
-  const [active, setActive] = useState<string | null>(null);
-  const [dirty, setDirty] = useState<Set<string>>(new Set());
+  const [groups, setGroups] = useState<Record<string, EditorGroup>>(() => ({
+    [DEFAULT_GROUP_ID]: newGroup(DEFAULT_GROUP_ID),
+  }));
+  const [activeGroupId, setActiveGroupIdState] = useState(DEFAULT_GROUP_ID);
+  const [layout, setLayout] = useState<PaneNode>({ type: "leaf", groupId: DEFAULT_GROUP_ID });
   const [panel, setPanelState] = useState<PanelId>("explorer");
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [terminalOpen, setTerminalOpen] = useState(false);
@@ -147,15 +232,24 @@ export function IdeProvider({ children }: { children: ReactNode }) {
   const [sidebarWidth, setSidebarWidth] = useState(260);
   const [agentDockWidth, setAgentDockWidth] = useState(360);
   const [terminalHeight, setTerminalHeight] = useState(220);
-  const [splitMode, setSplitMode] = useState(false);
-  const [splitActive, setSplitActive] = useState<string | null>(null);
   const [codeToInsert, setCodeToInsert] = useState<{ code: string; timestamp: number } | null>(null);
   const [routerLatency, setRouterLatency] = useState<number | null>(null);
   const [routerStatus, setRouterStatus] = useState<"online" | "degraded" | "offline">("online");
   const [files, setFiles] = useState<FileEntry[]>([]);
   const [revision, setRevision] = useState(0);
+  const [fileSyncVersion, setFileSyncVersion] = useState<Record<string, number>>({});
   const [reveal, setReveal] = useState<Reveal | null>(null);
   const [hydrated, setHydrated] = useState(false);
+
+  const activeGroup = groups[activeGroupId] ?? Object.values(groups)[0] ?? newGroup(DEFAULT_GROUP_ID);
+
+  const updateGroup = useCallback((groupId: string, updater: (g: EditorGroup) => EditorGroup) => {
+    setGroups((prev) => {
+      const g = prev[groupId];
+      if (!g) return prev;
+      return { ...prev, [groupId]: updater(g) };
+    });
+  }, []);
 
   const toggleSidebar = useCallback(() => {
     setSidebarOpen((prev) => !prev);
@@ -163,10 +257,6 @@ export function IdeProvider({ children }: { children: ReactNode }) {
 
   const toggleAgentDock = useCallback(() => {
     setAgentDockOpen((prev) => !prev);
-  }, []);
-
-  const toggleSplitMode = useCallback(() => {
-    setSplitMode((prev) => !prev);
   }, []);
 
   const insertCode = useCallback((code: string) => {
@@ -198,12 +288,21 @@ export function IdeProvider({ children }: { children: ReactNode }) {
     setSidebarOpen(true);
   }, []);
 
-  // A restauração acontece só no cliente
+  // A restauração acontece só no cliente. Só o grupo padrão é restaurado —
+  // splits são de sessão, um reload sempre volta a um único painel.
   useEffect(() => {
     const saved = load();
     if (saved.project) setProjectState(saved.project);
-    if (saved.tabs?.length) setTabs(saved.tabs);
-    if (saved.active) setActive(saved.active);
+    if (saved.tabs?.length || saved.active) {
+      setGroups((prev) => ({
+        ...prev,
+        [DEFAULT_GROUP_ID]: {
+          ...prev[DEFAULT_GROUP_ID],
+          tabs: saved.tabs?.length ? saved.tabs : prev[DEFAULT_GROUP_ID].tabs,
+          active: saved.active ?? prev[DEFAULT_GROUP_ID].active,
+        },
+      }));
+    }
     if (saved.sidebarWidth) setSidebarWidth(saved.sidebarWidth);
     if (saved.agentDockWidth) setAgentDockWidth(saved.agentDockWidth);
     if (saved.terminalHeight) setTerminalHeight(saved.terminalHeight);
@@ -212,11 +311,19 @@ export function IdeProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!hydrated) return;
+    const principal = groups[DEFAULT_GROUP_ID];
     window.localStorage.setItem(
       STORAGE_KEY,
-      JSON.stringify({ project, tabs, active, sidebarWidth, agentDockWidth, terminalHeight }),
+      JSON.stringify({
+        project,
+        tabs: principal?.tabs ?? [],
+        active: principal?.active ?? null,
+        sidebarWidth,
+        agentDockWidth,
+        terminalHeight,
+      }),
     );
-  }, [hydrated, project, tabs, active, sidebarWidth, agentDockWidth, terminalHeight]);
+  }, [hydrated, project, groups, sidebarWidth, agentDockWidth, terminalHeight]);
 
   const reloadProjects = useCallback(async () => {
     try {
@@ -233,6 +340,19 @@ export function IdeProvider({ children }: { children: ReactNode }) {
       setProjectsError(err instanceof Error ? err.message : String(err));
     }
   }, []);
+
+  const createProject = useCallback(
+    async (name: string, gitInit: boolean = false) => {
+      const p = await post<Project & { created: boolean }>("/api/projects", {
+        name,
+        git_init: gitInit,
+      });
+      await reloadProjects();
+      setProjectState(p.name);
+      return p;
+    },
+    [reloadProjects],
+  );
 
   useEffect(() => {
     // Um único bootstrap em vez de dois efeitos concorrentes: evita duas
@@ -258,46 +378,201 @@ export function IdeProvider({ children }: { children: ReactNode }) {
 
   const setProject = useCallback((name: string) => {
     setProjectState(name);
-    // Trocar de projeto com abas de outro abertas mostraria arquivos que não
-    // existem mais no contexto atual.
-    setTabs([]);
-    setActive(null);
-    setDirty(new Set());
+    // Trocar de projeto com abas/grupos de outro abertos mostraria arquivos
+    // que não existem mais no contexto atual — volta para um painel só.
+    setGroups({ [DEFAULT_GROUP_ID]: newGroup(DEFAULT_GROUP_ID) });
+    setLayout({ type: "leaf", groupId: DEFAULT_GROUP_ID });
+    setActiveGroupIdState(DEFAULT_GROUP_ID);
   }, []);
 
-  const openFile = useCallback((path: string, posicao?: { line: number; column: number }) => {
-    setTabs((prev) => (prev.includes(path) ? prev : [...prev, path]));
-    setActive(path);
-    // Guardado com o caminho junto: sem isso, abrir A e depois B faria o
-    // cursor de B parar na linha pedida para A.
-    setReveal(posicao ? { path, ...posicao } : null);
-  }, []);
+  const openFile = useCallback(
+    (path: string, posicao?: { line: number; column: number }, groupId?: string) => {
+      const gid = groupId ?? activeGroupId;
+      updateGroup(gid, (g) => ({
+        ...g,
+        tabs: g.tabs.includes(path) ? g.tabs : [...g.tabs, path],
+        active: path,
+      }));
+      setActiveGroupIdState(gid);
+      // Guardado com o caminho junto: sem isso, abrir A e depois B faria o
+      // cursor de B parar na linha pedida para A.
+      setReveal(posicao ? { path, ...posicao } : null);
+    },
+    [activeGroupId, updateGroup],
+  );
+
+  // Clique único na árvore: abre em modo "preview", reaproveitando a mesma
+  // aba a cada novo arquivo em vez de acumular uma por clique — só vira aba
+  // permanente se o usuário editar o arquivo ou der duplo-clique nele.
+  const previewFile = useCallback(
+    (path: string, posicao?: { line: number; column: number }, groupId?: string) => {
+      const gid = groupId ?? activeGroupId;
+      updateGroup(gid, (g) => {
+        if (g.tabs.includes(path)) return { ...g, active: path };
+        const tabs =
+          g.previewTab && g.tabs.includes(g.previewTab)
+            ? g.tabs.map((t) => (t === g.previewTab ? path : t))
+            : [...g.tabs, path];
+        return { ...g, tabs, previewTab: path, active: path };
+      });
+      setActiveGroupIdState(gid);
+      setReveal(posicao ? { path, ...posicao } : null);
+    },
+    [activeGroupId, updateGroup],
+  );
+
+  const pinTab = useCallback(
+    (path: string, groupId?: string) => {
+      const gid = groupId ?? activeGroupId;
+      updateGroup(gid, (g) => (g.previewTab === path ? { ...g, previewTab: null } : g));
+    },
+    [activeGroupId, updateGroup],
+  );
+
+  const reorderTabs = useCallback(
+    (from: string, to: string, groupId?: string) => {
+      if (from === to) return;
+      const gid = groupId ?? activeGroupId;
+      updateGroup(gid, (g) => {
+        const fromIdx = g.tabs.indexOf(from);
+        const toIdx = g.tabs.indexOf(to);
+        if (fromIdx === -1 || toIdx === -1) return g;
+        const tabs = [...g.tabs];
+        tabs.splice(fromIdx, 1);
+        tabs.splice(toIdx, 0, from);
+        return { ...g, tabs };
+      });
+    },
+    [activeGroupId, updateGroup],
+  );
 
   const clearReveal = useCallback(() => setReveal(null), []);
 
-  const closeTab = useCallback((path: string) => {
-    setTabs((prev) => {
-      const next = prev.filter((t) => t !== path);
-      setActive((atual) => (atual === path ? (next[next.length - 1] ?? null) : atual));
-      return next;
+  const closeTab = useCallback(
+    (path: string, groupId?: string) => {
+      const gid = groupId ?? activeGroupId;
+      updateGroup(gid, (g) => {
+        const tabs = g.tabs.filter((t) => t !== path);
+        const dirty = new Set(g.dirty);
+        dirty.delete(path);
+        return {
+          ...g,
+          tabs,
+          dirty,
+          active: g.active === path ? (tabs[tabs.length - 1] ?? null) : g.active,
+          previewTab: g.previewTab === path ? null : g.previewTab,
+        };
+      });
+    },
+    [activeGroupId, updateGroup],
+  );
+
+  const setActiveTab = useCallback(
+    (path: string, groupId?: string) => {
+      const gid = groupId ?? activeGroupId;
+      updateGroup(gid, (g) => (g.tabs.includes(path) ? { ...g, active: path } : g));
+      setActiveGroupIdState(gid);
+    },
+    [activeGroupId, updateGroup],
+  );
+
+  const markDirty = useCallback(
+    (path: string, isDirty: boolean, groupId?: string) => {
+      const gid = groupId ?? activeGroupId;
+      updateGroup(gid, (g) => {
+        const dirty = new Set(g.dirty);
+        if (isDirty) dirty.add(path);
+        else dirty.delete(path);
+        // Editar uma aba preview a promove a permanente — mesmo comportamento
+        // do VS Code: uma preview existe para "só olhar", não para editar.
+        return { ...g, dirty, previewTab: isDirty && g.previewTab === path ? null : g.previewTab };
+      });
+    },
+    [activeGroupId, updateGroup],
+  );
+
+  const setActiveGroup = useCallback((groupId: string) => setActiveGroupIdState(groupId), []);
+
+  const splitGroup = useCallback(
+    (
+      targetGroupId: string,
+      path: string,
+      direction: "row" | "column" = "row",
+      sourceGroupId: string = targetGroupId,
+    ) => {
+      const newId = `group-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+      setGroups((prev) => {
+        const target = prev[targetGroupId];
+        if (!target) return prev;
+        const next: Record<string, EditorGroup> = { ...prev };
+        const source = prev[sourceGroupId];
+        if (source) {
+          const remaining = source.tabs.filter((t) => t !== path);
+          next[sourceGroupId] = {
+            ...source,
+            tabs: remaining,
+            active: source.active === path ? (remaining[remaining.length - 1] ?? null) : source.active,
+            previewTab: source.previewTab === path ? null : source.previewTab,
+          };
+        }
+        next[newId] = { id: newId, tabs: [path], active: path, previewTab: null, dirty: new Set() };
+        return next;
+      });
+      setLayout((prev) => insertSplit(prev, targetGroupId, newId, direction));
+      setActiveGroupIdState(newId);
+    },
+    [],
+  );
+
+  const moveTabToGroup = useCallback((path: string, fromGroupId: string, toGroupId: string) => {
+    if (fromGroupId === toGroupId) return;
+    setGroups((prev) => {
+      const from = prev[fromGroupId];
+      const to = prev[toGroupId];
+      if (!from || !to) return prev;
+      const remaining = from.tabs.filter((t) => t !== path);
+      return {
+        ...prev,
+        [fromGroupId]: {
+          ...from,
+          tabs: remaining,
+          active: from.active === path ? (remaining[remaining.length - 1] ?? null) : from.active,
+          previewTab: from.previewTab === path ? null : from.previewTab,
+        },
+        [toGroupId]: {
+          ...to,
+          tabs: to.tabs.includes(path) ? to.tabs : [...to.tabs, path],
+          active: path,
+        },
+      };
     });
-    setDirty((prev) => {
-      const next = new Set(prev);
-      next.delete(path);
-      return next;
-    });
+    setActiveGroupIdState(toGroupId);
   }, []);
 
-  const markDirty = useCallback((path: string, isDirty: boolean) => {
-    setDirty((prev) => {
-      const next = new Set(prev);
-      if (isDirty) next.add(path);
-      else next.delete(path);
-      return next;
-    });
-  }, []);
+  const closeGroup = useCallback(
+    (groupId: string) => {
+      const next = removeGroupFromLayout(layout, groupId);
+      if (next === null) return; // não fecha o único grupo restante
+      setLayout(next);
+      setGroups((prev) => {
+        const rest = { ...prev };
+        delete rest[groupId];
+        return rest;
+      });
+      setActiveGroupIdState((prevActive) => (prevActive === groupId ? firstLeafGroupId(next) : prevActive));
+    },
+    [layout],
+  );
 
   const bumpRevision = useCallback(() => setRevision((r) => r + 1), []);
+
+  const notifyFileChanged = useCallback((path: string) => {
+    setFileSyncVersion((prev) => ({ ...prev, [path]: (prev[path] ?? 0) + 1 }));
+    // Limpa o cache fora do React (editor-buffer-cache.ts) também: sem isso
+    // o Editor acharia que já tem o conteúdo certo em memória e nunca
+    // buscaria a versão nova do disco.
+    clearBuffer(path);
+  }, []);
 
   const value = useMemo<IdeState>(
     () => ({
@@ -306,15 +581,27 @@ export function IdeProvider({ children }: { children: ReactNode }) {
       projectsError,
       setProject,
       reloadProjects,
-      tabs,
-      active,
-      dirty,
+      createProject,
+      tabs: activeGroup.tabs,
+      active: activeGroup.active,
+      dirty: activeGroup.dirty,
+      previewTab: activeGroup.previewTab,
       openFile,
+      previewFile,
+      pinTab,
+      reorderTabs,
       reveal,
       clearReveal,
       closeTab,
-      setActive,
+      setActive: setActiveTab,
       markDirty,
+      groups,
+      activeGroupId,
+      layout,
+      setActiveGroup,
+      splitGroup,
+      moveTabToGroup,
+      closeGroup,
       panel,
       setPanel,
       sidebarOpen,
@@ -331,11 +618,6 @@ export function IdeProvider({ children }: { children: ReactNode }) {
       setAgentDockWidth,
       terminalHeight,
       setTerminalHeight,
-      splitMode,
-      setSplitMode,
-      toggleSplitMode,
-      splitActive,
-      setSplitActive,
       codeToInsert,
       insertCode,
       clearInsertedCode,
@@ -346,14 +628,19 @@ export function IdeProvider({ children }: { children: ReactNode }) {
       reloadFiles,
       revision,
       bumpRevision,
+      fileSyncVersion,
+      notifyFileChanged,
     }),
     [
-      project, projects, projectsError, setProject, reloadProjects,
-      tabs, active, dirty, openFile, reveal, clearReveal, closeTab, markDirty,
+      project, projects, projectsError, setProject, reloadProjects, createProject,
+      activeGroup, openFile, previewFile, pinTab, reorderTabs,
+      reveal, clearReveal, closeTab, setActiveTab, markDirty,
+      groups, activeGroupId, layout, setActiveGroup, splitGroup, moveTabToGroup, closeGroup,
       panel, setPanel, sidebarOpen, toggleSidebar, terminalOpen,
       agentDockOpen, toggleAgentDock, sidebarWidth, agentDockWidth, terminalHeight,
-      splitMode, splitActive, toggleSplitMode, codeToInsert, insertCode, clearInsertedCode,
+      codeToInsert, insertCode, clearInsertedCode,
       routerLatency, routerStatus, checkRouterHealth, files, reloadFiles, revision, bumpRevision,
+      fileSyncVersion, notifyFileChanged,
     ],
   );
 

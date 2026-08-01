@@ -191,7 +191,7 @@ export function useLsp({ project, path, language, onNavigate }: Opcoes) {
     return () => {
       cancelado = true;
       desassinar?.();
-      closeDocument();
+      closeDocument(model);
     };
   }, [project, path, lspLanguage, montado]);
 

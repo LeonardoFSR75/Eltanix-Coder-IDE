@@ -52,9 +52,13 @@ function textoDeDocumentacao(valor: unknown): Monaco.IMarkdownString | string | 
 // ── documento ativo ───────────────────────────────────────────────────────
 
 /**
- * O editor mantém um único modelo do Monaco e troca o conteúdo ao mudar de aba.
- * Os provedores recebem o modelo e precisam saber a que arquivo ele corresponde
- * agora — daí este registro, e não um mapa por URI.
+ * O editor lado a lado (Fase 6) pode ter N modelos do Monaco vivos ao mesmo
+ * tempo, um por painel — daí o registro ser por modelo, e não uma única
+ * variável "documento atual". Cada `<Editor>` só troca o conteúdo do SEU
+ * próprio modelo ao mudar de aba, então o modelo em si já é uma chave estável
+ * por painel: usar um único slot global faria o segundo painel a abrir um
+ * arquivo emitir `didClose` no documento que o primeiro painel ainda mostra
+ * em tela, sem que a UI dele saiba.
  */
 interface DocumentoAtivo {
   model: Monaco.editor.ITextModel;
@@ -63,10 +67,10 @@ interface DocumentoAtivo {
   version: number;
 }
 
-let atual: DocumentoAtivo | null = null;
+const documentos = new Map<Monaco.editor.ITextModel, DocumentoAtivo>();
 
 function documentoDe(model: Monaco.editor.ITextModel): DocumentoAtivo | null {
-  return atual && atual.model === model ? atual : null;
+  return documentos.get(model) ?? null;
 }
 
 if (typeof window !== "undefined") {
@@ -74,12 +78,14 @@ if (typeof window !== "undefined") {
   // de causas indistinguíveis de fora — documento não anunciado, modelo
   // trocado, conexão caída — e todas produzem exatamente a mesma tela vazia.
   (window as unknown as Record<string, unknown>).__sicoobitoLsp = () => ({
-    aberto: atual?.path ?? null,
-    pronto: atual?.connection.ready ?? false,
-    erro: atual?.connection.error ?? null,
-    versao: atual?.version ?? null,
-    sync: atual?.connection.syncKind ?? null,
-    stats: atual?.connection.stats ?? null,
+    abertos: Array.from(documentos.values()).map((d) => ({
+      path: d.path,
+      pronto: d.connection.ready,
+      erro: d.connection.error,
+      versao: d.version,
+      sync: d.connection.syncKind,
+      stats: d.connection.stats,
+    })),
     provedores: [...registrados],
   });
 }
@@ -92,17 +98,18 @@ export function openDocument(
   path: string,
   languageId: string,
 ): void {
-  closeDocument();
-  atual = { model, path, connection, version: 1 };
+  closeDocument(model);
+  documentos.set(model, { model, path, connection, version: 1 });
   connection.notify("textDocument/didOpen", {
     textDocument: { uri: path, languageId, version: 1, text: model.getValue() },
   });
 }
 
-export function closeDocument(): void {
-  if (!atual) return;
-  atual.connection.notify("textDocument/didClose", { textDocument: { uri: atual.path } });
-  atual = null;
+export function closeDocument(model: Monaco.editor.ITextModel): void {
+  const documento = documentos.get(model);
+  if (!documento) return;
+  documento.connection.notify("textDocument/didClose", { textDocument: { uri: documento.path } });
+  documentos.delete(model);
 }
 
 export function documentChanged(

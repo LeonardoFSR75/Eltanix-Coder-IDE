@@ -4,6 +4,7 @@ import MonacoEditor, { DiffEditor } from "@monaco-editor/react";
 import "@/lib/monaco-loader";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { get, post, put } from "@/lib/client";
+import { getBuffer, setBuffer, updateBufferContent } from "@/lib/editor-buffer-cache";
 import { useLsp, type LspStatus } from "@/lib/use-lsp";
 import { useTheme } from "@/lib/theme";
 import { useIde } from "@/lib/ide-store";
@@ -75,24 +76,32 @@ export function autoDetectLanguage(filePath: string, fileContent?: string): stri
 }
 
 export function Editor({
-  project,
-  path,
-  onDirtyChange,
+  groupId,
   onNavigate,
-  reveal,
-  onRevealed,
   onCursorPositionChange,
 }: {
-  project: string | null;
-  path: string | null;
-  onDirtyChange?: (dirty: boolean) => void;
+  groupId: string;
   onNavigate?: (path: string, line: number, column: number) => void;
-  reveal?: { line: number; column: number } | null;
-  onRevealed?: () => void;
   onCursorPositionChange?: (pos: { line: number; column: number }) => void;
 }) {
   const { theme } = useTheme();
-  const { codeToInsert, clearInsertedCode, splitMode, toggleSplitMode } = useIde();
+  const {
+    project,
+    groups,
+    activeGroupId,
+    reveal: globalReveal,
+    clearReveal,
+    markDirty,
+    splitGroup,
+    setTerminalOpen,
+    fileSyncVersion,
+    codeToInsert,
+    clearInsertedCode,
+  } = useIde();
+  const group = groups[groupId];
+  const path = group?.active ?? null;
+  const reveal = globalReveal?.path === path ? globalReveal : null;
+  const syncVersion = path ? fileSyncVersion[path] ?? 0 : 0;
   const [content, setContent] = useState("");
   const [language, setLanguage] = useState("plaintext");
   const [rawLanguage, setRawLanguage] = useState<string | null>(null);
@@ -107,10 +116,11 @@ export function Editor({
   const originalRef = useRef("");
   const editorInstanceRef = useRef<any>(null);
 
-  const onDirtyRef = useRef(onDirtyChange);
+  const dirtyRef = useRef(false);
   useEffect(() => {
-    onDirtyRef.current = onDirtyChange;
-  }, [onDirtyChange]);
+    dirtyRef.current = dirty;
+  }, [dirty]);
+  const loadedPathRef = useRef<string | null>(null);
 
   const lsp = useLsp({
     project,
@@ -124,8 +134,11 @@ export function Editor({
 
   const monacoTheme = theme === "dark" ? "vs-dark" : "vs";
 
+  // A ponte de inserção de código do chat (Fase 3) é global, não por grupo —
+  // só o painel com foco no momento a consome, senão um clique em "inserir
+  // no editor" com dois painéis abertos escreveria nos dois ao mesmo tempo.
   useEffect(() => {
-    if (!codeToInsert || !editorInstanceRef.current) return;
+    if (!codeToInsert || !editorInstanceRef.current || groupId !== activeGroupId) return;
     const editor = editorInstanceRef.current;
     const selection = editor.getSelection();
     const id = { major: 1, minor: 1 };
@@ -137,10 +150,38 @@ export function Editor({
     };
     editor.executeEdits("ai-insert", [op]);
     clearInsertedCode();
-  }, [codeToInsert, clearInsertedCode]);
+  }, [codeToInsert, clearInsertedCode, groupId, activeGroupId]);
 
   useEffect(() => {
     if (!path || !project) return;
+    // Este efeito também refaz o fetch quando `syncVersion` muda (arquivo
+    // alterado no disco por fora do editor, ex.: revert de um diff do
+    // agente). Se for o mesmo arquivo já carregado e o usuário tem edição
+    // não salva, não sobrescreve — só um path novo força a troca.
+    if (path === loadedPathRef.current && dirtyRef.current) return;
+
+    // Recuperado do cache fora do React (editor-buffer-cache.ts): evita ida
+    // à rede e, principalmente, evita perder uma edição não salva quando
+    // este componente remonta por um motivo alheio ao arquivo — fechar um
+    // painel vizinho reorganiza `ide.layout`, e a posição do painel
+    // sobrevivente na árvore de componentes muda.
+    const cached = getBuffer(path);
+    if (cached) {
+      setContent(cached.content);
+      originalRef.current = cached.original;
+      const detected = cached.language || autoDetectLanguage(path, cached.content);
+      setRawLanguage(detected);
+      setLanguage(MONACO_LANGUAGE[detected] ?? "plaintext");
+      const isDirty = cached.content !== cached.original;
+      setDirty(isDirty);
+      setLoadedPath(path);
+      loadedPathRef.current = path;
+      setLoading(false);
+      setError(null);
+      markDirty(path, isDirty, groupId);
+      return;
+    }
+
     let cancelled = false;
 
     setLoading(true);
@@ -158,7 +199,9 @@ export function Editor({
         setLanguage(MONACO_LANGUAGE[detected] ?? "plaintext");
         setDirty(false);
         setLoadedPath(path);
-        onDirtyRef.current?.(false);
+        loadedPathRef.current = path;
+        markDirty(path, false, groupId);
+        setBuffer(path, { content: data.content, original: data.content, language: data.language });
       })
       .catch((err) => {
         if (!cancelled) setError(err instanceof Error ? err.message : String(err));
@@ -170,7 +213,7 @@ export function Editor({
     return () => {
       cancelled = true;
     };
-  }, [project, path]);
+  }, [project, path, syncVersion, groupId, markDirty]);
 
   const save = useCallback(async () => {
     if (!path || !project || !dirty) return;
@@ -179,7 +222,8 @@ export function Editor({
       await put("/api/workspace/file", { project, path, content });
       originalRef.current = content;
       setDirty(false);
-      onDirtyRef.current?.(false);
+      markDirty(path, false, groupId);
+      setBuffer(path, { content, original: content, language: rawLanguage });
       setError(null);
       lsp.onSave();
     } catch (err) {
@@ -187,20 +231,21 @@ export function Editor({
     } finally {
       setSaving(false);
     }
-  }, [project, path, content, dirty, lsp]);
+  }, [project, path, content, dirty, lsp, groupId, markDirty, rawLanguage]);
 
   const discardChanges = useCallback(async () => {
     if (!path || !project) return;
     setContent(originalRef.current);
     setDirty(false);
-    onDirtyRef.current?.(false);
+    markDirty(path, false, groupId);
+    setBuffer(path, { content: originalRef.current, original: originalRef.current, language: rawLanguage });
 
     try {
       await post("/api/git/discard", { project, paths: [path] });
     } catch {
       // Ignora erro se arquivo não estava sob controle do Git
     }
-  }, [path, project]);
+  }, [path, project, groupId, markDirty, rawLanguage]);
 
   const toggleDiffView = useCallback(async () => {
     if (showDiff) {
@@ -223,8 +268,8 @@ export function Editor({
   useEffect(() => {
     if (!reveal || loadedPath !== path) return;
     lsp.revealAt(reveal.line, reveal.column);
-    onRevealed?.();
-  }, [reveal, loadedPath, path, lsp, onRevealed]);
+    clearReveal();
+  }, [reveal, loadedPath, path, lsp, clearReveal]);
 
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
@@ -254,15 +299,10 @@ export function Editor({
   return (
     <div className="editor-wrap">
       <div className="editor-bar">
-        <span className="editor-path">
-          {path}
-          {dirty && <span className="dot" title="não salvo" />}
-        </span>
-
         <LspBadge status={lsp.status} />
 
-        <div className="editor-bar-actions" style={{ marginLeft: "auto", display: "flex", gap: 6, alignItems: "center" }}>
-          <span className="kbd-badge" title="Linguagem detectada">
+        <div className="editor-bar-actions" style={{ marginLeft: "auto", display: "flex", gap: 4, alignItems: "center" }}>
+          <span className="kbd-badge" title="Linguagem detectada" style={{ fontSize: "11px", padding: "1px 6px" }}>
             ⚡ {language}
           </span>
 
@@ -271,17 +311,29 @@ export function Editor({
             className={`theme-btn ${showMinimap ? "active" : ""}`}
             onClick={() => setShowMinimap(!showMinimap)}
             title="Alternar Minimapa"
+            style={{ padding: "2px 6px", fontSize: "11px" }}
           >
             🗺️ Minimap
           </button>
 
           <button
             type="button"
-            className={`theme-btn ${splitMode ? "active" : ""}`}
-            onClick={() => toggleSplitMode()}
-            title="Alternar Editor Lado a Lado (Split View)"
+            className="theme-btn"
+            onClick={() => path && splitGroup(groupId, path, "row")}
+            title="Dividir este painel na horizontal (novo grupo à direita)"
+            style={{ padding: "2px 6px", fontSize: "11px" }}
           >
-            ⚖️ Split
+            ⬌ Dividir
+          </button>
+
+          <button
+            type="button"
+            className="theme-btn"
+            onClick={() => path && splitGroup(groupId, path, "column")}
+            title="Dividir este painel na vertical (novo grupo abaixo)"
+            style={{ padding: "2px 6px", fontSize: "11px" }}
+          >
+            ⬍ Dividir
           </button>
 
           <button
@@ -289,6 +341,7 @@ export function Editor({
             className="theme-btn"
             onClick={() => void toggleDiffView()}
             title="Revisar alterações lado a lado"
+            style={{ padding: "2px 6px", fontSize: "11px" }}
           >
             {showDiff ? "Editor" : "Ver Diff"}
           </button>
@@ -297,7 +350,7 @@ export function Editor({
             <button
               type="button"
               className="theme-btn"
-              style={{ color: "var(--danger)" }}
+              style={{ color: "var(--danger)", padding: "2px 6px", fontSize: "11px" }}
               onClick={() => void discardChanges()}
               title="Descartar alterações locais e reverter"
             >
@@ -310,8 +363,29 @@ export function Editor({
             className="primary"
             onClick={() => void save()}
             disabled={!dirty || saving}
+            style={{ padding: "2px 8px", fontSize: "11px" }}
           >
             {saving ? "salvando…" : "Salvar (Ctrl+S)"}
+          </button>
+
+          <button
+            type="button"
+            className="primary"
+            onClick={() => {
+              setTerminalOpen(true);
+              const cmd =
+                language === "python"
+                  ? `python ${path}`
+                  : language === "javascript" || language === "typescript"
+                  ? `node ${path}`
+                  : `./${path}`;
+              const evt = new CustomEvent("sicoobito:terminal:exec", { detail: { command: cmd } });
+              window.dispatchEvent(evt);
+            }}
+            style={{ padding: "2px 10px", fontSize: "11px", background: "#16a34a", color: "#fff", border: "none", cursor: "pointer" }}
+            title={`Executar ${path} no terminal do sandbox`}
+          >
+            ▶ Rodar
           </button>
         </div>
       </div>
@@ -327,7 +401,7 @@ export function Editor({
           language={rawLanguage}
         />
       ) : (
-        <div className={`editor-container-grid ${splitMode ? "split-mode" : ""}`}>
+        <div className="editor-container-grid">
           <div className="editor-pane">
             <MonacoEditor
               height="100%"
@@ -350,23 +424,14 @@ export function Editor({
                 setContent(next);
                 const isDirty = next !== originalRef.current;
                 setDirty(isDirty);
-                onDirtyRef.current?.(isDirty);
+                if (path) {
+                  markDirty(path, isDirty, groupId);
+                  updateBufferContent(path, next);
+                }
                 lsp.onChange(evento);
               }}
             />
           </div>
-          {splitMode && (
-            <div className="editor-pane split-pane">
-              <div className="split-pane-header">Cópia de Referência</div>
-              <MonacoEditor
-                height="100%"
-                theme={monacoTheme}
-                language={language}
-                value={content}
-                options={{ ...editorOptions, readOnly: true }}
-              />
-            </div>
-          )}
         </div>
       )}
     </div>
