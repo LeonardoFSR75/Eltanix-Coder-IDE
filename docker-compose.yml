@@ -10,7 +10,8 @@ name: sicoobito
 #   5403  postgres
 #   5404  redis
 #   5405  ollama
-#   5406  browser (interno; exposto só para diagnóstico)
+#   5406  browser (só na rede interna — `browser_net` não permite publicar
+#         porta para o host; diagnóstico via `docker exec`)
 #
 # Todas as portas publicadas são vinculadas a 127.0.0.1: nenhum destes
 # serviços tem autenticação forte o suficiente para ficar alcançável pela
@@ -149,13 +150,17 @@ services:
   # Roda o Chromium headless para `browser_action` (Fase 7). Isolado do
   # sandbox de execução de comando de propósito — ver o comentário na rede
   # `browser_net` acima e o docstring de `services/browser/app.py`.
+  #
+  # Sem `ports:` de propósito: `browser_net` é `internal: true`, e testado na
+  # prática o publish de porta para o host não funciona numa rede sem rota
+  # de saída (confirmado: `docker port` não lista nada, a porta simplesmente
+  # não fica acessível de fora). Para diagnóstico, use
+  # `docker exec sicoobito-browser-1 curl -s http://localhost:5406/health`.
   browser:
     build:
       context: ./services/browser
     environment:
       BROWSER_TOKEN: ${BROWSER_TOKEN:-browser-local}
-    ports:
-      - "127.0.0.1:5406:5406"
     networks:
       - browser_net
     healthcheck:

@@ -1,4 +1,9 @@
-FROM python:3.12-slim
+# Debian fixado em bookworm, não a tag `slim` flutuante: a Playwright só
+# mantém a lista de pacotes do `--with-deps` para releases que ela suporta
+# oficialmente, e a `slim` já migrou para trixie, onde pacotes de fonte que
+# o instalador espera (ttf-ubuntu-font-family, ttf-unifont) não existem mais
+# com esses nomes — a instalação do Chromium falha antes de chegar ao app.
+FROM python:3.12-slim-bookworm
 
 WORKDIR /srv
 
