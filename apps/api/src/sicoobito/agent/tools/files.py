@@ -114,7 +114,15 @@ async def write_file(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
     return ToolResult(
         ok=True,
         content=f"{path} gravado ({len(content)} caracteres).",
-        data={"path": path, "diff": _unified_diff(path, anterior, content)},
+        # `before`/`after` completos poupam o frontend de parsear diff
+        # unificado: a Fase 3 (revisão de diff) alimenta o DiffEditor do
+        # Monaco direto com estas duas strings.
+        data={
+            "path": path,
+            "diff": _unified_diff(path, anterior, content),
+            "before": anterior,
+            "after": content,
+        },
     )
 
 
@@ -178,7 +186,9 @@ async def edit_file(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
     # O diff sai normalizado: mostrar ^M em toda linha esconderia a mudança real.
     diff = _unified_diff(path, atual_norm, novo_norm)
     return ToolResult(
-        ok=True, content=f"{path} editado.\n\n{diff}", data={"path": path, "diff": diff}
+        ok=True,
+        content=f"{path} editado.\n\n{diff}",
+        data={"path": path, "diff": diff, "before": atual_norm, "after": novo_norm},
     )
 
 

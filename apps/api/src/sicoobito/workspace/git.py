@@ -216,6 +216,30 @@ def commit(
     return committed.hexsha
 
 
+def revert_path(root: Path, path: str) -> None:
+    """Descarta a mudança de um arquivo, voltando ao estado do HEAD.
+
+    Usado quando o humano rejeita uma edição do agente na revisão de diff: o
+    worktree da sessão já é isolado, então "rejeitar" é simplesmente devolver
+    aquele arquivo ao que era antes da ferramenta tocá-lo. Um arquivo que o
+    agente criou (sem versão em HEAD) não tem para onde reverter — é removido
+    em vez de restaurado.
+    """
+    repo = open_repo(root)
+    try:
+        repo.git.checkout("HEAD", "--", path)
+        return
+    except GitCommandError:
+        pass  # provavelmente arquivo novo, sem versão em HEAD
+
+    alvo = root / path
+    try:
+        if alvo.exists():
+            alvo.unlink()
+    except OSError as exc:
+        raise GitError(f"não foi possível reverter {path}: {exc}") from exc
+
+
 def push(root: Path, branch: str, *, remote: str = "origin", set_upstream: bool = True) -> None:
     repo = open_repo(root)
     if remote not in {r.name for r in repo.remotes}:
