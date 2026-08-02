@@ -74,7 +74,12 @@ def build_task_prompt(
         if focus_folder:
             foco_parts.append(f"- Pasta alvo: `{focus_folder}`")
         if focus_files:
-            foco_parts.append("- Arquivos selecionados pelo usuário para considerar e editar:")
+            foco_parts.append(
+                "- Arquivos selecionados pelo usuário para considerar e editar. Use "
+                "exatamente este caminho (com a mesma pasta) em `edit_file`/`write_file` — "
+                "criar um arquivo novo de nome parecido em outro lugar, em vez de editar "
+                "o arquivo indicado, não é o que foi pedido:"
+            )
             for f in focus_files:
                 foco_parts.append(f"  • `{f}`")
         partes.append("\n".join(foco_parts))

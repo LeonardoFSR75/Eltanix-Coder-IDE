@@ -12,10 +12,12 @@ type Decision = "pending" | "accepted" | "rejected";
 // Toda chamada de write_file/edit_file já grava no worktree isolado da
 // sessão antes de chegar aqui (fluxo escreve-então-revisa). "Aceitar" não
 // precisa de ação nenhuma — a mudança já está lá. "Rejeitar" chama o
-// endpoint de revert, que devolve o arquivo ao estado anterior no worktree
-// via `git checkout` (ou remove, se o arquivo era novo).
+// endpoint de revert, mandando de volta o `before` que a própria ferramenta
+// devolveu — não depende de git existir no projeto (muitos não são
+// repositório Git, e a sessão funciona normalmente mesmo assim).
 export function DiffCard({
   tool,
+  content,
   data,
   ok,
   sessionId,
@@ -28,15 +30,26 @@ export function DiffCard({
   const path = String(data.path ?? "");
   const before = String(data.before ?? "");
   const after = String(data.after ?? "");
+  const existed = data.existed !== false;
   const verb = tool === "write_file" ? "escrever" : "editar";
   const language = autoDetectLanguage(path);
+
+  // A ferramenta pode ter falhado (arquivo não encontrado, trecho ambíguo
+  // etc.) — sem `path`, não há diff nenhum para revisar, só o erro.
+  if (!ok || !path) {
+    return (
+      <ToolCardShell icon="✏️" title={`${verb} — falhou`} ok={false} defaultOpen>
+        <pre className="tool-card-pre">{content}</pre>
+      </ToolCardShell>
+    );
+  }
 
   const reject = async () => {
     if (!sessionId || busy) return;
     setBusy(true);
     setError(null);
     try {
-      await post(`/api/agent/sessions/${sessionId}/files/revert`, { path });
+      await post(`/api/agent/sessions/${sessionId}/files/revert`, { path, before, existed });
       setDecision("rejected");
       notifyFileChanged(path);
     } catch (err) {
@@ -76,7 +89,7 @@ export function DiffCard({
               className="diff-card-btn reject"
               disabled={busy || !sessionId}
               onClick={() => void reject()}
-              title={sessionId ? "Reverter esta edição no worktree" : "Sessão indisponível"}
+              title={sessionId ? "Reverter esta edição" : "Sessão indisponível"}
             >
               {busy ? "revertendo…" : "✕ Rejeitar"}
             </button>

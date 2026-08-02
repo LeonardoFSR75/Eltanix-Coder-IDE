@@ -133,26 +133,3 @@ def test_open_repo_on_a_plain_directory_fails(tmp_path):
 def test_push_without_remote_fails_clearly(repo):
     with pytest.raises(GitError, match="Remote 'origin' não existe"):
         git_ops.push(repo, "main")
-
-
-# ── revert_path (revisão de diff — rejeitar uma edição do agente) ──────────
-
-
-def test_revert_path_restores_a_tracked_file_to_head(repo):
-    (repo / "app.py").write_text("print('editado pelo agente')\n", encoding="utf-8")
-
-    git_ops.revert_path(repo, "app.py")
-
-    assert (repo / "app.py").read_text(encoding="utf-8") == "print('v1')\n"
-    assert git_ops.status(repo).dirty is False
-
-
-def test_revert_path_removes_a_file_the_agent_created(repo):
-    # write_file criou um arquivo que nunca existiu em HEAD; não há para onde
-    # reverter, então rejeitar significa remover.
-    (repo / "novo.py").write_text("gerado pelo agente\n", encoding="utf-8")
-    assert (repo / "novo.py").exists()
-
-    git_ops.revert_path(repo, "novo.py")
-
-    assert not (repo / "novo.py").exists()

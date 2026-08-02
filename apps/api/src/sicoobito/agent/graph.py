@@ -35,28 +35,52 @@ log = get_logger(__name__)
 DEFAULT_MAX_ITERATIONS = 25
 
 
-def _tool_schemas(mode: str) -> list[dict[str, Any]]:
+def _tool_schemas(mode: str, has_plan: bool) -> list[dict[str, Any]]:
     """Ferramentas oferecidas por modo.
 
     Restringir por schema é mais confiável que instruir o modelo a não chamar:
     o que não está na lista não pode ser chamado.
+
+    `plan` sem `has_plan` cai na mesma lista de `ask` — leitura e
+    `write_todos` (RiskClass.READ, já incluído), nada de escrever ou
+    executar. Sem isto, só a instrução no prompt pedia "planeje primeiro", e
+    nada impedia o modelo de pular direto para editar/executar sem nunca
+    chamar `write_todos` — o "Modo Planejar" na prática não mostrava plano
+    nenhum, só executava como o modo agente comum.
     """
     if mode == "ask":
         return registry.schemas(allow_exec=False, allow_write=False)
     if mode == "edit":
         return registry.schemas(allow_exec=False, allow_write=True)
+    if mode == "plan" and not has_plan:
+        return registry.schemas(allow_exec=False, allow_write=False)
     return registry.schemas()
+
+
+# Chaves que a API OpenAI-compatível reconhece numa mensagem. `data`/`ok`
+# (Fase 1) existem só para a UI montar o card por tipo de ferramenta — viajam
+# dentro do mesmo dict que também é `state["messages"]`, e portanto a própria
+# conversa reenviada ao provedor a cada turno. Sem filtrar, a primeira
+# ferramenta chamada já quebra toda sessão: o Groq rejeita com 400 qualquer
+# propriedade fora do schema numa mensagem `role: tool`, e sem candidato que
+# aceite a mensagem "suja" a sessão trava (foi como o bug foi encontrado —
+# nenhum turno seguinte completava, então nenhum botão parecia fazer nada).
+_CHAVES_MENSAGEM_API = {"role", "content", "name", "tool_call_id", "tool_calls"}
+
+
+def _para_api(mensagens: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [{k: v for k, v in m.items() if k in _CHAVES_MENSAGEM_API} for m in mensagens]
 
 
 def build_graph(engine: RouterEngine, context: ToolContext):
     async def think(state: AgentState) -> dict[str, Any]:
-        mensagens = [{"role": "system", "content": SYSTEM_PROMPT}, *state["messages"]]
+        mensagens = _para_api([{"role": "system", "content": SYSTEM_PROMPT}, *state["messages"]])
 
         resultado = await engine.complete(
             requested_model=state.get("model") or "coding",
             params={
                 "messages": mensagens,
-                "tools": _tool_schemas(state.get("mode", "agent")),
+                "tools": _tool_schemas(state.get("mode", "agent"), bool(state.get("todos"))),
                 "temperature": 0,
             },
             source=f"agent:{state.get('mode', 'agent')}",

@@ -106,7 +106,8 @@ async def list_files(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
 async def write_file(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
     path, content = args["path"], args["content"]
     try:
-        anterior = ctx.fs.read(path) if ctx.fs.exists(path) else ""
+        existia = ctx.fs.exists(path)
+        anterior = ctx.fs.read(path) if existia else ""
         ctx.fs.write(path, content)
     except (PathEscapeError, ValueError, OSError) as exc:
         return ToolResult.failure(str(exc))
@@ -116,12 +117,16 @@ async def write_file(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
         content=f"{path} gravado ({len(content)} caracteres).",
         # `before`/`after` completos poupam o frontend de parsear diff
         # unificado: a Fase 3 (revisão de diff) alimenta o DiffEditor do
-        # Monaco direto com estas duas strings.
+        # Monaco direto com estas duas strings. `existed` diz se rejeitar a
+        # edição deve reescrever o conteúdo anterior ou apagar o arquivo —
+        # sem depender de git, que pode nem existir no projeto (ver
+        # `POST /sessions/{id}/files/revert`).
         data={
             "path": path,
             "diff": _unified_diff(path, anterior, content),
             "before": anterior,
             "after": content,
+            "existed": existia,
         },
     )
 
@@ -188,7 +193,9 @@ async def edit_file(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
     return ToolResult(
         ok=True,
         content=f"{path} editado.\n\n{diff}",
-        data={"path": path, "diff": diff, "before": atual_norm, "after": novo_norm},
+        # `edit_file` exige o arquivo já existir (lido no início da função),
+        # então `existed` é sempre True aqui — ver write_file para o outro caso.
+        data={"path": path, "diff": diff, "before": atual_norm, "after": novo_norm, "existed": True},
     )
 
 

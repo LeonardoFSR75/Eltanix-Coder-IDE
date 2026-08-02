@@ -36,6 +36,20 @@ function Shell() {
   const [isResizingAgent, setIsResizingAgent] = useState(false);
   const [isResizingTerminal, setIsResizingTerminal] = useState(false);
 
+  // Abrir a aba não basta quando ela já estava aberta: o Editor só refaz o
+  // fetch se `path`/`project` mudam ou se `notifyFileChanged` bumpa a versão
+  // de sincronia daquele path — sem isto, editar um arquivo que o usuário já
+  // tinha aberto (o caso mais comum, já que normalmente se ancora o agente
+  // num arquivo focado) deixava a aba mostrando o conteúdo antigo, como se a
+  // edição só tivesse acontecido dentro do card do chat.
+  const handleAgentFileTouched = useCallback(
+    (path: string) => {
+      ide.openFile(path);
+      ide.notifyFileChanged(path);
+    },
+    [ide],
+  );
+
   const handleCreateProject = async () => {
     const nome = window.prompt("Nome da pasta do projeto (será criada ou vinculada dentro do PROJECTS_ROOT):");
     if (!nome || !nome.trim()) return;
@@ -311,7 +325,7 @@ function Shell() {
 
         {ide.agentDockOpen && (
           <aside className="agent-dock" style={{ width: ide.agentDockWidth }}>
-            <AgentDock onFileTouched={ide.openFile} onSession={setSessionId} />
+            <AgentDock onFileTouched={handleAgentFileTouched} onSession={setSessionId} />
           </aside>
         )}
 

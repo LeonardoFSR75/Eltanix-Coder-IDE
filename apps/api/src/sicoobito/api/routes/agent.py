@@ -219,15 +219,25 @@ async def session_diff(session_id: str, request: Request) -> dict[str, Any]:
 
 class RevertFileRequest(BaseModel):
     path: str = Field(min_length=1)
+    # O conteúdo anterior já está no card de diff no frontend (a ferramenta
+    # devolveu `before`/`existed` em `ToolResult.data`) — reenviá-lo aqui
+    # evita depender de git para reverter. Muitos projetos abertos no IDE nem
+    # são repositório Git (a sessão ainda funciona para ler/editar sem isso,
+    # ver `AgentRunner.create_session`), e a versão anterior desta rota
+    # (`git checkout HEAD --`) simplesmente não tinha para onde reverter
+    # nesse caso — o clique em "Rejeitar" falhava sempre.
+    before: str = ""
+    existed: bool = True
 
 
 @router.post("/sessions/{session_id}/files/revert")
 async def revert_file(
     session_id: str, payload: RevertFileRequest, request: Request
 ) -> dict[str, Any]:
-    """Rejeita uma edição do agente: devolve o arquivo ao estado do HEAD no
-    worktree da sessão. É o lado 'Rejeitar' do card de diff — aceitar não
-    precisa de rota nenhuma, a mudança já está gravada."""
+    """Rejeita uma edição do agente: devolve o arquivo ao conteúdo anterior no
+    worktree da sessão (ou remove, se a ferramenta o criou). É o lado
+    'Rejeitar' do card de diff — aceitar não precisa de rota nenhuma, a
+    mudança já está gravada."""
     sessao = _session(request, session_id)
     try:
         # Mesma fronteira de path-escape usada pelas ferramentas do agente:
@@ -238,8 +248,11 @@ async def revert_file(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
     try:
-        git_ops.revert_path(sessao.worktree_path, payload.path)
-    except GitError as exc:
+        if payload.existed:
+            sessao.context.fs.write(payload.path, payload.before)
+        else:
+            sessao.context.fs.delete(payload.path)
+    except (PathEscapeError, ValueError, OSError) as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
     return {"path": payload.path, "reverted": True}
