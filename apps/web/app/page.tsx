@@ -2,17 +2,17 @@
 
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
-import { LocalDB, MCPServer } from "@/lib/db";
 import { DocumentSummary, listDocuments } from "@/lib/api/documents";
 import { NoteRecord, listNotes } from "@/lib/api/notes";
 import { SkillRecord, listSkills } from "@/lib/api/skills";
 import { AuditEntry, listAudit } from "@/lib/api/audit";
+import { MCPServerRecord, listMcpServers } from "@/lib/api/mcp";
 
 export default function HomePage() {
   const [notes, setNotes] = useState<NoteRecord[]>([]);
   const [documents, setDocuments] = useState<DocumentSummary[]>([]);
   const [skills, setSkills] = useState<SkillRecord[]>([]);
-  const [mcpServers, setMcpServers] = useState<MCPServer[]>([]);
+  const [mcpServers, setMcpServers] = useState<MCPServerRecord[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditEntry[]>([]);
 
   useEffect(() => {
@@ -20,7 +20,7 @@ export default function HomePage() {
     listDocuments().then(setDocuments).catch(() => setDocuments([]));
     listSkills().then(setSkills).catch(() => setSkills([]));
     listAudit().then(setAuditLogs).catch(() => setAuditLogs([]));
-    setMcpServers(LocalDB.getMCP());
+    listMcpServers().then(setMcpServers).catch(() => setMcpServers([]));
   }, []);
 
   const totalChunks = documents.reduce((acc, d) => acc + d.chunk_count, 0);
@@ -78,9 +78,11 @@ export default function HomePage() {
 
         <div className="stat-card">
           <span className="stat-icon">🔌</span>
-          <div className="stat-value">{mcpServers.length}</div>
+          <div className="stat-value">
+            {mcpServers.filter((s) => s.status === "connected").length}/{mcpServers.length}
+          </div>
           <div className="stat-label">Servidores MCP</div>
-          <div className="stat-hint">STDIO / SSE Online</div>
+          <div className="stat-hint">Conectados / Cadastrados</div>
         </div>
       </div>
 
@@ -187,15 +189,16 @@ export default function HomePage() {
           <Link href="/mcp" className="module-card">
             <div className="module-header">
               <span className="module-icon">🔌</span>
-              <span className="module-badge">Roteiro</span>
+              <span className="module-badge">Model Context Protocol</span>
             </div>
-            <h3>MCP (Model Context) — Preview</h3>
+            <h3>Conectores MCP do Agente</h3>
             <p>
-              Demonstração do desenho da futura integração MCP — ainda não implementada de verdade.
+              Conecte servidores MCP (stdio ou Streamable HTTP) — cada um vira ferramentas reais
+              que o agente pode chamar, com aprovação para ações de escrita.
             </p>
             <div className="module-footer">
-              <span>{mcpServers.length} servidores (demo)</span>
-              <span className="arrow-link">Ver roteiro →</span>
+              <span>{mcpServers.length} servidor(es) cadastrado(s)</span>
+              <span className="arrow-link">Gerenciar →</span>
             </div>
           </Link>
 

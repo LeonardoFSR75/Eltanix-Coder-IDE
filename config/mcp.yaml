@@ -1,0 +1,15 @@
+# Servidores MCP (Model Context Protocol) conectados ao agente.
+#
+# Cada servidor conectado vira um conjunto de ferramentas do agente, prefixadas
+# `mcp__<name>__<tool>`. Por padrão toda ferramenta MCP nasce como RiskClass.WRITE
+# (exige aprovação humana antes de rodar) — a especificação do MCP é explícita
+# que anotações como `read_only_hint` são um sinal do servidor, não uma garantia,
+# e não devem ser confiadas cegamente. Marque `trust_annotations: true` só em
+# servidores que você mesmo controla ou confia, para deixar as tools com
+# `read_only_hint: true` executarem sem aprovação.
+#
+# stdio sobe um subprocesso local (ex.: `npx -y @modelcontextprotocol/server-x`)
+# direto no processo da API — o comando é o que você digitou aqui, não código
+# vindo do agente/LLM, por isso não passa pelo sandbox do executor.
+
+servers: []

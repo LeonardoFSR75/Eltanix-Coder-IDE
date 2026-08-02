@@ -196,6 +196,10 @@ class Settings(BaseSettings):
     def pricing_file(self) -> Path:
         return self.config_dir / "pricing.yaml"
 
+    @property
+    def mcp_config_file(self) -> Path:
+        return self.config_dir / "mcp.yaml"
+
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:

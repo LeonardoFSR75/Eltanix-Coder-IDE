@@ -6,6 +6,7 @@ from sicoobito.api.routes.git import router as git_router
 from sicoobito.api.routes.health import router as health_router
 from sicoobito.api.routes.lsp import router as lsp_router
 from sicoobito.api.routes.lsp import ws_router as lsp_ws_router
+from sicoobito.api.routes.mcp import router as mcp_router
 from sicoobito.api.routes.metrics import router as metrics_router
 from sicoobito.api.routes.notes import router as notes_router
 from sicoobito.api.routes.skills import router as skills_router
@@ -22,6 +23,7 @@ __all__ = [
     "health_router",
     "lsp_router",
     "lsp_ws_router",
+    "mcp_router",
     "metrics_router",
     "notes_router",
     "projects_router",

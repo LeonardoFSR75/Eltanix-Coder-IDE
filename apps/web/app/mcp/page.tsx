@@ -1,201 +1,218 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
-import { LocalDB, MCPServer } from "@/lib/db";
+import { useCallback, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import {
+  MCPServerRecord,
+  MCPTransport,
+  createMcpServer,
+  deleteMcpServer,
+  listMcpServers,
+  toggleMcpServer,
+} from "@/lib/api/mcp";
 import { useToast } from "@/components/Toast";
+
+const STATUS_LABEL: Record<MCPServerRecord["status"], string> = {
+  connected: "Conectado",
+  connecting: "Conectando…",
+  disabled: "Desabilitado",
+  error: "Erro",
+};
 
 export default function MCPPage() {
   const { addToast } = useToast();
-  const [servers, setServers] = useState<MCPServer[]>([]);
-  const [selectedServer, setSelectedServer] = useState<MCPServer | null>(null);
+  const router = useRouter();
 
-  // Form states for new server
-  const [serverName, setServerName] = useState("");
-  const [serverType, setServerType] = useState<"stdio" | "sse">("stdio");
-  const [endpoint, setEndpoint] = useState("");
+  const [servers, setServers] = useState<MCPServerRecord[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedServer, setSelectedServer] = useState<MCPServerRecord | null>(null);
+  const [creating, setCreating] = useState(false);
 
-  // Console state
-  const [selectedTool, setSelectedTool] = useState("fs_read_file");
-  const [jsonRpcRequest, setJsonRpcRequest] = useState(
-    '{\n  "jsonrpc": "2.0",\n  "id": 1,\n  "method": "tools/call",\n  "params": {\n    "name": "fs_read_file",\n    "arguments": {\n      "path": "/workspace/README.md"\n    }\n  }\n}'
-  );
-  const [jsonRpcResponse, setJsonRpcResponse] = useState("");
-  const [isExecutingRpc, setIsExecutingRpc] = useState(false);
+  const [name, setName] = useState("");
+  const [transport, setTransport] = useState<MCPTransport>("stdio");
+  const [command, setCommand] = useState("");
+  const [args, setArgs] = useState("");
+  const [url, setUrl] = useState("");
+  const [trustAnnotations, setTrustAnnotations] = useState(false);
+
+  const refresh = useCallback(async () => {
+    try {
+      const loaded = await listMcpServers();
+      setServers(loaded);
+      if (loaded.length > 0 && !selectedServer) {
+        setSelectedServer(loaded[0]);
+      }
+    } catch (err) {
+      addToast(err instanceof Error ? err.message : "Falha ao carregar servidores MCP.", "error");
+    } finally {
+      setLoading(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [addToast]);
 
   useEffect(() => {
-    const loaded = LocalDB.getMCP();
-    setServers(loaded);
-    if (loaded.length > 0) {
-      setSelectedServer(loaded[0]);
-    }
-  }, []);
+    refresh();
+  }, [refresh]);
 
-  const handleAddServer = (e: React.FormEvent) => {
+  const handleAddServer = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!serverName || !endpoint) return;
+    if (!name.trim()) return;
+    if (transport === "stdio" && !command.trim()) {
+      addToast("Informe o comando para transporte stdio.", "error");
+      return;
+    }
+    if (transport === "http" && !url.trim()) {
+      addToast("Informe a URL para transporte HTTP.", "error");
+      return;
+    }
 
-    const newServer: MCPServer = {
-      id: `mcp-${Date.now()}`,
-      name: serverName,
-      type: serverType,
-      endpoint,
-      status: "online",
-      latencyMs: Math.floor(Math.random() * 20 + 8),
-      toolsCount: 4,
-      resourcesCount: 6,
-      promptsCount: 2,
-      lastPing: new Date().toISOString(),
-    };
-
-    const updated = [newServer, ...servers];
-    setServers(updated);
-    setSelectedServer(newServer);
-    LocalDB.saveMCP(updated);
-    setServerName("");
-    setEndpoint("");
-    addToast(`Servidor MCP "${newServer.name}" registrado no banco com sucesso!`, "success");
-  };
-
-  const handlePingServer = (server: MCPServer) => {
-    addToast(`Testando latência com ${server.name}...`, "info");
-    setTimeout(() => {
-      const newLatency = Math.floor(Math.random() * 15 + 5);
-      const updated = servers.map((s) =>
-        s.id === server.id ? { ...s, latencyMs: newLatency, lastPing: new Date().toISOString() } : s
-      );
+    setCreating(true);
+    try {
+      const updated = await createMcpServer({
+        name: name.trim(),
+        transport,
+        command: transport === "stdio" ? command.trim() : undefined,
+        args: transport === "stdio" ? args.split(" ").filter(Boolean) : undefined,
+        url: transport === "http" ? url.trim() : undefined,
+        enabled: true,
+        trust_annotations: trustAnnotations,
+      });
       setServers(updated);
-      LocalDB.saveMCP(updated);
-      addToast(`Servidor ${server.name} respondeu em ${newLatency}ms!`, "success");
-    }, 400);
+      const created = updated.find((s) => s.name === name.trim());
+      if (created) setSelectedServer(created);
+      setName("");
+      setCommand("");
+      setArgs("");
+      setUrl("");
+      setTrustAnnotations(false);
+      addToast(`Servidor MCP "${name}" conectado.`, "success");
+    } catch (err) {
+      addToast(err instanceof Error ? err.message : "Falha ao criar servidor MCP.", "error");
+    } finally {
+      setCreating(false);
+    }
   };
 
-  const handleExecuteJsonRpc = () => {
-    setIsExecutingRpc(true);
-    setJsonRpcResponse("⌛ Enviando requisição JSON-RPC 2.0 via protocolo MCP...");
+  const handleToggle = async (server: MCPServerRecord) => {
+    try {
+      const updated = await toggleMcpServer(server.name);
+      setServers(updated);
+      const refreshed = updated.find((s) => s.name === server.name);
+      if (refreshed) setSelectedServer(refreshed);
+      addToast(`Servidor "${server.name}" ${server.enabled ? "desabilitado" : "habilitado"}.`, "info");
+    } catch (err) {
+      addToast(err instanceof Error ? err.message : "Falha ao alternar servidor.", "error");
+    }
+  };
 
-    setTimeout(() => {
-      setIsExecutingRpc(false);
-      try {
-        const parsed = JSON.parse(jsonRpcRequest);
-        const responsePayload = {
-          jsonrpc: "2.0",
-          id: parsed.id || 1,
-          result: {
-            content: [
-              {
-                type: "text",
-                text: `[MCP EXECUTION SUCCESS] Executada a ferramenta "${selectedTool}" no servidor "${selectedServer?.name || "Filesystem Local"}".\n\nConteúdo lido: SicoobitoCode Platform v2.0 - Local-first agentic environment.`,
-              },
-            ],
-            isError: false,
-          },
-        };
-        setJsonRpcResponse(JSON.stringify(responsePayload, null, 2));
+  const handleDelete = async (server: MCPServerRecord) => {
+    try {
+      const updated = await deleteMcpServer(server.name);
+      setServers(updated);
+      setSelectedServer(updated.length > 0 ? updated[0] : null);
+      addToast(`Servidor "${server.name}" removido.`, "info");
+    } catch (err) {
+      addToast(err instanceof Error ? err.message : "Falha ao remover servidor.", "error");
+    }
+  };
 
-        // ✅ INTEGRAÇÃO AUDITORIA: Registro de Chamada MCP
-        LocalDB.addAuditLog({
-          actor: `Agente MCP (${selectedServer?.name || "STDIO Local"})`,
-          module: "MCP",
-          action: `Execução de Ferramenta (${selectedTool})`,
-          details: `Invocada ferramenta ${selectedTool} via JSON-RPC 2.0. Resposta: 200 OK.`,
-          riskLevel: "low",
-          ipAddress: "127.0.0.1",
-          status: "success",
-        });
-
-        addToast("Resposta JSON-RPC 2.0 recebida do servidor MCP!", "success");
-      } catch (err) {
-        setJsonRpcResponse(
-          JSON.stringify({ jsonrpc: "2.0", id: null, error: { code: -32700, message: "Parse error em JSON" } }, null, 2)
-        );
-
-        LocalDB.addAuditLog({
-          actor: "Cliente JSON-RPC",
-          module: "MCP",
-          action: "Erro de Sintaxe JSON-RPC",
-          details: "Tentativa de envio com payload JSON malformado.",
-          riskLevel: "medium",
-          ipAddress: "127.0.0.1",
-          status: "warning",
-        });
-
-        addToast("Erro no formato JSON da requisição.", "error");
-      }
-    }, 600);
+  const testInAgent = (server: MCPServerRecord) => {
+    if (server.status !== "connected") {
+      addToast("Conecte o servidor antes de testar no agente.", "error");
+      return;
+    }
+    router.push(
+      `/ide?agentPrompt=${encodeURIComponent(
+        `Liste e use as ferramentas do servidor MCP "${server.name}" (prefixo mcp__${server.name}__) para: `,
+      )}`,
+    );
   };
 
   return (
     <div className="shell">
       <div className="page-header">
         <div>
-          <span className="page-badge">🚧 MCP — Roteiro (ainda não implementado)</span>
-          <h1>Preview: Conectores & Servidores MCP</h1>
+          <span className="page-badge">🔌 Servidores MCP</span>
+          <h1>Conectores MCP do Agente</h1>
           <p>
-            Esta tela é uma demonstração interativa do desenho da futura integração MCP —
-            os servidores, ferramentas e respostas abaixo são simulados, não uma conexão real.
-            O agente do IDE já tem um registro de ferramentas real (<code className="inline-code">agent/tools</code>)
-            pronto para receber ferramentas MCP quando essa integração existir de verdade.
+            Servidores conectados aqui viram ferramentas reais do agente (prefixo{" "}
+            <code className="inline-code">mcp__servidor__ferramenta</code>). Por padrão toda
+            ferramenta MCP exige aprovação antes de rodar — só servidores marcados como
+            confiáveis abaixo têm suas ferramentas somente-leitura liberadas direto.
           </p>
-        </div>
-        <div className="header-actions">
-          <span className="badge-tag blue">Demo — dados simulados</span>
         </div>
       </div>
 
-      {/* Grid de Servidores MCP */}
       <div className="grid grid-3">
+        {loading && <p className="text-xs text-muted">Carregando…</p>}
+        {!loading && servers.length === 0 && (
+          <p className="text-xs text-muted">Nenhum servidor MCP cadastrado ainda.</p>
+        )}
         {servers.map((s) => (
           <div
-            key={s.id}
-            className={`mcp-server-card ${selectedServer?.id === s.id ? "active" : ""}`}
+            key={s.name}
+            className={`mcp-server-card ${selectedServer?.name === s.name ? "active" : ""}`}
             onClick={() => setSelectedServer(s)}
           >
             <div className="mcp-card-header">
-              <span className={`status-indicator ${s.status}`} />
+              <span className={`status-indicator ${s.status === "connected" ? "online" : "offline"}`} />
               <h3>{s.name}</h3>
-              <span className="mcp-type-badge">{s.type.toUpperCase()}</span>
+              <span className="mcp-type-badge">{s.transport.toUpperCase()}</span>
             </div>
 
-            <div className="mcp-endpoint font-mono">{s.endpoint}</div>
+            <div className="mcp-endpoint font-mono">
+              {s.transport === "stdio" ? `${s.command} ${s.args.join(" ")}` : s.url}
+            </div>
 
             <div className="mcp-capabilities-grid">
               <div className="cap-box">
-                <span className="cap-num">{s.toolsCount}</span>
+                <span className="cap-num">{s.tools_count}</span>
                 <span className="cap-label">Tools</span>
               </div>
               <div className="cap-box">
-                <span className="cap-num">{s.resourcesCount}</span>
-                <span className="cap-label">Resources</span>
-              </div>
-              <div className="cap-box">
-                <span className="cap-num">{s.promptsCount}</span>
-                <span className="cap-label">Prompts</span>
+                <span className="cap-num">{STATUS_LABEL[s.status]}</span>
+                <span className="cap-label">Status</span>
               </div>
             </div>
+            {s.status === "error" && s.error && (
+              <p className="text-xs" style={{ color: "var(--danger)" }}>
+                {s.error}
+              </p>
+            )}
 
             <div className="mcp-card-footer">
-              <span>Latência: <strong>{s.latencyMs}ms</strong></span>
-              <button
-                type="button"
-                className="btn-secondary-sm"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handlePingServer(s);
-                }}
-              >
-                ⚡ Ping
-              </button>
+              <span>{s.trust_annotations ? "Confiável" : "Sempre pede aprovação"}</span>
+              <div style={{ display: "flex", gap: 6 }}>
+                <button
+                  type="button"
+                  className="btn-secondary-sm"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleToggle(s);
+                  }}
+                >
+                  {s.enabled ? "Desabilitar" : "Habilitar"}
+                </button>
+                <button
+                  type="button"
+                  className="btn-danger-sm"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleDelete(s);
+                  }}
+                >
+                  Remover
+                </button>
+              </div>
             </div>
           </div>
         ))}
       </div>
 
-      {/* Form Adicionar Servidor & Console JSON-RPC */}
       <div className="grid grid-2">
-        {/* Adicionar Novo Servidor MCP */}
         <div className="panel-box">
           <div className="panel-header">
-            <h3>+ Registrar Novo Servidor MCP</h3>
+            <h3>+ Conectar Servidor MCP</h3>
           </div>
 
           <form onSubmit={handleAddServer} className="config-form">
@@ -205,9 +222,9 @@ export default function MCPPage() {
                 id="mcp-name"
                 type="text"
                 className="input-text"
-                value={serverName}
-                onChange={(e) => setServerName(e.target.value)}
-                placeholder="Ex: Slack Notifier MCP"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="Ex: filesystem-local"
                 required
               />
             </div>
@@ -216,97 +233,96 @@ export default function MCPPage() {
               <label htmlFor="mcp-type">Tipo de Transporte</label>
               <select
                 id="mcp-type"
-                value={serverType}
-                onChange={(e) => setServerType(e.target.value as "stdio" | "sse")}
+                value={transport}
+                onChange={(e) => setTransport(e.target.value as MCPTransport)}
                 className="input-select"
               >
                 <option value="stdio">STDIO (Subprocesso Local)</option>
-                <option value="sse">SSE (Server-Sent Events HTTP)</option>
+                <option value="http">Streamable HTTP (Remoto)</option>
               </select>
             </div>
 
+            {transport === "stdio" ? (
+              <>
+                <div className="form-group">
+                  <label htmlFor="mcp-command">Comando</label>
+                  <input
+                    id="mcp-command"
+                    type="text"
+                    className="input-text font-mono"
+                    value={command}
+                    onChange={(e) => setCommand(e.target.value)}
+                    placeholder="npx"
+                  />
+                </div>
+                <div className="form-group">
+                  <label htmlFor="mcp-args">Argumentos (separados por espaço)</label>
+                  <input
+                    id="mcp-args"
+                    type="text"
+                    className="input-text font-mono"
+                    value={args}
+                    onChange={(e) => setArgs(e.target.value)}
+                    placeholder="-y @modelcontextprotocol/server-filesystem /projects"
+                  />
+                </div>
+              </>
+            ) : (
+              <div className="form-group">
+                <label htmlFor="mcp-url">URL</label>
+                <input
+                  id="mcp-url"
+                  type="text"
+                  className="input-text font-mono"
+                  value={url}
+                  onChange={(e) => setUrl(e.target.value)}
+                  placeholder="https://exemplo.com/mcp"
+                />
+              </div>
+            )}
+
             <div className="form-group">
-              <label htmlFor="mcp-endpoint">Comando / Endpoint URL</label>
-              <input
-                id="mcp-endpoint"
-                type="text"
-                className="input-text font-mono"
-                value={endpoint}
-                onChange={(e) => setEndpoint(e.target.value)}
-                placeholder="npx -y @modelcontextprotocol/server-..."
-                required
-              />
+              <label className="checkbox-label">
+                <input
+                  type="checkbox"
+                  checked={trustAnnotations}
+                  onChange={(e) => setTrustAnnotations(e.target.checked)}
+                />
+                Confio neste servidor — liberar ferramentas somente-leitura sem aprovação
+              </label>
             </div>
 
-            <button type="submit" className="btn-primary btn-block">
-              💾 Cadastrar Servidor no BD
+            <button type="submit" className="btn-primary btn-block" disabled={creating}>
+              {creating ? "Conectando…" : "🔌 Conectar Servidor"}
             </button>
           </form>
         </div>
 
-        {/* Inspeção e Invocador de Ferramentas MCP */}
         <div className="panel-box">
           <div className="panel-header">
-            <h3>Console JSON-RPC 2.0</h3>
-            <span className="text-sm text-muted">
-              Alvo: {selectedServer ? selectedServer.name : "Nenhum selecionado"}
-            </span>
+            <h3>🤖 Testar no Agente</h3>
           </div>
-
-          <div className="config-form">
-            <div className="form-group">
-              <label htmlFor="tool-select">Ferramenta Disponível</label>
-              <select
-                id="tool-select"
-                value={selectedTool}
-                onChange={(e) => setSelectedTool(e.target.value)}
-                className="input-select"
+          {selectedServer ? (
+            <>
+              <p className="text-xs text-muted mb-2">
+                Abre o IDE com um prompt sugerindo o uso das ferramentas de{" "}
+                <strong>{selectedServer.name}</strong> — a execução acontece de verdade, dentro
+                de uma sessão do agente.
+              </p>
+              <button
+                type="button"
+                className="btn-primary glow-button btn-block"
+                onClick={() => testInAgent(selectedServer)}
+                disabled={selectedServer.status !== "connected"}
               >
-                <option value="fs_read_file">fs_read_file (Ler Arquivo)</option>
-                <option value="fs_write_file">fs_write_file (Escrever Arquivo)</option>
-                <option value="db_query_pg">db_query_pg (Consulta SQL Postgres)</option>
-                <option value="chroma_query_vector">chroma_query_vector (Busca Vetores)</option>
-              </select>
-            </div>
-
-            <div className="form-group">
-              <label htmlFor="rpc-req-area">Payload JSON-RPC Request</label>
-              <textarea
-                id="rpc-req-area"
-                value={jsonRpcRequest}
-                onChange={(e) => setJsonRpcRequest(e.target.value)}
-                className="input-textarea font-mono"
-                rows={5}
-              />
-            </div>
-
-            <button
-              type="button"
-              className="btn-primary glow-button btn-block"
-              onClick={handleExecuteJsonRpc}
-              disabled={isExecutingRpc}
-            >
-              {isExecutingRpc ? "Enviando RPC..." : "▶ Executar Chamada MCP"}
-            </button>
-          </div>
+                ▶ Abrir no Agent Panel
+              </button>
+            </>
+          ) : (
+            <p className="text-xs text-muted">Selecione um servidor na lista acima.</p>
+          )}
         </div>
       </div>
-
-      {/* Visualizador da Resposta RPC */}
-      <section className="section-block">
-        <div className="panel-box">
-          <div className="panel-header">
-            <h3>Response Payload Inspector (JSON-RPC 2.0 Output)</h3>
-          </div>
-          <textarea
-            value={jsonRpcResponse}
-            readOnly
-            className="input-textarea font-mono text-blue"
-            rows={7}
-            placeholder="Aguardando envio de chamadas JSON-RPC 2.0..."
-          />
-        </div>
-      </section>
     </div>
   );
 }

@@ -100,6 +100,12 @@ class ToolRegistry:
         self._tools[tool.name] = tool
         return tool
 
+    def unregister(self, name: str) -> None:
+        """Desfaz um `register()` em runtime — usado pelo `MCPManager` ao
+        recarregar servidores (reconectar/editar/remover sem reiniciar a API).
+        Ferramentas estáticas (`@tool`) nunca precisam disto."""
+        self._tools.pop(name, None)
+
     def get(self, name: str) -> Tool | None:
         return self._tools.get(name)
 

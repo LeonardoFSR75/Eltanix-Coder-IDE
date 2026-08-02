@@ -11,6 +11,7 @@ from redis.asyncio import Redis
 
 from sicoobito import __version__
 from sicoobito.agent.runner import AgentRunner
+from sicoobito.agent.tools import registry as tool_registry
 from sicoobito.api.routes import (
     agent_router,
     audit_router,
@@ -20,6 +21,7 @@ from sicoobito.api.routes import (
     health_router,
     lsp_router,
     lsp_ws_router,
+    mcp_router,
     metrics_router,
     notes_router,
     projects_router,
@@ -36,6 +38,7 @@ from sicoobito.context.indexer import ContextIndexer
 from sicoobito.db.session import init_engine, shutdown_engine
 from sicoobito.documents.service import DocumentService
 from sicoobito.logging_setup import get_logger, setup_logging
+from sicoobito.mcp.manager import MCPManager
 from sicoobito.notes.service import NoteService
 from sicoobito.optimizer.cache import ResponseCache
 from sicoobito.router.budget import BudgetGuard
@@ -113,6 +116,10 @@ async def lifespan(app: FastAPI):
     skills = SkillService()
     audit = AuditService()
 
+    mcp_manager = MCPManager(settings)
+    await mcp_manager.connect_all()
+    mcp_manager.register_tools(tool_registry)
+
     # Com EXECUTOR_URL definido, a execução vai por um serviço isolado que é o
     # único com acesso ao daemon do Docker (ver ADR 0002). É o modo usado
     # quando a própria API roda em container. Sem ele, cai no daemon local, que
@@ -156,6 +163,7 @@ async def lifespan(app: FastAPI):
     app.state.notes = notes
     app.state.skills = skills
     app.state.audit = audit
+    app.state.mcp_manager = mcp_manager
     app.state.agent_runner = AgentRunner(
         settings=settings,
         engine=engine,
@@ -188,6 +196,7 @@ async def lifespan(app: FastAPI):
         # ficariam órfãos consumindo memória até alguém notar.
         await sandboxes.shutdown()
         await app.state.agent_runner.aclose()
+        await mcp_manager.disconnect_all()
         if redis is not None:
             await redis.aclose()
         await shutdown_engine()
@@ -223,6 +232,7 @@ def create_app() -> FastAPI:
     app.include_router(notes_router)
     app.include_router(skills_router)
     app.include_router(audit_router)
+    app.include_router(mcp_router)
     app.include_router(agent_router)
     app.include_router(workspace_router)
     app.include_router(workspace_ws_router)
