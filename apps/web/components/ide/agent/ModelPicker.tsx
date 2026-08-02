@@ -1,32 +1,41 @@
 "use client";
 
 /**
- * Seletor de perfil de roteamento, para a sessão do agente.
+ * Seletor de modelo / perfil de roteamento para a atividade do agente.
  *
- * Busca de `/api/providers` — dado real (`config/routes.yaml`), não uma lista
- * inventada. Nunca importa de `lib/api.ts`: aquele módulo é só para Server
- * Components e guarda a chave da API num jeito que não pode vazar pro bundle
- * do cliente; aqui a busca passa pelo proxy `/api/gateway` via `lib/client.ts`,
- * igual a todo o resto do IDE.
+ * Busca de `/api/providers` (perfis de `config/routes.yaml` e modelos ativos).
  */
 
 import { useEffect, useState } from "react";
 import { get } from "@/lib/client";
 
+interface CatalogModel {
+  id: string;
+  provider: string;
+  available: boolean;
+}
+
 interface CatalogProfile {
   name: string;
   strategy: string;
   models: string[];
-  weights: Record<string, number>;
   is_default: boolean;
 }
 
-let cache: Promise<CatalogProfile[]> | null = null;
+interface ProvidersResponse {
+  profiles: CatalogProfile[];
+  models: CatalogModel[];
+}
 
-function loadProfiles(): Promise<CatalogProfile[]> {
+let cache: Promise<ProvidersResponse> | null = null;
+
+function loadProvidersData(): Promise<ProvidersResponse> {
   if (!cache) {
-    cache = get<{ profiles: CatalogProfile[] }>("/api/providers")
-      .then((r) => r.profiles.filter((p) => p.name !== "embedding"))
+    cache = get<ProvidersResponse>("/api/providers")
+      .then((r) => ({
+        profiles: (r.profiles || []).filter((p) => p.name !== "embedding"),
+        models: (r.models || []).filter((m) => m.available),
+      }))
       .catch((err) => {
         cache = null;
         throw err;
@@ -44,14 +53,14 @@ export function ModelPicker({
   onChange: (profile: string | null) => void;
   disabled?: boolean;
 }) {
-  const [perfis, setPerfis] = useState<CatalogProfile[] | null>(null);
+  const [data, setData] = useState<ProvidersResponse | null>(null);
   const [erro, setErro] = useState(false);
 
   useEffect(() => {
     let cancelado = false;
-    loadProfiles()
-      .then((p) => {
-        if (!cancelado) setPerfis(p);
+    loadProvidersData()
+      .then((res) => {
+        if (!cancelado) setData(res);
       })
       .catch(() => {
         if (!cancelado) setErro(true);
@@ -64,20 +73,36 @@ export function ModelPicker({
   if (erro) return null;
 
   return (
-    <select
-      className="model-picker"
-      value={value ?? ""}
-      disabled={disabled || !perfis}
-      onChange={(e) => onChange(e.target.value || null)}
-      title="Perfil de roteamento — vazio usa o padrão do modo"
-    >
-      <option value="">automático (por modo)</option>
-      {(perfis ?? []).map((p) => (
-        <option key={p.name} value={p.name}>
-          {p.name}
-          {p.is_default ? " · padrão" : ""}
-        </option>
-      ))}
-    </select>
+    <div className="model-picker-container" title="Selecione o modelo ou perfil para a atividade">
+      <span className="model-picker-icon">🤖</span>
+      <select
+        className="model-picker-select"
+        value={value ?? ""}
+        disabled={disabled || !data}
+        onChange={(e) => onChange(e.target.value || null)}
+      >
+        <option value="">⚡ Auto (Roteamento por modo)</option>
+
+        {data?.profiles && data.profiles.length > 0 && (
+          <optgroup label="── Perfis de Roteamento ──">
+            {data.profiles.map((p) => (
+              <option key={`p-${p.name}`} value={p.name}>
+                Perfil: {p.name} {p.is_default ? "★ (padrão)" : ""}
+              </option>
+            ))}
+          </optgroup>
+        )}
+
+        {data?.models && data.models.length > 0 && (
+          <optgroup label="── Modelos Específicos ──">
+            {data.models.map((m) => (
+              <option key={`m-${m.id}`} value={m.id}>
+                [{m.provider}] {m.id}
+              </option>
+            ))}
+          </optgroup>
+        )}
+      </select>
+    </div>
   );
 }

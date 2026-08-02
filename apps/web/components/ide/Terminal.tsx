@@ -184,7 +184,23 @@ export function TerminalPanel({
     if (!socket || socket.readyState !== WebSocket.OPEN) return;
     termRef.current?.write(`${cmd}\r\n`);
     socket.send(JSON.stringify({ command: cmd }));
-  }, []);
+
+    // ✅ INTEGRAÇÃO TERMINAL IDE <-> AUDITORIA
+    try {
+      const { LocalDB } = require("@/lib/db");
+      LocalDB.addAuditLog({
+        actor: "Desenvolvedor (Terminal Sandbox)",
+        module: "IDE",
+        action: "Execução de Comando no Terminal",
+        details: `Executado comando "${cmd}" no projeto "${project || "desconhecido"}".`,
+        riskLevel: cmd.includes("rm") || cmd.includes("delete") ? "high" : "low",
+        ipAddress: "127.0.0.1",
+        status: "success",
+      });
+    } catch {
+      // Ignora erro se DB indisponível
+    }
+  }, [project]);
 
   useEffect(() => {
     const handleCustomExec = (e: Event) => {
@@ -222,7 +238,16 @@ export function TerminalPanel({
         </span>
         {detalhe && <span className="terminal-detail">{detalhe}</span>}
 
-        <div className="terminal-quick-cmds" style={{ marginLeft: "auto", display: "flex", gap: 4 }}>
+        <div className="terminal-quick-cmds" style={{ marginLeft: "auto", display: "flex", gap: 4, flexWrap: "wrap" }}>
+          <button
+            type="button"
+            className="term-chip glow-chip"
+            onClick={() => enviarComando("npm run dev")}
+            disabled={estado !== "pronto"}
+            title="Iniciar servidor de desenvolvimento"
+          >
+            🚀 Dev Server
+          </button>
           <button
             type="button"
             className="term-chip"
@@ -244,10 +269,19 @@ export function TerminalPanel({
           <button
             type="button"
             className="term-chip"
+            onClick={() => enviarComando("git diff")}
+            disabled={estado !== "pronto"}
+            title="Verificar alterações no git"
+          >
+            git diff
+          </button>
+          <button
+            type="button"
+            className="term-chip"
             onClick={() => termRef.current?.clear()}
             title="Limpar terminal"
           >
-            limpar
+            🧹 Limpar
           </button>
         </div>
       </div>

@@ -126,7 +126,26 @@ async def create_session(payload: CreateSessionRequest) -> dict[str, Any]:
     return {"session_id": payload.session_id, "created": True}
 
 
+from urllib.parse import urlparse
+
 ALLOWED_SCHEMES = ("http://", "https://")
+BLOCKED_HOSTS = {
+    "169.254.169.254",
+    "metadata.google.internal",
+    "instance-data",
+}
+
+
+def validate_url(url: str | None) -> None:
+    if not url or not url.startswith(ALLOWED_SCHEMES):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="url precisa ser http(s)")
+    parsed = urlparse(url)
+    hostname = (parsed.hostname or "").lower()
+    if not hostname or hostname in BLOCKED_HOSTS or hostname.startswith("169.254."):
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            detail=f"Acesso ao host '{hostname}' é restrito por segurança (SSRF).",
+        )
 
 
 class ActionRequest(BaseModel):
@@ -146,8 +165,7 @@ async def run_action(session_id: str, payload: ActionRequest) -> dict[str, Any]:
 
     try:
         if payload.action == "navigate":
-            if not payload.url or not payload.url.startswith(ALLOWED_SCHEMES):
-                raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="url precisa ser http(s)")
+            validate_url(payload.url)
             resposta = await page.goto(payload.url, timeout=payload.timeout_ms, wait_until="load")
             return {
                 "ok": True,

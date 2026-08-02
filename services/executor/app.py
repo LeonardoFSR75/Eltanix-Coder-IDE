@@ -66,19 +66,24 @@ def require_token(authorization: Annotated[str | None, Header()] = None) -> None
 Auth = Depends(require_token)
 
 
+import posixpath
+
 def to_host_path(container_path: str) -> str:
     """Traduz um caminho visto pela API para o caminho equivalente no host."""
-    normalizado = container_path.replace("\\", "/").rstrip("/")
-    if not PROJECTS_ROOT_HOST:
-        return normalizado
-    if not normalizado.startswith(PROJECTS_ROOT_CONTAINER):
+    normalizado = posixpath.normpath(container_path.replace("\\", "/"))
+    root = posixpath.normpath(PROJECTS_ROOT_CONTAINER)
+
+    if not (normalizado == root or normalizado.startswith(root + "/")):
         # Recusar é melhor que montar algo inesperado: um caminho fora da raiz
         # de projetos só chega aqui por engano ou por tentativa de abuso.
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"caminho fora de {PROJECTS_ROOT_CONTAINER}: {container_path}",
         )
-    resto = normalizado[len(PROJECTS_ROOT_CONTAINER) :].lstrip("/")
+    if not PROJECTS_ROOT_HOST:
+        return normalizado
+
+    resto = normalizado[len(root) :].lstrip("/")
     separador = "\\" if "\\" in PROJECTS_ROOT_HOST or ":" in PROJECTS_ROOT_HOST[:2] else "/"
     if not resto:
         return PROJECTS_ROOT_HOST
@@ -113,7 +118,6 @@ async def health() -> dict[str, Any]:
         "docker": docker_ok,
         "error": erro,
         "projects_root_container": PROJECTS_ROOT_CONTAINER,
-        "projects_root_host": PROJECTS_ROOT_HOST,
         "network_enabled": NETWORK_ENABLED,
     }
 

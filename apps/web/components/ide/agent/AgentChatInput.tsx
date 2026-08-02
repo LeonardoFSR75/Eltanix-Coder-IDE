@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { MODE_HINT, type Mode } from "./modes";
 import { ModelPicker } from "./ModelPicker";
 import { useIde } from "@/lib/ide-store";
@@ -38,6 +38,7 @@ export function AgentChatInput({
 }: AgentChatInputProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const { active, files } = useIde();
+  const [showSlashHint, setShowSlashHint] = useState(false);
 
   // Auto-resize textarea conforme o conteúdo
   useEffect(() => {
@@ -45,6 +46,11 @@ export function AgentChatInput({
       textareaRef.current.style.height = "auto";
       textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 180)}px`;
     }
+  }, [task]);
+
+  // Detecta se o usuário está digitando /
+  useEffect(() => {
+    setShowSlashHint(task.startsWith("/"));
   }, [task]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -67,7 +73,7 @@ export function AgentChatInput({
   };
 
   const promptAddFolder = () => {
-    const input = window.prompt("Informe o caminho relativo da pasta para focar (ex: apps/api ou src):");
+    const input = window.prompt("Caminho relativo da pasta para focar (ex: apps/api ou src):");
     if (input && input.trim()) {
       setFocusFolder(input.trim());
     }
@@ -76,130 +82,38 @@ export function AgentChatInput({
   return (
     <div className="agent-input-container">
       <div className="agent-prompt-card">
-        {/* Barra superior do prompt card: Seleção de Modo */}
-        <div className="prompt-mode-row">
-          <div className="mode-toggle-group">
-            <button
-              type="button"
-              className={`mode-toggle-btn ${mode === "auto" || mode === "agent" || mode === "edit" ? "active" : ""}`}
-              onClick={() => setMode("auto")}
-              disabled={running}
-              title={MODE_HINT.auto}
-            >
-              ⚡ Agente
-            </button>
-            <button
-              type="button"
-              className={`mode-toggle-btn ${mode === "plan" ? "active" : ""}`}
-              onClick={() => setMode("plan")}
-              disabled={running}
-              title={MODE_HINT.plan}
-            >
-              📋 Plano
-            </button>
-            <button
-              type="button"
-              className={`mode-toggle-btn ${mode === "ask" ? "active" : ""}`}
-              onClick={() => setMode("ask")}
-              disabled={running}
-              title={MODE_HINT.ask}
-            >
-              ❓ Pergunta
-            </button>
+        {/* Context Chips: Arquivos e Pasta anexados */}
+        {(focusFiles.length > 0 || focusFolder) && (
+          <div className="context-chips-row">
+            {focusFolder && (
+              <span className="context-chip folder">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+                </svg>
+                {focusFolder}
+                <button
+                  type="button"
+                  className="chip-remove"
+                  onClick={() => setFocusFolder(null)}
+                >
+                  ×
+                </button>
+              </span>
+            )}
+            {focusFiles.map((file) => (
+              <span key={file} className="context-chip file">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" />
+                  <polyline points="13 2 13 9 20 9" />
+                </svg>
+                {file.split("/").pop()}
+                <button type="button" className="chip-remove" onClick={() => removeFile(file)}>
+                  ×
+                </button>
+              </span>
+            ))}
           </div>
-        </div>
-
-        {/* Chips de Foco: Arquivos e Pasta */}
-        <div style={{ padding: "4px 8px", display: "flex", flexWrap: "wrap", gap: "6px", alignItems: "center" }}>
-          {active && !focusFiles.includes(active) && (
-            <button
-              type="button"
-              onClick={addActiveFile}
-              disabled={running}
-              style={{
-                fontSize: "11px",
-                padding: "2px 6px",
-                borderRadius: "4px",
-                background: "rgba(74, 222, 128, 0.12)",
-                color: "#4ade80",
-                border: "1px dashed #4ade80",
-                cursor: "pointer",
-              }}
-              title="Anexar arquivo ativo do editor para foco"
-            >
-              📎 + {active.split("/").pop()}
-            </button>
-          )}
-
-          {!focusFolder && (
-            <button
-              type="button"
-              onClick={promptAddFolder}
-              disabled={running}
-              style={{
-                fontSize: "11px",
-                padding: "2px 6px",
-                borderRadius: "4px",
-                background: "rgba(59, 130, 246, 0.12)",
-                color: "#60a5fa",
-                border: "1px dashed #60a5fa",
-                cursor: "pointer",
-              }}
-              title="Indicar pasta específica do projeto para o agente focar"
-            >
-              📁 + Pasta
-            </button>
-          )}
-
-          {focusFolder && (
-            <span
-              style={{
-                fontSize: "11px",
-                padding: "2px 8px",
-                borderRadius: "12px",
-                background: "#1e3a8a",
-                color: "#93c5fd",
-                display: "inline-flex",
-                alignItems: "center",
-                gap: "4px",
-              }}
-            >
-              📁 {focusFolder}
-              <button
-                type="button"
-                onClick={() => setFocusFolder(null)}
-                style={{ background: "none", border: "none", color: "#93c5fd", cursor: "pointer", padding: "0 2px" }}
-              >
-                ×
-              </button>
-            </span>
-          )}
-
-          {focusFiles.map((file) => (
-            <span
-              key={file}
-              style={{
-                fontSize: "11px",
-                padding: "2px 8px",
-                borderRadius: "12px",
-                background: "#065f46",
-                color: "#a7f3d0",
-                display: "inline-flex",
-                alignItems: "center",
-                gap: "4px",
-              }}
-            >
-              📄 {file.split("/").pop()}
-              <button
-                type="button"
-                onClick={() => removeFile(file)}
-                style={{ background: "none", border: "none", color: "#a7f3d0", cursor: "pointer", padding: "0 2px" }}
-              >
-                ×
-              </button>
-            </span>
-          ))}
-        </div>
+        )}
 
         {/* Textarea Principal */}
         <textarea
@@ -208,31 +122,106 @@ export function AgentChatInput({
           value={task}
           onChange={(e) => setTask(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder="O que o agente deve fazer? (Ctrl+Enter para enviar)"
-          rows={2}
+          placeholder="Pergunte ao Sicoobito Agente ou use / para comandos..."
+          rows={1}
           disabled={running}
         />
 
-        {/* Rodapé do prompt card: Seletor de Modelo e Botão Enviar */}
+        {/* Slash command hint */}
+        {showSlashHint && (
+          <div className="slash-hint">
+            <kbd>/explain</kbd> <kbd>/fix</kbd> <kbd>/test</kbd> <kbd>/refactor</kbd> <kbd>/docs</kbd>
+          </div>
+        )}
+
+        {/* Rodapé do prompt card */}
         <div className="agent-prompt-footer">
           <div className="prompt-footer-left">
+            {/* Modo de execução */}
+            <div className="mode-toggle-group">
+              <button
+                type="button"
+                className={`mode-toggle-btn${mode === "auto" || mode === "agent" || mode === "edit" ? " active" : ""}`}
+                onClick={() => setMode("auto")}
+                disabled={running}
+                title={MODE_HINT.auto}
+              >
+                Agent
+              </button>
+              <button
+                type="button"
+                className={`mode-toggle-btn${mode === "ask" ? " active" : ""}`}
+                onClick={() => setMode("ask")}
+                disabled={running}
+                title={MODE_HINT.ask}
+              >
+                Ask
+              </button>
+              <button
+                type="button"
+                className={`mode-toggle-btn${mode === "plan" ? " active" : ""}`}
+                onClick={() => setMode("plan")}
+                disabled={running}
+                title={MODE_HINT.plan}
+              >
+                Plan
+              </button>
+            </div>
+
+            {/* Botões de contexto */}
+            <div className="context-actions">
+              {active && !focusFiles.includes(active) && (
+                <button
+                  type="button"
+                  className="context-add-btn"
+                  onClick={addActiveFile}
+                  disabled={running}
+                  title={`Anexar ${active.split("/").pop()}`}
+                >
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" />
+                    <polyline points="13 2 13 9 20 9" />
+                  </svg>
+                </button>
+              )}
+              {!focusFolder && (
+                <button
+                  type="button"
+                  className="context-add-btn"
+                  onClick={promptAddFolder}
+                  disabled={running}
+                  title="Adicionar pasta de contexto"
+                >
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+                  </svg>
+                </button>
+              )}
+            </div>
+
+            {/* Model Picker */}
             <ModelPicker value={profile} onChange={setProfile} disabled={running} />
           </div>
 
+          {/* Botão Enviar */}
           <button
             type="button"
-            className={`agent-send-btn ${canSubmit && !running ? "active" : ""}`}
+            className={`agent-send-btn${canSubmit && !running ? " active" : ""}`}
             onClick={onSubmit}
             disabled={running || !canSubmit}
-            title={running ? "Agente em execução" : "Enviar prompt (Ctrl+Enter)"}
+            title={running ? "Agente em execução…" : "Enviar (Ctrl+Enter)"}
           >
             {running ? (
-              <span className="spinner-dots">•••</span>
+              <span className="thinking-dots">
+                <span />
+                <span />
+                <span />
+              </span>
             ) : (
-              <>
-                <span>Enviar</span>
-                <span className="send-arrow">↑</span>
-              </>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                <line x1="12" y1="19" x2="12" y2="5" />
+                <polyline points="5 12 12 5 19 12" />
+              </svg>
             )}
           </button>
         </div>

@@ -3,6 +3,7 @@ import { Inter, JetBrains_Mono } from "next/font/google";
 import { HeaderNav } from "@/components/HeaderNav";
 import { ThemeProvider } from "@/lib/theme";
 import { ToastProvider } from "@/components/Toast";
+import { AuthProvider } from "@/components/providers/AuthContext";
 import "./globals.css";
 
 const inter = Inter({
@@ -18,8 +19,8 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "SicoobitoCode — Agente & Gateway Multi-Modelo",
-  description: "Gateway multi-modelo local-first com contabilidade de custo, agentic IDE e suporte a Pyright LSP",
+  title: "SicoobitoCode — Agente, RAG, ChromaDB & Redes Neurais",
+  description: "Plataforma IA local-first com Segundo Cérebro Obsidian, ChromaDB, Skills, MCP e Auditoria",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -28,10 +29,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body>
         <ThemeProvider>
           <ToastProvider>
-            <div className="app-root">
-              <HeaderNav />
-              {children}
-            </div>
+            <AuthProvider>
+              <div className="app-root">
+                <HeaderNav />
+                {children}
+              </div>
+            </AuthProvider>
           </ToastProvider>
         </ThemeProvider>
       </body>

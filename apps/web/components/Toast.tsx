@@ -10,10 +10,12 @@ interface ToastMessage {
 
 interface ToastContextType {
   toast: (text: string, type?: "info" | "success" | "warning" | "error") => void;
+  addToast: (text: string, type?: "info" | "success" | "warning" | "error") => void;
 }
 
 const ToastContext = createContext<ToastContextType>({
   toast: () => {},
+  addToast: () => {},
 });
 
 export function ToastProvider({ children }: { children: React.ReactNode }) {
@@ -29,7 +31,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   return (
-    <ToastContext.Provider value={{ toast }}>
+    <ToastContext.Provider value={{ toast, addToast: toast }}>
       {children}
       <div className="toast-container">
         {toasts.map((t) => (

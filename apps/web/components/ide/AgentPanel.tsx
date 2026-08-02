@@ -18,47 +18,71 @@ const PRESET_CARDS = [
   {
     icon: "💡",
     title: "Explicar Código",
-    desc: "Analisar e explicar a arquitetura e fluxo de módulos",
+    desc: "Analisa a arquitetura e explica o fluxo",
     prompt: "Explicar a arquitetura e o funcionamento do código deste projeto.",
   },
   {
-    icon: "⚡",
+    icon: "🔧",
     title: "Refatorar",
-    desc: "Melhorar modularidade, clareza e padrão do código",
+    desc: "Melhora modularidade e padrões",
     prompt: "Refatorar o código do módulo para melhorar legibilidade e modularidade.",
   },
   {
     icon: "🧪",
-    title: "Criar Testes",
-    desc: "Escrever suíte de testes unitários automatizados",
+    title: "Gerar Testes",
+    desc: "Cria suíte de testes unitários",
     prompt: "Escrever suíte de testes unitários cobrindo cenários e limites.",
   },
   {
-    icon: "🐞",
-    title: "Corrigir Bugs",
-    desc: "Identificar e resolver exceções ou falhas",
+    icon: "🐛",
+    title: "Corrigir Bug",
+    desc: "Identifica e resolve exceções",
     prompt: "Analisar e corrigir eventuais falhas, exceções ou gargalos de memória.",
   },
   {
-    icon: "📋",
-    title: "Criar Plano",
-    desc: "Gerar plano de implementação passo a passo",
+    icon: "📐",
+    title: "Gerar Plano",
+    desc: "Cria roteiro de implementação",
     prompt: "Criar um plano de execução detalhado para a implementação.",
   },
+  {
+    icon: "📝",
+    title: "Documentar",
+    desc: "Gera docstrings e README",
+    prompt: "Adicionar documentação completa com docstrings e README para este módulo.",
+  },
 ];
+
+import { LocalDB } from "@/lib/db";
+
+/* ── Bloco de Código Renderizado ────────────────────────────────── */
 
 function CodeBlock({ code, language }: { code: string; language: string }) {
   const { toast } = useToast();
   const { insertCode } = useIde();
+  const [copied, setCopied] = useState(false);
 
   const copyToClipboard = () => {
     navigator.clipboard.writeText(code);
-    toast("Código copiado para a área de transferência!", "success");
+    setCopied(true);
+    toast("Copiado!", "success");
+    setTimeout(() => setCopied(false), 2000);
   };
 
   const insertIntoEditor = () => {
     insertCode(code);
-    toast("Código inserido no editor ativo!", "success");
+
+    LocalDB.addAuditLog({
+      actor: "Agente IA da IDE",
+      module: "IDE",
+      action: "Inserção de Código Sugerido",
+      details: `Inserido bloco de código (${language || "text"}, ${code.length} caracteres) no editor ativo.`,
+      riskLevel: "low",
+      ipAddress: "127.0.0.1",
+      status: "success",
+    });
+
+    toast("Código inserido no editor!", "success");
   };
 
   return (
@@ -67,10 +91,10 @@ function CodeBlock({ code, language }: { code: string; language: string }) {
         <span className="agent-code-lang">{language || "code"}</span>
         <div className="agent-code-actions">
           <button type="button" className="agent-code-btn" onClick={copyToClipboard} title="Copiar código">
-            📋 Copiar
+            {copied ? "✓ Copiado" : "📋 Copiar"}
           </button>
-          <button type="button" className="agent-code-btn primary" onClick={insertIntoEditor} title="Inserir no editor ativo">
-            📥 Inserir no Editor
+          <button type="button" className="agent-code-btn primary" onClick={insertIntoEditor} title="Aplicar no editor">
+            ▶ Aplicar
           </button>
         </div>
       </div>
@@ -81,8 +105,9 @@ function CodeBlock({ code, language }: { code: string; language: string }) {
   );
 }
 
+/* ── Markdown Simples para Respostas do Assistente ──────────────── */
+
 function RenderedAssistantText({ text }: { text: string }) {
-  // Separa texto normal de blocos de código ```lang ... ```
   const parts = text.split(/(```[\s\S]*?```)/g);
 
   return (
@@ -94,15 +119,52 @@ function RenderedAssistantText({ text }: { text: string }) {
           return <CodeBlock key={index} language={lang.trim()} code={code.trimEnd()} />;
         }
         if (!part.trim()) return null;
+
+        // Processar formatação inline básica
+        const formatted = part
+          .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+          .replace(/`([^`]+)`/g, '<code class="inline-code">$1</code>');
+
         return (
-          <div key={index} className="assistant-paragraph" style={{ whiteSpace: "pre-wrap" }}>
-            {part}
-          </div>
+          <div
+            key={index}
+            className="assistant-paragraph"
+            dangerouslySetInnerHTML={{ __html: formatted }}
+          />
         );
       })}
     </div>
   );
 }
+
+/* ── Indicador de Pensamento (Thinking) ──────────────────────────── */
+
+function ThinkingIndicator() {
+  return (
+    <div className="agent-thinking">
+      <div className="thinking-avatar">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+          <defs>
+            <linearGradient id="think-g" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stopColor="#38bdf8" />
+              <stop offset="100%" stopColor="#a78bfa" />
+            </linearGradient>
+          </defs>
+          <circle cx="12" cy="12" r="10" fill="url(#think-g)" opacity="0.15" />
+          <circle cx="12" cy="12" r="3" fill="url(#think-g)" />
+        </svg>
+      </div>
+      <span className="thinking-label">Sicoobito Agente está pensando</span>
+      <span className="thinking-dots">
+        <span />
+        <span />
+        <span />
+      </span>
+    </div>
+  );
+}
+
+/* ── Painel Principal do Agente ─────────────────────────────────── */
 
 export function AgentPanel({ session, log, pending, onDecide, onPresetSelect }: AgentPanelProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -114,8 +176,6 @@ export function AgentPanel({ session, log, pending, onDecide, onPresetSelect }: 
     }
   }, [log, pending]);
 
-  // Cada novo lote de aprovação (novo `interrupt`) começa sem decisões — o
-  // usuário escolhe item a item antes de confirmar.
   useEffect(() => {
     setDecisions({});
   }, [pending]);
@@ -126,26 +186,53 @@ export function AgentPanel({ session, log, pending, onDecide, onPresetSelect }: 
 
   const allDecided = pending.length > 0 && pending.every((a) => decisions[a.tool_call_id] !== undefined);
 
+  // Verifica se o último item do log indica que o agente está processando
+  const isThinking = log.length > 0 && log[log.length - 1]?.kind === "info" &&
+    (log[log.length - 1]?.text?.includes("Executando") || log[log.length - 1]?.text?.includes("rodando"));
+
   return (
     <div className="agent-panel-container">
+      {/* Barra de contexto da sessão */}
       {session && (
         <div className="agent-meta-bar">
-          <span className="agent-meta-badge branch">🌿 {session.branch || "main"}</span>
-          <span className={`agent-meta-badge ${session.sandbox_available ? "active" : "disabled"}`}>
-            📦 sandbox {session.sandbox_available ? "ativo" : "off"}
+          <span className="agent-meta-chip">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <line x1="6" y1="3" x2="6" y2="15" />
+              <circle cx="18" cy="6" r="3" />
+              <circle cx="6" cy="18" r="3" />
+              <path d="M18 9a9 9 0 0 1-9 9" />
+            </svg>
+            {session.branch || "main"}
           </span>
-          <span className={`agent-meta-badge ${session.github_available ? "active" : ""}`}>
-            🐙 github {session.github_available ? "ok" : "off (opcional)"}
+          <span className={`agent-meta-chip ${session.sandbox_available ? "ok" : ""}`}>
+            {session.sandbox_available ? "◉" : "○"} sandbox
           </span>
         </div>
       )}
 
+      {/* Área de mensagens */}
       <div className="agent-messages-scroll" ref={scrollRef}>
         {log.length === 0 ? (
+          /* ── Estado Hero (Welcome) — estilo Copilot ── */
           <div className="agent-hero-state">
-            <div className="agent-hero-icon">⚡</div>
-            <h2 className="agent-hero-title">Sicoobito AI Assistant</h2>
-            <p className="agent-hero-subtitle">Como posso ajudar no seu projeto hoje?</p>
+            <div className="copilot-hero-icon">
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none">
+                <defs>
+                  <linearGradient id="hero-g" x1="0%" y1="0%" x2="100%" y2="100%">
+                    <stop offset="0%" stopColor="#38bdf8" />
+                    <stop offset="50%" stopColor="#818cf8" />
+                    <stop offset="100%" stopColor="#a78bfa" />
+                  </linearGradient>
+                </defs>
+                <circle cx="12" cy="12" r="10" fill="url(#hero-g)" opacity="0.15" />
+                <circle cx="12" cy="12" r="5" fill="url(#hero-g)" opacity="0.4" />
+                <circle cx="12" cy="12" r="2" fill="url(#hero-g)" />
+              </svg>
+            </div>
+            <h2 className="agent-hero-title">Sicoobito Agente</h2>
+            <p className="agent-hero-subtitle">
+              Seu assistente de IA para código. Pergunte, gere, refatore ou corrija bugs.
+            </p>
 
             <div className="agent-preset-grid">
               {PRESET_CARDS.map((card) => (
@@ -165,12 +252,14 @@ export function AgentPanel({ session, log, pending, onDecide, onPresetSelect }: 
             </div>
           </div>
         ) : (
+          /* ── Stream de Mensagens — estilo Copilot Chat ── */
           <div className="agent-message-stream">
             {log.map((line, index) => {
               if (line.kind === "info") {
                 return (
                   <div key={index} className="stream-badge info">
-                    <span className="badge-icon">ℹ️</span> {line.text}
+                    <span className="stream-badge-icon">ℹ</span>
+                    <span>{line.text}</span>
                   </div>
                 );
               }
@@ -178,7 +267,8 @@ export function AgentPanel({ session, log, pending, onDecide, onPresetSelect }: 
               if (line.kind === "cost") {
                 return (
                   <div key={index} className="stream-badge cost">
-                    📊 {line.text}
+                    <span className="stream-badge-icon">⚡</span>
+                    <span>{line.text}</span>
                   </div>
                 );
               }
@@ -196,10 +286,9 @@ export function AgentPanel({ session, log, pending, onDecide, onPresetSelect }: 
                   );
                   if (card) return <div key={index}>{card}</div>;
                 }
-                // Ferramenta sem card dedicado: badge de texto truncado.
                 return (
                   <div key={index} className="stream-badge tool">
-                    <span className="badge-icon">🔧</span>
+                    <span className="stream-badge-icon">⚙</span>
                     <span className="tool-text">{line.text}</span>
                   </div>
                 );
@@ -208,16 +297,29 @@ export function AgentPanel({ session, log, pending, onDecide, onPresetSelect }: 
               if (line.kind === "error") {
                 return (
                   <div key={index} className="stream-card error">
-                    <span className="badge-icon">⚠️</span> {line.text}
+                    <span className="stream-badge-icon">✕</span>
+                    <span>{line.text}</span>
                   </div>
                 );
               }
 
+              /* Mensagem do assistente */
               return (
                 <div key={index} className="stream-message assistant">
                   <div className="message-header">
-                    <span className="message-avatar">⚡</span>
-                    <span className="message-author">Assistente</span>
+                    <div className="message-avatar">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                        <defs>
+                          <linearGradient id={`msg-g-${index}`} x1="0%" y1="0%" x2="100%" y2="100%">
+                            <stop offset="0%" stopColor="#38bdf8" />
+                            <stop offset="100%" stopColor="#a78bfa" />
+                          </linearGradient>
+                        </defs>
+                        <circle cx="12" cy="12" r="8" fill={`url(#msg-g-${index})`} opacity="0.2" />
+                        <circle cx="12" cy="12" r="3" fill={`url(#msg-g-${index})`} />
+                      </svg>
+                    </div>
+                    <span className="message-author">Sicoobito Agente</span>
                   </div>
                   <div className="message-body">
                     <RenderedAssistantText text={line.text} />
@@ -226,14 +328,22 @@ export function AgentPanel({ session, log, pending, onDecide, onPresetSelect }: 
               );
             })}
 
+            {/* Indicador de pensamento quando processando */}
+            {isThinking && <ThinkingIndicator />}
+
+            {/* Card de aprovação */}
             {pending.length > 0 && (
               <div className="stream-approval-card">
                 <div className="approval-card-header">
-                  <span className="approval-icon">🛡️</span>
+                  <div className="approval-icon-wrap">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2">
+                      <path d="M12 9v2m0 4h.01M5.07 19h13.86c1.22 0 1.97-1.33 1.36-2.4L13.36 4.58c-.61-1.06-2.12-1.06-2.73 0L3.71 16.6C3.1 17.67 3.85 19 5.07 19z" />
+                    </svg>
+                  </div>
                   <div>
-                    <div className="approval-title">Aprovação Solicitada</div>
+                    <div className="approval-title">Aprovação Necessária</div>
                     <div className="approval-subtitle">
-                      O agente deseja executar {pending.length} ação{pending.length > 1 ? "ões" : ""}:
+                      {pending.length} {pending.length === 1 ? "ação requer" : "ações requerem"} sua aprovação
                     </div>
                   </div>
                 </div>
@@ -252,7 +362,7 @@ export function AgentPanel({ session, log, pending, onDecide, onPresetSelect }: 
                             type="button"
                             className={`btn-approve-item${decision === true ? " selected" : ""}`}
                             onClick={() => setDecision(action.tool_call_id, true)}
-                            title="Aprovar esta ação"
+                            title="Aprovar"
                           >
                             ✓
                           </button>
@@ -260,7 +370,7 @@ export function AgentPanel({ session, log, pending, onDecide, onPresetSelect }: 
                             type="button"
                             className={`btn-reject-item${decision === false ? " selected" : ""}`}
                             onClick={() => setDecision(action.tool_call_id, false)}
-                            title="Recusar esta ação"
+                            title="Recusar"
                           >
                             ✕
                           </button>
@@ -276,23 +386,23 @@ export function AgentPanel({ session, log, pending, onDecide, onPresetSelect }: 
                     className="btn-approve"
                     onClick={() => setDecisions(Object.fromEntries(pending.map((a) => [a.tool_call_id, true])))}
                   >
-                    ✓ Aprovar Todas
+                    ✓ Aceitar Tudo
                   </button>
                   <button
                     type="button"
                     className="btn-reject"
                     onClick={() => setDecisions(Object.fromEntries(pending.map((a) => [a.tool_call_id, false])))}
                   >
-                    ✕ Recusar Todas
+                    ✕ Recusar
                   </button>
                   <button
                     type="button"
                     className="btn-confirm-decisions"
                     disabled={!allDecided}
                     onClick={() => onDecide(decisions)}
-                    title={allDecided ? "Enviar decisões" : "Decida cada ação antes de confirmar"}
+                    title={allDecided ? "Confirmar decisões" : "Decida cada ação antes de confirmar"}
                   >
-                    Confirmar Decisões
+                    Confirmar
                   </button>
                 </div>
               </div>

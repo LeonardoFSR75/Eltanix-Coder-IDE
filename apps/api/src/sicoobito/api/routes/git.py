@@ -8,6 +8,7 @@ versão do IDE.
 from __future__ import annotations
 
 import asyncio
+import re
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query, status
@@ -23,6 +24,15 @@ from sicoobito.workspace.git import GitError, open_repo
 log = get_logger(__name__)
 
 router = APIRouter(prefix="/api/git", tags=["git"], dependencies=[AuthDep])
+
+_BRANCH_PATTERN = re.compile(r"^[a-zA-Z0-9._/-]+$")
+
+
+def validate_branch_name(branch: str) -> str:
+    limpo = branch.strip()
+    if not limpo or limpo.startswith("-") or not _BRANCH_PATTERN.match(limpo):
+        raise GitError(f"Nome de branch inválido: {branch!r}")
+    return limpo
 
 
 def _erro(exc: Exception) -> HTTPException:
@@ -53,11 +63,12 @@ async def diff(
     staged: bool = False,
 ) -> dict[str, Any]:
     fs = project_fs(settings, project)
+    valid_path = fs.relative(fs.resolve(path)) if path else None
     try:
-        saida = await asyncio.to_thread(git_ops.diff, fs.root, staged=staged, path=path)
+        saida = await asyncio.to_thread(git_ops.diff, fs.root, staged=staged, path=valid_path)
     except GitError as exc:
         raise _erro(exc) from exc
-    return {"diff": saida, "staged": staged, "path": path}
+    return {"diff": saida, "staged": staged, "path": valid_path}
 
 
 @router.get("/file-versions")
@@ -70,16 +81,20 @@ async def file_versions(
     editor, o Monaco precisa das duas versões inteiras.
     """
     fs = project_fs(settings, project)
+    try:
+        rel_path = fs.relative(fs.resolve(path))
+    except Exception as exc:
+        raise _erro(exc) from exc
 
     def _ler() -> tuple[str, str]:
         repo = open_repo(fs.root)
         try:
-            original = repo.git.show(f"HEAD:{path}")
+            original = repo.git.show(f"HEAD:{rel_path}")
         except GitCommandError:
             # Arquivo novo: não existe no HEAD, e o lado esquerdo fica vazio.
             original = ""
         try:
-            atual = fs.read(path)
+            atual = fs.read(rel_path)
         except (FileNotFoundError, ValueError):
             # Arquivo apagado no disco.
             atual = ""
@@ -90,7 +105,7 @@ async def file_versions(
     except GitError as exc:
         raise _erro(exc) from exc
 
-    return {"path": path, "original": original, "modified": atual}
+    return {"path": rel_path, "original": original, "modified": atual}
 
 
 class StageRequest(BaseModel):
@@ -101,31 +116,39 @@ class StageRequest(BaseModel):
 @router.post("/stage")
 async def stage(payload: StageRequest, settings: SettingsDep) -> dict[str, Any]:
     fs = _fs_from_body(settings, payload.project)
+    try:
+        valid_paths = [fs.relative(fs.resolve(p)) for p in payload.paths]
+    except Exception as exc:
+        raise _erro(exc) from exc
 
     def _stage() -> None:
         repo = open_repo(fs.root)
-        repo.git.add("--", *payload.paths)
+        repo.git.add("--", *valid_paths)
 
     try:
         await asyncio.to_thread(_stage)
     except (GitError, GitCommandError) as exc:
         raise _erro(exc) from exc
-    return {"staged": payload.paths}
+    return {"staged": valid_paths}
 
 
 @router.post("/unstage")
 async def unstage(payload: StageRequest, settings: SettingsDep) -> dict[str, Any]:
     fs = _fs_from_body(settings, payload.project)
+    try:
+        valid_paths = [fs.relative(fs.resolve(p)) for p in payload.paths]
+    except Exception as exc:
+        raise _erro(exc) from exc
 
     def _unstage() -> None:
         repo = open_repo(fs.root)
-        repo.git.restore("--staged", "--", *payload.paths)
+        repo.git.restore("--staged", "--", *valid_paths)
 
     try:
         await asyncio.to_thread(_unstage)
     except (GitError, GitCommandError) as exc:
         raise _erro(exc) from exc
-    return {"unstaged": payload.paths}
+    return {"unstaged": valid_paths}
 
 
 class CommitRequest(BaseModel):
@@ -139,9 +162,12 @@ class CommitRequest(BaseModel):
 @router.post("/commit")
 async def commit(payload: CommitRequest, settings: SettingsDep) -> dict[str, Any]:
     fs = _fs_from_body(settings, payload.project)
+    valid_paths = (
+        [fs.relative(fs.resolve(p)) for p in payload.paths] if payload.paths else None
+    )
     try:
         sha = await asyncio.to_thread(
-            git_ops.commit, fs.root, payload.message, paths=payload.paths or None
+            git_ops.commit, fs.root, payload.message, paths=valid_paths
         )
     except GitError as exc:
         raise _erro(exc) from exc
@@ -178,6 +204,10 @@ class CheckoutRequest(BaseModel):
 @router.post("/checkout")
 async def checkout(payload: CheckoutRequest, settings: SettingsDep) -> dict[str, Any]:
     fs = _fs_from_body(settings, payload.project)
+    try:
+        branch = validate_branch_name(payload.branch)
+    except GitError as exc:
+        raise _erro(exc) from exc
 
     def _trocar() -> str:
         repo = open_repo(fs.root)
@@ -188,9 +218,9 @@ async def checkout(payload: CheckoutRequest, settings: SettingsDep) -> dict[str,
                 "Há alterações não commitadas. Faça commit ou descarte antes de trocar de branch."
             )
         if payload.create:
-            repo.git.checkout("-b", payload.branch, "--")
+            repo.git.checkout("-b", branch, "--")
         else:
-            repo.git.checkout(payload.branch, "--")
+            repo.git.checkout(branch, "--")
         return repo.active_branch.name
 
     try:
@@ -221,14 +251,18 @@ class DiscardRequest(BaseModel):
 async def discard(payload: DiscardRequest, settings: SettingsDep) -> dict[str, Any]:
     """Descarta alterações locais. Operação destrutiva: a UI precisa confirmar."""
     fs = _fs_from_body(settings, payload.project)
+    try:
+        valid_paths = [fs.relative(fs.resolve(p)) for p in payload.paths]
+    except Exception as exc:
+        raise _erro(exc) from exc
 
     def _descartar() -> None:
         repo = open_repo(fs.root)
-        repo.git.checkout("--", *payload.paths)
+        repo.git.checkout("--", *valid_paths)
 
     try:
         await asyncio.to_thread(_descartar)
     except (GitError, GitCommandError) as exc:
         raise _erro(exc) from exc
-    log.info("git.discard", project=payload.project, paths=len(payload.paths))
-    return {"discarded": payload.paths}
+    log.info("git.discard", project=payload.project, paths=len(valid_paths))
+    return {"discarded": valid_paths}

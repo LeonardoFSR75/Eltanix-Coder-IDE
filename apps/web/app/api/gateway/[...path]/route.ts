@@ -20,7 +20,16 @@ async function proxy(request: Request, { params }: Params): Promise<Response> {
   const target = `${BASE_URL}/${path.join("/")}${url.search}`;
 
   const headers = new Headers();
-  if (API_KEY) headers.set("Authorization", `Bearer ${API_KEY}`);
+
+  // Se o cliente (browser) enviou uma chave própria, usa a do cliente;
+  // caso contrário, o servidor Next anexa a SICOOBITO_API_KEY do ambiente.
+  const clientAuth = request.headers.get("authorization") || request.headers.get("x-api-key");
+  if (clientAuth) {
+    headers.set("Authorization", clientAuth.startsWith("Bearer ") ? clientAuth : `Bearer ${clientAuth}`);
+  } else if (API_KEY) {
+    headers.set("Authorization", `Bearer ${API_KEY}`);
+  }
+
   const contentType = request.headers.get("content-type");
   if (contentType) headers.set("content-type", contentType);
   // Identifica a origem no dashboard de custo, separando o IDE das ferramentas

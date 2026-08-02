@@ -9,6 +9,8 @@ import { useLsp, type LspStatus } from "@/lib/use-lsp";
 import { useTheme } from "@/lib/theme";
 import { useIde } from "@/lib/ide-store";
 
+import { LocalDB } from "@/lib/db";
+
 interface FileResponse {
   path: string;
   content: string;
@@ -226,6 +228,17 @@ export function Editor({
       setBuffer(path, { content, original: content, language: rawLanguage });
       setError(null);
       lsp.onSave();
+
+      // ✅ INTEGRAÇÃO IDE <-> AUDITORIA: Registra salvamento de código no BD
+      LocalDB.addAuditLog({
+        actor: "Usuário Desenvolvedor (IDE)",
+        module: "IDE",
+        action: "Edição e Salvamento de Código",
+        details: `Arquivo "${path}" no projeto "${project}" foi alterado e salvo com sucesso.`,
+        riskLevel: "low",
+        ipAddress: "127.0.0.1",
+        status: "success",
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -242,6 +255,17 @@ export function Editor({
 
     try {
       await post("/api/git/discard", { project, paths: [path] });
+
+      // ✅ INTEGRAÇÃO IDE <-> AUDITORIA
+      LocalDB.addAuditLog({
+        actor: "Usuário Desenvolvedor (IDE)",
+        module: "IDE",
+        action: "Descarte de Alterações Git",
+        details: `Alterações não salvas do arquivo "${path}" foram descartadas.`,
+        riskLevel: "medium",
+        ipAddress: "127.0.0.1",
+        status: "warning",
+      });
     } catch {
       // Ignora erro se arquivo não estava sob controle do Git
     }
