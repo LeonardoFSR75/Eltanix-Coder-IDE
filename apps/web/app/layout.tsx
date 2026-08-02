@@ -19,8 +19,8 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "SicoobitoCode — Agente, RAG, ChromaDB & Redes Neurais",
-  description: "Plataforma IA local-first com Segundo Cérebro Obsidian, ChromaDB, Skills, MCP e Auditoria",
+  title: "SicoobitoCode — Agente, RAG & Segundo Cérebro",
+  description: "Plataforma IA local-first com Segundo Cérebro Obsidian, RAG, Skills, MCP e Auditoria",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

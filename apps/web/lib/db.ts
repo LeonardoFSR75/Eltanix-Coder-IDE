@@ -23,7 +23,7 @@ export interface AuditLog {
   id: string;
   timestamp: string;
   actor: string;
-  module: "RAG" | "MCP" | "Skills" | "SecondBrain" | "Neural" | "Auth" | "Settings" | "IDE";
+  module: "RAG" | "MCP" | "Skills" | "SecondBrain" | "Auth" | "Settings" | "IDE";
   action: string;
   details: string;
   riskLevel: "low" | "medium" | "critical";
@@ -31,26 +31,10 @@ export interface AuditLog {
   status: "success" | "warning" | "denied";
 }
 
-// Interface para Modelos de Rede Neural
-export interface NeuralModel {
-  id: string;
-  name: string;
-  architecture: {
-    inputNodes: number;
-    hiddenLayers: number[];
-    outputNodes: number;
-    activation: "relu" | "sigmoid" | "tanh" | "softmax";
-  };
-  accuracy: number;
-  epochsTrained: number;
-  savedAt: string;
-}
-
 // Chaves do localStorage
 const KEYS = {
   MCP: "sicoobito_db_mcp",
   AUDIT: "sicoobito_db_audit",
-  NEURAL: "sicoobito_db_neural",
 };
 
 // Dados padrão iniciais
@@ -129,35 +113,6 @@ const DEFAULT_AUDIT: AuditLog[] = [
   },
 ];
 
-const DEFAULT_NEURAL: NeuralModel[] = [
-  {
-    id: "model-1",
-    name: "Classificador de Relevância RAG",
-    architecture: {
-      inputNodes: 128,
-      hiddenLayers: [64, 32],
-      outputNodes: 2,
-      activation: "relu",
-    },
-    accuracy: 94.8,
-    epochsTrained: 50,
-    savedAt: new Date(Date.now() - 86400000 * 1).toISOString(),
-  },
-  {
-    id: "model-2",
-    name: "Mapeador de Atenção LLM",
-    architecture: {
-      inputNodes: 512,
-      hiddenLayers: [256, 128, 64],
-      outputNodes: 16,
-      activation: "tanh",
-    },
-    accuracy: 98.2,
-    epochsTrained: 120,
-    savedAt: new Date(Date.now() - 3600000 * 6).toISOString(),
-  },
-];
-
 // Funções de acesso (Getter / Setter com fallback para dados padrão)
 export const LocalDB = {
   getMCP(): MCPServer[] {
@@ -191,16 +146,5 @@ export const LocalDB = {
     const updated = [newLog, ...current];
     this.saveAudit(updated);
     return newLog;
-  },
-
-  getNeuralModels(): NeuralModel[] {
-    if (typeof window === "undefined") return DEFAULT_NEURAL;
-    const item = localStorage.getItem(KEYS.NEURAL);
-    return item ? JSON.parse(item) : DEFAULT_NEURAL;
-  },
-  saveNeuralModels(models: NeuralModel[]): void {
-    if (typeof window !== "undefined") {
-      localStorage.setItem(KEYS.NEURAL, JSON.stringify(models));
-    }
   },
 };

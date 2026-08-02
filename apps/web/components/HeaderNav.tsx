@@ -68,7 +68,6 @@ export function HeaderNav() {
       items: [
         { href: "/rag", label: "RAG & ChromaDB", icon: "📚", description: "Busca Vetorial & PDFs no BD" },
         { href: "/second-brain", label: "Segundo Cérebro", icon: "📓", description: "Grafo Obsidian & Wikilinks" },
-        { href: "/neural-network", label: "Rede Neural 2D", icon: "🧠", description: "Simulador de Arquiteturas" },
       ],
     },
     {

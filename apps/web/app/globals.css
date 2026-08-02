@@ -3255,7 +3255,7 @@ button.primary:hover:not(:disabled) {
 }
 
 /* ==========================================================================
-   Novas Interfaces Integradas: Login, Rede Neural, Segundo Cérebro, RAG, MCP, Skills, Audit
+   Novas Interfaces Integradas: Login, Segundo Cérebro, RAG, MCP, Skills, Audit
    ========================================================================== */
 
 /* Topbar Navegação Responsiva & Status Badges */
@@ -3849,7 +3849,7 @@ button.primary:hover:not(:disabled) {
   cursor: pointer;
 }
 
-/* Neural Network Visualizer */
+/* Canvas de visualizações (grafo do Segundo Cérebro, etc.) */
 .canvas-wrapper {
   background: var(--surface-2);
   border-radius: var(--radius);
@@ -3860,7 +3860,7 @@ button.primary:hover:not(:disabled) {
   border: 1px solid var(--border);
   margin-bottom: 16px;
 }
-.neural-canvas, .vector-canvas, .graph-canvas {
+.vector-canvas, .graph-canvas {
   width: 100%;
   height: auto;
   display: block;

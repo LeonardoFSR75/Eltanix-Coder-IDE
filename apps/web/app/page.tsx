@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
-import { LocalDB, MCPServer, NeuralModel } from "@/lib/db";
+import { LocalDB, MCPServer } from "@/lib/db";
 import { DocumentSummary, listDocuments } from "@/lib/api/documents";
 import { NoteRecord, listNotes } from "@/lib/api/notes";
 import { SkillRecord, listSkills } from "@/lib/api/skills";
@@ -14,7 +14,6 @@ export default function HomePage() {
   const [skills, setSkills] = useState<SkillRecord[]>([]);
   const [mcpServers, setMcpServers] = useState<MCPServer[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditEntry[]>([]);
-  const [neuralModels, setNeuralModels] = useState<NeuralModel[]>([]);
 
   useEffect(() => {
     listNotes().then(setNotes).catch(() => setNotes([]));
@@ -22,7 +21,6 @@ export default function HomePage() {
     listSkills().then(setSkills).catch(() => setSkills([]));
     listAudit().then(setAuditLogs).catch(() => setAuditLogs([]));
     setMcpServers(LocalDB.getMCP());
-    setNeuralModels(LocalDB.getNeuralModels());
   }, []);
 
   const totalChunks = documents.reduce((acc, d) => acc + d.chunk_count, 0);
@@ -35,7 +33,7 @@ export default function HomePage() {
           <div className="banner-badge">🚀 Central de Operações do Sistema</div>
           <h1>Painel Principal SicoobitoCode</h1>
           <p>
-            Plataforma local-first integrando <strong>IDE Agêntica</strong>, <strong>Provedores de LLM</strong>, <strong>Contabilidade de Custo</strong>, <strong>ChromaDB</strong>, <strong>Segundo Cérebro</strong>, <strong>Redes Neurais</strong>, <strong>Skills</strong>, <strong>MCP</strong> e <strong>Auditoria</strong>.
+            Plataforma local-first integrando <strong>IDE Agêntica</strong>, <strong>Provedores de LLM</strong>, <strong>Contabilidade de Custo</strong>, <strong>RAG</strong>, <strong>Segundo Cérebro</strong>, <strong>Skills</strong>, <strong>MCP</strong> e <strong>Auditoria</strong>.
           </p>
         </div>
         <div className="banner-actions">
@@ -69,13 +67,6 @@ export default function HomePage() {
           <div className="stat-value">{notes.length}</div>
           <div className="stat-label">Notas Segundo Cérebro</div>
           <div className="stat-hint">Grafo de conexões ativo</div>
-        </div>
-
-        <div className="stat-card">
-          <span className="stat-icon">🧠</span>
-          <div className="stat-value">{neuralModels.length}</div>
-          <div className="stat-label">Redes Neurais</div>
-          <div className="stat-hint">Acurácia média 96.5%</div>
         </div>
 
         <div className="stat-card">
@@ -148,21 +139,6 @@ export default function HomePage() {
           </Link>
 
           {/* Novas Ferramentas */}
-          <Link href="/neural-network" className="module-card">
-            <div className="module-header">
-              <span className="module-icon">🧠</span>
-              <span className="module-badge">Simulador 2D</span>
-            </div>
-            <h3>Rede Neural Interativa</h3>
-            <p>
-              Projeta camadas ocultas, ajusta funções de ativação (ReLU, Tanh, Sigmoid) e visualiza a curva de perda (*loss*) em tempo real.
-            </p>
-            <div className="module-footer">
-              <span>{neuralModels.length} modelos salvos</span>
-              <span className="arrow-link">Explorar →</span>
-            </div>
-          </Link>
-
           <Link href="/second-brain" className="module-card">
             <div className="module-header">
               <span className="module-icon">📓</span>
