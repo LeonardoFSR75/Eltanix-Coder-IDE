@@ -149,6 +149,20 @@ def build_graph(engine: RouterEngine, context: ToolContext):
             aprovacoes[pendente["tool_call_id"]] = bool(item.get("approved", False))
             motivos[pendente["tool_call_id"]] = item.get("reason", "")
 
+        if context.audit is not None:
+            try:
+                await context.audit.record_approvals(
+                    session_id=state.get("session_id", ""),
+                    pending=pendentes,
+                    approvals=aprovacoes,
+                    reasons=motivos,
+                )
+            except Exception as exc:
+                # Auditoria não pode travar a execução do agente — um soluço
+                # no banco aqui derrubaria uma sessão por um problema de log,
+                # não de verdade da ação em si.
+                log.warning("agent.audit.failed", error=str(exc)[:200])
+
         return {"approvals": aprovacoes, "approval_reasons": motivos, "pending": []}
 
     async def act(state: AgentState) -> dict[str, Any]:

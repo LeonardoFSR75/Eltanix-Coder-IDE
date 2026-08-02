@@ -1,146 +1,107 @@
 "use client";
 
-import React, { useEffect, useRef, useState } from "react";
-import { LocalDB, Note } from "@/lib/db";
-import { ChromaClient } from "@/lib/chroma";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { NoteRecord, createNote, deleteNote, listNotes, updateNote } from "@/lib/api/notes";
 import { useToast } from "@/components/Toast";
 
 export default function SecondBrainPage() {
   const { addToast } = useToast();
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
-  const [notes, setNotes] = useState<Note[]>([]);
-  const [selectedNote, setSelectedNote] = useState<Note | null>(null);
+  const [notes, setNotes] = useState<NoteRecord[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedNote, setSelectedNote] = useState<NoteRecord | null>(null);
 
   // Editor states
   const [editTitle, setEditTitle] = useState("");
   const [editContent, setEditContent] = useState("");
   const [editTags, setEditTags] = useState("");
+  const [saving, setSaving] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedTagFilter, setSelectedTagFilter] = useState<string | null>(null);
 
-  useEffect(() => {
-    const loadedNotes = LocalDB.getNotes();
-    setNotes(loadedNotes);
-    if (loadedNotes.length > 0) {
-      selectNote(loadedNotes[0]);
-    }
-  }, []);
-
-  const selectNote = (note: Note) => {
+  const selectNote = useCallback((note: NoteRecord) => {
     setSelectedNote(note);
     setEditTitle(note.title);
     setEditContent(note.content);
     setEditTags(note.tags.join(" "));
-  };
+  }, []);
 
-  // Salvar nota alterada
-  const handleSaveNote = () => {
-    if (!selectedNote) return;
+  const refreshNotes = useCallback(async () => {
+    try {
+      const loaded = await listNotes();
+      setNotes(loaded);
+      return loaded;
+    } catch (err) {
+      addToast(err instanceof Error ? err.message : "Falha ao carregar notas.", "error");
+      return [];
+    } finally {
+      setLoading(false);
+    }
+  }, [addToast]);
 
-    // Detectar [[wikilinks]] no conteúdo
-    const wikiLinkMatches = editContent.match(/\[\[(.*?)\]\]/g) || [];
-    const extractedLinks = wikiLinkMatches.map((m) => m.replace(/\[\[|\]\]/g, ""));
-
-    // Encontrar IDs de notas vinculadas
-    const linkIds: string[] = [];
-    extractedLinks.forEach((linkTitle) => {
-      const match = notes.find((n) => n.title.toLowerCase() === linkTitle.toLowerCase());
-      if (match) linkIds.push(match.id);
+  useEffect(() => {
+    refreshNotes().then((loaded) => {
+      if (loaded.length > 0) selectNote(loaded[0]);
     });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
+  // Salvar nota alterada — `links` é resolvido no servidor a partir dos
+  // [[wikilinks]] no conteúdo, não calculado aqui.
+  const handleSaveNote = async () => {
+    if (!selectedNote) return;
     const parsedTags = editTags
       .split(" ")
       .filter((t) => t.trim().length > 0)
       .map((t) => (t.startsWith("#") ? t : `#${t}`));
 
-    const updatedNote: Note = {
-      ...selectedNote,
-      title: editTitle,
-      content: editContent,
-      tags: parsedTags,
-      links: linkIds,
-      updatedAt: new Date().toISOString(),
-    };
-
-    const updatedNotesList = notes.map((n) => (n.id === updatedNote.id ? updatedNote : n));
-    setNotes(updatedNotesList);
-    setSelectedNote(updatedNote);
-    LocalDB.saveNotes(updatedNotesList);
-
-    // ✅ INTEGRAÇÃO RAG/CHROMADB: Auto-vetorizar nota no banco de vetores
-    ChromaClient.addNoteToChroma(updatedNote.id, updatedNote.title, updatedNote.content);
-
-    // ✅ INTEGRAÇÃO AUDITORIA: Registra log de alteração de conhecimento
-    LocalDB.addAuditLog({
-      actor: "Usuário Desenvolvedor",
-      module: "SecondBrain",
-      action: "Edição e Vetorização de Nota",
-      details: `Nota "${updatedNote.title}" salva no banco e indexada no ChromaDB. Tags: ${parsedTags.join(", ")}`,
-      riskLevel: "low",
-      ipAddress: "127.0.0.1",
-      status: "success",
-    });
-
-    addToast(`Nota "${editTitle}" salva no BD e vetorizada no ChromaDB!`, "success");
-  };
-
-  // Criar nova nota
-  const handleCreateNote = () => {
-    const newNote: Note = {
-      id: `note-${Date.now()}`,
-      title: "Nova Nota de Conhecimento",
-      content: "Digite seu conhecimento aqui... Use [[Nome da Nota]] para conectar conceitos.",
-      tags: ["#novo", "#sicoobito"],
-      links: [],
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
-
-    const updated = [newNote, ...notes];
-    setNotes(updated);
-    selectNote(newNote);
-    LocalDB.saveNotes(updated);
-
-    // ✅ INTEGRAÇÃO CHROMADB & AUDITORIA
-    ChromaClient.addNoteToChroma(newNote.id, newNote.title, newNote.content);
-    LocalDB.addAuditLog({
-      actor: "Usuário Desenvolvedor",
-      module: "SecondBrain",
-      action: "Criação de Nota",
-      details: `Nova nota "${newNote.title}" criada e adicionada ao grafo de conexões.`,
-      riskLevel: "low",
-      ipAddress: "127.0.0.1",
-      status: "success",
-    });
-
-    addToast("Nova nota criada e sincronizada com ChromaDB!", "info");
-  };
-
-  // Excluir nota
-  const handleDeleteNote = (id: string) => {
-    const noteToDelete = notes.find((n) => n.id === id);
-    const updated = notes.filter((n) => n.id !== id);
-    setNotes(updated);
-    LocalDB.saveNotes(updated);
-    if (updated.length > 0) {
-      selectNote(updated[0]);
-    } else {
-      setSelectedNote(null);
+    setSaving(true);
+    try {
+      const updated = await updateNote(selectedNote.id, {
+        title: editTitle,
+        content: editContent,
+        tags: parsedTags,
+      });
+      setNotes((prev) => prev.map((n) => (n.id === updated.id ? updated : n)));
+      setSelectedNote(updated);
+      addToast(`Nota "${updated.title}" salva e reindexada.`, "success");
+    } catch (err) {
+      addToast(err instanceof Error ? err.message : "Falha ao salvar nota.", "error");
+    } finally {
+      setSaving(false);
     }
+  };
 
-    // ✅ INTEGRAÇÃO AUDITORIA
-    LocalDB.addAuditLog({
-      actor: "Usuário Desenvolvedor",
-      module: "SecondBrain",
-      action: "Exclusão de Nota",
-      details: `Nota "${noteToDelete?.title || id}" removida do banco de dados.`,
-      riskLevel: "low",
-      ipAddress: "127.0.0.1",
-      status: "success",
-    });
+  const handleCreateNote = async () => {
+    try {
+      const created = await createNote({
+        title: "Nova Nota de Conhecimento",
+        content: "Digite seu conhecimento aqui... Use [[Nome da Nota]] para conectar conceitos.",
+        tags: ["#novo"],
+      });
+      setNotes((prev) => [created, ...prev]);
+      selectNote(created);
+      addToast("Nova nota criada.", "info");
+    } catch (err) {
+      addToast(err instanceof Error ? err.message : "Falha ao criar nota.", "error");
+    }
+  };
 
-    addToast("Nota removida do banco.", "info");
+  const handleDeleteNote = async (id: string) => {
+    try {
+      await deleteNote(id);
+      const updated = notes.filter((n) => n.id !== id);
+      setNotes(updated);
+      if (updated.length > 0) {
+        selectNote(updated[0]);
+      } else {
+        setSelectedNote(null);
+      }
+      addToast("Nota removida.", "info");
+    } catch (err) {
+      addToast(err instanceof Error ? err.message : "Falha ao remover nota.", "error");
+    }
   };
 
   // Desenhar Grafo Obsidian 2D no Canvas
@@ -157,7 +118,6 @@ export default function SecondBrainPage() {
 
     if (notes.length === 0) return;
 
-    // Calcular posições dos nós em círculo com forças visuais
     const nodePositions: Record<string, { x: number; y: number; title: string }> = {};
     const centerX = width / 2;
     const centerY = height / 2;
@@ -170,7 +130,6 @@ export default function SecondBrainPage() {
       nodePositions[note.id] = { x, y, title: note.title };
     });
 
-    // 1. Desenhar Arestas (Conexões)
     notes.forEach((note) => {
       const fromPos = nodePositions[note.id];
       if (!fromPos) return;
@@ -188,7 +147,6 @@ export default function SecondBrainPage() {
       });
     });
 
-    // 2. Desenhar Nós
     notes.forEach((note) => {
       const pos = nodePositions[note.id];
       if (!pos) return;
@@ -203,7 +161,6 @@ export default function SecondBrainPage() {
       ctx.lineWidth = 2;
       ctx.stroke();
 
-      // Título do nó
       ctx.fillStyle = "#e2e8f0";
       ctx.font = isSelected ? "bold 12px sans-serif" : "11px sans-serif";
       ctx.textAlign = "center";
@@ -211,7 +168,6 @@ export default function SecondBrainPage() {
     });
   }, [notes, selectedNote]);
 
-  // Filtragem de notas
   const filteredNotes = notes.filter((n) => {
     const matchesSearch =
       n.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -220,7 +176,6 @@ export default function SecondBrainPage() {
     return matchesSearch && matchesTag;
   });
 
-  // Todas as tags únicas
   const allTags = Array.from(new Set(notes.flatMap((n) => n.tags)));
 
   return (
@@ -229,7 +184,10 @@ export default function SecondBrainPage() {
         <div>
           <span className="page-badge">📓 Gestão de Conhecimento Estilo Obsidian</span>
           <h1>Segundo Cérebro & Grafo de Notas</h1>
-          <p>Conecte pensamentos, documentações técnicas, [[wikilinks]] e tags com persistência no banco de dados.</p>
+          <p>
+            Conecte pensamentos com [[wikilinks]] e tags — persistido no backend, indexado
+            para o agente buscar via <code className="inline-code">search_notes</code>.
+          </p>
         </div>
         <div className="header-actions">
           <button type="button" className="btn-primary glow-button" onClick={handleCreateNote}>
@@ -239,7 +197,6 @@ export default function SecondBrainPage() {
       </div>
 
       <div className="obsidian-layout">
-        {/* Sidebar de Busca e Lista de Notas */}
         <div className="obsidian-sidebar">
           <div className="sidebar-search">
             <input
@@ -251,7 +208,6 @@ export default function SecondBrainPage() {
             />
           </div>
 
-          {/* Filtros de Tags */}
           <div className="tags-cloud">
             <span
               role="button"
@@ -269,7 +225,9 @@ export default function SecondBrainPage() {
                 tabIndex={0}
                 className={`tag-chip ${selectedTagFilter === tag ? "active" : ""}`}
                 onClick={() => setSelectedTagFilter(selectedTagFilter === tag ? null : tag)}
-                onKeyDown={(e) => e.key === "Enter" && setSelectedTagFilter(selectedTagFilter === tag ? null : tag)}
+                onKeyDown={(e) =>
+                  e.key === "Enter" && setSelectedTagFilter(selectedTagFilter === tag ? null : tag)
+                }
               >
                 {tag}
               </span>
@@ -277,6 +235,10 @@ export default function SecondBrainPage() {
           </div>
 
           <div className="notes-list">
+            {loading && <p className="text-xs text-muted">Carregando…</p>}
+            {!loading && filteredNotes.length === 0 && (
+              <p className="text-xs text-muted">Nenhuma nota encontrada.</p>
+            )}
             {filteredNotes.map((n) => (
               <div
                 key={n.id}
@@ -287,7 +249,9 @@ export default function SecondBrainPage() {
                 <div className="note-card-preview">{n.content.slice(0, 75)}...</div>
                 <div className="note-card-tags">
                   {n.tags.map((t) => (
-                    <span key={t} className="mini-tag">{t}</span>
+                    <span key={t} className="mini-tag">
+                      {t}
+                    </span>
                   ))}
                 </div>
               </div>
@@ -295,7 +259,6 @@ export default function SecondBrainPage() {
           </div>
         </div>
 
-        {/* Painel Central: Editor & Visualização de Grafo */}
         <div className="obsidian-main">
           {selectedNote ? (
             <div className="obsidian-editor-container">
@@ -308,10 +271,19 @@ export default function SecondBrainPage() {
                   placeholder="Título da Nota"
                 />
                 <div className="editor-actions">
-                  <button type="button" className="btn-primary" onClick={handleSaveNote}>
-                    💾 Salvar no BD
+                  <button
+                    type="button"
+                    className="btn-primary"
+                    onClick={handleSaveNote}
+                    disabled={saving}
+                  >
+                    {saving ? "Salvando…" : "💾 Salvar"}
                   </button>
-                  <button type="button" className="btn-danger-sm" onClick={() => handleDeleteNote(selectedNote.id)}>
+                  <button
+                    type="button"
+                    className="btn-danger-sm"
+                    onClick={() => handleDeleteNote(selectedNote.id)}
+                  >
                     🗑️ Excluir
                   </button>
                 </div>
@@ -352,14 +324,20 @@ export default function SecondBrainPage() {
                           {selectedNote.links.map((linkId) => {
                             const targetNote = notes.find((n) => n.id === linkId);
                             return targetNote ? (
-                              <li key={linkId} onClick={() => selectNote(targetNote)} className="clickable-link">
+                              <li
+                                key={linkId}
+                                onClick={() => selectNote(targetNote)}
+                                className="clickable-link"
+                              >
                                 🔗 [[{targetNote.title}]]
                               </li>
                             ) : null;
                           })}
                         </ul>
                       ) : (
-                        <p className="text-muted text-sm">Nenhum [[wikilink]] vinculado no momento.</p>
+                        <p className="text-muted text-sm">
+                          Nenhum [[wikilink]] vinculado no momento. Salve para o servidor resolver.
+                        </p>
                       )}
                     </div>
                   </div>
@@ -370,7 +348,6 @@ export default function SecondBrainPage() {
             <div className="no-note-selected">Selecione ou crie uma nota no menu lateral</div>
           )}
 
-          {/* Grafo de Nós em Canvas 2D */}
           <div className="graph-container">
             <div className="graph-header">
               <span>🕸️ Mapa do Grafo de Conhecimento</span>

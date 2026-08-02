@@ -25,7 +25,7 @@ export function HeaderNav() {
   const pathname = usePathname();
   const router = useRouter();
   const { theme, toggleTheme } = useTheme();
-  const { user, logout } = useAuth();
+  const { apiKeyValid, maskedKey, logout } = useAuth();
   const { addToast } = useToast();
   const isIde = pathname.startsWith("/ide");
 
@@ -46,7 +46,7 @@ export function HeaderNav() {
   // ✅ FIX: useCallback para evitar re-criação da função em cada render
   const handleUserLogout = useCallback(() => {
     logout();
-    addToast("Você saiu da sua conta.", "info");
+    addToast("Chave local removida.", "info");
     router.push("/login");
   }, [logout, addToast, router]);
 
@@ -213,13 +213,13 @@ export function HeaderNav() {
           {theme === "dark" ? "☀️" : "🌙"}
         </button>
 
-        {user ? (
+        {apiKeyValid ? (
           <div className="user-profile-badge-wrapper">
-            <Link href="/profile" className="user-profile-badge" title="Ver Perfil">
-              <span className="user-avatar">{user.avatar}</span>
+            <Link href="/profile" className="user-profile-badge" title="Configurações">
+              <span className="user-avatar">🔑</span>
               <div className="user-info">
-                <span className="user-name">{user.name}</span>
-                <span className="user-role">{user.role}</span>
+                <span className="user-name">Conectado</span>
+                <span className="user-role">{maskedKey || "sem chave"}</span>
               </div>
             </Link>
             <button

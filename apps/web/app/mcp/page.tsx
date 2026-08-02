@@ -128,12 +128,17 @@ export default function MCPPage() {
     <div className="shell">
       <div className="page-header">
         <div>
-          <span className="page-badge">🔌 Protocolo Model Context (MCP)</span>
-          <h1>Hub de Conectores & Servidores MCP</h1>
-          <p>Monitore conexões STDIO e SSE, inspecione a matriz de ferramentas e execute chamadas JSON-RPC 2.0.</p>
+          <span className="page-badge">🚧 MCP — Roteiro (ainda não implementado)</span>
+          <h1>Preview: Conectores & Servidores MCP</h1>
+          <p>
+            Esta tela é uma demonstração interativa do desenho da futura integração MCP —
+            os servidores, ferramentas e respostas abaixo são simulados, não uma conexão real.
+            O agente do IDE já tem um registro de ferramentas real (<code className="inline-code">agent/tools</code>)
+            pronto para receber ferramentas MCP quando essa integração existir de verdade.
+          </p>
         </div>
         <div className="header-actions">
-          <span className="badge-tag green">Protocolo v1.0 / JSON-RPC 2.0</span>
+          <span className="badge-tag blue">Demo — dados simulados</span>
         </div>
       </div>
 

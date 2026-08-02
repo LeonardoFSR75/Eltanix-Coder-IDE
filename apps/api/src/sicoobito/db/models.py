@@ -200,6 +200,179 @@ class CodeChunk(Base):
         return f"<CodeChunk {self.path}:{self.start_line}-{self.end_line} {self.symbol or ''}>"
 
 
+class Document(Base):
+    """Um documento (PDF) enviado para o RAG. O blob mora no MinIO; aqui só
+    ficam metadados e o estado da ingestão."""
+
+    __tablename__ = "document"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    filename: Mapped[str] = mapped_column(String(512), nullable=False)
+    content_type: Mapped[str] = mapped_column(String(128), nullable=False)
+    size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
+    minio_bucket: Mapped[str] = mapped_column(String(128), nullable=False)
+    minio_object: Mapped[str] = mapped_column(String(512), nullable=False)
+    page_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    chunk_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    # pending -> processing -> ready | failed
+    status: Mapped[str] = mapped_column(String(16), default="pending", nullable=False)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    uploaded_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    indexed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    chunks: Mapped[list[DocumentChunk]] = relationship(
+        back_populates="document", cascade="all, delete-orphan", passive_deletes=True
+    )
+
+    __table_args__ = (Index("ix_document_status", "status"),)
+
+    def __repr__(self) -> str:  # pragma: no cover - conveniência de debug
+        return f"<Document {self.filename} {self.status}>"
+
+
+class DocumentChunk(Base):
+    """Um trecho embeddável de um documento — igual em espírito a `CodeChunk`,
+    mas orientado a página/parágrafo em vez de símbolo de código."""
+
+    __tablename__ = "document_chunk"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    document_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("document.id", ondelete="CASCADE"), nullable=False
+    )
+    chunk_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    page_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    token_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    embedding: Mapped[list[float] | None] = mapped_column(Vector(EMBEDDING_DIM), nullable=True)
+    tsv: Mapped[str | None] = mapped_column(
+        TSVECTOR,
+        Computed("to_tsvector('simple', content)", persisted=True),
+        nullable=True,
+    )
+
+    document: Mapped[Document] = relationship(back_populates="chunks")
+
+    __table_args__ = (Index("ix_document_chunk_document_id", "document_id"),)
+
+    def __repr__(self) -> str:  # pragma: no cover - conveniência de debug
+        return f"<DocumentChunk {self.document_id} #{self.chunk_index}>"
+
+
+class Note(Base):
+    """Uma nota do Segundo Cérebro. `links` é resolvido no servidor a cada
+    save, a partir de `[[wikilinks]]` no conteúdo — não confiado ao cliente,
+    para o agente também poder criar/atualizar notas de forma consistente."""
+
+    __tablename__ = "note"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    title: Mapped[str] = mapped_column(String(512), nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    tags: Mapped[list] = mapped_column(JSONB, default=list, nullable=False)
+    links: Mapped[list] = mapped_column(JSONB, default=list, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+    chunks: Mapped[list[NoteChunk]] = relationship(
+        back_populates="note", cascade="all, delete-orphan", passive_deletes=True
+    )
+
+    def __repr__(self) -> str:  # pragma: no cover - conveniência de debug
+        return f"<Note {self.title!r}>"
+
+
+class NoteChunk(Base):
+    """Um trecho embeddável de uma nota — mesmo espírito de `DocumentChunk`."""
+
+    __tablename__ = "note_chunk"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    note_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("note.id", ondelete="CASCADE"), nullable=False
+    )
+    chunk_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    token_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    embedding: Mapped[list[float] | None] = mapped_column(Vector(EMBEDDING_DIM), nullable=True)
+    tsv: Mapped[str | None] = mapped_column(
+        TSVECTOR,
+        Computed("to_tsvector('simple', content)", persisted=True),
+        nullable=True,
+    )
+
+    note: Mapped[Note] = relationship(back_populates="chunks")
+
+    __table_args__ = (Index("ix_note_chunk_note_id", "note_id"),)
+
+    def __repr__(self) -> str:  # pragma: no cover - conveniência de debug
+        return f"<NoteChunk {self.note_id} #{self.chunk_index}>"
+
+
+class Skill(Base):
+    """Preset de prompt de sistema reusável — pelo usuário na UI ou pelo
+    próprio agente via `list_skills`/`get_skill`."""
+
+    __tablename__ = "skill"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    category: Mapped[str] = mapped_column(String(32), default="automation", nullable=False)
+    system_prompt: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    # Texto JSON cru, editado pelo usuário como JSON Schema livre — não é
+    # validado/parseado no backend, mesma semântica que a UI já tinha.
+    parameters_json: Mapped[str] = mapped_column(Text, default="{}", nullable=False)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    usage_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+    __table_args__ = (Index("ix_skill_enabled", "enabled"),)
+
+    def __repr__(self) -> str:  # pragma: no cover - conveniência de debug
+        return f"<Skill {self.name!r} enabled={self.enabled}>"
+
+
+class AuditLogEntry(Base):
+    """Uma linha de auditoria. `event_metadata` (não `metadata` — reservado
+    pelo `Base` do SQLAlchemy) carrega o que não cabe nos campos fixos."""
+
+    __tablename__ = "audit_log"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    actor: Mapped[str] = mapped_column(String(128), nullable=False)
+    module: Mapped[str] = mapped_column(String(32), nullable=False)
+    action: Mapped[str] = mapped_column(String(255), nullable=False)
+    details: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    risk_level: Mapped[str] = mapped_column(String(16), default="low", nullable=False)
+    status: Mapped[str] = mapped_column(String(16), default="success", nullable=False)
+    session_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    event_metadata: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
+
+    __table_args__ = (
+        Index("ix_audit_log_created_at", "created_at"),
+        Index("ix_audit_log_module", "module"),
+        Index("ix_audit_log_risk_level", "risk_level"),
+    )
+
+    def __repr__(self) -> str:  # pragma: no cover - conveniência de debug
+        return f"<AuditLogEntry {self.module} {self.action!r} {self.status}>"
+
+
 class AgentSessionRecord(Base):
     """Metadados de uma sessão do agente, para o histórico sobreviver a um restart.
 

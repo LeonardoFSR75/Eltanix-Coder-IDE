@@ -65,12 +65,20 @@ class AgentRunner:
         indexer: ContextIndexer,
         sandboxes: SandboxManager,
         browser_config: BrowserConfig | None = None,
+        documents: Any | None = None,  # DocumentService
+        notes: Any | None = None,  # NoteService
+        skills: Any | None = None,  # SkillService
+        audit: Any | None = None,  # AuditService
     ) -> None:
         self.settings = settings
         self.engine = engine
         self.indexer = indexer
         self.sandboxes = sandboxes
         self.browser_config = browser_config
+        self.documents = documents
+        self.notes = notes
+        self.skills = skills
+        self.audit = audit
         self._browser_http: httpx.AsyncClient | None = None
         self._sessions: dict[str, AgentSession] = {}
         self._checkpointer: Any | None = None
@@ -185,6 +193,10 @@ class AgentRunner:
             base_branch=base,
             branch=branch,
             browser=browser,
+            documents=self.documents,
+            notes=self.notes,
+            skills=self.skills,
+            audit=self.audit,
         )
 
         sessao = AgentSession(

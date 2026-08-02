@@ -45,6 +45,23 @@ export function AgentDock({
     onSession?.(active?.session?.session_id ?? null);
   }, [active, onSession]);
 
+  // Outras páginas (ex.: /rag) linkam para cá com `?agentPrompt=` para
+  // pré-preencher uma pergunta sem duplicar o loop de chat aqui — a busca
+  // real já é uma ferramenta que o próprio agente chama. Lido direto de
+  // `window.location` (não `next/navigation`) para não exigir um Suspense
+  // boundary só por causa deste prefill único no mount.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const prompt = params.get("agentPrompt");
+    if (!prompt) return;
+    setTask(prompt);
+    params.delete("agentPrompt");
+    const query = params.toString();
+    const { pathname } = window.location;
+    window.history.replaceState(null, "", query ? `${pathname}?${query}` : pathname);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const running = active?.running ?? false;
 
   const submitWithPrompt = (promptToRun?: string) => {

@@ -13,23 +13,30 @@ from sicoobito import __version__
 from sicoobito.agent.runner import AgentRunner
 from sicoobito.api.routes import (
     agent_router,
+    audit_router,
     context_router,
+    documents_router,
     git_router,
     health_router,
     lsp_router,
     lsp_ws_router,
     metrics_router,
+    notes_router,
     projects_router,
+    skills_router,
     workspace_router,
     workspace_ws_router,
 )
 from sicoobito.api.tickets import TicketStore
 from sicoobito.api.v1 import router as openai_router
+from sicoobito.audit.service import AuditService
 from sicoobito.browser.client import BrowserConfig
 from sicoobito.config import get_settings
 from sicoobito.context.indexer import ContextIndexer
 from sicoobito.db.session import init_engine, shutdown_engine
+from sicoobito.documents.service import DocumentService
 from sicoobito.logging_setup import get_logger, setup_logging
+from sicoobito.notes.service import NoteService
 from sicoobito.optimizer.cache import ResponseCache
 from sicoobito.router.budget import BudgetGuard
 from sicoobito.router.catalog import load_catalog
@@ -38,6 +45,8 @@ from sicoobito.router.health import HealthTracker
 from sicoobito.router.pricing import PriceTable
 from sicoobito.sandbox.container import SandboxConfig, SandboxManager
 from sicoobito.sandbox.executor import ExecutorConfig, ExecutorSandboxManager
+from sicoobito.skills.service import SkillService
+from sicoobito.storage.blob import BlobStore
 
 log = get_logger(__name__)
 
@@ -90,6 +99,20 @@ async def lifespan(app: FastAPI):
 
     indexer = ContextIndexer(settings=settings, engine=engine)
 
+    blob = BlobStore(settings)
+    try:
+        await blob.ensure_bucket()
+    except Exception as exc:
+        # Mesmo espírito do Redis opcional acima: sem MinIO no ar, o RAG de
+        # documentos fica indisponível, mas o resto da plataforma não trava.
+        log.warning(
+            "blob.unavailable", error=str(exc)[:200], impact="upload de documentos indisponível"
+        )
+    documents = DocumentService(settings=settings, engine=engine, blob=blob)
+    notes = NoteService(settings=settings, engine=engine)
+    skills = SkillService()
+    audit = AuditService()
+
     # Com EXECUTOR_URL definido, a execução vai por um serviço isolado que é o
     # único com acesso ao daemon do Docker (ver ADR 0002). É o modo usado
     # quando a própria API roda em container. Sem ele, cai no daemon local, que
@@ -128,12 +151,21 @@ async def lifespan(app: FastAPI):
     app.state.tickets = TicketStore(redis)
     app.state.indexer = indexer
     app.state.sandboxes = sandboxes
+    app.state.blob = blob
+    app.state.documents = documents
+    app.state.notes = notes
+    app.state.skills = skills
+    app.state.audit = audit
     app.state.agent_runner = AgentRunner(
         settings=settings,
         engine=engine,
         indexer=indexer,
         sandboxes=sandboxes,
         browser_config=browser_config,
+        documents=documents,
+        notes=notes,
+        skills=skills,
+        audit=audit,
     )
     # O desligamento ordenado abaixo cobre o caso normal; este laço cobre o
     # anormal (kill -9, queda), varrendo containers de execuções anteriores que
@@ -187,6 +219,10 @@ def create_app() -> FastAPI:
     app.include_router(health_router)
     app.include_router(metrics_router)
     app.include_router(context_router)
+    app.include_router(documents_router)
+    app.include_router(notes_router)
+    app.include_router(skills_router)
+    app.include_router(audit_router)
     app.include_router(agent_router)
     app.include_router(workspace_router)
     app.include_router(workspace_ws_router)

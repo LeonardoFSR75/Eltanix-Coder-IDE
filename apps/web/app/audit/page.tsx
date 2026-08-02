@@ -1,26 +1,36 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
-import { LocalDB, AuditLog } from "@/lib/db";
+import { useCallback, useEffect, useState } from "react";
+import { AuditEntry, listAudit } from "@/lib/api/audit";
 import { useToast } from "@/components/Toast";
 
 export default function AuditPage() {
   const { addToast } = useToast();
-  const [logs, setLogs] = useState<AuditLog[]>([]);
-  const [selectedLog, setSelectedLog] = useState<AuditLog | null>(null);
+  const [logs, setLogs] = useState<AuditEntry[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedLog, setSelectedLog] = useState<AuditEntry | null>(null);
 
-  // Filters
   const [moduleFilter, setModuleFilter] = useState<string>("ALL");
   const [riskFilter, setRiskFilter] = useState<string>("ALL");
   const [searchQuery, setSearchQuery] = useState("");
 
+  const refresh = useCallback(async () => {
+    try {
+      setLogs(await listAudit());
+    } catch (err) {
+      addToast(err instanceof Error ? err.message : "Falha ao carregar auditoria.", "error");
+    } finally {
+      setLoading(false);
+    }
+  }, [addToast]);
+
   useEffect(() => {
-    setLogs(LocalDB.getAudit());
-  }, []);
+    refresh();
+  }, [refresh]);
 
   const filteredLogs = logs.filter((log) => {
     const matchesModule = moduleFilter === "ALL" || log.module === moduleFilter;
-    const matchesRisk = riskFilter === "ALL" || log.riskLevel === riskFilter;
+    const matchesRisk = riskFilter === "ALL" || log.risk_level === riskFilter;
     const matchesSearch =
       log.action.toLowerCase().includes(searchQuery.toLowerCase()) ||
       log.actor.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -28,6 +38,8 @@ export default function AuditPage() {
 
     return matchesModule && matchesRisk && matchesSearch;
   });
+
+  const allModules = Array.from(new Set(logs.map((l) => l.module))).sort();
 
   const handleExportJSON = () => {
     const jsonString = `data:text/json;charset=utf-8,${encodeURIComponent(JSON.stringify(filteredLogs, null, 2))}`;
@@ -41,11 +53,11 @@ export default function AuditPage() {
   };
 
   const handleExportCSV = () => {
-    const headers = "ID,Timestamp,Actor,Module,Action,RiskLevel,Status,IP,Details\n";
+    const headers = "ID,CreatedAt,Actor,Module,Action,RiskLevel,Status,Details\n";
     const rows = filteredLogs
       .map(
         (l) =>
-          `"${l.id}","${l.timestamp}","${l.actor}","${l.module}","${l.action}","${l.riskLevel}","${l.status}","${l.ipAddress}","${l.details.replace(/"/g, '""')}"`
+          `"${l.id}","${l.created_at}","${l.actor}","${l.module}","${l.action}","${l.risk_level}","${l.status}","${l.details.replace(/"/g, '""')}"`,
       )
       .join("\n");
 
@@ -65,7 +77,10 @@ export default function AuditPage() {
         <div>
           <span className="page-badge">🛡️ Governança & Segurança</span>
           <h1>Trilha de Auditoria & Logs de Eventos</h1>
-          <p>Monitoramento de acessos, guardrails de prompt, execuções MCP e alterações persistidas no banco.</p>
+          <p>
+            Decisões de aprovação do agente (WRITE/EXEC), CRUD de documentos/notas/skills e
+            eventos de UI relevantes, persistidos no backend.
+          </p>
         </div>
         <div className="header-actions">
           <button type="button" className="btn-secondary" onClick={handleExportCSV}>
@@ -77,7 +92,6 @@ export default function AuditPage() {
         </div>
       </div>
 
-      {/* Bar de Filtros */}
       <div className="panel-box">
         <div className="audit-filters-bar">
           <div className="form-group flex-1">
@@ -97,13 +111,11 @@ export default function AuditPage() {
               className="input-select"
             >
               <option value="ALL">Todos os Módulos</option>
-              <option value="IDE">IDE Agêntica</option>
-              <option value="RAG">RAG</option>
-              <option value="MCP">MCP</option>
-              <option value="Skills">Skills</option>
-              <option value="SecondBrain">Segundo Cérebro</option>
-              <option value="Neural">Rede Neural</option>
-              <option value="Auth">Autenticação</option>
+              {allModules.map((m) => (
+                <option key={m} value={m}>
+                  {m}
+                </option>
+              ))}
             </select>
           </div>
 
@@ -122,11 +134,10 @@ export default function AuditPage() {
         </div>
       </div>
 
-      {/* Tabela de Logs de Auditoria */}
       <div className="panel-box">
         <div className="panel-header">
           <h3>Registros de Auditoria ({filteredLogs.length} Encontrados)</h3>
-          <span className="badge-tag green">Guardrails Ativos</span>
+          <span className="badge-tag green">Backend</span>
         </div>
 
         <div className="table-responsive">
@@ -135,24 +146,41 @@ export default function AuditPage() {
               <tr>
                 <th>Status</th>
                 <th>Horário</th>
-                <th>Ator / Usuário</th>
+                <th>Ator</th>
                 <th>Módulo</th>
                 <th>Ação Executada</th>
                 <th>Risco</th>
-                <th>IP</th>
                 <th>Ações</th>
               </tr>
             </thead>
             <tbody>
+              {loading && (
+                <tr>
+                  <td colSpan={7} className="text-xs text-muted">
+                    Carregando…
+                  </td>
+                </tr>
+              )}
+              {!loading && filteredLogs.length === 0 && (
+                <tr>
+                  <td colSpan={7} className="text-xs text-muted">
+                    Nenhum registro encontrado.
+                  </td>
+                </tr>
+              )}
               {filteredLogs.map((log) => (
                 <tr key={log.id} className={`status-row-${log.status}`}>
                   <td>
                     <span className={`status-pill ${log.status}`}>
-                      {log.status === "success" ? "✓ Ok" : log.status === "warning" ? "⚠️ Alerta" : "🚫 Bloqueado"}
+                      {log.status === "success"
+                        ? "✓ Ok"
+                        : log.status === "warning"
+                          ? "⚠️ Alerta"
+                          : "🚫 Bloqueado"}
                     </span>
                   </td>
                   <td className="font-mono text-sm">
-                    {new Date(log.timestamp).toLocaleString("pt-BR")}
+                    {new Date(log.created_at).toLocaleString("pt-BR")}
                   </td>
                   <td>
                     <strong>{log.actor}</strong>
@@ -162,11 +190,10 @@ export default function AuditPage() {
                   </td>
                   <td>{log.action}</td>
                   <td>
-                    <span className={`risk-badge risk-${log.riskLevel}`}>
-                      {log.riskLevel.toUpperCase()}
+                    <span className={`risk-badge risk-${log.risk_level}`}>
+                      {log.risk_level.toUpperCase()}
                     </span>
                   </td>
-                  <td className="font-mono text-xs text-muted">{log.ipAddress}</td>
                   <td>
                     <button
                       type="button"
@@ -183,7 +210,6 @@ export default function AuditPage() {
         </div>
       </div>
 
-      {/* Modal de Detalhamento do Evento */}
       {selectedLog && (
         <div className="modal-overlay" onClick={() => setSelectedLog(null)}>
           <div className="modal-card" onClick={(e) => e.stopPropagation()}>
@@ -202,10 +228,10 @@ export default function AuditPage() {
                   <strong>Status:</strong> {selectedLog.status}
                 </div>
                 <div>
-                  <strong>Nível de Risco:</strong> {selectedLog.riskLevel.toUpperCase()}
+                  <strong>Nível de Risco:</strong> {selectedLog.risk_level.toUpperCase()}
                 </div>
                 <div>
-                  <strong>IP de Origem:</strong> {selectedLog.ipAddress}
+                  <strong>Sessão:</strong> {selectedLog.session_id || "—"}
                 </div>
               </div>
 
@@ -215,9 +241,18 @@ export default function AuditPage() {
               </div>
 
               <div className="modal-section">
-                <strong>Payload & Detalhes Registrados:</strong>
+                <strong>Detalhes:</strong>
                 <pre className="log-payload-box font-mono">{selectedLog.details}</pre>
               </div>
+
+              {Object.keys(selectedLog.metadata).length > 0 && (
+                <div className="modal-section">
+                  <strong>Metadados:</strong>
+                  <pre className="log-payload-box font-mono">
+                    {JSON.stringify(selectedLog.metadata, null, 2)}
+                  </pre>
+                </div>
+              )}
             </div>
             <div className="modal-footer">
               <button type="button" className="btn-primary" onClick={() => setSelectedLog(null)}>

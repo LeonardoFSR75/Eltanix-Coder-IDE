@@ -40,6 +40,9 @@ dependencies = [
     "docker>=7.1",
     "GitPython>=3.1",
     "ruamel-yaml>=0.18",
+    # Fase de alinhamento — documentos (RAG) e blob storage
+    "minio>=7.2",
+    "pypdf>=5.0",
 ]
 
 [project.optional-dependencies]

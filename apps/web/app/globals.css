@@ -4384,6 +4384,7 @@ button.primary:hover:not(:disabled) {
 }
 .badge-tag.green { background: var(--accent-emerald-dim); color: var(--accent-emerald); }
 .badge-tag.blue { background: var(--accent-dim); color: var(--accent); }
+.badge-tag.red { background: var(--danger-dim); color: var(--danger); }
 
 /* ==========================================================================
    Tree Navigation Dropdowns (Sub-menus Agrupados por Categoria)

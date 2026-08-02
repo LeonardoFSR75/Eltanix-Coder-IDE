@@ -2,29 +2,29 @@
 
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
-import { LocalDB, Note, PDFDocument, Skill, MCPServer, AuditLog, NeuralModel } from "@/lib/db";
-import { ChromaClient, ChromaVectorChunk } from "@/lib/chroma";
+import { LocalDB, MCPServer, AuditLog, NeuralModel } from "@/lib/db";
+import { DocumentSummary, listDocuments } from "@/lib/api/documents";
+import { NoteRecord, listNotes } from "@/lib/api/notes";
+import { SkillRecord, listSkills } from "@/lib/api/skills";
 
 export default function HomePage() {
-  const [notes, setNotes] = useState<Note[]>([]);
-  const [pdfs, setPdfs] = useState<PDFDocument[]>([]);
-  const [skills, setSkills] = useState<Skill[]>([]);
+  const [notes, setNotes] = useState<NoteRecord[]>([]);
+  const [documents, setDocuments] = useState<DocumentSummary[]>([]);
+  const [skills, setSkills] = useState<SkillRecord[]>([]);
   const [mcpServers, setMcpServers] = useState<MCPServer[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [neuralModels, setNeuralModels] = useState<NeuralModel[]>([]);
-  const [vectors, setVectors] = useState<ChromaVectorChunk[]>([]);
 
   useEffect(() => {
-    setNotes(LocalDB.getNotes());
-    setPdfs(LocalDB.getPDFs());
-    setSkills(LocalDB.getSkills());
+    listNotes().then(setNotes).catch(() => setNotes([]));
+    listDocuments().then(setDocuments).catch(() => setDocuments([]));
+    listSkills().then(setSkills).catch(() => setSkills([]));
     setMcpServers(LocalDB.getMCP());
     setAuditLogs(LocalDB.getAudit());
     setNeuralModels(LocalDB.getNeuralModels());
-    setVectors(ChromaClient.getVectors());
   }, []);
 
-  const totalChunks = pdfs.reduce((acc, p) => acc + p.chunkCount, 0);
+  const totalChunks = documents.reduce((acc, d) => acc + d.chunk_count, 0);
 
   return (
     <div className="shell">
@@ -58,9 +58,9 @@ export default function HomePage() {
 
         <div className="stat-card">
           <span className="stat-icon">📚</span>
-          <div className="stat-value">{vectors.length + totalChunks}</div>
-          <div className="stat-label">Vetores no ChromaDB</div>
-          <div className="stat-hint">{pdfs.length} documentos PDF no BD</div>
+          <div className="stat-value">{totalChunks}</div>
+          <div className="stat-label">Chunks indexados (pgvector)</div>
+          <div className="stat-hint">{documents.length} documentos no RAG</div>
         </div>
 
         <div className="stat-card">
@@ -187,7 +187,7 @@ export default function HomePage() {
               Upload de documentos PDF, extração de texto, fatiamento (*chunking*), visualizador de embeddings e chat com citação.
             </p>
             <div className="module-footer">
-              <span>{pdfs.length} PDFs armazenados</span>
+              <span>{documents.length} documentos armazenados</span>
               <span className="arrow-link">Explorar →</span>
             </div>
           </Link>
@@ -210,15 +210,15 @@ export default function HomePage() {
           <Link href="/mcp" className="module-card">
             <div className="module-header">
               <span className="module-icon">🔌</span>
-              <span className="module-badge">JSON-RPC 2.0</span>
+              <span className="module-badge">Roteiro</span>
             </div>
-            <h3>Gestão MCP (Model Context)</h3>
+            <h3>MCP (Model Context) — Preview</h3>
             <p>
-              Monitore servidores de contexto MCP, inspecione chamadas de ferramentas e execute requisições via console.
+              Demonstração do desenho da futura integração MCP — ainda não implementada de verdade.
             </p>
             <div className="module-footer">
-              <span>{mcpServers.length} servidores ativos</span>
-              <span className="arrow-link">Explorar →</span>
+              <span>{mcpServers.length} servidores (demo)</span>
+              <span className="arrow-link">Ver roteiro →</span>
             </div>
           </Link>
 
@@ -256,8 +256,8 @@ export default function HomePage() {
               <strong>Ativo no Docker (Porta 5403)</strong>
             </div>
             <div className="db-stat-item">
-              <span>ChromaDB Vector Store</span>
-              <strong>3 Coleções / {vectors.length + totalChunks} Chunks</strong>
+              <span>Índice pgvector (Documentos + Código)</span>
+              <strong>{totalChunks} Chunks</strong>
             </div>
             <div className="db-stat-item">
               <span>Redis Cache & Cache Exato</span>

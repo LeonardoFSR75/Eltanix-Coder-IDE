@@ -14,6 +14,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { post } from "@/lib/client";
+import { logAuditEvent } from "@/lib/api/audit";
 
 const PROMPT = "\x1b[32m$\x1b[0m ";
 
@@ -185,21 +186,14 @@ export function TerminalPanel({
     termRef.current?.write(`${cmd}\r\n`);
     socket.send(JSON.stringify({ command: cmd }));
 
-    // ✅ INTEGRAÇÃO TERMINAL IDE <-> AUDITORIA
-    try {
-      const { LocalDB } = require("@/lib/db");
-      LocalDB.addAuditLog({
-        actor: "Desenvolvedor (Terminal Sandbox)",
-        module: "IDE",
-        action: "Execução de Comando no Terminal",
-        details: `Executado comando "${cmd}" no projeto "${project || "desconhecido"}".`,
-        riskLevel: cmd.includes("rm") || cmd.includes("delete") ? "high" : "low",
-        ipAddress: "127.0.0.1",
-        status: "success",
-      });
-    } catch {
-      // Ignora erro se DB indisponível
-    }
+    logAuditEvent({
+      actor: "Desenvolvedor (Terminal Sandbox)",
+      module: "IDE",
+      action: "Execução de Comando no Terminal",
+      details: `Executado comando "${cmd}" no projeto "${project || "desconhecido"}".`,
+      risk_level: cmd.includes("rm") || cmd.includes("delete") ? "critical" : "low",
+      status: "success",
+    }).catch(() => {});
   }, [project]);
 
   useEffect(() => {

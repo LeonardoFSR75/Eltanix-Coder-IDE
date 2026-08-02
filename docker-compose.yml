@@ -213,6 +213,12 @@ services:
       # sobrescrever isto para usar uma instalação do host.
       OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://ollama:11434}
       LITELLM_LOCAL_MODEL_COST_MAP: "True"
+      # `minio:9000` só é alcançável de dentro do compose; URLs pré-assinadas
+      # devolvidas ao browser precisam do endpoint publicado no host.
+      MINIO_ENDPOINT: minio:9000
+      MINIO_PUBLIC_ENDPOINT: ${MINIO_PUBLIC_ENDPOINT:-localhost:5407}
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin}
     env_file:
       - path: .env
         required: false
@@ -232,6 +238,8 @@ services:
       postgres:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      minio:
         condition: service_healthy
       executor:
         condition: service_started

@@ -1,106 +1,89 @@
 "use client";
 
-import React, { createContext, useContext, useEffect, useState } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useState } from "react";
+import { get } from "@/lib/client";
 
-export interface UserProfile {
-  id: string;
-  name: string;
-  email: string;
-  role: "Admin" | "Engenheiro de IA" | "Auditor" | "Desenvolvedor";
-  avatar: string;
-  token: string;
-  authMethod: "password" | "passkey" | "apikey";
+/**
+ * O backend usa uma única chave de API compartilhada (`SICOOBITO_API_KEY`),
+ * não contas de usuário — ver `api/deps.py::require_api_key`. Este contexto
+ * reflete exatamente isso: guarda a chave local e se ela é válida contra o
+ * backend, nada de perfil, papel ou avatar fabricados.
+ */
+
+const STORAGE_KEY = "sicoobito_api_key";
+
+function maskKey(key: string): string {
+  return key.length <= 4 ? "••••" : `••••${key.slice(-4)}`;
 }
 
 interface AuthContextType {
-  user: UserProfile | null;
-  isAuthenticated: boolean;
-  login: (email: string, role?: UserProfile["role"], method?: UserProfile["authMethod"]) => void;
+  hasApiKey: boolean;
+  // null enquanto a primeira checagem contra o backend não terminou.
+  apiKeyValid: boolean | null;
+  checking: boolean;
+  maskedKey: string | null;
+  setApiKey: (key: string) => Promise<boolean>;
   logout: () => void;
-  updateUser: (updated: Partial<UserProfile>) => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-const STORAGE_KEY = "sicoobito_auth_user";
-
-const DEFAULT_USER: UserProfile = {
-  id: "usr-admin-01",
-  name: "Leonardo Silva",
-  email: "leonardo@sicoobito.local",
-  role: "Engenheiro de IA",
-  avatar: "⚡",
-  token: "scbt_token_sec_9941a8e22b",
-  authMethod: "passkey",
-};
-
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<UserProfile | null>(null);
-  // ✅ FIX: Inicializa como true para não causar flash de conteúdo vazio;
-  // a leitura do localStorage é feita no useEffect abaixo.
-  const [mounted, setMounted] = useState(false);
+  const [hasApiKey, setHasApiKey] = useState(false);
+  const [maskedKey, setMaskedKey] = useState<string | null>(null);
+  const [apiKeyValid, setApiKeyValid] = useState<boolean | null>(null);
+  const [checking, setChecking] = useState(true);
 
-  useEffect(() => {
-    setMounted(true);
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored) {
-      try {
-        setUser(JSON.parse(stored));
-      } catch {
-        setUser(DEFAULT_USER);
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(DEFAULT_USER));
-      }
-    } else {
-      setUser(DEFAULT_USER);
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(DEFAULT_USER));
+  // Sem chave, `require_api_key` ainda pode aceitar a chamada — se o
+  // backend não tiver `SICOOBITO_API_KEY` configurada, fica aberto de
+  // propósito para uso estritamente local. Por isso a validação é sempre
+  // "chamar /health e ver o que volta", não "existe uma chave salva".
+  const validate = useCallback(async (): Promise<boolean> => {
+    setChecking(true);
+    try {
+      await get("/api/health");
+      setApiKeyValid(true);
+      return true;
+    } catch {
+      setApiKeyValid(false);
+      return false;
+    } finally {
+      setChecking(false);
     }
   }, []);
 
-  const login = (
-    email: string,
-    role: UserProfile["role"] = "Engenheiro de IA",
-    method: UserProfile["authMethod"] = "password"
-  ) => {
-    const newUser: UserProfile = {
-      id: `usr-${Date.now()}`,
-      name: email.split("@")[0]?.replace(/[._-]/g, " ") || "Usuário Sicoobito",
-      email: email,
-      role: role,
-      avatar: role === "Admin" ? "🛡️" : role === "Auditor" ? "🔍" : role === "Desenvolvedor" ? "💻" : "⚡",
-      token: `scbt_token_${Math.random().toString(36).slice(2)}`,
-      authMethod: method,
-    };
-    setUser(newUser);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(newUser));
-  };
+  useEffect(() => {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    setHasApiKey(!!stored);
+    setMaskedKey(stored ? maskKey(stored) : null);
+    validate();
+  }, [validate]);
 
-  // ✅ FIX: Novo método updateUser para atualizar campos do perfil sem criar novo ID
-  const updateUser = (updated: Partial<UserProfile>) => {
-    setUser((prev) => {
-      if (!prev) return prev;
-      const merged = { ...prev, ...updated };
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
-      return merged;
-    });
-  };
+  const setApiKey = useCallback(
+    async (key: string): Promise<boolean> => {
+      const trimmed = key.trim();
+      if (trimmed) {
+        localStorage.setItem(STORAGE_KEY, trimmed);
+      } else {
+        localStorage.removeItem(STORAGE_KEY);
+      }
+      setHasApiKey(!!trimmed);
+      setMaskedKey(trimmed ? maskKey(trimmed) : null);
+      return validate();
+    },
+    [validate],
+  );
 
-  const logout = () => {
-    setUser(null);
+  const logout = useCallback(() => {
     localStorage.removeItem(STORAGE_KEY);
-  };
+    setHasApiKey(false);
+    setMaskedKey(null);
+    setApiKeyValid(null);
+  }, []);
 
-  // ✅ FIX: Renderiza children normalmente durante hidratação; o estado de user
-  // começa como null e é preenchido no useEffect (comportamento correto no SSR/CSR).
-  // Não retornamos null aqui para evitar que toda a UI desapareça durante mount.
   return (
     <AuthContext.Provider
-      value={{
-        user: mounted ? user : null,
-        isAuthenticated: mounted && !!user,
-        login,
-        logout,
-        updateUser,
-      }}
+      value={{ hasApiKey, apiKeyValid, checking, maskedKey, setApiKey, logout }}
     >
       {children}
     </AuthContext.Provider>

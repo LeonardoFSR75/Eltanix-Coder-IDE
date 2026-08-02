@@ -1,110 +1,125 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
-import { LocalDB, Skill } from "@/lib/db";
+import { useCallback, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import {
+  SkillCategory,
+  SkillRecord,
+  createSkill,
+  deleteSkill,
+  listSkills,
+  toggleSkill,
+  updateSkill,
+} from "@/lib/api/skills";
 import { useToast } from "@/components/Toast";
+
+const EMPTY_PARAMS = '{\n  "param1": "string"\n}';
 
 export default function SkillsPage() {
   const { addToast } = useToast();
-  const [skills, setSkills] = useState<Skill[]>([]);
-  const [selectedSkill, setSelectedSkill] = useState<Skill | null>(null);
+  const router = useRouter();
 
-  // Form & Sandbox state
+  const [skills, setSkills] = useState<SkillRecord[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedSkill, setSelectedSkill] = useState<SkillRecord | null>(null);
+  const [saving, setSaving] = useState(false);
+
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
-  const [category, setCategory] = useState<Skill["category"]>("automation");
+  const [category, setCategory] = useState<SkillCategory>("automation");
   const [systemPrompt, setSystemPrompt] = useState("");
-  const [parametersJson, setParametersJson] = useState("");
-  const [sandboxInput, setSandboxInput] = useState('{\n  "targetCollection": "relatorios_tecnicos"\n}');
-  const [sandboxOutput, setSandboxOutput] = useState("");
-  const [isExecuting, setIsExecuting] = useState(false);
+  const [parametersJson, setParametersJson] = useState(EMPTY_PARAMS);
+
+  const refreshSkills = useCallback(async () => {
+    try {
+      const loaded = await listSkills();
+      setSkills(loaded);
+      return loaded;
+    } catch (err) {
+      addToast(err instanceof Error ? err.message : "Falha ao carregar skills.", "error");
+      return [];
+    } finally {
+      setLoading(false);
+    }
+  }, [addToast]);
 
   useEffect(() => {
-    const loaded = LocalDB.getSkills();
-    setSkills(loaded);
-    if (loaded.length > 0) {
-      selectSkill(loaded[0]);
-    }
+    refreshSkills().then((loaded) => {
+      if (loaded.length > 0) selectSkill(loaded[0]);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const selectSkill = (skill: Skill) => {
+  const selectSkill = (skill: SkillRecord) => {
     setSelectedSkill(skill);
     setName(skill.name);
     setDescription(skill.description);
     setCategory(skill.category);
-    setSystemPrompt(skill.systemPrompt);
-    setParametersJson(skill.parametersJson);
-    setSandboxOutput("");
+    setSystemPrompt(skill.system_prompt);
+    setParametersJson(skill.parameters_json);
   };
 
-  const handleSaveSkill = () => {
+  const startNewSkill = () => {
+    setSelectedSkill(null);
+    setName("");
+    setDescription("");
+    setCategory("automation");
+    setSystemPrompt("");
+    setParametersJson(EMPTY_PARAMS);
+  };
+
+  const handleSaveSkill = async () => {
     if (!name.trim()) return;
-
-    const newSkill: Skill = {
-      id: selectedSkill ? selectedSkill.id : `skill-${Date.now()}`,
-      name,
-      description,
-      category,
-      systemPrompt,
-      parametersJson,
-      enabled: selectedSkill ? selectedSkill.enabled : true,
-      usageCount: selectedSkill ? selectedSkill.usageCount : 0,
-    };
-
-    let updated: Skill[];
-    if (selectedSkill) {
-      updated = skills.map((s) => (s.id === newSkill.id ? newSkill : s));
-    } else {
-      updated = [newSkill, ...skills];
-    }
-
-    setSkills(updated);
-    setSelectedSkill(newSkill);
-    LocalDB.saveSkills(updated);
-    addToast(`Skill "${name}" salva no banco de dados com sucesso!`, "success");
-  };
-
-  const handleToggleSkill = (skill: Skill) => {
-    const updated = skills.map((s) => (s.id === skill.id ? { ...s, enabled: !s.enabled } : s));
-    setSkills(updated);
-    LocalDB.saveSkills(updated);
-    addToast(`Skill ${skill.enabled ? "desativada" : "ativada"}!`, "info");
-  };
-
-  const handleRunSandbox = () => {
-    if (!selectedSkill) return;
-    setIsExecuting(true);
-    setSandboxOutput("⏳ Conectando à Skill e processando parâmetros...");
-
-    setTimeout(() => {
-      setIsExecuting(false);
-      const result = {
-        status: "success",
-        skillExecuted: selectedSkill.name,
-        executionTimeMs: Math.floor(Math.random() * 40 + 15),
-        tokensConsumed: Math.floor(Math.random() * 200 + 80),
-        output: `[SANDBOX SUCCESS] A skill "${selectedSkill.name}" processou a requisição com sucesso.\n\nPrompt Aplicado: ${selectedSkill.systemPrompt}\n\nRetorno da Função: Dados formatados e salvos no banco de dados.`,
-      };
-      setSandboxOutput(JSON.stringify(result, null, 2));
-
-      // Incrementar contagem de uso
-      const updated = skills.map((s) => (s.id === selectedSkill.id ? { ...s, usageCount: s.usageCount + 1 } : s));
-      setSkills(updated);
-      LocalDB.saveSkills(updated);
-
-      // ✅ INTEGRAÇÃO AUDITORIA: Registra execução de Skill no Sandbox
-      LocalDB.addAuditLog({
-        actor: "Agente Executor Sandbox",
-        module: "Skills",
-        action: "Execução de Skill em Sandbox",
-        details: `Skill "${selectedSkill.name}" executada com sucesso. Tokens consumidos: ${result.tokensConsumed}.`,
-        riskLevel: "low",
-        ipAddress: "127.0.0.1",
-        status: "success",
+    setSaving(true);
+    try {
+      const input = { name, description, category, system_prompt: systemPrompt, parameters_json: parametersJson };
+      const saved = selectedSkill
+        ? await updateSkill(selectedSkill.id, input)
+        : await createSkill(input);
+      setSkills((prev) => {
+        const exists = prev.some((s) => s.id === saved.id);
+        return exists ? prev.map((s) => (s.id === saved.id ? saved : s)) : [saved, ...prev];
       });
+      setSelectedSkill(saved);
+      addToast(`Skill "${saved.name}" salva.`, "success");
+    } catch (err) {
+      addToast(err instanceof Error ? err.message : "Falha ao salvar skill.", "error");
+    } finally {
+      setSaving(false);
+    }
+  };
 
-      addToast("Execução da Skill concluída no Sandbox!", "success");
-    }, 800);
+  const handleToggleSkill = async (skill: SkillRecord) => {
+    try {
+      const updated = await toggleSkill(skill.id);
+      setSkills((prev) => prev.map((s) => (s.id === updated.id ? updated : s)));
+      if (selectedSkill?.id === updated.id) setSelectedSkill(updated);
+      addToast(`Skill ${updated.enabled ? "ativada" : "desativada"}.`, "info");
+    } catch (err) {
+      addToast(err instanceof Error ? err.message : "Falha ao alternar skill.", "error");
+    }
+  };
+
+  const handleDeleteSkill = async (skill: SkillRecord) => {
+    try {
+      await deleteSkill(skill.id);
+      const updated = skills.filter((s) => s.id !== skill.id);
+      setSkills(updated);
+      if (selectedSkill?.id === skill.id) {
+        updated.length > 0 ? selectSkill(updated[0]) : startNewSkill();
+      }
+      addToast("Skill removida.", "info");
+    } catch (err) {
+      addToast(err instanceof Error ? err.message : "Falha ao remover skill.", "error");
+    }
+  };
+
+  const testInAgent = () => {
+    if (!systemPrompt.trim()) {
+      addToast("Defina um system prompt antes de testar no agente.", "error");
+      return;
+    }
+    router.push(`/ide?agentPrompt=${encodeURIComponent(systemPrompt)}`);
   };
 
   return (
@@ -113,35 +128,32 @@ export default function SkillsPage() {
         <div>
           <span className="page-badge">⚡ Hub de Capacidades & Agentes</span>
           <h1>Catálogo & Editor de Skills</h1>
-          <p>Defina rotinas agênticas, instrua a IA com prompts de sistema e teste execuções em sandbox.</p>
+          <p>
+            Defina prompts de sistema reusáveis. O agente do IDE já consegue descobrir e
+            aplicar skills habilitadas sozinho, via{" "}
+            <code className="inline-code">list_skills</code>/
+            <code className="inline-code">get_skill</code>.
+          </p>
         </div>
         <div className="header-actions">
-          <button
-            type="button"
-            className="btn-primary glow-button"
-            onClick={() => {
-              setSelectedSkill(null);
-              setName("");
-              setDescription("");
-              setCategory("automation");
-              setSystemPrompt("");
-              setParametersJson("{\n  \"param1\": \"string\"\n}");
-            }}
-          >
+          <button type="button" className="btn-primary glow-button" onClick={startNewSkill}>
             + Criar Nova Skill
           </button>
         </div>
       </div>
 
       <div className="grid grid-3-1">
-        {/* Catálogo de Skills */}
         <div className="panel-box">
           <div className="panel-header">
-            <h3>Skills Instaladas e Ativas</h3>
-            <span className="badge-tag blue">{skills.length} Ativas</span>
+            <h3>Skills Cadastradas</h3>
+            <span className="badge-tag blue">{skills.length}</span>
           </div>
 
           <div className="grid grid-3">
+            {loading && <p className="text-xs text-muted">Carregando…</p>}
+            {!loading && skills.length === 0 && (
+              <p className="text-xs text-muted">Nenhuma skill cadastrada ainda.</p>
+            )}
             {skills.map((s) => (
               <div
                 key={s.id}
@@ -164,7 +176,7 @@ export default function SkillsPage() {
                 <h3>{s.name}</h3>
                 <p>{s.description}</p>
                 <div className="skill-card-footer">
-                  <span>Execuções: {s.usageCount}</span>
+                  <span>Usos: {s.usage_count}</span>
                   <span className="text-link-sm">Editar →</span>
                 </div>
               </div>
@@ -172,7 +184,6 @@ export default function SkillsPage() {
           </div>
         </div>
 
-        {/* Sandbox & Editor de Skill */}
         <div className="panel-box">
           <div className="panel-header">
             <h3>{selectedSkill ? "Editor de Skill" : "Nova Skill"}</h3>
@@ -196,7 +207,7 @@ export default function SkillsPage() {
               <select
                 id="skill-cat-select"
                 value={category}
-                onChange={(e) => setCategory(e.target.value as Skill["category"])}
+                onChange={(e) => setCategory(e.target.value as SkillCategory)}
                 className="input-select"
               >
                 <option value="automation">Automação</option>
@@ -240,52 +251,45 @@ export default function SkillsPage() {
               />
             </div>
 
-            <button type="button" className="btn-primary btn-block" onClick={handleSaveSkill}>
-              💾 Salvar Skill no BD
+            <button
+              type="button"
+              className="btn-primary btn-block"
+              onClick={handleSaveSkill}
+              disabled={saving}
+            >
+              {saving ? "Salvando…" : "💾 Salvar Skill"}
             </button>
+            {selectedSkill && (
+              <button
+                type="button"
+                className="btn-danger-sm btn-block"
+                onClick={() => handleDeleteSkill(selectedSkill)}
+              >
+                🗑️ Excluir Skill
+              </button>
+            )}
           </div>
         </div>
       </div>
 
-      {/* Sandbox de Execução da Skill */}
       <section className="section-block">
         <div className="panel-box">
           <div className="panel-header">
-            <h3>🧪 Sandbox de Teste de Skill</h3>
+            <h3>🤖 Testar no Agente</h3>
             <button
               type="button"
               className="btn-primary glow-button"
-              onClick={handleRunSandbox}
-              disabled={isExecuting || !selectedSkill}
+              onClick={testInAgent}
+              disabled={!systemPrompt.trim()}
             >
-              {isExecuting ? "Executando..." : "▶ Testar Skill em Sandbox"}
+              ▶ Abrir no Agent Panel
             </button>
           </div>
-
-          <div className="grid grid-2">
-            <div>
-              <label htmlFor="sandbox-input-area" className="pane-label">Entrada JSON do Teste</label>
-              <textarea
-                id="sandbox-input-area"
-                value={sandboxInput}
-                onChange={(e) => setSandboxInput(e.target.value)}
-                className="input-textarea font-mono"
-                rows={7}
-              />
-            </div>
-
-            <div>
-              <label htmlFor="sandbox-output-area" className="pane-label">Saída de Execução (Console / Log)</label>
-              <textarea
-                id="sandbox-output-area"
-                value={sandboxOutput}
-                readOnly
-                className="input-textarea font-mono text-green"
-                rows={7}
-                placeholder="Aguardando execução do sandbox..."
-              />
-            </div>
-          </div>
+          <p className="text-xs text-muted">
+            Abre o IDE com o system prompt desta skill pré-preenchido no Agent Panel — a
+            execução acontece de verdade, dentro de uma sessão do agente, não num sandbox
+            simulado.
+          </p>
         </div>
       </section>
     </div>

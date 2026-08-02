@@ -121,6 +121,28 @@ class Settings(BaseSettings):
     browser_url: str = Field(default="", alias="BROWSER_URL")
     browser_token: str = Field(default="", alias="BROWSER_TOKEN")
 
+    # ── Armazenamento de blobs (documentos do RAG) ──────────────────────────
+    # Visto pelo processo da API — dentro do compose é `minio:9000`.
+    minio_endpoint: str = Field(default="localhost:5407", alias="MINIO_ENDPOINT")
+    # Visto pelo browser, para URLs pré-assinadas de upload/download. Vazio cai
+    # para `minio_endpoint` — só diverge quando a API roda em container.
+    minio_public_endpoint: str = Field(default="", alias="MINIO_PUBLIC_ENDPOINT")
+    minio_access_key: str = Field(default="minioadmin", alias="MINIO_ACCESS_KEY")
+    minio_secret_key: str = Field(default="minioadmin", alias="MINIO_SECRET_KEY")
+    minio_secure: bool = Field(default=False, alias="MINIO_SECURE")
+    minio_documents_bucket: str = Field(
+        default="sicoobito-documents", alias="MINIO_DOCUMENTS_BUCKET"
+    )
+
+    @property
+    def effective_minio_public_endpoint(self) -> str:
+        return self.minio_public_endpoint or self.minio_endpoint
+
+    # ── Documentos (RAG) ─────────────────────────────────────────────────────
+    documents_max_upload_mb: int = Field(default=25, alias="DOCUMENTS_MAX_UPLOAD_MB")
+    documents_chunk_tokens: int = Field(default=512, alias="DOCUMENTS_CHUNK_TOKENS")
+    documents_chunk_overlap_tokens: int = Field(default=64, alias="DOCUMENTS_CHUNK_OVERLAP_TOKENS")
+
     # ── Credenciais de provedores ───────────────────────────────────────────
     ollama_base_url: str = Field(default="http://localhost:11434", alias="OLLAMA_BASE_URL")
 

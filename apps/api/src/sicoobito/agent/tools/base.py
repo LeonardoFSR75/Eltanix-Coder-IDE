@@ -44,6 +44,10 @@ class ToolContext:
     base_branch: str = "main"
     branch: str = ""
     browser: Any | None = None  # BrowserClient
+    documents: Any | None = None  # DocumentService
+    notes: Any | None = None  # NoteService
+    skills: Any | None = None  # SkillService
+    audit: Any | None = None  # AuditService
 
 
 @dataclass(slots=True)

@@ -215,9 +215,12 @@ export default function NeuralNetworkPage() {
     <div className="shell">
       <div className="page-header">
         <div>
-          <span className="page-badge">🧠 Módulo de Inteligência Computacional</span>
+          <span className="page-badge">🎨 Demo / Visualização</span>
           <h1>Simulador & Visualizador de Rede Neural</h1>
-          <p>Ajuste topologias, funções de ativação e visualize a dinâmica de aprendizado em tempo real.</p>
+          <p>
+            Ajuste topologias, funções de ativação e visualize a dinâmica de aprendizado em tempo
+            real — simulação client-side, sem treino real nem conexão com o backend.
+          </p>
         </div>
         <div className="header-actions">
           <button

@@ -53,7 +53,7 @@ const PRESET_CARDS = [
   },
 ];
 
-import { LocalDB } from "@/lib/db";
+import { logAuditEvent } from "@/lib/api/audit";
 
 /* ── Bloco de Código Renderizado ────────────────────────────────── */
 
@@ -72,14 +72,16 @@ function CodeBlock({ code, language }: { code: string; language: string }) {
   const insertIntoEditor = () => {
     insertCode(code);
 
-    LocalDB.addAuditLog({
+    logAuditEvent({
       actor: "Agente IA da IDE",
       module: "IDE",
       action: "Inserção de Código Sugerido",
       details: `Inserido bloco de código (${language || "text"}, ${code.length} caracteres) no editor ativo.`,
-      riskLevel: "low",
-      ipAddress: "127.0.0.1",
+      risk_level: "low",
       status: "success",
+    }).catch(() => {
+      // Auditoria é best-effort do ponto de vista da UI: uma falha aqui não
+      // deve impedir o usuário de já ter o código inserido no editor.
     });
 
     toast("Código inserido no editor!", "success");
