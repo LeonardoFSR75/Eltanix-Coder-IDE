@@ -2,25 +2,26 @@
 
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
-import { LocalDB, MCPServer, AuditLog, NeuralModel } from "@/lib/db";
+import { LocalDB, MCPServer, NeuralModel } from "@/lib/db";
 import { DocumentSummary, listDocuments } from "@/lib/api/documents";
 import { NoteRecord, listNotes } from "@/lib/api/notes";
 import { SkillRecord, listSkills } from "@/lib/api/skills";
+import { AuditEntry, listAudit } from "@/lib/api/audit";
 
 export default function HomePage() {
   const [notes, setNotes] = useState<NoteRecord[]>([]);
   const [documents, setDocuments] = useState<DocumentSummary[]>([]);
   const [skills, setSkills] = useState<SkillRecord[]>([]);
   const [mcpServers, setMcpServers] = useState<MCPServer[]>([]);
-  const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
+  const [auditLogs, setAuditLogs] = useState<AuditEntry[]>([]);
   const [neuralModels, setNeuralModels] = useState<NeuralModel[]>([]);
 
   useEffect(() => {
     listNotes().then(setNotes).catch(() => setNotes([]));
     listDocuments().then(setDocuments).catch(() => setDocuments([]));
     listSkills().then(setSkills).catch(() => setSkills([]));
+    listAudit().then(setAuditLogs).catch(() => setAuditLogs([]));
     setMcpServers(LocalDB.getMCP());
-    setAuditLogs(LocalDB.getAudit());
     setNeuralModels(LocalDB.getNeuralModels());
   }, []);
 
@@ -272,13 +273,17 @@ export default function HomePage() {
             <Link href="/audit" className="text-link-sm">Ver todos →</Link>
           </div>
           <div className="activity-feed">
+            {auditLogs.length === 0 && (
+              <p className="text-xs text-muted">Nenhuma atividade registrada ainda.</p>
+            )}
             {auditLogs.slice(0, 4).map((log) => (
               <div key={log.id} className="feed-item">
-                <span className={`risk-dot ${log.riskLevel}`} />
+                <span className={`risk-dot ${log.risk_level}`} />
                 <div className="feed-details">
                   <div className="feed-title">{log.action}</div>
                   <div className="feed-meta">
-                    {log.actor} · {log.module} · {new Date(log.timestamp).toLocaleTimeString("pt-BR")}
+                    {log.actor} · {log.module} ·{" "}
+                    {new Date(log.created_at).toLocaleTimeString("pt-BR")}
                   </div>
                 </div>
               </div>

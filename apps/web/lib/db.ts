@@ -46,26 +46,11 @@ export interface NeuralModel {
   savedAt: string;
 }
 
-// Interface para Configurações Globais
-export interface SystemSettings {
-  chromaHost: string;
-  chromaPort: number;
-  dbType: "postgresql" | "sqlite" | "local_storage";
-  dbConnectionString: string;
-  defaultEmbeddingModel: string;
-  ragChunkSize: number;
-  ragChunkOverlap: number;
-  theme: "dark" | "light";
-  auditLoggingEnabled: boolean;
-  maxTokensPerRequest: number;
-}
-
 // Chaves do localStorage
 const KEYS = {
   MCP: "sicoobito_db_mcp",
   AUDIT: "sicoobito_db_audit",
   NEURAL: "sicoobito_db_neural",
-  SETTINGS: "sicoobito_db_settings",
 };
 
 // Dados padrão iniciais
@@ -173,19 +158,6 @@ const DEFAULT_NEURAL: NeuralModel[] = [
   },
 ];
 
-const DEFAULT_SETTINGS: SystemSettings = {
-  chromaHost: "http://127.0.0.1",
-  chromaPort: 8000,
-  dbType: "postgresql",
-  dbConnectionString: "postgresql://sicoobito:sicoobito@127.0.0.1:5403/sicoobito",
-  defaultEmbeddingModel: "text-embedding-3-small (1536d)",
-  ragChunkSize: 512,
-  ragChunkOverlap: 64,
-  theme: "dark",
-  auditLoggingEnabled: true,
-  maxTokensPerRequest: 8192,
-};
-
 // Funções de acesso (Getter / Setter com fallback para dados padrão)
 export const LocalDB = {
   getMCP(): MCPServer[] {
@@ -229,17 +201,6 @@ export const LocalDB = {
   saveNeuralModels(models: NeuralModel[]): void {
     if (typeof window !== "undefined") {
       localStorage.setItem(KEYS.NEURAL, JSON.stringify(models));
-    }
-  },
-
-  getSettings(): SystemSettings {
-    if (typeof window === "undefined") return DEFAULT_SETTINGS;
-    const item = localStorage.getItem(KEYS.SETTINGS);
-    return item ? JSON.parse(item) : DEFAULT_SETTINGS;
-  },
-  saveSettings(settings: SystemSettings): void {
-    if (typeof window !== "undefined") {
-      localStorage.setItem(KEYS.SETTINGS, JSON.stringify(settings));
     }
   },
 };
