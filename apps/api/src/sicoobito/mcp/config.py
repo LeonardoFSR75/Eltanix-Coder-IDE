@@ -67,3 +67,34 @@ def load_mcp_servers(path: Path) -> list[MCPServerConfig]:
         raw = yaml.safe_load(fh) or {}
     entries = raw.get("servers") or []
     return [MCPServerConfig(**_expand_env(entry)) for entry in entries]
+
+
+class MCPCatalogTemplate(BaseModel):
+    """Um servidor MCP conhecido, oferecido como atalho de cadastro na UI.
+
+    Estático — nunca guarda valor sensível, só os *nomes* de variável/
+    placeholder que a UI precisa pedir ao usuário (`required_env`,
+    `required_args` casando com `{chave}` dentro de `args`)."""
+
+    id: str
+    label: str
+    description: str = ""
+    transport: Literal["stdio", "http"]
+    command: str | None = None
+    args: list[str] = Field(default_factory=list)
+    url: str | None = None
+    required_env: list[str] = Field(default_factory=list)
+    required_args: list[str] = Field(default_factory=list)
+    note: str = ""
+
+
+def load_catalog(path: Path) -> list[MCPCatalogTemplate]:
+    """Não passa por `_expand_env`: é catálogo de referência, não config com
+    segredo — os valores reais só entram quando o usuário cadastra o servidor
+    de verdade em `mcp.yaml`."""
+    if not path.exists():
+        return []
+    with path.open("r", encoding="utf-8") as fh:
+        raw = yaml.safe_load(fh) or {}
+    entries = raw.get("templates") or []
+    return [MCPCatalogTemplate(**entry) for entry in entries]

@@ -12,6 +12,7 @@ import asyncio
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 from sicoobito.config import Settings
 from sicoobito.context import store
@@ -48,9 +49,12 @@ class IndexReport:
 
 
 class ContextIndexer:
-    def __init__(self, *, settings: Settings, engine: RouterEngine) -> None:
+    def __init__(
+        self, *, settings: Settings, engine: RouterEngine, trace_recorder: Any | None = None
+    ) -> None:
         self.settings = settings
         self.engine = engine
+        self.trace_recorder = trace_recorder
 
     def workspace_key(self, root: Path) -> str:
         """Chave estável do workspace no banco.
@@ -198,6 +202,7 @@ class ContextIndexer:
         path_prefix: str | None = None,
     ) -> list[store.SearchHit]:
         workspace = self.workspace_key(root)
+        inicio = time.perf_counter()
 
         query_embedding: list[float] | None = None
         try:
@@ -212,15 +217,28 @@ class ContextIndexer:
         except Exception as exc:
             log.warning("indexer.query_embed.failed", error=str(exc)[:200])
 
-        async with session_scope() as session:
-            return await store.hybrid_search(
-                session,
-                workspace=workspace,
-                query_text=query,
-                query_embedding=query_embedding,
-                limit=limit,
-                path_prefix=path_prefix,
-            )
+        status = "ok"
+        try:
+            async with session_scope() as session:
+                return await store.hybrid_search(
+                    session,
+                    workspace=workspace,
+                    query_text=query,
+                    query_embedding=query_embedding,
+                    limit=limit,
+                    path_prefix=path_prefix,
+                )
+        except Exception:
+            status = "error"
+            raise
+        finally:
+            if self.trace_recorder is not None:
+                self.trace_recorder.record(
+                    kind="rag",
+                    name="context",
+                    latency_ms=(time.perf_counter() - inicio) * 1000.0,
+                    status=status,
+                )
 
     async def stats(self, root: Path) -> dict[str, object]:
         async with session_scope() as session:

@@ -19,6 +19,7 @@ até alguém perceber.
 from __future__ import annotations
 
 import json
+import time
 from typing import Any
 
 from langgraph.graph import END, StateGraph
@@ -201,12 +202,31 @@ def build_graph(engine: RouterEngine, context: ToolContext):
                 continue
 
             argumentos = _parse_arguments(chamada)
+            inicio = time.perf_counter()
             try:
                 resultado = await ferramenta.handler(context, argumentos)
             except Exception as exc:
                 log.warning("agent.tool.failed", tool=nome, error=str(exc)[:200])
+                if context.trace_recorder is not None:
+                    context.trace_recorder.record(
+                        kind="tool",
+                        name=nome,
+                        latency_ms=(time.perf_counter() - inicio) * 1000.0,
+                        status="error",
+                        session_id=state.get("session_id", ""),
+                        error=str(exc),
+                    )
                 respostas.append(_tool_message(call_id, nome, f"ERRO: {exc}", ok=False))
                 continue
+
+            if context.trace_recorder is not None:
+                context.trace_recorder.record(
+                    kind="tool",
+                    name=nome,
+                    latency_ms=(time.perf_counter() - inicio) * 1000.0,
+                    status="ok" if resultado.ok else "error",
+                    session_id=state.get("session_id", ""),
+                )
 
             respostas.append(
                 _tool_message(call_id, nome, resultado.content, ok=resultado.ok, data=resultado.data)

@@ -36,9 +36,27 @@ export interface MCPServerInput {
   trust_annotations: boolean;
 }
 
+export interface MCPCatalogTemplate {
+  id: string;
+  label: string;
+  description: string;
+  transport: MCPTransport;
+  command: string | null;
+  args: string[];
+  url: string | null;
+  required_env: string[];
+  required_args: string[];
+  note: string;
+}
+
 export async function listMcpServers(): Promise<MCPServerRecord[]> {
   const { servers } = await get<{ servers: MCPServerRecord[] }>("/api/mcp/servers");
   return servers;
+}
+
+export async function listMcpCatalog(): Promise<MCPCatalogTemplate[]> {
+  const { templates } = await get<{ templates: MCPCatalogTemplate[] }>("/api/mcp/catalog");
+  return templates;
 }
 
 export async function createMcpServer(input: MCPServerInput): Promise<MCPServerRecord[]> {

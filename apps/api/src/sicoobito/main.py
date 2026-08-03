@@ -26,6 +26,7 @@ from sicoobito.api.routes import (
     notes_router,
     projects_router,
     skills_router,
+    telemetry_router,
     workspace_router,
     workspace_ws_router,
 )
@@ -50,6 +51,7 @@ from sicoobito.sandbox.container import SandboxConfig, SandboxManager
 from sicoobito.sandbox.executor import ExecutorConfig, ExecutorSandboxManager
 from sicoobito.skills.service import SkillService
 from sicoobito.storage.blob import BlobStore
+from sicoobito.telemetry.tracer import TraceRecorder
 
 log = get_logger(__name__)
 
@@ -100,7 +102,11 @@ async def lifespan(app: FastAPI):
     )
     engine.build()
 
-    indexer = ContextIndexer(settings=settings, engine=engine)
+    # Efêmero de propósito — buffer em memória de spans de tools/RAG, não
+    # precisa sobreviver a restart (ver docstring de TraceRecorder).
+    trace_recorder = TraceRecorder()
+
+    indexer = ContextIndexer(settings=settings, engine=engine, trace_recorder=trace_recorder)
 
     blob = BlobStore(settings)
     try:
@@ -111,8 +117,10 @@ async def lifespan(app: FastAPI):
         log.warning(
             "blob.unavailable", error=str(exc)[:200], impact="upload de documentos indisponível"
         )
-    documents = DocumentService(settings=settings, engine=engine, blob=blob)
-    notes = NoteService(settings=settings, engine=engine)
+    documents = DocumentService(
+        settings=settings, engine=engine, blob=blob, trace_recorder=trace_recorder
+    )
+    notes = NoteService(settings=settings, engine=engine, trace_recorder=trace_recorder)
     skills = SkillService()
     audit = AuditService()
 
@@ -164,6 +172,7 @@ async def lifespan(app: FastAPI):
     app.state.skills = skills
     app.state.audit = audit
     app.state.mcp_manager = mcp_manager
+    app.state.trace_recorder = trace_recorder
     app.state.agent_runner = AgentRunner(
         settings=settings,
         engine=engine,
@@ -174,6 +183,7 @@ async def lifespan(app: FastAPI):
         notes=notes,
         skills=skills,
         audit=audit,
+        trace_recorder=trace_recorder,
     )
     # O desligamento ordenado abaixo cobre o caso normal; este laço cobre o
     # anormal (kill -9, queda), varrendo containers de execuções anteriores que
@@ -233,6 +243,7 @@ def create_app() -> FastAPI:
     app.include_router(skills_router)
     app.include_router(audit_router)
     app.include_router(mcp_router)
+    app.include_router(telemetry_router)
     app.include_router(agent_router)
     app.include_router(workspace_router)
     app.include_router(workspace_ws_router)

@@ -8,7 +8,9 @@ from __future__ import annotations
 
 import asyncio
 import io
+import time
 import uuid
+from typing import Any
 
 from pypdf import PdfReader
 
@@ -31,10 +33,18 @@ def _extract_pages(data: bytes) -> list[str]:
 
 
 class DocumentService:
-    def __init__(self, *, settings: Settings, engine: RouterEngine, blob: BlobStore) -> None:
+    def __init__(
+        self,
+        *,
+        settings: Settings,
+        engine: RouterEngine,
+        blob: BlobStore,
+        trace_recorder: Any | None = None,
+    ) -> None:
         self.settings = settings
         self.engine = engine
         self.blob = blob
+        self.trace_recorder = trace_recorder
 
     async def _embed(self, chunks: list[TextChunk]) -> tuple[list[list[float] | None], int]:
         """Espelha `ContextIndexer._embed`: falha degrada para chunk sem vetor,
@@ -145,6 +155,7 @@ class DocumentService:
         )
 
     async def search(self, query: str, *, limit: int = 8) -> list[DocumentSearchHit]:
+        inicio = time.perf_counter()
         query_embedding: list[float] | None = None
         try:
             result = await self.engine.embed(
@@ -158,7 +169,20 @@ class DocumentService:
         except Exception as exc:
             log.warning("documents.search.embed_failed", error=str(exc)[:200])
 
-        async with session_scope() as session:
-            return await store.hybrid_search(
-                session, query_text=query, query_embedding=query_embedding, limit=limit
-            )
+        status = "ok"
+        try:
+            async with session_scope() as session:
+                return await store.hybrid_search(
+                    session, query_text=query, query_embedding=query_embedding, limit=limit
+                )
+        except Exception:
+            status = "error"
+            raise
+        finally:
+            if self.trace_recorder is not None:
+                self.trace_recorder.record(
+                    kind="rag",
+                    name="documents",
+                    latency_ms=(time.perf_counter() - inicio) * 1000.0,
+                    status=status,
+                )

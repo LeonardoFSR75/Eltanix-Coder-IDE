@@ -1,0 +1,51 @@
+# Catálogo de servidores MCP conhecidos — usado só para pré-preencher o
+# formulário de cadastro em /mcp (ver `mcp/config.py::load_catalog`).
+#
+# Estático e não editado pela UI (ao contrário de `mcp.yaml`, que guarda os
+# servidores de fato cadastrados). Só nomes de variáveis/placeholders aqui —
+# nenhum valor sensível (token, connection string) fica neste arquivo.
+#
+# `required_env`: nomes de variável de ambiente que a UI deve pedir e enviar
+# em `env` no cadastro. `required_args`: placeholders `{nome}` dentro de
+# `args` que a UI deve substituir pelo valor informado.
+
+templates:
+  - id: github
+    label: GitHub
+    description: Lê e escreve issues, PRs e arquivos de repositórios via API do GitHub.
+    transport: stdio
+    command: npx
+    args: ["-y", "@modelcontextprotocol/server-github"]
+    required_env: ["GITHUB_PERSONAL_ACCESS_TOKEN"]
+    required_args: []
+    note: Requer Node.js disponível no ambiente que roda a API.
+
+  - id: filesystem
+    label: Sistema de arquivos local
+    description: Lê e escreve arquivos dentro de uma pasta específica do host.
+    transport: stdio
+    command: npx
+    args: ["-y", "@modelcontextprotocol/server-filesystem", "{path}"]
+    required_env: []
+    required_args: ["path"]
+    note: Requer Node.js disponível no ambiente que roda a API.
+
+  - id: postgres
+    label: PostgreSQL
+    description: Consulta um banco Postgres (somente leitura por padrão do servidor).
+    transport: stdio
+    command: npx
+    args: ["-y", "@modelcontextprotocol/server-postgres", "{connection_string}"]
+    required_env: []
+    required_args: ["connection_string"]
+    note: Requer Node.js disponível no ambiente que roda a API.
+
+  - id: slack
+    label: Slack
+    description: Lê e envia mensagens em canais do Slack.
+    transport: stdio
+    command: npx
+    args: ["-y", "@modelcontextprotocol/server-slack"]
+    required_env: ["SLACK_BOT_TOKEN", "SLACK_TEAM_ID"]
+    required_args: []
+    note: Requer Node.js disponível no ambiente que roda a API.

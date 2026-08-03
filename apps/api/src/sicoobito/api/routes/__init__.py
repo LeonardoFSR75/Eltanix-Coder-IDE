@@ -10,6 +10,7 @@ from sicoobito.api.routes.mcp import router as mcp_router
 from sicoobito.api.routes.metrics import router as metrics_router
 from sicoobito.api.routes.notes import router as notes_router
 from sicoobito.api.routes.skills import router as skills_router
+from sicoobito.api.routes.telemetry import router as telemetry_router
 from sicoobito.api.routes.workspace import projects_router
 from sicoobito.api.routes.workspace import router as workspace_router
 from sicoobito.api.routes.workspace import ws_router as workspace_ws_router
@@ -28,6 +29,7 @@ __all__ = [
     "notes_router",
     "projects_router",
     "skills_router",
+    "telemetry_router",
     "workspace_router",
     "workspace_ws_router",
 ]

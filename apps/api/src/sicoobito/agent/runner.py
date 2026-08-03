@@ -69,6 +69,7 @@ class AgentRunner:
         notes: Any | None = None,  # NoteService
         skills: Any | None = None,  # SkillService
         audit: Any | None = None,  # AuditService
+        trace_recorder: Any | None = None,  # TraceRecorder
     ) -> None:
         self.settings = settings
         self.engine = engine
@@ -79,6 +80,7 @@ class AgentRunner:
         self.notes = notes
         self.skills = skills
         self.audit = audit
+        self.trace_recorder = trace_recorder
         self._browser_http: httpx.AsyncClient | None = None
         self._sessions: dict[str, AgentSession] = {}
         self._checkpointer: Any | None = None
@@ -197,6 +199,7 @@ class AgentRunner:
             notes=self.notes,
             skills=self.skills,
             audit=self.audit,
+            trace_recorder=self.trace_recorder,
         )
 
         sessao = AgentSession(

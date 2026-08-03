@@ -200,6 +200,10 @@ class Settings(BaseSettings):
     def mcp_config_file(self) -> Path:
         return self.config_dir / "mcp.yaml"
 
+    @property
+    def mcp_catalog_file(self) -> Path:
+        return self.config_dir / "mcp_catalog.yaml"
+
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:

@@ -1,42 +1,70 @@
-"""Módulo de Telemetria e Tracing para o SicoobitoCode.
+"""Registro em memória de spans de execução: ferramentas do agente e buscas RAG.
 
-Fornece rastreamento estruturado de spankeys de execução, medição de latência p95
-e observabilidade de roteamento de LLMs.
+Efêmero por design — não sobrevive a um restart, e não precisa: chamadas de
+LLM já têm registro durável em `router/telemetry.py::TelemetryEntry`
+(Postgres, por request) e `router/health.py::HealthTracker` (p50/p95 por
+modelo, Redis). Este buffer cobre o que não tinha nenhum registro: quanto
+tempo uma ferramenta do agente ou uma busca RAG levou, e se deu certo.
 """
 
 from __future__ import annotations
 
 import time
+from collections import deque
+from dataclasses import dataclass
+from typing import Literal
+
 import structlog
-from typing import Any, Callable
 
 log = structlog.get_logger(__name__)
 
+TraceKind = Literal["tool", "rag"]
+TraceStatus = Literal["ok", "error"]
 
-class TelemetryTracer:
-    """Tracer estruturado de operações e chamadas a modelos."""
 
-    @staticmethod
-    def trace_span(op_name: str, **attributes: Any) -> Callable:
-        def decorator(func: Callable) -> Callable:
-            async def wrapper(*args: Any, **kwargs: Any) -> Any:
-                start_time = time.perf_counter()
-                status = "ok"
-                try:
-                    res = await func(*args, **kwargs)
-                    return res
-                except Exception as exc:
-                    status = "error"
-                    log.error("telemetry.span.error", op=op_name, error=str(exc), **attributes)
-                    raise
-                finally:
-                    latency_ms = (time.perf_counter() - start_time) * 1000.0
-                    log.info(
-                        "telemetry.span.complete",
-                        op=op_name,
-                        latency_ms=round(latency_ms, 2),
-                        status=status,
-                        **attributes,
-                    )
-            return wrapper
-        return decorator
+@dataclass(slots=True)
+class TraceEntry:
+    ts: float
+    kind: TraceKind
+    name: str
+    latency_ms: float
+    status: TraceStatus
+    session_id: str = ""
+    error: str | None = None
+
+
+class TraceRecorder:
+    """Buffer circular das últimas execuções — visibilidade operacional, não
+    auditoria (para isso existe `audit/`) nem contabilidade de custo (para
+    isso existe `router/telemetry.py`)."""
+
+    def __init__(self, maxlen: int = 500) -> None:
+        self._entries: deque[TraceEntry] = deque(maxlen=maxlen)
+
+    def record(
+        self,
+        *,
+        kind: TraceKind,
+        name: str,
+        latency_ms: float,
+        status: TraceStatus,
+        session_id: str = "",
+        error: str | None = None,
+    ) -> None:
+        entry = TraceEntry(
+            ts=time.time(),
+            kind=kind,
+            name=name,
+            latency_ms=round(latency_ms, 2),
+            status=status,
+            session_id=session_id,
+            error=error[:300] if error else None,
+        )
+        self._entries.append(entry)
+        log.info(
+            "telemetry.span", kind=kind, name=name, latency_ms=entry.latency_ms, status=status
+        )
+
+    def recent(self, limit: int = 100) -> list[TraceEntry]:
+        """Mais recente primeiro."""
+        return list(self._entries)[::-1][:limit]

@@ -1,0 +1,33 @@
+# Casos de avaliação de qualidade do RAG — usado por `sicoobito-eval-rag`
+# (`sicoobito/evals/runner.py`). Cada caso testa se a busca híbrida (RRF)
+# traz um resultado relevante nos primeiros `limit` hits.
+#
+# `expected_keywords`: substring (case-insensitive) procurada no conteúdo dos
+# hits — mais fácil de escrever à mão. `expected_ids`: id exato do chunk
+# (mais preciso, quando você já sabe qual é). Um caso precisa de pelo menos
+# um dos dois.
+#
+# `source: context` exige `root` (caminho absoluto do workspace já indexado
+# via `POST /api/context/index` ou pela IDE) — os exemplos abaixo apontam
+# para o próprio backend do SicoobitoCode, ajuste para o seu ambiente.
+
+cases:
+  - source: context
+    query: "onde fica o registro de ferramentas do agente"
+    expected_keywords: ["ToolRegistry"]
+    root: "C:/Users/leona/Documents/Projetos/SicoobitoCode/apps/api/src/sicoobito"
+
+  - source: context
+    query: "como funciona o Reciprocal Rank Fusion na busca híbrida"
+    expected_keywords: ["RRF", "rank"]
+    root: "C:/Users/leona/Documents/Projetos/SicoobitoCode/apps/api/src/sicoobito"
+
+  # Exemplos de documents/notes — precisam de um PDF/nota real já indexado no
+  # ambiente para fazer sentido; ajuste a query e o expected_keywords para
+  # algo que você sabe que está no seu banco antes de rodar.
+  # - source: documents
+  #   query: "política de reembolso"
+  #   expected_keywords: ["reembolso"]
+  # - source: notes
+  #   query: "ideia sobre onboarding"
+  #   expected_keywords: ["onboarding"]

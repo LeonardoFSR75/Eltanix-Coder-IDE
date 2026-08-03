@@ -3,10 +3,12 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
+  MCPCatalogTemplate,
   MCPServerRecord,
   MCPTransport,
   createMcpServer,
   deleteMcpServer,
+  listMcpCatalog,
   listMcpServers,
   toggleMcpServer,
 } from "@/lib/api/mcp";
@@ -24,6 +26,7 @@ export default function MCPPage() {
   const router = useRouter();
 
   const [servers, setServers] = useState<MCPServerRecord[]>([]);
+  const [catalog, setCatalog] = useState<MCPCatalogTemplate[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedServer, setSelectedServer] = useState<MCPServerRecord | null>(null);
   const [creating, setCreating] = useState(false);
@@ -35,10 +38,15 @@ export default function MCPPage() {
   const [url, setUrl] = useState("");
   const [trustAnnotations, setTrustAnnotations] = useState(false);
 
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
+  const [envValues, setEnvValues] = useState<Record<string, string>>({});
+  const [argValues, setArgValues] = useState<Record<string, string>>({});
+
   const refresh = useCallback(async () => {
     try {
-      const loaded = await listMcpServers();
+      const [loaded, templates] = await Promise.all([listMcpServers(), listMcpCatalog()]);
       setServers(loaded);
+      setCatalog(templates);
       if (loaded.length > 0 && !selectedServer) {
         setSelectedServer(loaded[0]);
       }
@@ -54,6 +62,24 @@ export default function MCPPage() {
     refresh();
   }, [refresh]);
 
+  const applyTemplate = (template: MCPCatalogTemplate) => {
+    setSelectedTemplateId(template.id);
+    setTransport(template.transport);
+    setCommand(template.command ?? "");
+    setArgs(template.args.join(" "));
+    setUrl(template.url ?? "");
+    setEnvValues(Object.fromEntries(template.required_env.map((k) => [k, ""])));
+    setArgValues(Object.fromEntries(template.required_args.map((k) => [k, ""])));
+  };
+
+  const clearTemplate = () => {
+    setSelectedTemplateId(null);
+    setEnvValues({});
+    setArgValues({});
+  };
+
+  const selectedTemplate = catalog.find((t) => t.id === selectedTemplateId) ?? null;
+
   const handleAddServer = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) return;
@@ -65,6 +91,30 @@ export default function MCPPage() {
       addToast("Informe a URL para transporte HTTP.", "error");
       return;
     }
+    if (selectedTemplate) {
+      const missing = [
+        ...selectedTemplate.required_env.filter((k) => !envValues[k]?.trim()),
+        ...selectedTemplate.required_args.filter((k) => !argValues[k]?.trim()),
+      ];
+      if (missing.length > 0) {
+        addToast(`Preencha os campos do template: ${missing.join(", ")}.`, "error");
+        return;
+      }
+    }
+
+    // Placeholders `{nome}` nos args do template (ex.: `{path}`) são
+    // substituídos aqui pelo valor que o usuário informou nos campos extras.
+    let finalArgs = args.split(" ").filter(Boolean);
+    if (selectedTemplate) {
+      finalArgs = finalArgs.map((token) => {
+        let out = token;
+        for (const [key, value] of Object.entries(argValues)) {
+          out = out.replace(`{${key}}`, value.trim());
+        }
+        return out;
+      });
+    }
+    const finalEnv = selectedTemplate ? envValues : {};
 
     setCreating(true);
     try {
@@ -72,7 +122,8 @@ export default function MCPPage() {
         name: name.trim(),
         transport,
         command: transport === "stdio" ? command.trim() : undefined,
-        args: transport === "stdio" ? args.split(" ").filter(Boolean) : undefined,
+        args: transport === "stdio" ? finalArgs : undefined,
+        env: Object.keys(finalEnv).length > 0 ? finalEnv : undefined,
         url: transport === "http" ? url.trim() : undefined,
         enabled: true,
         trust_annotations: trustAnnotations,
@@ -85,6 +136,7 @@ export default function MCPPage() {
       setArgs("");
       setUrl("");
       setTrustAnnotations(false);
+      clearTemplate();
       addToast(`Servidor MCP "${name}" conectado.`, "success");
     } catch (err) {
       addToast(err instanceof Error ? err.message : "Falha ao criar servidor MCP.", "error");
@@ -209,6 +261,39 @@ export default function MCPPage() {
         ))}
       </div>
 
+      {catalog.length > 0 && (
+        <div className="panel-box mb-6">
+          <div className="panel-header">
+            <h3>📦 Catálogo de conectores conhecidos</h3>
+          </div>
+          <p className="text-xs text-muted mb-2">
+            Escolha um servidor conhecido para pré-preencher o formulário abaixo — só falta dar um
+            nome e informar o que o template pedir (token, caminho, etc).
+          </p>
+          <div className="grid grid-3">
+            {catalog.map((t) => (
+              <div
+                key={t.id}
+                className={`mcp-server-card ${selectedTemplateId === t.id ? "active" : ""}`}
+                onClick={() => applyTemplate(t)}
+              >
+                <div className="mcp-card-header">
+                  <h3>{t.label}</h3>
+                  <span className="mcp-type-badge">{t.transport.toUpperCase()}</span>
+                </div>
+                <p className="text-xs text-muted">{t.description}</p>
+                {t.note && <p className="text-xs text-muted">⚠️ {t.note}</p>}
+              </div>
+            ))}
+          </div>
+          {selectedTemplateId && (
+            <button type="button" className="btn-secondary-sm mt-2" onClick={clearTemplate}>
+              Limpar template selecionado
+            </button>
+          )}
+        </div>
+      )}
+
       <div className="grid grid-2">
         <div className="panel-box">
           <div className="panel-header">
@@ -216,6 +301,36 @@ export default function MCPPage() {
           </div>
 
           <form onSubmit={handleAddServer} className="config-form">
+            {selectedTemplate && (
+              <>
+                {selectedTemplate.required_env.map((key) => (
+                  <div className="form-group" key={key}>
+                    <label htmlFor={`mcp-env-${key}`}>{key}</label>
+                    <input
+                      id={`mcp-env-${key}`}
+                      type="text"
+                      className="input-text font-mono"
+                      value={envValues[key] ?? ""}
+                      onChange={(e) => setEnvValues((v) => ({ ...v, [key]: e.target.value }))}
+                      placeholder={key}
+                    />
+                  </div>
+                ))}
+                {selectedTemplate.required_args.map((key) => (
+                  <div className="form-group" key={key}>
+                    <label htmlFor={`mcp-arg-${key}`}>{key}</label>
+                    <input
+                      id={`mcp-arg-${key}`}
+                      type="text"
+                      className="input-text font-mono"
+                      value={argValues[key] ?? ""}
+                      onChange={(e) => setArgValues((v) => ({ ...v, [key]: e.target.value }))}
+                      placeholder={key}
+                    />
+                  </div>
+                ))}
+              </>
+            )}
             <div className="form-group">
               <label htmlFor="mcp-name">Nome do Servidor</label>
               <input

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { get, post } from "@/lib/client";
 import { useToast } from "@/components/Toast";
+import { TraceEntry, listRecentTraces } from "@/lib/api/telemetry";
 
 interface HealthView {
   status: string;
@@ -42,20 +43,23 @@ export default function SettingsPage() {
   const [health, setHealth] = useState<HealthView | null>(null);
   const [metrics, setMetrics] = useState<MetricsSummary | null>(null);
   const [providersHealth, setProvidersHealth] = useState<ProvidersHealthResponse | null>(null);
+  const [traces, setTraces] = useState<TraceEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [clearingCache, setClearingCache] = useState(false);
   const [resettingModel, setResettingModel] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     try {
-      const [h, m, p] = await Promise.all([
+      const [h, m, p, t] = await Promise.all([
         get<HealthView>("/api/health"),
         get<MetricsSummary>("/api/metrics/summary"),
         get<ProvidersHealthResponse>("/api/health/providers"),
+        listRecentTraces(30),
       ]);
       setHealth(h);
       setMetrics(m);
       setProvidersHealth(p);
+      setTraces(t);
     } catch (err) {
       addToast(
         err instanceof Error ? err.message : "Falha ao carregar status do backend.",
@@ -212,6 +216,58 @@ export default function SettingsPage() {
               </div>
             ))}
           </div>
+        </div>
+      </section>
+
+      <section className="section-block mb-6">
+        <div className="panel-box">
+          <div className="panel-header">
+            <h3>📈 Spans Recentes (Ferramentas & RAG)</h3>
+            <span className="badge-tag blue">{traces.length} recentes</span>
+          </div>
+
+          {loading && <p className="text-xs text-muted">Carregando…</p>}
+          {!loading && traces.length === 0 && (
+            <p className="text-xs text-muted">
+              Nenhum span registrado ainda — rode uma sessão do agente ou uma busca em RAG/Segundo
+              Cérebro.
+            </p>
+          )}
+
+          {traces.length > 0 && (
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Tipo</th>
+                    <th>Nome</th>
+                    <th className="num">Latência</th>
+                    <th>Status</th>
+                    <th>Quando</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {traces.map((t, i) => (
+                    <tr key={`${t.ts}-${i}`}>
+                      <td>{t.kind === "tool" ? "🛠️ Tool" : "📚 RAG"}</td>
+                      <td>
+                        <code>{t.name}</code>
+                      </td>
+                      <td className="num">{t.latency_ms.toFixed(0)} ms</td>
+                      <td>
+                        <span className={`badge-tag ${t.status === "ok" ? "green" : "red"}`}>
+                          {t.status === "ok" ? "OK" : "Erro"}
+                        </span>
+                      </td>
+                      <td className="text-xs text-muted">
+                        {new Date(t.ts * 1000).toLocaleTimeString("pt-BR")}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       </section>
     </div>

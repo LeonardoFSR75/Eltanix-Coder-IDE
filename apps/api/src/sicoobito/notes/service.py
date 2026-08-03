@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import time
 import uuid
 from typing import Any
 
@@ -24,9 +25,12 @@ _WIKILINK_RE = re.compile(r"\[\[(.*?)\]\]")
 
 
 class NoteService:
-    def __init__(self, *, settings: Settings, engine: RouterEngine) -> None:
+    def __init__(
+        self, *, settings: Settings, engine: RouterEngine, trace_recorder: Any | None = None
+    ) -> None:
         self.settings = settings
         self.engine = engine
+        self.trace_recorder = trace_recorder
 
     async def _resolve_links(self, session: Any, content: str) -> list[str]:
         titles = _WIKILINK_RE.findall(content)
@@ -122,6 +126,7 @@ class NoteService:
             return await store.get_note(session, note_id)
 
     async def search(self, query: str, *, limit: int = 8) -> list[NoteSearchHit]:
+        inicio = time.perf_counter()
         query_embedding: list[float] | None = None
         try:
             result = await self.engine.embed(
@@ -135,7 +140,20 @@ class NoteService:
         except Exception as exc:
             log.warning("notes.search.embed_failed", error=str(exc)[:200])
 
-        async with session_scope() as session:
-            return await store.hybrid_search(
-                session, query_text=query, query_embedding=query_embedding, limit=limit
-            )
+        status = "ok"
+        try:
+            async with session_scope() as session:
+                return await store.hybrid_search(
+                    session, query_text=query, query_embedding=query_embedding, limit=limit
+                )
+        except Exception:
+            status = "error"
+            raise
+        finally:
+            if self.trace_recorder is not None:
+                self.trace_recorder.record(
+                    kind="rag",
+                    name="notes",
+                    latency_ms=(time.perf_counter() - inicio) * 1000.0,
+                    status=status,
+                )

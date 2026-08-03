@@ -48,6 +48,7 @@ class ToolContext:
     notes: Any | None = None  # NoteService
     skills: Any | None = None  # SkillService
     audit: Any | None = None  # AuditService
+    trace_recorder: Any | None = None  # TraceRecorder
 
 
 @dataclass(slots=True)

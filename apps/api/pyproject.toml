@@ -50,6 +50,9 @@ dependencies = [
 [project.optional-dependencies]
 azure = ["azure-identity>=1.19"]
 
+[project.scripts]
+sicoobito-eval-rag = "sicoobito.evals.runner:main"
+
 [dependency-groups]
 dev = [
     "pytest>=8.3",

@@ -11,6 +11,7 @@ from sicoobito.agent.tools import registry
 from sicoobito.api.deps import AuthDep, SettingsDep
 from sicoobito.audit.service import AuditService
 from sicoobito.mcp import config_editor
+from sicoobito.mcp.config import load_catalog
 from sicoobito.mcp.manager import MCPManager
 
 router = APIRouter(prefix="/api/mcp", tags=["mcp"], dependencies=[AuthDep])
@@ -58,6 +59,11 @@ async def _reload_and_list(request: Request, settings: SettingsDep) -> list[dict
 @router.get("/servers")
 async def list_servers(request: Request) -> dict[str, Any]:
     return {"servers": _manager(request).list_status()}
+
+
+@router.get("/catalog")
+async def catalog(settings: SettingsDep) -> dict[str, Any]:
+    return {"templates": [t.model_dump() for t in load_catalog(settings.mcp_catalog_file)]}
 
 
 @router.post("/servers")
