@@ -1,6 +1,7 @@
 "use client";
 
 import { BrowserCard } from "./BrowserCard";
+import { CodeReviewCard } from "./CodeReviewCard";
 import { DiffCard } from "./DiffCard";
 import { GitCard } from "./GitCard";
 import { ListFilesCard, ReadFileCard } from "./ReadFileCard";
@@ -28,6 +29,8 @@ export function ToolCallCard(props: ToolCardProps & { sessionId: string | null }
       return <SearchCard {...props} />;
     case "browser_action":
       return <BrowserCard {...props} />;
+    case "request_code_review":
+      return <CodeReviewCard {...props} />;
     default:
       if (GIT_TOOLS.has(props.tool)) return <GitCard {...props} />;
       return null;

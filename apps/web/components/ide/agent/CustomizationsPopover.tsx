@@ -13,7 +13,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { get } from "@/lib/client";
-import { MODE_HINT, MODES } from "./modes";
+import { MODE_HINT, MODES, type Mode } from "./modes";
 
 interface ToolInfo {
   name: string;
@@ -37,9 +37,13 @@ const CATEGORIAS: { id: CategoriaId; label: string; enabled: boolean }[] = [
 export function CustomizationsPopover({
   anchorRef,
   onClose,
+  mode,
+  setMode,
 }: {
   anchorRef: React.RefObject<HTMLButtonElement | null>;
   onClose: () => void;
+  mode: Mode;
+  setMode: (mode: Mode) => void;
 }) {
   const popoverRef = useRef<HTMLDivElement>(null);
   const [categoria, setCategoria] = useState<CategoriaId>("overview");
@@ -111,10 +115,21 @@ export function CustomizationsPopover({
         {categoria === "agents" && (
           <div className="customizations-list">
             {MODES.map((m) => (
-              <div key={m} className="customizations-item">
-                <div className="customizations-item-title">{m}</div>
+              <button
+                key={m}
+                type="button"
+                className={`customizations-item customizations-item-button${m === mode ? " active" : ""}`}
+                onClick={() => {
+                  setMode(m);
+                  onClose();
+                }}
+              >
+                <div className="customizations-item-title">
+                  {m}
+                  {m === mode && <span className="pill ok">atual</span>}
+                </div>
                 <div className="customizations-item-desc">{MODE_HINT[m]}</div>
-              </div>
+              </button>
             ))}
           </div>
         )}

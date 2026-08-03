@@ -2773,6 +2773,29 @@ button.primary:hover:not(:disabled) {
   line-height: 1.5;
 }
 
+/* Itens da aba "Agentes" são clicáveis (selecionam o modo) — reset dos
+   estilos padrão de <button> para se comportarem como o <div> que eram. */
+.customizations-item-button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 8px;
+  margin: -8px;
+  cursor: pointer;
+}
+
+.customizations-item-button:hover {
+  background: var(--surface);
+}
+
+.customizations-item-button.active {
+  border-color: var(--accent-dim);
+  background: var(--accent-dim);
+}
+
 /* ==========================================================================
    Provider Configuration Studio
    ========================================================================== */

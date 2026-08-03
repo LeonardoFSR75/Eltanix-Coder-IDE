@@ -201,6 +201,7 @@ class AgentRunner:
             skills=self.skills,
             audit=self.audit,
             trace_recorder=self.trace_recorder,
+            engine=self.engine,
         )
 
         sessao = AgentSession(

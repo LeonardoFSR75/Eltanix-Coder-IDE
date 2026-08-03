@@ -38,6 +38,7 @@ def test_read_tools_do_not_require_approval():
         "git_diff",
         "read_issue",
         "write_todos",
+        "request_code_review",
     ):
         ferramenta = registry.get(nome)
         assert ferramenta is not None, nome

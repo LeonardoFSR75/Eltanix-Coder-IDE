@@ -42,18 +42,19 @@ def _tool_schemas(mode: str, has_plan: bool) -> list[dict[str, Any]]:
     Restringir por schema é mais confiável que instruir o modelo a não chamar:
     o que não está na lista não pode ser chamado.
 
-    `plan` sem `has_plan` cai na mesma lista de `ask` — leitura e
+    `plan`/`orchestra` sem `has_plan` caem na mesma lista de `ask` — leitura e
     `write_todos` (RiskClass.READ, já incluído), nada de escrever ou
     executar. Sem isto, só a instrução no prompt pedia "planeje primeiro", e
     nada impedia o modelo de pular direto para editar/executar sem nunca
     chamar `write_todos` — o "Modo Planejar" na prática não mostrava plano
-    nenhum, só executava como o modo agente comum.
+    nenhum, só executava como o modo agente comum. `orchestra` reusa esse
+    mesmo portão: o ciclo plano→TDD→revisão→commit não começa sem plano.
     """
     if mode == "ask":
         return registry.schemas(allow_exec=False, allow_write=False)
     if mode == "edit":
         return registry.schemas(allow_exec=False, allow_write=True)
-    if mode == "plan" and not has_plan:
+    if mode in ("plan", "orchestra") and not has_plan:
         return registry.schemas(allow_exec=False, allow_write=False)
     return registry.schemas()
 

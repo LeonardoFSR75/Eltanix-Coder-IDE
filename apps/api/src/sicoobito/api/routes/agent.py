@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field
 
 from sicoobito.agent import session_store
 from sicoobito.agent.runner import AgentRunner, AgentSession
+from sicoobito.agent.state import AgentMode
 from sicoobito.agent.tools import registry
 from sicoobito.api.deps import AuthDep, DbSessionDep, EngineDep, SettingsDep
 from sicoobito.logging_setup import get_logger
@@ -65,7 +66,7 @@ async def list_tools() -> dict[str, Any]:
 class CreateSessionRequest(BaseModel):
     task: str = Field(min_length=1, description="O que o agente deve fazer")
     project: str = Field(min_length=1, description="Nome do projeto em PROJECTS_ROOT")
-    mode: Literal["ask", "edit", "agent", "plan", "auto"] = "agent"
+    mode: AgentMode = "agent"
     # Perfil de roteamento (config/routes.yaml). None mantém a escolha
     # implícita por modo — não é Literal porque os perfis são definidos em
     # YAML, e um Literal fixo aqui ficaria defasado sozinho.

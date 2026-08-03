@@ -112,7 +112,12 @@ export function AgentDock({
       )}
 
       {settingsOpen && (
-        <CustomizationsPopover anchorRef={settingsRef} onClose={() => setSettingsOpen(false)} />
+        <CustomizationsPopover
+          anchorRef={settingsRef}
+          onClose={() => setSettingsOpen(false)}
+          mode={mode}
+          setMode={setMode}
+        />
       )}
 
       {!managerOpen && (

@@ -49,6 +49,9 @@ class ToolContext:
     skills: Any | None = None  # SkillService
     audit: Any | None = None  # AuditService
     trace_recorder: Any | None = None  # TraceRecorder
+    # RouterEngine — ferramentas que fazem uma segunda chamada de LLM isolada
+    # da conversa principal (ex. request_code_review) usam isto.
+    engine: Any | None = None
 
 
 @dataclass(slots=True)

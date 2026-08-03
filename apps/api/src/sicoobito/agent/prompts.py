@@ -99,6 +99,25 @@ def build_task_prompt(
             "problema, edite os arquivos e execute testes para verificar e corrigir eventuais "
             "erros."
         )
+    elif mode == "orchestra":
+        partes.append(
+            "MODO ORQUESTRA ATIVO:\n"
+            "Comece chamando `write_todos` com o plano detalhado, dividido em etapas "
+            "pequenas e verificáveis. Para CADA item do plano, siga este ciclo à risca, "
+            "sem pular passos:\n"
+            "1. Escreva um teste que cubra o comportamento esperado e rode com "
+            "`run_command` — confirme que ele FALHA antes de implementar (se já passar, "
+            "o teste não está testando nada novo).\n"
+            "2. Implemente a menor mudança que faz o teste passar.\n"
+            "3. Rode os testes de novo com `run_command` e confirme que passam, sem "
+            "quebrar nada que já passava.\n"
+            "4. Chame `request_code_review` com um resumo do que mudou nesta etapa.\n"
+            "5. Se vier `NEEDS_REVISION`, corrija o apontado e chame `request_code_review` "
+            "de novo — não prossiga com uma revisão pendente.\n"
+            "6. Só depois de `APPROVED`, chame `git_commit` com uma mensagem explicando o "
+            "porquê da mudança, marque o item como `completed` em `write_todos`, e siga "
+            "para o próximo item do plano."
+        )
 
     partes.append(f"Tarefa:\n{task}")
     return "\n\n".join(partes)
