@@ -161,7 +161,11 @@ def create_worktree(
         return AgentWorktree(path=target, branch=branch, base_branch=base)
 
     try:
-        repo.git.worktree("add", "-b", branch, str(target), base)
+        # `--` barra qualquer um dos dois argumentos posicionais de ser lido
+        # como flag — mesma defesa já aplicada aos outros `repo.git.*` deste
+        # arquivo. Não é explorável hoje (branch é sempre `sicoobito/<uuid>` e
+        # base nunca vem de fora), mas não custa manter a mesma disciplina.
+        repo.git.worktree("add", "-b", branch, "--", str(target), base)
     except GitCommandError as exc:
         raise GitError(f"não foi possível criar o worktree: {exc}") from exc
 
