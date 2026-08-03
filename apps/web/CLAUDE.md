@@ -7,9 +7,16 @@ invariantes de arquitetura.
 
 ```bash
 npm run typecheck   # tsc --noEmit — rodar sempre após mudar algo aqui
-npm run build       # next build — pega erros que o typecheck sozinho não pega
+npm run test         # vitest run — testes de unidade/componente (jsdom)
+npm run build        # next build — pega erros que typecheck+test sozinhos não pegam
 npm run dev          # servidor local (dentro do container isso já roda via docker compose)
 ```
+
+Testes ficam ao lado do arquivo testado (`lib/format.test.ts`, `components/.../modes.test.ts`),
+não numa pasta `__tests__` separada. `vitest.config.ts` espelha o alias `@/*` do
+`tsconfig.json` — path novo em um não pode ficar sem o outro. `vitest.setup.ts` inclui um
+polyfill de `localStorage` (o do jsdom não fica disponível de forma confiável sob o Vitest
+4 — ver comentário no arquivo) — não remover achando redundante.
 
 **`node_modules` não é bind-mounted** (só `app/`, `components/`, `lib/` são — ver
 `docker-compose.yml`): mudar `package.json` exige `docker compose build web` e

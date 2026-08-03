@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import os
+
 import certifi
 
 os.environ["SSL_CERT_FILE"] = certifi.where()
 os.environ["REQUESTS_CA_BUNDLE"] = certifi.where()
 
 import pytest
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
 from sicoobito.config import REPO_ROOT, Settings, get_settings
 from sicoobito.router.catalog import load_catalog
@@ -59,3 +61,33 @@ def catalog():
 @pytest.fixture
 def prices():
     return PriceTable.load(CONFIG_DIR / "pricing.yaml")
+
+
+@pytest.fixture
+async def pg_session():
+    """Sessão real contra Postgres, isolada por transação com rollback no
+    teardown — cada teste escreve de verdade no banco e some sozinho, sem
+    precisar de schema/banco descartável nem de rodar migração por teste (as
+    funções de `store.py` só pedem um `AsyncSession`, não `session_scope()` —
+    encaixa aqui sem mudar nada nelas).
+
+    Pulado por padrão: só ativa com `DATABASE_URL_TEST` definida (ver
+    `apps/api/CLAUDE.md` para o comando de migração local, rodado uma vez, não
+    a cada teste). Mantém o `pytest tests -q` do dia a dia rápido e sem
+    depender de Postgres no ar — mudança de categoria explícita, não descuido
+    (mesmo espírito documentado em `test_indexing_pipeline.py`).
+    """
+    url = os.environ.get("DATABASE_URL_TEST")
+    if not url:
+        pytest.skip("DATABASE_URL_TEST não definida — teste de integração com Postgres pulado")
+
+    engine = create_async_engine(url)
+    async with engine.connect() as conn:
+        trans = await conn.begin()
+        session = AsyncSession(bind=conn, expire_on_commit=False)
+        try:
+            yield session
+        finally:
+            await session.close()
+            await trans.rollback()
+    await engine.dispose()
