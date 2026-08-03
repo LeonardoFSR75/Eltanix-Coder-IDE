@@ -12,6 +12,7 @@ from redis.asyncio import Redis
 from sicoobito import __version__
 from sicoobito.agent.runner import AgentRunner
 from sicoobito.agent.tools import registry as tool_registry
+from sicoobito.api.middleware import CorrelationIdMiddleware
 from sicoobito.api.routes import (
     agent_router,
     audit_router,
@@ -233,6 +234,7 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    app.add_middleware(CorrelationIdMiddleware)
 
     app.include_router(openai_router)
     app.include_router(health_router)

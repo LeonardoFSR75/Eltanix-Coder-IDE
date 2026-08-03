@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 import httpx
+import structlog
 
 from sicoobito.agent import session_store
 from sicoobito.agent.graph import DEFAULT_MAX_ITERATIONS, build_graph
@@ -320,6 +321,11 @@ class AgentRunner:
 
     async def stream_run(self, session: AgentSession, *, resume: Any = None):
         """Executa o grafo emitindo eventos. Cede o controle na aprovação."""
+        # Amarra `session_id` a todo log emitido durante o streaming — uma
+        # sessão pode gerar dezenas de spans de ferramentas, e sem isto não
+        # há como filtrar só os logs dela sem grep por timestamp aproximado.
+        structlog.contextvars.bind_contextvars(session_id=session.session_id)
+
         compilado = await self._compiled_graph(session)
         config = {"configurable": {"thread_id": session.session_id}}
 
