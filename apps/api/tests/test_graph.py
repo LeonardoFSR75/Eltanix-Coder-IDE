@@ -8,7 +8,14 @@ testes de `registry.schemas` em test_agent_tools.py.
 
 from __future__ import annotations
 
-from sicoobito.agent.graph import _para_api, _tool_schemas
+from sicoobito.agent.graph import (
+    REPETITION_THRESHOLD,
+    _is_stuck_repeat,
+    _next_repetition_state,
+    _para_api,
+    _tool_fingerprint,
+    _tool_schemas,
+)
 
 
 def _names(schemas: list[dict]) -> set[str]:
@@ -105,3 +112,58 @@ def test_para_api_keeps_tool_calls_field_on_assistant_messages():
     limpas = _para_api(mensagens)
 
     assert limpas[0]["tool_calls"] == mensagens[0]["tool_calls"]
+
+
+# ── Guard de repetição ──────────────────────────────────────────────────────
+#
+# Sem isto, um agente que tenta a mesma `edit_file` com os mesmos argumentos e
+# falha repetidamente queima até DEFAULT_MAX_ITERATIONS rodadas antes de parar.
+# As três funções são puras de propósito — testáveis sem subir o grafo nem um
+# RouterEngine de verdade, mesmo padrão de `_tool_schemas`/`_para_api` acima.
+
+
+def test_fingerprint_is_stable_regardless_of_argument_order():
+    a = _tool_fingerprint("edit_file", {"path": "x.py", "old": "a", "new": "b"})
+    b = _tool_fingerprint("edit_file", {"new": "b", "path": "x.py", "old": "a"})
+    assert a == b
+
+
+def test_fingerprint_differs_for_different_arguments():
+    a = _tool_fingerprint("edit_file", {"path": "x.py"})
+    b = _tool_fingerprint("edit_file", {"path": "y.py"})
+    assert a != b
+
+
+def test_is_stuck_repeat_false_below_threshold():
+    fp = _tool_fingerprint("edit_file", {"path": "x.py"})
+    assert _is_stuck_repeat(fp, fp, REPETITION_THRESHOLD - 1) is False
+
+
+def test_is_stuck_repeat_true_at_threshold():
+    fp = _tool_fingerprint("edit_file", {"path": "x.py"})
+    assert _is_stuck_repeat(fp, fp, REPETITION_THRESHOLD) is True
+
+
+def test_is_stuck_repeat_false_for_a_different_call():
+    fp = _tool_fingerprint("edit_file", {"path": "x.py"})
+    outra = _tool_fingerprint("edit_file", {"path": "y.py"})
+    assert _is_stuck_repeat(fp, outra, REPETITION_THRESHOLD) is False
+
+
+def test_next_repetition_state_clears_on_success():
+    fp = _tool_fingerprint("run_command", {"command": "pytest"})
+    assert _next_repetition_state(fp, True, fp, 2) == (None, 0)
+
+
+def test_next_repetition_state_increments_on_identical_failure():
+    fp = _tool_fingerprint("edit_file", {"path": "x.py"})
+    assert _next_repetition_state(fp, False, fp, 1) == (fp, 2)
+
+
+def test_next_repetition_state_restarts_on_a_different_failing_call():
+    # O ciclo do modo Orquestra roda `run_command` várias vezes de propósito
+    # entre edições — falhar em algo diferente não pode acumular na mesma
+    # contagem, senão o guard travaria um fluxo legítimo.
+    anterior = _tool_fingerprint("run_command", {"command": "pytest"})
+    nova = _tool_fingerprint("edit_file", {"path": "x.py"})
+    assert _next_repetition_state(nova, False, anterior, 2) == (nova, 1)

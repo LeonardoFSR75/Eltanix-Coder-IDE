@@ -35,6 +35,41 @@ log = get_logger(__name__)
 
 DEFAULT_MAX_ITERATIONS = 25
 
+# Mesmo default do RepetitionDetector do projeto MLXCode (kochj23/MLXCode),
+# adaptado de nível de token (lá, o app controla a geração local) para nível
+# de chamada de ferramenta (aqui, o router fala com APIs externas — não há
+# stream de token para inspecionar, só o resultado de cada `tool_call`).
+REPETITION_THRESHOLD = 3
+
+
+def _tool_fingerprint(nome: str, argumentos: dict[str, Any]) -> str:
+    """Identifica uma chamada por nome + argumentos, para comparar repetições."""
+    return f"{nome}:{json.dumps(argumentos, sort_keys=True, default=str)}"
+
+
+def _is_stuck_repeat(fingerprint: str, ultima_falha: str | None, contagem: int) -> bool:
+    """Verdadeiro quando a MESMA chamada, com os MESMOS argumentos, já falhou
+    `REPETITION_THRESHOLD` vezes seguidas sem nenhuma chamada diferente ter
+    sido bem-sucedida no meio.
+
+    Um sucesso ou uma falha de outra chamada zeram a contagem (ver
+    `_next_repetition_state`) — rodar o mesmo `run_command` várias vezes de
+    propósito entre edições (o próprio ciclo do modo Orquestra) nunca aciona
+    isto, porque cada falha idêntica só conta se a anterior também foi.
+    """
+    return fingerprint == ultima_falha and contagem >= REPETITION_THRESHOLD
+
+
+def _next_repetition_state(
+    fingerprint: str, ok: bool, ultima_falha: str | None, contagem: int
+) -> tuple[str | None, int]:
+    """Próximo `(last_failed_call, last_failed_call_count)` depois de uma chamada."""
+    if ok:
+        return None, 0
+    if fingerprint == ultima_falha:
+        return fingerprint, contagem + 1
+    return fingerprint, 1
+
 
 def _tool_schemas(mode: str, has_plan: bool) -> list[dict[str, Any]]:
     """Ferramentas oferecidas por modo.
@@ -176,6 +211,8 @@ def build_graph(engine: RouterEngine, context: ToolContext):
         respostas: list[dict[str, Any]] = []
         alterados: list[str] = []
         todos_atualizados: list[dict[str, Any]] | None = None
+        ultima_falha = state.get("last_failed_call")
+        contagem_falha = state.get("last_failed_call_count", 0)
 
         for chamada in tool_calls:
             call_id = chamada.get("id", "")
@@ -203,6 +240,23 @@ def build_graph(engine: RouterEngine, context: ToolContext):
                 continue
 
             argumentos = _parse_arguments(chamada)
+            fingerprint = _tool_fingerprint(nome, argumentos)
+
+            if _is_stuck_repeat(fingerprint, ultima_falha, contagem_falha):
+                respostas.append(
+                    _tool_message(
+                        call_id,
+                        nome,
+                        f"ERRO: você repetiu exatamente a mesma chamada de `{nome}`, com os "
+                        f"mesmos argumentos, {contagem_falha} vezes seguidas sem sucesso. Pare "
+                        "de repetir — tente uma abordagem diferente ou explique ao usuário o "
+                        "que está impedindo o progresso.",
+                        ok=False,
+                        data={"blocked_repetition": True},
+                    )
+                )
+                continue
+
             inicio = time.perf_counter()
             try:
                 resultado = await ferramenta.handler(context, argumentos)
@@ -218,6 +272,9 @@ def build_graph(engine: RouterEngine, context: ToolContext):
                         error=str(exc),
                     )
                 respostas.append(_tool_message(call_id, nome, f"ERRO: {exc}", ok=False))
+                ultima_falha, contagem_falha = _next_repetition_state(
+                    fingerprint, False, ultima_falha, contagem_falha
+                )
                 continue
 
             if context.trace_recorder is not None:
@@ -232,6 +289,9 @@ def build_graph(engine: RouterEngine, context: ToolContext):
             respostas.append(
                 _tool_message(call_id, nome, resultado.content, ok=resultado.ok, data=resultado.data)
             )
+            ultima_falha, contagem_falha = _next_repetition_state(
+                fingerprint, resultado.ok, ultima_falha, contagem_falha
+            )
             if caminho := resultado.data.get("path"):
                 alterados.append(str(caminho))
             if "todos" in resultado.data:
@@ -241,6 +301,8 @@ def build_graph(engine: RouterEngine, context: ToolContext):
             "messages": respostas,
             "files_changed": alterados,
             "approvals": {},
+            "last_failed_call": ultima_falha,
+            "last_failed_call_count": contagem_falha,
         }
         # Ausente na maioria dos turnos: sem `write_todos` nesta rodada, o
         # checklist da sessão fica como estava — omitir a chave preserva o

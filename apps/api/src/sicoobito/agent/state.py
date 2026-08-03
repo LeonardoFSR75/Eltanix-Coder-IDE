@@ -46,6 +46,13 @@ class AgentState(TypedDict, total=False):
     # não acumula.
     todos: list[TodoItem]
 
+    # Guard de repetição (`agent/graph.py::_is_stuck_repeat`): fingerprint e
+    # contagem da última chamada de ferramenta que falhou, para travar antes
+    # de repetir a mesma chamada indefinidamente. Substituído a cada turno,
+    # igual a `todos` — não acumula.
+    last_failed_call: str | None
+    last_failed_call_count: int
+
     iterations: int
     max_iterations: int
     finished: bool
