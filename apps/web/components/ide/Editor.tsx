@@ -45,12 +45,18 @@ const MONACO_LANGUAGE: Record<string, string> = {
 
 export const EDITOR_OPTIONS = {
   fontSize: 13,
-  fontFamily: 'ui-monospace, "SF Mono", Menlo, Consolas, monospace',
+  fontFamily: 'JetBrains Mono, ui-monospace, "SF Mono", Menlo, Consolas, monospace',
   minimap: { enabled: false },
   scrollBeyondLastLine: false,
   renderWhitespace: "selection" as const,
   tabSize: 2,
   automaticLayout: true,
+  bracketPairColorization: { enabled: true },
+  cursorSmoothCaretAnimation: "on" as const,
+  cursorBlinking: "smooth" as const,
+  smoothScrolling: true,
+  renderLineHighlight: "all" as const,
+  padding: { top: 10, bottom: 10 },
 };
 
 export function autoDetectLanguage(filePath: string, fileContent?: string): string {
@@ -322,9 +328,11 @@ export function Editor({
         <LspBadge status={lsp.status} />
 
         <div className="editor-bar-actions" style={{ marginLeft: "auto", display: "flex", gap: 4, alignItems: "center" }}>
-          <span className="kbd-badge" title="Linguagem detectada" style={{ fontSize: "11px", padding: "1px 6px" }}>
-            ⚡ {language}
-          </span>
+          {!lsp.status.language && language && (
+            <span className="kbd-badge" title="Linguagem detectada" style={{ fontSize: "11px", padding: "1px 6px" }}>
+              ⚡ {language}
+            </span>
+          )}
 
           <button
             type="button"

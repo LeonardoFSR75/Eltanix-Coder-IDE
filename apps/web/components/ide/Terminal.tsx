@@ -15,6 +15,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { post } from "@/lib/client";
 import { logAuditEvent } from "@/lib/api/audit";
+import { useTheme } from "@/lib/theme";
 
 const PROMPT = "\x1b[32m$\x1b[0m ";
 
@@ -22,11 +23,14 @@ export function TerminalPanel({
   sessionId,
   project,
   onSessionCreated,
+  onClose,
 }: {
   sessionId: string | null;
   project?: string | null;
   onSessionCreated?: (id: string) => void;
+  onClose?: () => void;
 }) {
+  const { theme } = useTheme();
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<import("@xterm/xterm").Terminal | null>(null);
   const socketRef = useRef<WebSocket | null>(null);
@@ -128,7 +132,11 @@ export function TerminalPanel({
       const term = new Terminal({
         fontSize: 12,
         fontFamily: 'ui-monospace, "SF Mono", Menlo, Consolas, monospace',
-        theme: { background: "#0b0d10", foreground: "#e6e9ee", cursor: "#4ade80" },
+        theme: {
+          background: theme === "light" ? "#ffffff" : "#0b0d10",
+          foreground: theme === "light" ? "#0f172a" : "#e6e9ee",
+          cursor: theme === "light" ? "#0284c7" : "#4ade80",
+        },
         cursorBlink: true,
         convertEol: true,
       });
@@ -161,11 +169,14 @@ export function TerminalPanel({
       });
     })();
 
+    const observer = new ResizeObserver(() => fit?.fit());
+    if (containerRef.current) observer.observe(containerRef.current);
     const onResize = () => fit?.fit();
     window.addEventListener("resize", onResize);
 
     return () => {
       disposed = true;
+      observer.disconnect();
       window.removeEventListener("resize", onResize);
       socketRef.current?.close();
       socketRef.current = null;
@@ -216,67 +227,79 @@ export function TerminalPanel({
             className={`terminal-tab ${aba === "terminal" ? "active" : ""}`}
             onClick={() => setAba("terminal")}
           >
-            💻 Terminal Interativo
+            <span>💻</span> Terminal
           </button>
           <button
             type="button"
             className={`terminal-tab ${aba === "debugger" ? "active" : ""}`}
             onClick={() => setAba("debugger")}
           >
-            🐞 Saída & Debugger
+            <span>🐞</span> Debugger
           </button>
         </div>
 
-        <span className={`pill ${estado === "pronto" ? "ok" : estado === "erro" ? "bad" : ""}`}>
-          {estado}
-        </span>
-        {detalhe && <span className="terminal-detail">{detalhe}</span>}
+        <div className="terminal-status-wrap">
+          <span className={`terminal-status-dot ${estado === "pronto" ? "ok" : estado === "erro" ? "err" : "loading"}`} />
+          <span>{estado}</span>
+        </div>
 
-        <div className="terminal-quick-cmds" style={{ marginLeft: "auto", display: "flex", gap: 4, flexWrap: "wrap" }}>
+        <div className="terminal-actions-right">
+          <div className="terminal-quick-cmds">
+            <button
+              type="button"
+              className="term-chip"
+              onClick={() => enviarComando("npm run dev")}
+              disabled={estado !== "pronto"}
+              title="Iniciar servidor de desenvolvimento (npm run dev)"
+            >
+              🚀 Dev
+            </button>
+            <button
+              type="button"
+              className="term-chip"
+              onClick={() => enviarComando("python -m pytest")}
+              disabled={estado !== "pronto"}
+              title="Executar testes automatizados (pytest)"
+            >
+              ▶ Testes
+            </button>
+            <button
+              type="button"
+              className="term-chip"
+              onClick={() => enviarComando("git status")}
+              disabled={estado !== "pronto"}
+              title="Verificar estado do Git (git status)"
+            >
+              git status
+            </button>
+          </div>
+
+          <div className="terminal-bar-divider" />
+
           <button
             type="button"
-            className="term-chip glow-chip"
-            onClick={() => enviarComando("npm run dev")}
-            disabled={estado !== "pronto"}
-            title="Iniciar servidor de desenvolvimento"
-          >
-            🚀 Dev Server
-          </button>
-          <button
-            type="button"
-            className="term-chip"
-            onClick={() => enviarComando("python -m pytest")}
-            disabled={estado !== "pronto"}
-            title="Executar testes automatizados"
-          >
-            ▶ Rodar Testes
-          </button>
-          <button
-            type="button"
-            className="term-chip"
-            onClick={() => enviarComando("git status")}
-            disabled={estado !== "pronto"}
-            title="Verificar estado do git"
-          >
-            git status
-          </button>
-          <button
-            type="button"
-            className="term-chip"
-            onClick={() => enviarComando("git diff")}
-            disabled={estado !== "pronto"}
-            title="Verificar alterações no git"
-          >
-            git diff
-          </button>
-          <button
-            type="button"
-            className="term-chip"
+            className="terminal-icon-btn"
             onClick={() => termRef.current?.clear()}
-            title="Limpar terminal"
+            title="Limpar saída do terminal"
           >
-            🧹 Limpar
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+              <polyline points="3 6 5 6 21 6" />
+              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+            </svg>
           </button>
+
+          {onClose && (
+            <button
+              type="button"
+              className="terminal-icon-btn terminal-minimize-btn"
+              onClick={onClose}
+              title="Minimizar gaveta do terminal (Ctrl+`)"
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                <polyline points="6 9 12 15 18 9" />
+              </svg>
+            </button>
+          )}
         </div>
       </div>
 

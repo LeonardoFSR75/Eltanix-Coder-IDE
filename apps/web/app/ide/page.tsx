@@ -310,7 +310,12 @@ function Shell() {
                 onMouseDown={() => setIsResizingTerminal(true)}
                 title="Arrastar para redimensionar altura do terminal"
               />
-              <TerminalPanel sessionId={sessionId} project={ide.project} onSessionCreated={setSessionId} />
+              <TerminalPanel
+                sessionId={sessionId}
+                project={ide.project}
+                onSessionCreated={setSessionId}
+                onClose={() => ide.setTerminalOpen(false)}
+              />
             </>
           )}
         </main>

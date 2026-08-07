@@ -557,59 +557,91 @@ export function SearchPanel() {
   };
 
   return (
-    <div className="panel-body">
+    <div className="panel-body search-panel-body">
       <div className="search-form">
-        <div className="search-input-wrapper">
-          <input
-            value={query}
-            placeholder="Localizar no código..."
-            onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && void buscar()}
-          />
+        {/* Campo de Busca Principal */}
+        <div className="search-field-row">
+          <div className="search-input-container">
+            <svg className="search-field-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2">
+              <circle cx="11" cy="11" r="8" />
+              <line x1="21" y1="21" x2="16.65" y2="16.65" />
+            </svg>
+            <input
+              type="text"
+              className="search-field-input"
+              value={query}
+              placeholder="Localizar no código..."
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && void buscar()}
+            />
+            <div className="search-field-options">
+              <button
+                type="button"
+                className={`search-opt-btn ${caseSensitive ? "active" : ""}`}
+                onClick={() => setCaseSensitive(!caseSensitive)}
+                title="Diferenciar maiúsculas/minúsculas (Aa)"
+              >
+                Aa
+              </button>
+              <button
+                type="button"
+                className={`search-opt-btn ${regex ? "active" : ""}`}
+                onClick={() => setRegex(!regex)}
+                title="Usar Expressão Regular (.*)"
+              >
+                .*
+              </button>
+            </div>
+          </div>
           <button
             type="button"
-            className={`search-toggle-replace ${showReplace ? "active" : ""}`}
+            className={`search-toggle-btn ${showReplace ? "active" : ""}`}
             onClick={() => setShowReplace(!showReplace)}
-            title="Alternar Substituir"
+            title="Alternar campo de Substituir"
           >
-            ↔
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+              <polyline points="7 10 12 15 17 10" />
+              <polyline points="7 14 12 9 17 14" />
+            </svg>
           </button>
         </div>
 
+        {/* Campo de Substituição */}
         {showReplace && (
-          <input
-            value={replacement}
-            placeholder="Substituir por..."
-            onChange={(e) => setReplacement(e.target.value)}
-            className="replace-input"
-          />
+          <div className="search-field-row">
+            <div className="search-input-container">
+              <svg className="search-field-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <polyline points="17 1 21 5 17 9" />
+                <path d="M3 11V9a4 4 0 0 1 4-4h14" />
+              </svg>
+              <input
+                type="text"
+                className="search-field-input"
+                value={replacement}
+                placeholder="Substituir por..."
+                onChange={(e) => setReplacement(e.target.value)}
+              />
+            </div>
+          </div>
         )}
 
-        <div className="search-opts-bar">
+        {/* Botões de Ação */}
+        <div className="search-action-row">
           <button
             type="button"
-            className={`search-opt-chip ${caseSensitive ? "active" : ""}`}
-            onClick={() => setCaseSensitive(!caseSensitive)}
-            title="Diferenciar maiúsculas/minúsculas (Aa)"
+            className="search-btn-primary"
+            onClick={() => void buscar()}
+            disabled={buscando || !query.trim()}
           >
-            Aa
-          </button>
-          <button
-            type="button"
-            className={`search-opt-chip ${regex ? "active" : ""}`}
-            onClick={() => setRegex(!regex)}
-            title="Usar Expressão Regular (.*)"
-          >
-            .*
-          </button>
-        </div>
-
-        <div className="search-actions">
-          <button type="button" className="primary" onClick={() => void buscar()} disabled={buscando || !query.trim()}>
-            {buscando ? "buscando..." : "Buscar"}
+            {buscando ? "Buscando..." : "Localizar"}
           </button>
           {showReplace && (
-            <button type="button" className="danger" onClick={() => setConfirmar(true)} disabled={!query.trim() || matches.length === 0}>
+            <button
+              type="button"
+              className="search-btn-danger"
+              onClick={() => setConfirmar(true)}
+              disabled={!query.trim() || matches.length === 0}
+            >
               Substituir Tudo
             </button>
           )}
@@ -617,22 +649,29 @@ export function SearchPanel() {
       </div>
 
       {erro && <div className="panel-error">{erro}</div>}
-      {resumo && <div className="tree-hint">{resumo}</div>}
+      {resumo && <div className="search-summary">{resumo}</div>}
 
-      <div className="match-list">
-        {matches.map((m, i) => (
-          <button
-            key={`${m.path}:${m.line}:${m.column}:${i}`}
-            type="button"
-            className="match"
-            onClick={() => openFile(m.path, { line: m.line, column: m.column })}
-          >
-            <div className="match-path">
-              {m.path}<span className="match-line">:{m.line}:{m.column}</span>
-            </div>
-            <div className="match-preview">{m.preview}</div>
-          </button>
-        ))}
+      {/* Lista de Resultados Encontrados */}
+      <div className="search-results-list">
+        {matches.map((m, i) => {
+          const filename = m.path.split("/").pop() ?? m.path;
+          const dir = m.path.includes("/") ? m.path.substring(0, m.path.lastIndexOf("/")) : "";
+          return (
+            <button
+              key={`${m.path}:${m.line}:${m.column}:${i}`}
+              type="button"
+              className="search-match-card"
+              onClick={() => openFile(m.path, { line: m.line, column: m.column })}
+            >
+              <div className="search-match-header">
+                <span className="search-match-filename">{filename}</span>
+                <span className="search-match-pos">:{m.line}:{m.column}</span>
+                {dir && <span className="search-match-dir">{dir}</span>}
+              </div>
+              <div className="search-match-preview">{m.preview || m.text}</div>
+            </button>
+          );
+        })}
       </div>
 
       {confirmar && (
@@ -712,7 +751,7 @@ export function GitPanel() {
       {estado && (
         <>
           <div className="git-header-bar">
-            <div className="git-branch">
+            <div className="git-branch-wrapper">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <line x1="6" y1="3" x2="6" y2="15" />
                 <circle cx="18" cy="6" r="3" />
@@ -720,13 +759,22 @@ export function GitPanel() {
                 <path d="M18 9a9 9 0 0 1-9 9" />
               </svg>
               <select
+                className="git-branch-select"
                 value={estado.branch}
                 onChange={(e) => void acao(() => post("/api/git/checkout", { project, branch: e.target.value }))}
+                title="Alternar branch atual"
               >
                 {branches.map((b) => <option key={b} value={b}>{b}</option>)}
                 {!branches.includes(estado.branch) && <option value={estado.branch}>{estado.branch}</option>}
               </select>
-              <button type="button" onClick={() => setNovoBranch(true)} title="Novo Branch" className="icon-action-btn">+</button>
+              <button
+                type="button"
+                onClick={() => setNovoBranch(true)}
+                title="Criar novo branch"
+                className="git-icon-btn"
+              >
+                +
+              </button>
             </div>
           </div>
 
@@ -734,32 +782,37 @@ export function GitPanel() {
             {stagedFiles.length > 0 && (
               <div className="git-group">
                 <div className="git-group-title">
-                  <span>Alterações Preparadas (Staged - {stagedFiles.length})</span>
+                  <span>Preparadas ({stagedFiles.length})</span>
                   <button
                     type="button"
                     className="git-action-sm"
-                    title="Unstage All"
+                    title="Despreparar todas (Unstage All)"
                     onClick={() => void acao(() => post("/api/git/unstage", { project, paths: stagedFiles.map((f) => f.path) }))}
                   >
                     −
                   </button>
                 </div>
-                {stagedFiles.map((f) => (
-                  <div key={`staged:${f.path}`} className="git-file">
-                    <button type="button" className="git-file-path" onClick={() => openFile(f.path)} title={f.path}>
-                      <span className="git-badge staged">S</span>
-                      {f.path}
-                    </button>
-                    <button
-                      type="button"
-                      className="git-action-sm"
-                      title="Unstage"
-                      onClick={() => void acao(() => post("/api/git/unstage", { project, paths: [f.path] }))}
-                    >
-                      −
-                    </button>
-                  </div>
-                ))}
+                {stagedFiles.map((f) => {
+                  const filename = f.path.split("/").pop() ?? f.path;
+                  const dir = f.path.includes("/") ? f.path.substring(0, f.path.lastIndexOf("/")) : "";
+                  return (
+                    <div key={`staged:${f.path}`} className="git-file-row">
+                      <span className="git-badge git-status-staged" title="Alteração preparada (Staged)">S</span>
+                      <button type="button" className="git-file-info" onClick={() => openFile(f.path)} title={f.path}>
+                        <span className="git-file-name">{filename}</span>
+                        {dir && <span className="git-file-dir">{dir}</span>}
+                      </button>
+                      <button
+                        type="button"
+                        className="git-action-sm"
+                        title="Despreparar arquivo (Unstage)"
+                        onClick={() => void acao(() => post("/api/git/unstage", { project, paths: [f.path] }))}
+                      >
+                        −
+                      </button>
+                    </div>
+                  );
+                })}
               </div>
             )}
 
@@ -770,7 +823,7 @@ export function GitPanel() {
                   <button
                     type="button"
                     className="git-action-sm"
-                    title="Stage All"
+                    title="Preparar todas (Stage All)"
                     onClick={() => void acao(() => post("/api/git/stage", { project, paths: unstagedFiles.map((f) => f.path) }))}
                   >
                     +
@@ -780,31 +833,39 @@ export function GitPanel() {
               {unstagedFiles.length === 0 && stagedFiles.length === 0 && (
                 <div className="tree-hint">Nenhuma alteração pendente. Árvore limpa.</div>
               )}
-              {unstagedFiles.map((f) => (
-                <div key={`unstaged:${f.path}`} className="git-file">
-                  <button type="button" className="git-file-path" onClick={() => openFile(f.path)} title={f.path}>
-                    <span className={`git-badge ${f.status}`}>
-                      {f.status === "modified" ? "M" : f.status === "untracked" ? "U" : f.status.slice(0, 1).toUpperCase()}
+              {unstagedFiles.map((f) => {
+                const filename = f.path.split("/").pop() ?? f.path;
+                const dir = f.path.includes("/") ? f.path.substring(0, f.path.lastIndexOf("/")) : "";
+                const stLower = f.status.toLowerCase();
+                const badgeText = stLower === "modified" ? "M" : stLower === "untracked" ? "U" : stLower === "deleted" ? "D" : "A";
+                return (
+                  <div key={`unstaged:${f.path}`} className="git-file-row">
+                    <span className={`git-badge git-status-${stLower}`} title={`Status: ${f.status}`}>
+                      {badgeText}
                     </span>
-                    {f.path}
-                  </button>
-                  <button
-                    type="button"
-                    className="git-action-sm"
-                    title="Stage"
-                    onClick={() => void acao(() => post("/api/git/stage", { project, paths: [f.path] }))}
-                  >
-                    +
-                  </button>
-                </div>
-              ))}
+                    <button type="button" className="git-file-info" onClick={() => openFile(f.path)} title={f.path}>
+                      <span className="git-file-name">{filename}</span>
+                      {dir && <span className="git-file-dir">{dir}</span>}
+                    </button>
+                    <button
+                      type="button"
+                      className="git-action-sm"
+                      title="Preparar arquivo (Stage)"
+                      onClick={() => void acao(() => post("/api/git/stage", { project, paths: [f.path] }))}
+                    >
+                      +
+                    </button>
+                  </div>
+                );
+              })}
             </div>
           </div>
 
           <div className="git-commit">
             <textarea
+              className="git-commit-textarea"
               value={mensagem}
-              placeholder="Mensagem de commit (ex: feat: adiciona suporte a resizing)"
+              placeholder="Mensagem de commit (ex: feat: refatora layout do git)"
               rows={3}
               onChange={(e) => setMensagem(e.target.value)}
             />
