@@ -149,6 +149,11 @@ async def create_sandbox(payload: CreateRequest) -> dict[str, Any]:
         return {"id": container.id, "name": nome, "reused": True}
 
     rede = NETWORK_ENABLED if payload.network is None else payload.network
+    # As flags de segurança abaixo (user, cap_drop, security_opt, privileged,
+    # mem/cpu/pids limit) espelham as mesmas restrições em
+    # apps/api/src/sicoobito/sandbox/container.py — aquele é o caminho local/dev,
+    # este é o serviço isolado de produção (ADR 0002). Mudou uma flag aqui,
+    # mude a mesma lá.
     try:
         container = client().containers.run(
             payload.image or DEFAULT_IMAGE,

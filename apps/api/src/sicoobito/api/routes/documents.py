@@ -20,9 +20,12 @@ from sicoobito.audit.service import AuditService
 from sicoobito.db.session import session_scope
 from sicoobito.documents import store
 from sicoobito.documents.service import DocumentService
+from sicoobito.logging_setup import get_logger
 from sicoobito.storage.blob import BlobStore
 
 router = APIRouter(prefix="/api/documents", tags=["documents"], dependencies=[AuthDep])
+
+log = get_logger(__name__)
 
 _ALLOWED_CONTENT_TYPES = {"application/pdf"}
 
@@ -191,11 +194,11 @@ async def delete_document(document_id: uuid.UUID, request: Request) -> dict[str,
 
     try:
         await blob.remove_object(object_key)
-    except Exception:
+    except Exception as exc:
         # Linha do banco já caiu; um objeto órfão no bucket não é motivo para
         # devolver erro a uma exclusão que, do ponto de vista do usuário, já
-        # aconteceu.
-        pass
+        # aconteceu. Loga para o órfão ser rastreável, sem propagar.
+        log.warning("documents.blob_delete_failed", object_key=object_key, error=str(exc)[:200])
 
     if audit := _audit(request):
         await audit.record(

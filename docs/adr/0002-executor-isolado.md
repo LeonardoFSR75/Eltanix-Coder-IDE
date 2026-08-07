@@ -25,12 +25,19 @@ Um serviço `executor` separado, e só ele com o socket montado.
 - A API fala com ele por HTTP na rede interna do compose, autenticada por
   `EXECUTOR_TOKEN`.
 - O contrato é mínimo e fechado: criar sandbox, executar comando, destruir,
-  listar, limpar órfãos. Não há endpoint que aceite caminho arbitrário nem
-  opções de container vindas do chamador.
-- **As restrições de segurança do sandbox são fixadas no executor**, não
+  listar, limpar órfãos. Não há endpoint que aceite caminho arbitrário.
+- **As restrições *hard* de segurança do sandbox são fixadas no executor**, não
   recebidas por parâmetro: usuário não-root, `cap_drop: ALL`,
-  `no-new-privileges`, limites de memória e PIDs, rede desabilitada. Um chamador
-  comprometido não consegue afrouxá-las.
+  `no-new-privileges`, `privileged=False`, limites de memória/CPU/PIDs. Um
+  chamador comprometido não consegue afrouxá-las — elas não existem como campo
+  no payload de `POST /sandboxes`.
+- `image` e `network` **são** campos opcionais de `POST /sandboxes`
+  (`CreateRequest`), mas não são um canal de configuração para o agente: quem
+  os preenche é a API a partir de `Settings` (config do operador), nunca o
+  `run_command` exposto ao modelo — `agent/tools/shell.py` só repassa
+  `command`/`timeout`. Se algum dia esses dois campos passarem a receber valor
+  vindo de um tool-call ou de conteúdo gerado pelo agente, esta decisão foi
+  violada.
 - A imagem do executor instala quatro pacotes. Cada dependência ali é uma
   dependência com o socket ao alcance.
 

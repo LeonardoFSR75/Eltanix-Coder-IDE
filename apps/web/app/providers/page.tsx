@@ -1,14 +1,10 @@
+"use client";
+
+import { useEffect, useState } from "react";
 import { ErrorNotice } from "@/components/ErrorNotice";
 import { ProviderStudio } from "@/components/providers/ProviderStudio";
-import {
-  apiGet,
-  type CatalogModel,
-  type CatalogProfile,
-  type CredentialsView,
-  type ProviderCheck,
-} from "@/lib/api";
-
-export const dynamic = "force-dynamic";
+import { getProvidersHealth, type ProvidersHealthResponse } from "@/lib/api/health";
+import { getCatalog, getCredentials, type CatalogResponse, type CredentialsView } from "@/lib/api/providers";
 
 const EMPTY_CREDENTIAL = { configured: false, value: "", masked: null };
 const EMPTY_CREDENTIALS: CredentialsView = {
@@ -22,17 +18,44 @@ const EMPTY_CREDENTIALS: CredentialsView = {
   groq_api_key: EMPTY_CREDENTIAL,
   github_token: EMPTY_CREDENTIAL,
 };
+const EMPTY_CATALOG: CatalogResponse = { models: [], profiles: [] };
 
-export default async function ProvidersPage() {
-  const [health, catalog, credentials] = await Promise.all([
-    apiGet<{ healthy: number; total: number; providers: ProviderCheck[] }>(
-      "/api/health/providers",
-    ),
-    apiGet<{ models: CatalogModel[]; profiles: CatalogProfile[] }>("/api/providers"),
-    apiGet<{ credentials: CredentialsView }>("/api/providers/credentials"),
-  ]);
+export default function ProvidersPage() {
+  const [health, setHealth] = useState<ProvidersHealthResponse | null>(null);
+  const [catalog, setCatalog] = useState<CatalogResponse>(EMPTY_CATALOG);
+  const [credentials, setCredentials] = useState<CredentialsView>(EMPTY_CREDENTIALS);
+  const [error, setError] = useState<string | null>(null);
 
-  if (!health.ok) return <ErrorNotice error={health.error} />;
+  useEffect(() => {
+    let cancelled = false;
+
+    async function load() {
+      // Saúde é o que decide se a página é utilizável; catálogo/credenciais
+      // degradam para vazio em vez de derrubar a tela inteira.
+      try {
+        const h = await getProvidersHealth();
+        if (cancelled) return;
+        setHealth(h);
+      } catch (err) {
+        if (cancelled) return;
+        setError(err instanceof Error ? err.message : String(err));
+        return;
+      }
+
+      const [c, cr] = await Promise.allSettled([getCatalog(), getCredentials()]);
+      if (cancelled) return;
+      if (c.status === "fulfilled") setCatalog(c.value);
+      if (cr.status === "fulfilled") setCredentials(cr.value);
+    }
+
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (error) return <ErrorNotice error={error} />;
+  if (!health) return null;
 
   return (
     <div className="shell">
@@ -41,9 +64,9 @@ export default async function ProvidersPage() {
           Estúdio de Configuração de Provedores
         </h1>
         <ProviderStudio
-          initialHealth={health.data}
-          initialCatalog={catalog.ok ? catalog.data : { models: [], profiles: [] }}
-          initialCredentials={credentials.ok ? credentials.data.credentials : EMPTY_CREDENTIALS}
+          initialHealth={health}
+          initialCatalog={catalog}
+          initialCredentials={credentials}
         />
       </div>
     </div>

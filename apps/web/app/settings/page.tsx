@@ -2,46 +2,23 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { get, post } from "@/lib/client";
 import { useToast } from "@/components/Toast";
 import { TraceEntry, listRecentTraces } from "@/lib/api/telemetry";
-
-interface HealthView {
-  status: string;
-  cache_enabled: boolean;
-}
-
-interface MetricsSummary {
-  cache_hits: number;
-  cache_hit_rate: number;
-  savings: {
-    tokens_saved: number;
-    cost_saved_usd: number;
-  };
-}
-
-interface ProviderHealth {
-  model: string;
-  provider?: string;
-  ok: boolean;
-  detail?: string;
-  circuit_open?: boolean;
-  cooldown_remaining_s?: number;
-  consecutive_fails?: number;
-  success_rate?: number;
-}
-
-interface ProvidersHealthResponse {
-  healthy: number;
-  total: number;
-  providers: ProviderHealth[];
-}
+import {
+  clearCache as clearCacheRequest,
+  getHealth,
+  getProvidersHealth,
+  resetCircuit,
+  type HealthStatus,
+  type ProvidersHealthResponse,
+} from "@/lib/api/health";
+import { getMetricsSummary, type Summary } from "@/lib/api/metrics";
 
 export default function SettingsPage() {
   const { addToast } = useToast();
 
-  const [health, setHealth] = useState<HealthView | null>(null);
-  const [metrics, setMetrics] = useState<MetricsSummary | null>(null);
+  const [health, setHealth] = useState<HealthStatus | null>(null);
+  const [metrics, setMetrics] = useState<Summary | null>(null);
   const [providersHealth, setProvidersHealth] = useState<ProvidersHealthResponse | null>(null);
   const [traces, setTraces] = useState<TraceEntry[]>([]);
   const [loading, setLoading] = useState(true);
@@ -51,9 +28,9 @@ export default function SettingsPage() {
   const refresh = useCallback(async () => {
     try {
       const [h, m, p, t] = await Promise.all([
-        get<HealthView>("/api/health"),
-        get<MetricsSummary>("/api/metrics/summary"),
-        get<ProvidersHealthResponse>("/api/health/providers"),
+        getHealth(),
+        getMetricsSummary(),
+        getProvidersHealth(),
         listRecentTraces(30),
       ]);
       setHealth(h);
@@ -77,7 +54,7 @@ export default function SettingsPage() {
   const handleClearCache = async () => {
     setClearingCache(true);
     try {
-      const { removed } = await post<{ removed: number }>("/api/cache/clear");
+      const { removed } = await clearCacheRequest();
       addToast(`Cache exato limpo (${removed} entrada(s) removida(s)).`, "success");
       await refresh();
     } catch (err) {
@@ -90,9 +67,7 @@ export default function SettingsPage() {
   const handleResetCircuit = async (model: string) => {
     setResettingModel(model);
     try {
-      // A rota usa `{model_id:path}` — o id do modelo (que pode ter "/", ex.
-      // "ollama/qwen2.5-coder:7b") entra cru, sem encodeURIComponent.
-      await post(`/api/providers/${model}/reset`);
+      await resetCircuit(model);
       addToast(`Circuito de "${model}" resetado.`, "success");
       await refresh();
     } catch (err) {

@@ -1,12 +1,30 @@
+"use client";
+
+import { useEffect, useState } from "react";
 import { ErrorNotice } from "@/components/ErrorNotice";
-import { apiGet, type RecentRequest } from "@/lib/api";
+import { getRecentRequests, type RecentRequest } from "@/lib/api/metrics";
 import { formatDateTime, formatMs, formatTokens, formatUsd } from "@/lib/format";
 
-export const dynamic = "force-dynamic";
+export default function RequestsPage() {
+  const [requests, setRequests] = useState<RecentRequest[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
-export default async function RequestsPage() {
-  const recent = await apiGet<{ requests: RecentRequest[] }>("/api/metrics/recent?limit=100");
-  if (!recent.ok) return <ErrorNotice error={recent.error} />;
+  useEffect(() => {
+    let cancelled = false;
+    getRecentRequests(100)
+      .then((data) => {
+        if (!cancelled) setRequests(data);
+      })
+      .catch((err) => {
+        if (!cancelled) setError(err instanceof Error ? err.message : String(err));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (error) return <ErrorNotice error={error} />;
+  if (requests === null) return null;
 
   return (
     <div className="shell">
@@ -15,7 +33,7 @@ export default async function RequestsPage() {
           Requests recentes<span className="sub">últimos 100</span>
         </h2>
         <div className="table-wrap">
-          {recent.data.requests.length > 0 ? (
+          {requests.length > 0 ? (
             <table>
               <thead>
                 <tr>
@@ -30,7 +48,7 @@ export default async function RequestsPage() {
                 </tr>
               </thead>
               <tbody>
-                {recent.data.requests.map((r) => (
+                {requests.map((r) => (
                   <tr key={r.id}>
                     <td>{formatDateTime(r.created_at)}</td>
                     <td>{r.source}</td>

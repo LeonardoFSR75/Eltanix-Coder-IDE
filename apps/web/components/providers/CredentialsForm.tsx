@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { put } from "@/lib/client";
-import type { CredentialsView } from "@/lib/api";
+import type { CredentialsView } from "@/lib/api/providers";
 
 type FieldKey =
   | "ollama_base_url"

@@ -134,6 +134,11 @@ class Sandbox:
             log.info("sandbox.reused", session=self.session_id, container=container.short_id)
             return container.id
 
+        # As flags de segurança abaixo (user, cap_drop, security_opt, privileged,
+        # mem/cpu/pids limit) espelham as mesmas restrições em
+        # services/executor/app.py::create_sandbox — este é o caminho local/dev
+        # (ADR 0002), aquele é o serviço isolado de produção. Mudou uma flag
+        # aqui, mude a mesma lá.
         try:
             container = await asyncio.to_thread(
                 lambda: self._client.containers.run(

@@ -325,28 +325,36 @@ class AgentRunner:
         # Amarra `session_id` a todo log emitido durante o streaming — uma
         # sessão pode gerar dezenas de spans de ferramentas, e sem isto não
         # há como filtrar só os logs dela sem grep por timestamp aproximado.
+        # unbind no finally evita que o valor vaze para outra requisição caso
+        # a task ASGI seja reaproveitada ou o generator seja abandonado
+        # (cliente desconectou) antes do stream terminar. unbind em vez de
+        # clear_contextvars(): esta função roda dentro do contexto já aberto
+        # pelo CorrelationIdMiddleware (request_id), que não deve ser apagado
+        # daqui.
         structlog.contextvars.bind_contextvars(session_id=session.session_id)
+        try:
+            compilado = await self._compiled_graph(session)
+            config = {"configurable": {"thread_id": session.session_id}}
 
-        compilado = await self._compiled_graph(session)
-        config = {"configurable": {"thread_id": session.session_id}}
+            if resume is not None:
+                from langgraph.types import Command
 
-        if resume is not None:
-            from langgraph.types import Command
+                entrada: Any = Command(resume=resume)
+            else:
+                entrada = await self._initial_state(session)
 
-            entrada: Any = Command(resume=resume)
-        else:
-            entrada = await self._initial_state(session)
+            async for evento in compilado.astream(entrada, config=config, stream_mode="updates"):
+                for no, atualizacao in evento.items():
+                    yield {"node": no, "update": _serializable(atualizacao)}
 
-        async for evento in compilado.astream(entrada, config=config, stream_mode="updates"):
-            for no, atualizacao in evento.items():
-                yield {"node": no, "update": _serializable(atualizacao)}
-
-        estado = await compilado.aget_state(config) if compilado.checkpointer else None
-        if estado is not None and estado.tasks:
-            # Grafo parado numa interrupção: há aprovação pendente.
-            for tarefa in estado.tasks:
-                for interrupcao in getattr(tarefa, "interrupts", []) or []:
-                    yield {"node": "interrupt", "update": _serializable(interrupcao.value)}
+            estado = await compilado.aget_state(config) if compilado.checkpointer else None
+            if estado is not None and estado.tasks:
+                # Grafo parado numa interrupção: há aprovação pendente.
+                for tarefa in estado.tasks:
+                    for interrupcao in getattr(tarefa, "interrupts", []) or []:
+                        yield {"node": "interrupt", "update": _serializable(interrupcao.value)}
+        finally:
+            structlog.contextvars.unbind_contextvars("session_id")
 
     async def get_messages(self, session: AgentSession) -> list[dict[str, Any]]:
         """Mensagens acumuladas no checkpoint — reabre o transcript real de uma

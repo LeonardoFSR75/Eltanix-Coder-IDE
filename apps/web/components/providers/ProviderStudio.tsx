@@ -6,7 +6,8 @@ import { formatMs } from "@/lib/format";
 import { ProfileEditor, type ProfileFormValue } from "@/components/providers/ProfileEditor";
 import { CredentialsForm } from "@/components/providers/CredentialsForm";
 import { ModelDiscovery } from "@/components/providers/ModelDiscovery";
-import type { CatalogModel, CatalogProfile, CredentialsView, ProviderCheck } from "@/lib/api";
+import type { CatalogModel, CatalogProfile, CredentialsView } from "@/lib/api/providers";
+import type { ProviderCheck } from "@/lib/api/health";
 
 const NEW_PROFILE = "__new__";
 

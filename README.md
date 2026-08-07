@@ -11,27 +11,34 @@ modelo ou de nuvem é mudança de configuração, não de código.
 
 ## Estado atual
 
-As cinco fases estão construídas e **validadas contra infraestrutura real** —
-Postgres com pgvector, Redis e Docker no ar.
+Além do IDE agêntico original (gateway multi-modelo, indexação de código,
+agente LangGraph, editor Monaco), a plataforma cresceu para uma base de
+conhecimento completa em torno do mesmo agente:
 
-| Fase | Escopo | Status |
+| Área | Escopo | Status |
 |---|---|---|
-| 1 | Gateway multi-modelo, fallback, contabilidade de custo, dashboard | validada |
-| 2 | Indexação do repositório (tree-sitter + pgvector), busca híbrida | validada |
-| 3 | Agente LangGraph, sandbox Docker, Git/GitHub, PRs | validada |
-| 4 | IDE web (Monaco, explorer, busca, Git, terminal, palette) | validada |
-| 5 | Compressão de contexto e roteamento por complexidade | construída |
+| Gateway multi-modelo | Roteamento (Ollama, Azure, Databricks, Anthropic, Groq), fallback, custo, cache | validada |
+| Contexto de código | Indexação tree-sitter + pgvector, busca híbrida (RRF) | validada |
+| Agente | LangGraph, sandbox Docker, Git/GitHub, PRs, modos `ask`/`edit`/`agent`/`plan`/`auto`/`orchestra` | validada |
+| IDE web | Monaco (split-pane), explorer com drag-and-drop, terminal, cards estruturados por tool-call, Agent Manager (múltiplas sessões) | validada |
+| Verificação por navegador | Ferramenta `browser_action` (Chromium headless isolado em rede própria) | validada |
+| RAG de documentos | Upload → MinIO + pgvector, busca híbrida, ferramenta do agente | validada |
+| Segundo Cérebro | Notas com `[[wikilinks]]`, busca híbrida, ferramenta do agente | validada |
+| Skills | Catálogo de habilidades reutilizáveis, CRUD real | validada |
+| Auditoria | Toda aprovação WRITE/EXEC do agente é registrada no Postgres | validada |
+| MCP | Cliente real (stdio/HTTP), catálogo de conectores prontos (GitHub, filesystem, Postgres, Slack) | validada |
+| Observabilidade | `TraceRecorder` (spans de tool/RAG), correlation ID ponta a ponta, avaliação hit@k/MRR de RAG | validada |
+| Modo Orquestra | Ciclo TDD forçado por item de plano, revisão de código por chamada de LLM isolada, commit por etapa | validada |
 
-Exercitado de ponta a ponta: as três migrações contra Postgres real (extensão
-`vector`, índice HNSW, `tsvector` como coluna gerada); indexação deste próprio
-repositório (117 arquivos, 849 chunks); sessão de agente com worktree Git e
-sandbox Docker, confirmando na prática usuário não-root, escrita barrada fora do
-workspace e rede desabilitada; e o dashboard renderizando telemetria real.
+Exercitado de ponta a ponta: as migrações contra Postgres real (pgvector,
+índices HNSW/tsvector); indexação deste próprio repositório; sessão de agente
+com worktree Git e sandbox Docker (usuário não-root, escrita barrada fora do
+workspace, rede desabilitada); MCP conectado a um servidor real via `npx`;
+busca híbrida RRF das três fontes (código/documentos/notas) contra Postgres.
 
-Falta apenas uma chamada a um modelo de verdade — depende do Ollama ou de
-credenciais de nuvem.
-
-207 testes. Pytest, `tsc` e `next build` limpos.
+306 testes de backend (+ 5 pulados sem `DATABASE_URL_TEST`) e 26 de frontend.
+Pytest, Vitest, `tsc` e `next build` limpos. CI no GitHub Actions roda tudo
+isso a cada push/PR na `main`, mais auditoria de dependências.
 
 ## Requisitos
 

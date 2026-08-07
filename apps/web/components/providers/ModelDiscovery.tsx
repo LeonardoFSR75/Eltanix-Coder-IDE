@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { post } from "@/lib/client";
-import type { CatalogModel, DiscoveredModelCandidate, DiscoverResponse } from "@/lib/api";
+import type { CatalogModel, DiscoveredModelCandidate, DiscoverResponse } from "@/lib/api/providers";
 
 const SUPPORTED_PROVIDERS = ["ollama", "databricks", "anthropic", "openai", "groq"] as const;
 const CAPABILITY_OPTIONS = ["chat", "tools", "vision", "prompt_cache", "embedding"] as const;

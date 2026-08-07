@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import type { CatalogModel } from "@/lib/api";
+import type { CatalogModel } from "@/lib/api/providers";
 
 const STRATEGIES = ["priority", "cost", "latency", "score"] as const;
 const WEIGHT_KEYS = ["health", "cost", "latency", "success_rate", "context_fit"] as const;
