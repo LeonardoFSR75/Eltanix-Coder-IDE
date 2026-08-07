@@ -590,7 +590,7 @@ code {
   align-items: center;
   gap: 4px;
   padding: 8px 0;
-  background: #0d0f14;
+  background: var(--surface-1);
   border-right: 1px solid var(--border);
   position: relative;
   z-index: var(--z-sticky);
@@ -659,7 +659,7 @@ code {
   align-items: center;
   gap: 4px;
   padding: 8px 0;
-  background: #0d0f14;
+  background: var(--surface-1);
   border-left: 1px solid var(--border);
   position: relative;
   z-index: var(--z-sticky);
@@ -861,7 +861,7 @@ code {
   align-items: stretch;
   gap: 1px;
   border-bottom: 1px solid var(--border);
-  background: #0d0f14;
+  background: var(--surface-1);
   overflow-x: auto;
   flex-shrink: 0;
   height: 30px;
@@ -1597,7 +1597,7 @@ button.primary:hover:not(:disabled) {
   padding: 0 12px;
   height: 40px;
   border-bottom: 1px solid var(--border);
-  background: rgba(10, 12, 18, 0.9);
+  background: var(--surface-glass);
   backdrop-filter: blur(12px);
   flex-shrink: 0;
   z-index: 10;
@@ -2343,7 +2343,7 @@ button.primary:hover:not(:disabled) {
 /* Prompt Card Flutuante — Copilot Input */
 .agent-input-container {
   padding: 8px 10px 10px;
-  background: rgba(8, 10, 16, 0.8);
+  background: var(--surface-glass);
   backdrop-filter: blur(8px);
   flex-shrink: 0;
   border-top: 1px solid var(--border);
@@ -2893,17 +2893,17 @@ button.primary:hover:not(:disabled) {
 
 .toast-success {
   border-color: rgba(52, 211, 153, 0.4);
-  background: rgba(11, 20, 16, 0.9);
+  background: var(--accent-emerald-dim);
 }
 
 .toast-error {
   border-color: rgba(248, 113, 113, 0.4);
-  background: rgba(24, 12, 14, 0.9);
+  background: var(--danger-dim);
 }
 
 .toast-info {
   border-color: rgba(56, 189, 248, 0.4);
-  background: rgba(10, 16, 24, 0.9);
+  background: var(--accent-dim);
 }
 
 @keyframes toastIn {
@@ -4711,7 +4711,7 @@ button.primary:hover:not(:disabled) {
    ========================================================================== */
 
 .topbar-ide {
-  background: rgba(8, 10, 15, 0.95);
+  background: var(--surface-glass);
   backdrop-filter: blur(12px);
   border-bottom: 1px solid var(--border);
   height: 44px;
@@ -4723,7 +4723,7 @@ button.primary:hover:not(:disabled) {
 
 .activity-bar,
 .activity-bar-right {
-  background: #06080d !important;
+  background: var(--surface-1);
   border-color: var(--border) !important;
   width: 44px;
 }
@@ -4814,7 +4814,7 @@ button.primary:hover:not(:disabled) {
 .agent-dock-header {
   height: 42px;
   padding: 0 12px;
-  background: rgba(10, 13, 20, 0.95);
+  background: var(--surface-glass);
   backdrop-filter: blur(8px);
   border-bottom: 1px solid var(--border);
   display: flex;
