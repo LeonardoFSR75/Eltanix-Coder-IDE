@@ -32,6 +32,9 @@ data/
 # Workspaces e worktrees do agente
 .sicoobito/
 
+# Saída gerada pelo graphify (ferramenta de dev, grafo de conhecimento do repo)
+graphify-out/
+
 # SO / editor
 .DS_Store
 Thumbs.db
