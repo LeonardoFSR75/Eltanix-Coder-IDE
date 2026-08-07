@@ -211,6 +211,38 @@ def test_routes_editor_upsert_existing_profile_replaces_in_place(tmp_path):
     assert "# Resiliência aplicada a todos os perfis." in updated
 
 
+def test_routes_editor_upsert_existing_profile_preserves_next_profile_comment(tmp_path):
+    """Editar um perfil que já existe não pode apagar o comentário do
+    perfil SEGUINTE no arquivo. `auto` é seguido de `local-first`, cujo
+    bloco de comentário é o caso real que motivou este teste: o ruamel
+    prende esse comentário ao último item da lista `models` de `auto`
+    (não à seção `profiles`), então trocar o `CommentedMap` ou a
+    `CommentedSeq` inteiros do perfil editado o descarta."""
+    from sicoobito.router import routes_editor
+
+    routes_file = _routes_copy(tmp_path)
+
+    data = routes_editor.load(routes_file)
+    routes_editor.upsert_profile(
+        data,
+        "auto",
+        strategy="score",
+        models=["ollama/qwen2.5-coder:1.5b", "foundry/gpt-4o-mini"],
+        weights={"health": 0.40, "cost": 0.25, "latency": 0.20, "success_rate": 0.15},
+    )
+    routes_editor.dump(routes_file, data)
+
+    updated = routes_file.read_text(encoding="utf-8")
+    assert "# O maior redutor de custo do projeto" in updated
+    assert "# Resiliência aplicada a todos os perfis." in updated
+
+    # Peso alterado perde a formatação (é um valor novo), mas os que não
+    # mudaram continuam com a precisão original do arquivo.
+    assert "health: 0.4\n" in updated
+    assert "cost: 0.25\n" in updated
+    assert "latency: 0.20\n" in updated
+
+
 def test_routes_editor_delete_profile(tmp_path):
     from sicoobito.router import routes_editor
 
