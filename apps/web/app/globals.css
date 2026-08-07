@@ -95,6 +95,17 @@
   box-sizing: border-box;
 }
 
+/* Ícones inline (svg com só width/height via atributo, sem width/height em
+   CSS) são filhos de contêiner flex em praticamente todo botão de ícone da
+   IDE. Sem flex-shrink:0 o item pode encolher para 0px de largura mesmo
+   sobrando espaço — foi o que aconteceu com os ícones do header do Agent
+   Dock. `.git-branch-wrapper svg` já tinha essa regra; generalizando aqui
+   para não repetir o mesmo bug em cada botão novo. */
+button > svg,
+.context-chip > svg {
+  flex-shrink: 0;
+}
+
 html,
 body {
   margin: 0;
