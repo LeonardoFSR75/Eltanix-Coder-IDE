@@ -170,6 +170,17 @@ a {
   display: flex;
   align-items: center;
   gap: 12px;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.brand-link {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-decoration: none;
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 .brand-logo {
@@ -183,6 +194,7 @@ a {
   display: grid;
   place-items: center;
   box-shadow: var(--shadow-glow);
+  flex-shrink: 0;
 }
 
 .brand-name {
@@ -190,22 +202,7 @@ a {
   font-weight: 700;
   letter-spacing: -0.02em;
   color: var(--text);
-}
-
-.brand-highlight {
-  background: var(--accent-gradient);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-}
-
-.brand-badge {
-  font-size: 11px;
-  font-weight: 600;
-  padding: 2px 8px;
-  border-radius: 999px;
-  background: var(--accent-dim);
-  color: var(--accent);
-  border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+  white-space: nowrap;
 }
 
 .nav {
@@ -4416,10 +4413,14 @@ button.primary:hover:not(:disabled) {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-wrap: nowrap;
+  white-space: nowrap;
 }
 
 .nav-dropdown-wrapper {
   position: relative;
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 .nav-dropdown-btn {
@@ -4434,6 +4435,8 @@ button.primary:hover:not(:disabled) {
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
   transition: all 0.2s ease;
 }
 

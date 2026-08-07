@@ -104,7 +104,6 @@ export function HeaderNav() {
             Sicoobito<span className="brand-highlight">Code</span>
           </span>
         </Link>
-        <span className="brand-badge">Local-First</span>
       </div>
 
       <nav className="nav tree-nav" ref={navRef}>
@@ -188,21 +187,6 @@ export function HeaderNav() {
       </nav>
 
       <div className="topbar-actions">
-        <div className="db-badge-group">
-          <span className="mini-badge db-online" title="PostgreSQL 17 + pgvector (Porta 5403)">
-            <span className="pulse-dot-green" /> Postgres
-          </span>
-          <span className="mini-badge redis-online" title="Redis Cache L1, Redlock & Circuit Breaker (Porta 5404)">
-            <span className="pulse-dot-red" /> Redis L1
-          </span>
-          <span className="mini-badge chroma-online" title="ChromaDB Vector Gateway Online">
-            <span className="pulse-dot-blue" /> ChromaDB
-          </span>
-          <span className="mini-badge minio-online" title="MinIO S3 Object Storage Online (Porta 5407/5408)">
-            <span className="pulse-dot-yellow" /> MinIO S3
-          </span>
-        </div>
-
         <button
           type="button"
           className="theme-btn"

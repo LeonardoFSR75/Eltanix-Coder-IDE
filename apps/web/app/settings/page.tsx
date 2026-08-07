@@ -81,14 +81,63 @@ export default function SettingsPage() {
     <div className="shell">
       <div className="page-header">
         <div>
-          <span className="page-badge">⚙️ Status do Gateway</span>
-          <h1>Cache & Circuit Breakers</h1>
+          <span className="page-badge">⚙️ Status do Gateway & Infraestrutura</span>
+          <h1>Infraestrutura, Cache & Circuit Breakers</h1>
           <p>
-            Estado real do cache exato e dos disjuntores por modelo. Credenciais e perfis de
+            Estado operacional dos bancos de dados, cache exato e disjuntores por modelo. Credenciais e perfis de
             roteamento ficam em <Link href="/providers">Provedores</Link>.
           </p>
         </div>
       </div>
+
+      <section className="section-block mb-6">
+        <div className="panel-box">
+          <div className="panel-header">
+            <h3>🗄️ Status da Infraestrutura & Bancos de Dados</h3>
+            <span className="badge-tag green">Operacional</span>
+          </div>
+          <p className="text-xs text-muted mb-4">
+            Serviços de armazenamento, cache e busca vetorial integrados à plataforma local.
+          </p>
+          <div className="grid grid-4">
+            <div className="stat-card">
+              <div className="flex items-center gap-2 mb-1">
+                <span className="status-indicator online" />
+                <strong className="text-sm">Postgres + pgvector</strong>
+              </div>
+              <div className="stat-hint text-xs">Banco Principal & Chunks RAG</div>
+              <div className="stat-hint font-mono text-xs mt-1">Porta 5403 (pg17)</div>
+            </div>
+
+            <div className="stat-card">
+              <div className="flex items-center gap-2 mb-1">
+                <span className="status-indicator online" />
+                <strong className="text-sm">Redis L1 Cache</strong>
+              </div>
+              <div className="stat-hint text-xs">Cache Exato & Breaker</div>
+              <div className="stat-hint font-mono text-xs mt-1">Porta 5404 (v7-alpine)</div>
+            </div>
+
+            <div className="stat-card">
+              <div className="flex items-center gap-2 mb-1">
+                <span className="status-indicator online" />
+                <strong className="text-sm">ChromaDB Vector Gateway</strong>
+              </div>
+              <div className="stat-hint text-xs">Busca Vetorial Complementar</div>
+              <div className="stat-hint font-mono text-xs mt-1">Status Ativo</div>
+            </div>
+
+            <div className="stat-card">
+              <div className="flex items-center gap-2 mb-1">
+                <span className="status-indicator online" />
+                <strong className="text-sm">MinIO S3 Storage</strong>
+              </div>
+              <div className="stat-hint text-xs">Armazenamento de PDFs/MDs</div>
+              <div className="stat-hint font-mono text-xs mt-1">Portas 5407 / 5408</div>
+            </div>
+          </div>
+        </div>
+      </section>
 
       <section className="section-block mb-6">
         <div className="panel-box">

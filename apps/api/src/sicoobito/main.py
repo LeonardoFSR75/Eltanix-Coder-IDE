@@ -103,9 +103,8 @@ async def lifespan(app: FastAPI):
     )
     engine.build()
 
-    # Efêmero de propósito — buffer em memória de spans de tools/RAG, não
-    # precisa sobreviver a restart (ver docstring de TraceRecorder).
-    trace_recorder = TraceRecorder()
+    # Buffer de spans de tools/RAG, com persistência opcional em Redis se conectado.
+    trace_recorder = TraceRecorder(redis=redis)
 
     indexer = ContextIndexer(settings=settings, engine=engine, trace_recorder=trace_recorder)
 

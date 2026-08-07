@@ -29,7 +29,7 @@ def _recorder(request: Request) -> TraceRecorder:
 
 @router.get("/recent")
 async def recent(request: Request, limit: int = Query(default=50, ge=1, le=500)) -> dict[str, Any]:
-    entries = _recorder(request).recent(limit=limit)
+    entries = await _recorder(request).recent_async(limit=limit)
     return {
         "entries": [
             {

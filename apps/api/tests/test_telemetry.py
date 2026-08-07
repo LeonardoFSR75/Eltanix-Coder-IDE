@@ -46,3 +46,39 @@ def test_error_is_truncated():
     recorder = TraceRecorder()
     recorder.record(kind="tool", name="x", latency_ms=1.0, status="error", error="e" * 1000)
     assert len(recorder.recent()[0].error) == 300
+
+
+async def test_recent_async_fallback_to_memory():
+    recorder = TraceRecorder()
+    recorder.record(kind="tool", name="write_file", latency_ms=10.0, status="ok")
+    entries = await recorder.recent_async()
+    assert len(entries) == 1
+    assert entries[0].name == "write_file"
+
+
+class _FakeRedis:
+    def __init__(self):
+        self.data = []
+
+    async def lpush(self, key, val):
+        self.data.insert(0, val)
+
+    async def ltrim(self, key, start, end):
+        self.data = self.data[start : end + 1]
+
+    async def lrange(self, key, start, end):
+        return self.data[start : end + 1]
+
+
+async def test_recent_async_with_fake_redis():
+    fake_redis = _FakeRedis()
+    recorder = TraceRecorder(redis=fake_redis)
+    recorder.record(kind="tool", name="shell", latency_ms=5.0, status="ok")
+    # aguarda a task assíncrona finalizar
+    for task in list(recorder._background_tasks):
+        await task
+
+    entries = await recorder.recent_async()
+    assert len(entries) == 1
+    assert entries[0].name == "shell"
+

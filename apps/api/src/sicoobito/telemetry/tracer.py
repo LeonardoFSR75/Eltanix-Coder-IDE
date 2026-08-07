@@ -1,25 +1,27 @@
-"""Registro em memória de spans de execução: ferramentas do agente e buscas RAG.
+"""Registro de spans de execução: ferramentas do agente e buscas RAG.
 
-Efêmero por design — não sobrevive a um restart, e não precisa: chamadas de
-LLM já têm registro durável em `router/telemetry.py::TelemetryEntry`
-(Postgres, por request) e `router/health.py::HealthTracker` (p50/p95 por
-modelo, Redis). Este buffer cobre o que não tinha nenhum registro: quanto
-tempo uma ferramenta do agente ou uma busca RAG levou, e se deu certo.
+Buffer circular com persistência opcional no Redis (se disponível).
+Sobrevive a restarts quando o Redis está ativo e degrada suavemente para a memória.
 """
 
 from __future__ import annotations
 
+import asyncio
+import json
 import time
 from collections import deque
 from dataclasses import dataclass
 from typing import Literal
 
 import structlog
+from redis.asyncio import Redis
 
 log = structlog.get_logger(__name__)
 
 TraceKind = Literal["tool", "rag"]
 TraceStatus = Literal["ok", "error"]
+
+_REDIS_KEY = "sicoobito:telemetry:spans"
 
 
 @dataclass(slots=True)
@@ -32,14 +34,38 @@ class TraceEntry:
     session_id: str = ""
     error: str | None = None
 
+    def to_dict(self) -> dict:
+        return {
+            "ts": self.ts,
+            "kind": self.kind,
+            "name": self.name,
+            "latency_ms": self.latency_ms,
+            "status": self.status,
+            "session_id": self.session_id,
+            "error": self.error,
+        }
+
+    @classmethod
+    def from_dict(cls, d: dict) -> TraceEntry:
+        return cls(
+            ts=float(d.get("ts", 0)),
+            kind=d.get("kind", "tool"),
+            name=str(d.get("name", "")),
+            latency_ms=float(d.get("latency_ms", 0)),
+            status=d.get("status", "ok"),
+            session_id=str(d.get("session_id", "")),
+            error=d.get("error"),
+        )
+
 
 class TraceRecorder:
-    """Buffer circular das últimas execuções — visibilidade operacional, não
-    auditoria (para isso existe `audit/`) nem contabilidade de custo (para
-    isso existe `router/telemetry.py`)."""
+    """Buffer circular das últimas execuções com persistência em Redis opcional."""
 
-    def __init__(self, maxlen: int = 500) -> None:
+    def __init__(self, maxlen: int = 500, redis: Redis | None = None) -> None:
+        self.maxlen = maxlen
+        self._redis = redis
         self._entries: deque[TraceEntry] = deque(maxlen=maxlen)
+        self._background_tasks: set[asyncio.Task[None]] = set()
 
     def record(
         self,
@@ -65,6 +91,43 @@ class TraceRecorder:
             "telemetry.span", kind=kind, name=name, latency_ms=entry.latency_ms, status=status
         )
 
+        if self._redis is not None:
+            try:
+                loop = asyncio.get_running_loop()
+                task = loop.create_task(self._persist_redis(entry))
+                self._background_tasks.add(task)
+                task.add_done_callback(self._background_tasks.discard)
+            except RuntimeError:
+                pass
+
+    async def _persist_redis(self, entry: TraceEntry) -> None:
+        if self._redis is None:
+            return
+        try:
+            payload = json.dumps(entry.to_dict())
+            await self._redis.lpush(_REDIS_KEY, payload)
+            await self._redis.ltrim(_REDIS_KEY, 0, self.maxlen - 1)
+        except Exception as exc:
+            log.warning("telemetry.redis_persist_failed", error=str(exc)[:200])
+
+    async def recent_async(self, limit: int = 100) -> list[TraceEntry]:
+        """Mais recente primeiro. Consulta Redis se disponível, caindo para memória."""
+        if self._redis is not None:
+            try:
+                raw_list = await self._redis.lrange(_REDIS_KEY, 0, limit - 1)
+                if raw_list:
+                    res = []
+                    for item in raw_list:
+                        data = json.loads(item)
+                        res.append(TraceEntry.from_dict(data))
+                    return res
+            except Exception as exc:
+                log.warning("telemetry.redis_read_failed", error=str(exc)[:200])
+
+        return self.recent(limit=limit)
+
     def recent(self, limit: int = 100) -> list[TraceEntry]:
-        """Mais recente primeiro."""
+        """Mais recente primeiro (versão síncrona em memória)."""
         return list(self._entries)[::-1][:limit]
+
+
