@@ -1,13 +1,19 @@
 "use client";
 
 import React, { useState } from "react";
-import { del, post, put } from "@/lib/client";
 import { formatMs } from "@/lib/format";
 import { ProfileEditor, type ProfileFormValue } from "@/components/providers/ProfileEditor";
 import { CredentialsForm } from "@/components/providers/CredentialsForm";
 import { ModelDiscovery } from "@/components/providers/ModelDiscovery";
-import type { CatalogModel, CatalogProfile, CredentialsView } from "@/lib/api/providers";
-import type { ProviderCheck } from "@/lib/api/health";
+import {
+  deleteProfile,
+  saveProfile,
+  setDefaultProfile,
+  type CatalogModel,
+  type CatalogProfile,
+  type CredentialsView,
+} from "@/lib/api/providers";
+import { resetCircuit, type ProviderCheck } from "@/lib/api/health";
 
 const NEW_PROFILE = "__new__";
 
@@ -32,10 +38,8 @@ export function ProviderStudio({ initialHealth, initialCatalog, initialCredentia
   const handleSetDefaultProfile = async (profileName: string) => {
     setSettingDefault(profileName);
     try {
-      const data = await post<{ profiles: CatalogProfile[] }>("/api/providers/default-profile", {
-        profile: profileName,
-      });
-      setProfiles(data.profiles);
+      const profiles = await setDefaultProfile(profileName);
+      setProfiles(profiles);
       setStatusMsg(`Perfil "${profileName}" agora é o padrão (usado quando o modelo pedido é "auto").`);
     } catch (err) {
       setStatusMsg(`Erro ao trocar o perfil padrão: ${err instanceof Error ? err.message : String(err)}`);
@@ -47,15 +51,13 @@ export function ProviderStudio({ initialHealth, initialCatalog, initialCredentia
   const handleSaveProfile = async (value: ProfileFormValue) => {
     setSavingProfile(true);
     try {
-      const data = await put<{ profiles: CatalogProfile[] }>(
-        `/api/providers/profiles/${encodeURIComponent(value.name)}`,
-        {
-          strategy: value.strategy,
-          models: value.models,
-          weights: value.strategy === "score" ? value.weights : undefined,
-        },
-      );
-      setProfiles(data.profiles);
+      const profiles = await saveProfile({
+        name: value.name,
+        strategy: value.strategy,
+        models: value.models,
+        weights: value.strategy === "score" ? value.weights : undefined,
+      });
+      setProfiles(profiles);
       setStatusMsg(`Perfil "${value.name}" salvo.`);
       setEditingProfile(null);
     } catch (err) {
@@ -69,10 +71,8 @@ export function ProviderStudio({ initialHealth, initialCatalog, initialCredentia
     if (!window.confirm(`Excluir o perfil "${profileName}"? Essa ação não tem volta.`)) return;
     setDeletingProfile(profileName);
     try {
-      const data = await del<{ profiles: CatalogProfile[] }>(
-        `/api/providers/profiles/${encodeURIComponent(profileName)}`,
-      );
-      setProfiles(data.profiles);
+      const profiles = await deleteProfile(profileName);
+      setProfiles(profiles);
       setStatusMsg(`Perfil "${profileName}" excluído.`);
     } catch (err) {
       setStatusMsg(`Erro ao excluir o perfil: ${err instanceof Error ? err.message : String(err)}`);
@@ -88,7 +88,7 @@ export function ProviderStudio({ initialHealth, initialCatalog, initialCredentia
   const handleResetCircuit = async (modelId: string) => {
     setResettingModel(modelId);
     try {
-      await post(`/api/providers/${encodeURIComponent(modelId)}/reset`, {});
+      await resetCircuit(modelId);
       setStatusMsg(`Circuito do modelo ${modelId} foi resetado com sucesso!`);
       // Atualiza estado local
       setHealthData((prev) => ({

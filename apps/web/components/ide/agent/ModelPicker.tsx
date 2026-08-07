@@ -7,20 +7,7 @@
  */
 
 import { useEffect, useState } from "react";
-import { get } from "@/lib/client";
-
-interface CatalogModel {
-  id: string;
-  provider: string;
-  available: boolean;
-}
-
-interface CatalogProfile {
-  name: string;
-  strategy: string;
-  models: string[];
-  is_default: boolean;
-}
+import { getCatalog, type CatalogModel, type CatalogProfile } from "@/lib/api/providers";
 
 interface ProvidersResponse {
   profiles: CatalogProfile[];
@@ -31,7 +18,7 @@ let cache: Promise<ProvidersResponse> | null = null;
 
 function loadProvidersData(): Promise<ProvidersResponse> {
   if (!cache) {
-    cache = get<ProvidersResponse>("/api/providers")
+    cache = getCatalog()
       .then((r) => ({
         profiles: (r.profiles || []).filter((p) => p.name !== "embedding"),
         models: (r.models || []).filter((m) => m.available),

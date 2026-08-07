@@ -4,7 +4,7 @@
  * backend que serve a tela `/providers`, apesar do nome do arquivo).
  */
 
-import { get } from "@/lib/client";
+import { del, get, post, put } from "@/lib/client";
 
 export interface CatalogModel {
   id: string;
@@ -89,4 +89,71 @@ export async function getCredentials(): Promise<CredentialsView> {
     "/api/providers/credentials",
   );
   return credentials;
+}
+
+export async function updateCredentials(
+  updates: Partial<Record<keyof CredentialsView, string>>,
+): Promise<CredentialsView> {
+  const { credentials } = await put<{ credentials: CredentialsView }>(
+    "/api/providers/credentials",
+    updates,
+  );
+  return credentials;
+}
+
+export async function setDefaultProfile(profileName: string): Promise<CatalogProfile[]> {
+  const { profiles } = await post<{ profiles: CatalogProfile[] }>(
+    "/api/providers/default-profile",
+    { profile: profileName },
+  );
+  return profiles;
+}
+
+export interface ProfileUpsert {
+  name: string;
+  strategy: string;
+  models: string[];
+  weights?: Record<string, number>;
+}
+
+export async function saveProfile(value: ProfileUpsert): Promise<CatalogProfile[]> {
+  const { profiles } = await put<{ profiles: CatalogProfile[] }>(
+    `/api/providers/profiles/${encodeURIComponent(value.name)}`,
+    { strategy: value.strategy, models: value.models, weights: value.weights },
+  );
+  return profiles;
+}
+
+export async function deleteProfile(profileName: string): Promise<CatalogProfile[]> {
+  const { profiles } = await del<{ profiles: CatalogProfile[] }>(
+    `/api/providers/profiles/${encodeURIComponent(profileName)}`,
+  );
+  return profiles;
+}
+
+export async function discoverProviderModels(
+  provider: string,
+): Promise<DiscoverResponse> {
+  return post<DiscoverResponse>(`/api/providers/${encodeURIComponent(provider)}/discover`);
+}
+
+export interface ConfirmDiscoveredModel {
+  id: string;
+  model: string | null;
+  deployment: string | null;
+  endpoint: string | null;
+  mode: string | null;
+  context_window: number;
+  tags: string[];
+  capabilities: string[];
+}
+
+export async function confirmDiscoveredModels(
+  provider: string,
+  models: ConfirmDiscoveredModel[],
+): Promise<{ added: string[]; models: CatalogModel[] }> {
+  return post<{ added: string[]; models: CatalogModel[] }>(
+    `/api/providers/${encodeURIComponent(provider)}/discover/confirm`,
+    { models },
+  );
 }

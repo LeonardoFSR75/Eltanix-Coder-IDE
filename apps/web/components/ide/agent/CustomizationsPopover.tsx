@@ -12,15 +12,8 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { get } from "@/lib/client";
+import { listAgentTools, type AgentToolInfo as ToolInfo } from "@/lib/api/agent";
 import { MODE_HINT, MODES, type Mode } from "./modes";
-
-interface ToolInfo {
-  name: string;
-  description: string;
-  risk: string;
-  requires_approval: boolean;
-}
 
 type CategoriaId = "overview" | "agents" | "skills" | "instructions" | "hooks" | "mcp" | "tools";
 
@@ -75,8 +68,8 @@ export function CustomizationsPopover({
 
   useEffect(() => {
     if (categoria !== "tools" || tools !== null) return;
-    get<{ tools: ToolInfo[] }>("/api/agent/tools")
-      .then((r) => setTools(r.tools))
+    listAgentTools()
+      .then((t) => setTools(t))
       .catch((err) => setToolsErro(err instanceof Error ? err.message : String(err)));
   }, [categoria, tools]);
 

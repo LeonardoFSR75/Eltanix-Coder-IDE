@@ -20,10 +20,14 @@ const EMPTY_CREDENTIALS: CredentialsView = {
 };
 const EMPTY_CATALOG: CatalogResponse = { models: [], profiles: [] };
 
+interface LoadedData {
+  health: ProvidersHealthResponse;
+  catalog: CatalogResponse;
+  credentials: CredentialsView;
+}
+
 export default function ProvidersPage() {
-  const [health, setHealth] = useState<ProvidersHealthResponse | null>(null);
-  const [catalog, setCatalog] = useState<CatalogResponse>(EMPTY_CATALOG);
-  const [credentials, setCredentials] = useState<CredentialsView>(EMPTY_CREDENTIALS);
+  const [data, setData] = useState<LoadedData | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -31,21 +35,22 @@ export default function ProvidersPage() {
 
     async function load() {
       // Saúde é o que decide se a página é utilizável; catálogo/credenciais
-      // degradam para vazio em vez de derrubar a tela inteira.
+      // degradam para vazio em vez de derrubar a tela inteira. As três
+      // resolvem juntas antes de montar ProviderStudio: ele só lê
+      // `initial*` uma vez (useState), então um set em duas etapas deixaria
+      // o catálogo travado vazio para sempre depois da primeira montagem.
       try {
-        const h = await getProvidersHealth();
+        const [health, catalog, credentials] = await Promise.all([
+          getProvidersHealth(),
+          getCatalog().catch(() => EMPTY_CATALOG),
+          getCredentials().catch(() => EMPTY_CREDENTIALS),
+        ]);
         if (cancelled) return;
-        setHealth(h);
+        setData({ health, catalog, credentials });
       } catch (err) {
         if (cancelled) return;
         setError(err instanceof Error ? err.message : String(err));
-        return;
       }
-
-      const [c, cr] = await Promise.allSettled([getCatalog(), getCredentials()]);
-      if (cancelled) return;
-      if (c.status === "fulfilled") setCatalog(c.value);
-      if (cr.status === "fulfilled") setCredentials(cr.value);
     }
 
     load();
@@ -55,7 +60,7 @@ export default function ProvidersPage() {
   }, []);
 
   if (error) return <ErrorNotice error={error} />;
-  if (!health) return null;
+  if (!data) return null;
 
   return (
     <div className="shell">
@@ -64,9 +69,9 @@ export default function ProvidersPage() {
           Estúdio de Configuração de Provedores
         </h1>
         <ProviderStudio
-          initialHealth={health}
-          initialCatalog={catalog}
-          initialCredentials={credentials}
+          initialHealth={data.health}
+          initialCatalog={data.catalog}
+          initialCredentials={data.credentials}
         />
       </div>
     </div>

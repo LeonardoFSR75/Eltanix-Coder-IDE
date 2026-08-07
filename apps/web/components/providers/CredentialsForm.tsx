@@ -1,8 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { put } from "@/lib/client";
-import type { CredentialsView } from "@/lib/api/providers";
+import { updateCredentials, type CredentialsView } from "@/lib/api/providers";
 
 type FieldKey =
   | "ollama_base_url"
@@ -62,11 +61,11 @@ export function CredentialsForm({ initial, onSaved, onError }: CredentialsFormPr
     try {
       const payload: Partial<Record<FieldKey, string>> = {};
       for (const key of touched) payload[key] = values[key];
-      const data = await put<{ credentials: CredentialsView }>("/api/providers/credentials", payload);
-      setCurrent(data.credentials);
-      setValues(buildValues(data.credentials));
+      const credentials = await updateCredentials(payload);
+      setCurrent(credentials);
+      setValues(buildValues(credentials));
       setTouched(new Set());
-      onSaved(data.credentials);
+      onSaved(credentials);
     } catch (err) {
       onError(err instanceof Error ? err.message : String(err));
     } finally {

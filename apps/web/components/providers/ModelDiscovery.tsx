@@ -1,8 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import { post } from "@/lib/client";
-import type { CatalogModel, DiscoveredModelCandidate, DiscoverResponse } from "@/lib/api/providers";
+import {
+  confirmDiscoveredModels,
+  discoverProviderModels,
+  type CatalogModel,
+  type DiscoveredModelCandidate,
+  type DiscoverResponse,
+} from "@/lib/api/providers";
 
 const SUPPORTED_PROVIDERS = ["ollama", "databricks", "anthropic", "openai", "groq"] as const;
 const CAPABILITY_OPTIONS = ["chat", "tools", "vision", "prompt_cache", "embedding"] as const;
@@ -36,7 +41,7 @@ export function ModelDiscovery({ onModelsAdded, onStatus }: ModelDiscoveryProps)
   const handleDiscover = async (provider: string) => {
     setDiscovering(provider);
     try {
-      const data = await post<DiscoverResponse>(`/api/providers/${provider}/discover`, {});
+      const data = await discoverProviderModels(provider);
       setResult(data);
       setSelected(new Set(data.new.map((c) => c.suggested_id)));
       setEdits(Object.fromEntries(data.new.map((c) => [c.suggested_id, editsFromCandidate(c)])));
@@ -89,25 +94,20 @@ export function ModelDiscovery({ onModelsAdded, onStatus }: ModelDiscoveryProps)
 
     setConfirming(true);
     try {
-      const payload = {
-        models: chosen.map((candidate) => {
-          const edit = edits[candidate.suggested_id];
-          return {
-            id: edit.id,
-            model: candidate.model,
-            deployment: candidate.deployment,
-            endpoint: candidate.endpoint,
-            mode: candidate.mode,
-            context_window: edit.context_window,
-            tags: candidate.tags,
-            capabilities: edit.capabilities,
-          };
-        }),
-      };
-      const data = await post<{ added: string[]; models: CatalogModel[] }>(
-        `/api/providers/${result.provider}/discover/confirm`,
-        payload,
-      );
+      const models = chosen.map((candidate) => {
+        const edit = edits[candidate.suggested_id];
+        return {
+          id: edit.id,
+          model: candidate.model,
+          deployment: candidate.deployment,
+          endpoint: candidate.endpoint,
+          mode: candidate.mode,
+          context_window: edit.context_window,
+          tags: candidate.tags,
+          capabilities: edit.capabilities,
+        };
+      });
+      const data = await confirmDiscoveredModels(result.provider, models);
       onModelsAdded(data.models);
       onStatus(`${data.added.length} modelo(s) adicionado(s) ao catálogo: ${data.added.join(", ")}`);
       cancel();

@@ -9,22 +9,32 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { del, get, post } from "@/lib/client";
+import {
+  createEntry,
+  deleteEntry,
+  listTree,
+  moveEntry,
+  replaceInWorkspace,
+  searchWorkspace,
+  type WorkspaceEntry as Entry,
+} from "@/lib/api/workspace";
+import {
+  checkoutBranch,
+  commitChanges,
+  getGitBranches,
+  getGitStatus,
+  stageFiles,
+  unstageFiles,
+  type GitFile,
+} from "@/lib/api/git";
 import { useIde } from "@/lib/ide-store";
 import { ConfirmDialog, PromptDialog } from "@/components/ide/Overlays";
 import { FileIcon } from "@/components/ide/FileIcons";
 
 // ── Explorer ────────────────────────────────────────────────────────────────
 
-interface Entry {
-  path: string;
-  name: string;
-  is_dir: boolean;
-  size_bytes: number;
-}
-
 export function Explorer() {
-  const { project, openFile, previewFile, pinTab, active, bumpRevision, revision } = useIde();
+  const { project, openFile, previewFile, pinTab, active, bumpRevision, revision, closeTab, tabs } = useIde();
   const [levels, setLevels] = useState<Record<string, Entry[]>>({});
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -45,10 +55,8 @@ export function Explorer() {
     async (subpath: string) => {
       if (!project) return;
       try {
-        const data = await get<{ entries: Entry[] }>(
-          `/api/workspace/tree?project=${encodeURIComponent(project)}&subpath=${encodeURIComponent(subpath)}`,
-        );
-        setLevels((prev) => ({ ...prev, [subpath]: data.entries }));
+        const entries = await listTree(project, subpath);
+        setLevels((prev) => ({ ...prev, [subpath]: entries }));
         setErro(null);
       } catch (err) {
         setErro(err instanceof Error ? err.message : String(err));
@@ -175,7 +183,7 @@ export function Explorer() {
   const criar = async (caminho: string, isDir: boolean) => {
     if (!project) return;
     try {
-      await post("/api/workspace/file", { project, path: caminho, is_dir: isDir });
+      await createEntry(project, caminho, isDir);
       bumpRevision();
       if (!isDir) openFile(caminho);
     } catch (err) {
@@ -186,19 +194,39 @@ export function Explorer() {
   const renomear = async (origem: string, destino: string) => {
     if (!project) return;
     try {
-      await post("/api/workspace/move", { project, source: origem, destination: destino });
+      await moveEntry(project, origem, destino);
+      // Mesma razão de fecharAbasSob: sem remapear, a aba continuaria
+      // apontando para o caminho antigo (que não existe mais no disco).
+      for (const t of tabs) {
+        if (t === origem) {
+          closeTab(t);
+          openFile(destino);
+        } else if (t.startsWith(`${origem}/`)) {
+          closeTab(t);
+          openFile(`${destino}${t.slice(origem.length)}`);
+        }
+      }
       bumpRevision();
     } catch (err) {
       setErro(err instanceof Error ? err.message : String(err));
     }
   };
 
+  // Fecha qualquer aba aberta para o próprio caminho excluído ou, no caso de
+  // pasta, para qualquer arquivo que vivia dentro dela — sem isto a aba fica
+  // "fantasma", apontando para um arquivo que não existe mais no disco (um
+  // "Salvar" nela recriaria o arquivo do zero, sem avisar o usuário).
+  const fecharAbasSob = (path: string) => {
+    for (const t of tabs) {
+      if (t === path || t.startsWith(`${path}/`)) closeTab(t);
+    }
+  };
+
   const excluir = async (entry: Entry) => {
     if (!project) return;
     try {
-      await del(
-        `/api/workspace/file?project=${encodeURIComponent(project)}&path=${encodeURIComponent(entry.path)}&recursive=${entry.is_dir}`,
-      );
+      await deleteEntry(project, entry.path, entry.is_dir);
+      fecharAbasSob(entry.path);
       bumpRevision();
     } catch (err) {
       setErro(err instanceof Error ? err.message : String(err));
@@ -212,9 +240,8 @@ export function Explorer() {
     // quando o alvo é diretório).
     for (const path of alvos) {
       try {
-        await del(
-          `/api/workspace/file?project=${encodeURIComponent(project)}&path=${encodeURIComponent(path)}&recursive=true`,
-        );
+        await deleteEntry(project, path, true);
+        fecharAbasSob(path);
       } catch (err) {
         setErro(err instanceof Error ? err.message : String(err));
       }
@@ -520,14 +547,7 @@ export function SearchPanel() {
     setBuscando(true);
     setErro(null);
     try {
-      const data = await post<{
-        matches: Match[];
-        files_with_matches: number;
-        files_searched: number;
-        truncated: boolean;
-      }>("/api/workspace/search", {
-        project, query, regex, case_sensitive: caseSensitive,
-      });
+      const data = await searchWorkspace(project, query, { regex, caseSensitive });
       setMatches(data.matches);
       setResumo(
         `${data.matches.length}${data.truncated ? "+" : ""} ocorrências em ` +
@@ -544,10 +564,10 @@ export function SearchPanel() {
   const substituir = async () => {
     if (!project || !query.trim()) return;
     try {
-      const data = await post<{ files_changed: number; replacements: number }>(
-        "/api/workspace/replace",
-        { project, query, replacement, regex, case_sensitive: caseSensitive },
-      );
+      const data = await replaceInWorkspace(project, query, replacement, {
+        regex,
+        caseSensitive,
+      });
       setResumo(`${data.replacements} substituições em ${data.files_changed} arquivos`);
       setMatches([]);
       bumpRevision();
@@ -693,11 +713,6 @@ export function SearchPanel() {
 
 // ── Git ─────────────────────────────────────────────────────────────────────
 
-interface GitFile {
-  path: string;
-  status: string;
-}
-
 export function GitPanel() {
   const { project, openFile, revision, bumpRevision, reloadProjects } = useIde();
   const [estado, setEstado] = useState<{ branch: string; dirty: boolean; files: GitFile[] } | null>(null);
@@ -710,12 +725,9 @@ export function GitPanel() {
   const recarregar = useCallback(async () => {
     if (!project) return;
     try {
-      const [st, br] = await Promise.all([
-        get<{ branch: string; dirty: boolean; files: GitFile[] }>(`/api/git/status?project=${encodeURIComponent(project)}`),
-        get<{ branches: string[] }>(`/api/git/branches?project=${encodeURIComponent(project)}`),
-      ]);
+      const [st, br] = await Promise.all([getGitStatus(project), getGitBranches(project)]);
       setEstado(st);
-      setBranches(br.branches);
+      setBranches(br);
       setErro(null);
     } catch (err) {
       setErro(err instanceof Error ? err.message : String(err));
@@ -761,7 +773,7 @@ export function GitPanel() {
               <select
                 className="git-branch-select"
                 value={estado.branch}
-                onChange={(e) => void acao(() => post("/api/git/checkout", { project, branch: e.target.value }))}
+                onChange={(e) => void acao(() => checkoutBranch(project, e.target.value))}
                 title="Alternar branch atual"
               >
                 {branches.map((b) => <option key={b} value={b}>{b}</option>)}
@@ -787,7 +799,7 @@ export function GitPanel() {
                     type="button"
                     className="git-action-sm"
                     title="Despreparar todas (Unstage All)"
-                    onClick={() => void acao(() => post("/api/git/unstage", { project, paths: stagedFiles.map((f) => f.path) }))}
+                    onClick={() => void acao(() => unstageFiles(project, stagedFiles.map((f) => f.path)))}
                   >
                     −
                   </button>
@@ -806,7 +818,7 @@ export function GitPanel() {
                         type="button"
                         className="git-action-sm"
                         title="Despreparar arquivo (Unstage)"
-                        onClick={() => void acao(() => post("/api/git/unstage", { project, paths: [f.path] }))}
+                        onClick={() => void acao(() => unstageFiles(project, [f.path]))}
                       >
                         −
                       </button>
@@ -824,7 +836,7 @@ export function GitPanel() {
                     type="button"
                     className="git-action-sm"
                     title="Preparar todas (Stage All)"
-                    onClick={() => void acao(() => post("/api/git/stage", { project, paths: unstagedFiles.map((f) => f.path) }))}
+                    onClick={() => void acao(() => stageFiles(project, unstagedFiles.map((f) => f.path)))}
                   >
                     +
                   </button>
@@ -851,7 +863,7 @@ export function GitPanel() {
                       type="button"
                       className="git-action-sm"
                       title="Preparar arquivo (Stage)"
-                      onClick={() => void acao(() => post("/api/git/stage", { project, paths: [f.path] }))}
+                      onClick={() => void acao(() => stageFiles(project, [f.path]))}
                     >
                       +
                     </button>
@@ -876,9 +888,9 @@ export function GitPanel() {
               onClick={() =>
                 void acao(async () => {
                   if (stagedFiles.length === 0 && unstagedFiles.length > 0) {
-                    await post("/api/git/stage", { project, paths: unstagedFiles.map((f) => f.path) });
+                    await stageFiles(project, unstagedFiles.map((f) => f.path));
                   }
-                  await post("/api/git/commit", { project, message: mensagem });
+                  await commitChanges(project, mensagem);
                   setMensagem("");
                 }, "Commit realizado com sucesso!")
               }
@@ -893,7 +905,7 @@ export function GitPanel() {
         <PromptDialog
           title="Nome do novo branch"
           confirmLabel="Criar Branch"
-          onConfirm={(nome) => void acao(() => post("/api/git/checkout", { project, branch: nome, create: true }))}
+          onConfirm={(nome) => void acao(() => checkoutBranch(project, nome, true))}
           onClose={() => setNovoBranch(false)}
         />
       )}

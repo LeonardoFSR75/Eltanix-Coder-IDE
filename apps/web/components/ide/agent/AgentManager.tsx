@@ -9,22 +9,9 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { get } from "@/lib/client";
+import { listAgentSessions, type AgentSessionRecord as SessionRecord } from "@/lib/api/agent";
 import { fuzzyScore } from "@/lib/ide-store";
 import type { SessionStatus, SessionSummary } from "./sessionTypes";
-
-interface SessionRecord {
-  session_id: string;
-  project: string;
-  task: string;
-  mode: string;
-  profile: string | null;
-  branch: string | null;
-  status: "open" | "closed";
-  created_at: string;
-  updated_at: string;
-  live: boolean;
-}
 
 interface Row {
   id: string;
@@ -79,10 +66,8 @@ export function AgentManager({
     if (!project) return;
     setCarregando(true);
     try {
-      const data = await get<{ sessions: SessionRecord[] }>(
-        `/api/agent/sessions?project=${encodeURIComponent(project)}&limit=50`,
-      );
-      setHistorico(data.sessions);
+      const sessions = await listAgentSessions(project, 50);
+      setHistorico(sessions);
       setErro(null);
     } catch (err) {
       setErro(err instanceof Error ? err.message : String(err));

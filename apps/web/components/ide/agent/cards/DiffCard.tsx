@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { autoDetectLanguage, DiffView } from "@/components/ide/Editor";
-import { post } from "@/lib/client";
+import { revertFile } from "@/lib/api/agent";
 import { useIde } from "@/lib/ide-store";
 import { ToolCardShell } from "./ToolCardShell";
 import type { ToolCardProps } from "./types";
@@ -49,7 +49,7 @@ export function DiffCard({
     setBusy(true);
     setError(null);
     try {
-      await post(`/api/agent/sessions/${sessionId}/files/revert`, { path, before, existed });
+      await revertFile(sessionId, path, before, existed);
       setDecision("rejected");
       notifyFileChanged(path);
     } catch (err) {

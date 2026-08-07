@@ -4,40 +4,16 @@ import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/components/providers/AuthContext";
 import { useToast } from "@/components/Toast";
-import { get } from "@/lib/client";
-
-interface HealthView {
-  status: string;
-  models_total: number;
-  models_usable: number;
-  profiles: string[];
-  cache_enabled: boolean;
-  pricing_updated_at: string;
-}
-
-interface MetricsSummary {
-  window_days: number;
-  requests: number;
-  errors: number;
-  total_tokens: number;
-  cost_usd: number;
-  cache_hit_rate: number;
-  budget: {
-    daily_spent_usd: number;
-    daily_limit_usd: number;
-    monthly_spent_usd: number;
-    monthly_limit_usd: number;
-    hard_stop: boolean;
-  };
-}
+import { getHealth, type HealthStatus } from "@/lib/api/health";
+import { getMetricsSummary, type Summary } from "@/lib/api/metrics";
 
 export default function ProfilePage() {
   const { apiKeyValid, maskedKey, setApiKey, logout } = useAuth();
   const { addToast } = useToast();
   const router = useRouter();
 
-  const [health, setHealth] = useState<HealthView | null>(null);
-  const [metrics, setMetrics] = useState<MetricsSummary | null>(null);
+  const [health, setHealth] = useState<HealthStatus | null>(null);
+  const [metrics, setMetrics] = useState<Summary | null>(null);
   const [loading, setLoading] = useState(true);
 
   const [changingKey, setChangingKey] = useState(false);
@@ -45,7 +21,7 @@ export default function ProfilePage() {
   const [validating, setValidating] = useState(false);
 
   useEffect(() => {
-    Promise.all([get<HealthView>("/api/health"), get<MetricsSummary>("/api/metrics/summary")])
+    Promise.all([getHealth(), getMetricsSummary()])
       .then(([h, m]) => {
         setHealth(h);
         setMetrics(m);

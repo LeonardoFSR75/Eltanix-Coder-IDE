@@ -3,20 +3,17 @@
 import MonacoEditor, { DiffEditor } from "@monaco-editor/react";
 import "@/lib/monaco-loader";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { get, post, put } from "@/lib/client";
 import { getBuffer, setBuffer, updateBufferContent } from "@/lib/editor-buffer-cache";
 import { useLsp, type LspStatus } from "@/lib/use-lsp";
 import { useTheme } from "@/lib/theme";
 import { useIde } from "@/lib/ide-store";
 
 import { logAuditEvent } from "@/lib/api/audit";
-
-interface FileResponse {
-  path: string;
-  content: string;
-  language: string | null;
-  lines: number;
-}
+import { readFile, writeFile } from "@/lib/api/workspace";
+import {
+  discardChanges as discardGitChanges,
+  getFileVersions,
+} from "@/lib/api/git";
 
 // O nome da linguagem no nosso catálogo nem sempre é o id do Monaco.
 const MONACO_LANGUAGE: Record<string, string> = {
@@ -195,9 +192,7 @@ export function Editor({
     setLoading(true);
     setError(null);
     setShowDiff(false);
-    get<FileResponse>(
-      `/api/workspace/file?project=${encodeURIComponent(project)}&path=${encodeURIComponent(path)}`,
-    )
+    readFile(project, path)
       .then((data) => {
         if (cancelled) return;
         setContent(data.content);
@@ -227,7 +222,7 @@ export function Editor({
     if (!path || !project || !dirty) return;
     setSaving(true);
     try {
-      await put("/api/workspace/file", { project, path, content });
+      await writeFile(project, path, content);
       originalRef.current = content;
       setDirty(false);
       markDirty(path, false, groupId);
@@ -258,7 +253,7 @@ export function Editor({
     setBuffer(path, { content: originalRef.current, original: originalRef.current, language: rawLanguage });
 
     try {
-      await post("/api/git/discard", { project, paths: [path] });
+      await discardGitChanges(project, [path]);
 
       logAuditEvent({
         actor: "Usuário Desenvolvedor (IDE)",
@@ -280,9 +275,7 @@ export function Editor({
     }
     if (!path || !project) return;
     try {
-      const res = await get<{ original: string; modified: string }>(
-        `/api/git/file-versions?project=${encodeURIComponent(project)}&path=${encodeURIComponent(path)}`,
-      );
+      const res = await getFileVersions(project, path);
       setHeadContent(res.original);
       setShowDiff(true);
     } catch {
