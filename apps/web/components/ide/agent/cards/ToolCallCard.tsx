@@ -1,5 +1,6 @@
 "use client";
 
+import { BlameCard } from "./BlameCard";
 import { BrowserCard } from "./BrowserCard";
 import { CodeReviewCard } from "./CodeReviewCard";
 import { DiffCard } from "./DiffCard";
@@ -31,6 +32,8 @@ export function ToolCallCard(props: ToolCardProps & { sessionId: string | null }
       return <BrowserCard {...props} />;
     case "request_code_review":
       return <CodeReviewCard {...props} />;
+    case "code_history":
+      return <BlameCard {...props} />;
     default:
       if (GIT_TOOLS.has(props.tool)) return <GitCard {...props} />;
       return null;

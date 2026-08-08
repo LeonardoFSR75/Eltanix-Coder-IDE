@@ -51,6 +51,22 @@ class AgentWorktree:
     base_branch: str
 
 
+@dataclass(slots=True)
+class BlameHunk:
+    start_line: int
+    end_line: int
+    sha: str
+    author: str
+    date: str
+    message: str
+
+
+@dataclass(slots=True)
+class CoChangeEntry:
+    path: str
+    count: int
+
+
 def open_repo(root: Path) -> Repo:
     try:
         return Repo(root, search_parent_directories=False)
@@ -245,6 +261,63 @@ def log_recent(root: Path, limit: int = 20) -> list[dict[str, str]]:
         }
         for c in repo.iter_commits(max_count=limit)
     ]
+
+
+def blame(root: Path, path: str, rev: str = "HEAD") -> list[BlameHunk]:
+    """Linha a linha: quem tocou por último em cada trecho do arquivo.
+
+    `Repo.blame` devolve os hunks já em ordem de arquivo — um `(commit, linhas)`
+    por trecho contíguo de mesma autoria. Só precisamos acumular o número da
+    linha conforme avançamos, sem reprocessar nada.
+    """
+    repo = open_repo(root)
+    try:
+        entradas = repo.blame(rev, path)
+    except GitCommandError as exc:
+        raise GitError(f"git blame falhou: {exc}") from exc
+
+    hunks: list[BlameHunk] = []
+    linha = 1
+    for commit, linhas in entradas or []:
+        quantidade = len(linhas)
+        hunks.append(
+            BlameHunk(
+                start_line=linha,
+                end_line=linha + quantidade - 1,
+                sha=commit.hexsha[:8],
+                author=str(commit.author),
+                date=datetime.fromtimestamp(commit.committed_date, tz=UTC).isoformat(),
+                message=commit.message.splitlines()[0] if commit.message else "",
+            )
+        )
+        linha += quantidade
+    return hunks
+
+
+def co_change(root: Path, path: str, limit: int = 50) -> list[CoChangeEntry]:
+    """Quais outros arquivos aparecem nos mesmos commits que `path`.
+
+    Sem grafo persistido: percorre os últimos `limit` commits que tocaram o
+    arquivo e conta com que frequência cada outro arquivo aparece junto. Custo
+    proporcional a `limit`, não ao tamanho do repositório.
+    """
+    repo = open_repo(root)
+    if not repo.head.is_valid():
+        return []
+
+    contagem: dict[str, int] = {}
+    for commit in repo.iter_commits(paths=path, max_count=limit):
+        try:
+            tocados = commit.stats.files.keys()
+        except GitCommandError:
+            continue
+        for outro in tocados:
+            if outro == path:
+                continue
+            contagem[outro] = contagem.get(outro, 0) + 1
+
+    ordenado = sorted(contagem.items(), key=lambda par: par[1], reverse=True)
+    return [CoChangeEntry(path=p, count=c) for p, c in ordenado[:20]]
 
 
 def remote_url(root: Path, remote: str = "origin") -> str | None:

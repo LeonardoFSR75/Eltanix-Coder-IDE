@@ -61,6 +61,73 @@ async def git_diff(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
 
 
 @tool(
+    name="code_history",
+    description=(
+        "Mostra quem alterou um trecho de código (git blame) e quais outros "
+        "arquivos costumam mudar junto com ele. Use `line` para focar numa "
+        "linha específica (ex. dentro de uma função); sem ela, mostra o "
+        "arquivo inteiro."
+    ),
+    risk=RiskClass.READ,
+    parameters={
+        "type": "object",
+        "properties": {
+            "path": {"type": "string", "description": "Caminho do arquivo"},
+            "line": {"type": "integer", "description": "Linha específica (opcional)"},
+        },
+        "required": ["path"],
+    },
+    summarize=lambda a: f"histórico de {a.get('path')}"
+    + (f":{a['line']}" if a.get("line") else ""),
+)
+async def code_history(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
+    path = args["path"]
+    linha_alvo = args.get("line")
+    root = Path(ctx.workspace_root)
+
+    try:
+        hunks = git_ops.blame(root, path)
+    except GitError as exc:
+        return ToolResult.failure(str(exc))
+
+    if linha_alvo is not None:
+        hunks = [h for h in hunks if h.start_line <= linha_alvo <= h.end_line]
+
+    try:
+        co_mudancas = git_ops.co_change(root, path)
+    except GitError:
+        # Co-change é um extra sobre o blame; não falha a ferramenta inteira.
+        co_mudancas = []
+
+    linhas_saida = [
+        f"L{h.start_line}-{h.end_line}  {h.sha}  {h.author}  {h.message}" for h in hunks
+    ]
+    if co_mudancas:
+        linhas_saida.append("")
+        linhas_saida.append("costuma mudar junto com:")
+        linhas_saida.extend(f"  {c.path} ({c.count}x)" for c in co_mudancas[:10])
+
+    return ToolResult(
+        ok=True,
+        content="\n".join(linhas_saida) if linhas_saida else "(sem histórico)",
+        data={
+            "hunks": [
+                {
+                    "start_line": h.start_line,
+                    "end_line": h.end_line,
+                    "sha": h.sha,
+                    "author": h.author,
+                    "date": h.date,
+                    "message": h.message,
+                }
+                for h in hunks
+            ],
+            "co_changed": [{"path": c.path, "count": c.count} for c in co_mudancas],
+        },
+    )
+
+
+@tool(
     name="git_commit",
     description=(
         "Commita as alterações no branch da sessão. A mensagem deve explicar o "

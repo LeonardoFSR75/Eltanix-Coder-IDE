@@ -8,10 +8,11 @@ versão do IDE.
 from __future__ import annotations
 
 import asyncio
+import json
 import re
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, HTTPException, Query, Request, status
 from git import GitCommandError
 from pydantic import BaseModel, Field
 
@@ -24,6 +25,12 @@ from sicoobito.workspace.git import GitError, open_repo
 log = get_logger(__name__)
 
 router = APIRouter(prefix="/api/git", tags=["git"], dependencies=[AuthDep])
+
+# Cache de blame por (path, sha do HEAD) — só faz sentido para revisões que não
+# mudam mais (HEAD apontando para o commit já registrado na chave); revisão
+# explícita de outro commit também é imutável e cacheável pelo próprio sha.
+_BLAME_CACHE_PREFIX = "git:blame"
+_BLAME_CACHE_TTL_SECONDS = 3600
 
 _BRANCH_PATTERN = re.compile(r"^[a-zA-Z0-9._/-]+$")
 
@@ -240,6 +247,94 @@ async def log_(
     except GitError as exc:
         raise _erro(exc) from exc
     return {"commits": commits}
+
+
+@router.get("/blame")
+async def blame(
+    request: Request,
+    settings: SettingsDep,
+    project: str = Query(min_length=1),
+    path: str = Query(min_length=1),
+    rev: str = "HEAD",
+) -> dict[str, Any]:
+    fs = project_fs(settings, project)
+    try:
+        rel_path = fs.relative(fs.resolve(path))
+    except Exception as exc:
+        raise _erro(exc) from exc
+
+    def _head_sha() -> str:
+        repo = open_repo(fs.root)
+        return repo.head.commit.hexsha if repo.head.is_valid() else ""
+
+    try:
+        head_sha = await asyncio.to_thread(_head_sha)
+    except GitError as exc:
+        raise _erro(exc) from exc
+
+    # Só cacheia quando a revisão pedida é imutável: HEAD (chaveado pelo sha
+    # atual, então um novo commit muda a chave sozinho) ou um sha explícito.
+    cacheavel = rev == "HEAD" or rev == head_sha
+    redis = getattr(request.app.state, "redis", None)
+    chave = f"{_BLAME_CACHE_PREFIX}:{fs.root.as_posix()}:{head_sha}:{rel_path}"
+
+    if redis is not None and cacheavel:
+        try:
+            bruto = await redis.get(chave)
+            if bruto:
+                return {"path": rel_path, "hunks": json.loads(bruto)}
+        except Exception as exc:
+            log.warning("git.blame.cache_unavailable", error=str(exc))
+
+    try:
+        hunks = await asyncio.to_thread(git_ops.blame, fs.root, rel_path, rev)
+    except GitError as exc:
+        raise _erro(exc) from exc
+
+    payload = [
+        {
+            "start_line": h.start_line,
+            "end_line": h.end_line,
+            "sha": h.sha,
+            "author": h.author,
+            "date": h.date,
+            "message": h.message,
+        }
+        for h in hunks
+    ]
+
+    if redis is not None and cacheavel:
+        try:
+            await redis.set(chave, json.dumps(payload), ex=_BLAME_CACHE_TTL_SECONDS)
+        except Exception as exc:
+            log.warning("git.blame.cache_unavailable", error=str(exc))
+
+    return {"path": rel_path, "hunks": payload}
+
+
+@router.get("/co-change")
+async def co_change(
+    settings: SettingsDep,
+    project: str = Query(min_length=1),
+    path: str = Query(min_length=1),
+    limit: int = 50,
+) -> dict[str, Any]:
+    """Quais outros arquivos costumam mudar junto com este, pelo histórico recente."""
+    fs = project_fs(settings, project)
+    try:
+        rel_path = fs.relative(fs.resolve(path))
+    except Exception as exc:
+        raise _erro(exc) from exc
+
+    try:
+        entradas = await asyncio.to_thread(git_ops.co_change, fs.root, rel_path, limit)
+    except GitError as exc:
+        raise _erro(exc) from exc
+
+    return {
+        "path": rel_path,
+        "co_changed": [{"path": e.path, "count": e.count} for e in entradas],
+    }
 
 
 class DiscardRequest(BaseModel):

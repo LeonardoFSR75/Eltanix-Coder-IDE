@@ -20,6 +20,20 @@ export interface FileVersions {
   modified: string;
 }
 
+export interface BlameHunk {
+  start_line: number;
+  end_line: number;
+  sha: string;
+  author: string;
+  date: string;
+  message: string;
+}
+
+export interface CoChangeEntry {
+  path: string;
+  count: number;
+}
+
 export async function getGitStatus(project: string): Promise<GitStatus> {
   return get<GitStatus>(`/api/git/status?project=${encodeURIComponent(project)}`);
 }
@@ -59,4 +73,26 @@ export async function getFileVersions(project: string, path: string): Promise<Fi
   return get<FileVersions>(
     `/api/git/file-versions?project=${encodeURIComponent(project)}&path=${encodeURIComponent(path)}`,
   );
+}
+
+export async function getBlame(
+  project: string,
+  path: string,
+  rev = "HEAD",
+): Promise<BlameHunk[]> {
+  const { hunks } = await get<{ hunks: BlameHunk[] }>(
+    `/api/git/blame?project=${encodeURIComponent(project)}&path=${encodeURIComponent(path)}&rev=${encodeURIComponent(rev)}`,
+  );
+  return hunks;
+}
+
+export async function getCoChange(
+  project: string,
+  path: string,
+  limit = 50,
+): Promise<CoChangeEntry[]> {
+  const { co_changed } = await get<{ co_changed: CoChangeEntry[] }>(
+    `/api/git/co-change?project=${encodeURIComponent(project)}&path=${encodeURIComponent(path)}&limit=${limit}`,
+  );
+  return co_changed;
 }
