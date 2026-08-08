@@ -5,7 +5,7 @@ from __future__ import annotations
 import operator
 from typing import Annotated, Any, Literal, TypedDict
 
-AgentMode = Literal["ask", "edit", "agent", "plan", "auto", "orchestra"]
+AgentMode = Literal["ask", "edit", "agent", "plan", "auto", "orchestra", "explore"]
 
 
 class PendingApproval(TypedDict):

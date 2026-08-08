@@ -6,7 +6,7 @@
  * exatamente o mesmo texto, então duplicá-lo criaria divergência silenciosa.
  */
 
-export type Mode = "ask" | "edit" | "agent" | "plan" | "auto" | "orchestra";
+export type Mode = "ask" | "edit" | "agent" | "plan" | "auto" | "orchestra" | "explore";
 
 export const MODE_HINT: Record<Mode, string> = {
   ask: "Só leitura: o agente responde sem tocar em nada.",
@@ -17,6 +17,9 @@ export const MODE_HINT: Record<Mode, string> = {
   orchestra:
     "Modo Orquestra: planeja, implementa com TDD (teste falha → implementa → teste passa), " +
     "pede uma segunda opinião do modelo antes de cada commit, e commita a cada etapa aprovada.",
+  explore:
+    "Modo Explorar: só leitura, focado em arquitetura — grafo de código, histórico e " +
+    "detecção de dependência circular/módulo órfão, sempre citando evidência.",
 };
 
-export const MODES: Mode[] = ["plan", "orchestra", "auto", "ask", "edit", "agent"];
+export const MODES: Mode[] = ["plan", "orchestra", "auto", "explore", "ask", "edit", "agent"];

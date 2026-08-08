@@ -119,6 +119,20 @@ def build_task_prompt(
             "para o próximo item do plano."
         )
 
+    elif mode == "explore":
+        partes.append(
+            "MODO EXPLORAR ATIVO:\n"
+            "Você está investigando o repositório, não editando — não há ferramenta de "
+            "escrita disponível neste modo. Use `search_code`, `code_graph` e "
+            "`code_history` para entender estrutura e histórico, e `find_circular_imports` "
+            "/ `find_orphan_modules` quando a pergunta for sobre saúde arquitetural. "
+            "`find_orphan_modules` devolve candidatos brutos — pontos de entrada legítimos "
+            "(main.py, __init__.py, testes) aparecem ali também; confirme cada um antes de "
+            "chamá-lo de código morto. Toda afirmação na resposta final precisa citar a "
+            "ferramenta e o resultado que a sustenta (arquivo, símbolo, aresta) — sem isso, "
+            "é opinião, não achado."
+        )
+
     partes.append(f"Tarefa:\n{task}")
     return "\n\n".join(partes)
 

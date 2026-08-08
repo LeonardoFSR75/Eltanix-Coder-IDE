@@ -28,6 +28,40 @@ _IMPORT_LANGUAGES = frozenset({"python", "javascript", "typescript", "tsx"})
 _JS_EXTENSIONS = (".ts", ".tsx", ".js", ".jsx")
 
 
+def find_cycles(graph: dict[str, set[str]]) -> list[list[str]]:
+    """Ciclos de import via DFS com coloração branco/cinza/preto.
+
+    Cinza é "no caminho atual"; achar uma aresta para um nó cinza é a
+    assinatura de um ciclo. Não deduplica ciclos que se sobrepõem (duas
+    arestas de volta para o mesmo laço aparecem duas vezes) — preferível
+    reportar demais a esconder um ciclo real atrás de uma deduplicação
+    errada. DFS recursivo é suficiente para o tamanho de um workspace
+    local; não vale a complexidade de uma versão iterativa aqui.
+    """
+    WHITE, GRAY, BLACK = 0, 1, 2
+    color: dict[str, int] = {}
+    path: list[str] = []
+    cycles: list[list[str]] = []
+
+    def visit(node: str) -> None:
+        color[node] = GRAY
+        path.append(node)
+        for neighbor in graph.get(node, ()):
+            state = color.get(neighbor, WHITE)
+            if state == WHITE:
+                visit(neighbor)
+            elif state == GRAY:
+                start = path.index(neighbor)
+                cycles.append([*path[start:], neighbor])
+        path.pop()
+        color[node] = BLACK
+
+    for node in graph:
+        if color.get(node, WHITE) == WHITE:
+            visit(node)
+    return cycles
+
+
 def contains_edges[T](chunk_ids: list[tuple[Chunk, T]]) -> list[tuple[T, T]]:
     """`[(id do container, id do filho)]` — ex. classe → método.
 

@@ -415,6 +415,56 @@ async def imported_by(session: AsyncSession, *, workspace: str, path: str) -> li
     return sorted(rows.scalars().all())
 
 
+async def import_graph(session: AsyncSession, *, workspace: str) -> dict[str, set[str]]:
+    """Adjacência arquivo → arquivos que ele importa, só `kind='imports'`.
+
+    Base para `edges.find_cycles` — devolvida como dict simples porque quem
+    chama vai rodar um algoritmo de grafo em Python, não outra query SQL.
+    """
+    rows = await session.execute(
+        select(CodeChunk.path, CodeEdge.to_path)
+        .join(CodeEdge, CodeEdge.from_chunk_id == CodeChunk.id)
+        .where(
+            CodeEdge.workspace == workspace,
+            CodeEdge.kind == "imports",
+            CodeEdge.to_path.is_not(None),
+        )
+        .distinct()
+    )
+    graph: dict[str, set[str]] = {}
+    for from_path, to_path in rows.all():
+        graph.setdefault(from_path, set()).add(to_path)
+    return graph
+
+
+async def orphan_modules(session: AsyncSession, *, workspace: str) -> list[str]:
+    """Arquivos indexados que nenhum outro arquivo importa.
+
+    Inclui pontos de entrada legítimos (`main.py`, `__init__.py`, testes) —
+    isso não é uma lista de código morto pronta, é o ponto de partida para
+    uma investigação (ver o aviso equivalente no prompt do modo `explore`).
+    """
+    all_paths = set(
+        (await session.execute(select(IndexedFile.path).where(IndexedFile.workspace == workspace)))
+        .scalars()
+        .all()
+    )
+    imported_paths = set(
+        (
+            await session.execute(
+                select(CodeEdge.to_path).where(
+                    CodeEdge.workspace == workspace,
+                    CodeEdge.kind == "imports",
+                    CodeEdge.to_path.is_not(None),
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    return sorted(all_paths - imported_paths)
+
+
 @dataclass(slots=True)
 class CodeGraphResult:
     chunk: CodeChunk | None

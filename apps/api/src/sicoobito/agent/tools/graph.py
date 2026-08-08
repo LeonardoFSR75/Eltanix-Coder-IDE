@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from sicoobito.agent.tools.base import RiskClass, ToolContext, ToolResult, tool
+from sicoobito.context import edges as context_edges
 from sicoobito.context import store as context_store
 from sicoobito.db.session import session_scope
 
@@ -85,3 +86,64 @@ async def code_graph(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
             "imported_by": result.imported_by,
         },
     )
+
+
+@tool(
+    name="find_circular_imports",
+    description=(
+        "Procura dependência circular entre arquivos, seguindo as arestas de "
+        "import do Code Knowledge Graph. Devolve os ciclos como listas de "
+        "caminho — cada um é evidência (a cadeia de imports), não uma "
+        "suposição. Projeto precisa estar indexado."
+    ),
+    risk=RiskClass.READ,
+    parameters={"type": "object", "properties": {}},
+    summarize=lambda _a: "procurar dependência circular",
+)
+async def find_circular_imports(ctx: ToolContext, _args: dict[str, Any]) -> ToolResult:
+    if ctx.indexer is None:
+        return ToolResult.failure("Índice de contexto indisponível.")
+
+    workspace = ctx.indexer.workspace_key(Path(ctx.workspace_root))
+    async with session_scope() as session:
+        graph = await context_store.import_graph(session, workspace=workspace)
+    cycles = context_edges.find_cycles(graph)
+
+    if not cycles:
+        return ToolResult(
+            ok=True, content="Nenhuma dependência circular encontrada.", data={"cycles": []}
+        )
+
+    linhas = [f"{len(cycles)} ciclo(s) encontrado(s):"]
+    linhas.extend("  " + " → ".join(cycle) for cycle in cycles)
+    return ToolResult(ok=True, content="\n".join(linhas), data={"cycles": cycles})
+
+
+@tool(
+    name="find_orphan_modules",
+    description=(
+        "Lista arquivos que nenhum outro arquivo do workspace importa. NÃO é "
+        "uma lista de código morto pronta: pontos de entrada legítimos "
+        "(main.py, __init__.py, arquivo de teste, script de migração) também "
+        "aparecem aqui, porque de fato ninguém os importa. Confirme cada "
+        "candidato (ex. com `code_history` ou lendo o arquivo) antes de "
+        "afirmar que é órfão de verdade."
+    ),
+    risk=RiskClass.READ,
+    parameters={"type": "object", "properties": {}},
+    summarize=lambda _a: "procurar módulos órfãos",
+)
+async def find_orphan_modules(ctx: ToolContext, _args: dict[str, Any]) -> ToolResult:
+    if ctx.indexer is None:
+        return ToolResult.failure("Índice de contexto indisponível.")
+
+    workspace = ctx.indexer.workspace_key(Path(ctx.workspace_root))
+    async with session_scope() as session:
+        orphans = await context_store.orphan_modules(session, workspace=workspace)
+
+    if not orphans:
+        return ToolResult(ok=True, content="Nenhum candidato a módulo órfão.", data={"orphans": []})
+
+    linhas = [f"{len(orphans)} candidato(s) — confirme antes de tratar como código morto:"]
+    linhas.extend(f"  {path}" for path in orphans)
+    return ToolResult(ok=True, content="\n".join(linhas), data={"orphans": orphans})

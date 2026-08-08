@@ -4,6 +4,7 @@ import { BlameCard } from "./BlameCard";
 import { BrowserCard } from "./BrowserCard";
 import { CodeReviewCard } from "./CodeReviewCard";
 import { DiffCard } from "./DiffCard";
+import { ExplorerCard } from "./ExplorerCard";
 import { GitCard } from "./GitCard";
 import { GraphCard } from "./GraphCard";
 import { ListFilesCard, ReadFileCard } from "./ReadFileCard";
@@ -37,6 +38,9 @@ export function ToolCallCard(props: ToolCardProps & { sessionId: string | null }
       return <BlameCard {...props} />;
     case "code_graph":
       return <GraphCard {...props} />;
+    case "find_circular_imports":
+    case "find_orphan_modules":
+      return <ExplorerCard {...props} />;
     default:
       if (GIT_TOOLS.has(props.tool)) return <GitCard {...props} />;
       return null;

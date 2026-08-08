@@ -85,7 +85,9 @@ def _tool_schemas(mode: str, has_plan: bool) -> list[dict[str, Any]]:
     nenhum, só executava como o modo agente comum. `orchestra` reusa esse
     mesmo portão: o ciclo plano→TDD→revisão→commit não começa sem plano.
     """
-    if mode == "ask":
+    if mode in ("ask", "explore"):
+        # `explore` é somente-leitura como `ask` — a diferença entre os dois
+        # é o prompt (ver `prompts.py`), não o conjunto de ferramentas.
         return registry.schemas(allow_exec=False, allow_write=False)
     if mode == "edit":
         return registry.schemas(allow_exec=False, allow_write=True)
