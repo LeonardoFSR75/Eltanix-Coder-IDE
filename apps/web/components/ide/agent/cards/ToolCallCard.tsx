@@ -5,6 +5,7 @@ import { BrowserCard } from "./BrowserCard";
 import { CodeReviewCard } from "./CodeReviewCard";
 import { DiffCard } from "./DiffCard";
 import { GitCard } from "./GitCard";
+import { GraphCard } from "./GraphCard";
 import { ListFilesCard, ReadFileCard } from "./ReadFileCard";
 import { RunCommandCard } from "./RunCommandCard";
 import { SearchCard } from "./SearchCard";
@@ -34,6 +35,8 @@ export function ToolCallCard(props: ToolCardProps & { sessionId: string | null }
       return <CodeReviewCard {...props} />;
     case "code_history":
       return <BlameCard {...props} />;
+    case "code_graph":
+      return <GraphCard {...props} />;
     default:
       if (GIT_TOOLS.has(props.tool)) return <GitCard {...props} />;
       return null;

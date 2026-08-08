@@ -10,13 +10,14 @@ escalas incomparáveis (distância de cosseno vs. ts_rank).
 
 from __future__ import annotations
 
+import uuid
 from dataclasses import dataclass
 
 from sqlalchemy import case, delete, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from sicoobito.context.chunker import Chunk
-from sicoobito.db.models import CodeChunk, IndexedFile
+from sicoobito.db.models import CodeChunk, CodeEdge, IndexedFile
 from sicoobito.logging_setup import get_logger
 
 log = get_logger(__name__)
@@ -61,7 +62,7 @@ async def upsert_file(
     chunks: list[Chunk],
     embeddings: list[list[float] | None],
     fallback_chunking: bool,
-) -> IndexedFile:
+) -> tuple[IndexedFile, list[CodeChunk]]:
     """Substitui o arquivo e todos os seus chunks.
 
     Substituir em vez de fazer diff de chunk é deliberado: editar uma função no
@@ -93,26 +94,29 @@ async def upsert_file(
     # `existing.id` exista antes de virar chave estrangeira dos chunks.
     await session.flush()
 
+    persisted: list[CodeChunk] = []
     for chunk, embedding in zip(chunks, embeddings, strict=True):
-        session.add(
-            CodeChunk(
-                file_id=existing.id,
-                workspace=workspace,
-                path=chunk.path,
-                language=chunk.language,
-                symbol=chunk.symbol[:256] if chunk.symbol else None,
-                parent=chunk.parent[:256] if chunk.parent else None,
-                kind=chunk.kind,
-                start_line=chunk.start_line,
-                end_line=chunk.end_line,
-                content=chunk.content,
-                token_count=chunk.token_count,
-                embedding=embedding,
-            )
+        row = CodeChunk(
+            file_id=existing.id,
+            workspace=workspace,
+            path=chunk.path,
+            language=chunk.language,
+            symbol=chunk.symbol[:256] if chunk.symbol else None,
+            parent=chunk.parent[:256] if chunk.parent else None,
+            kind=chunk.kind,
+            start_line=chunk.start_line,
+            end_line=chunk.end_line,
+            content=chunk.content,
+            token_count=chunk.token_count,
+            embedding=embedding,
         )
+        session.add(row)
+        persisted.append(row)
 
+    # Flush para os chunks ganharem `id` — `context/edges.py` precisa deles
+    # para montar as arestas do Code Knowledge Graph logo em seguida.
     await session.flush()
-    return existing
+    return existing, persisted
 
 
 async def delete_missing(
@@ -296,3 +300,154 @@ async def index_stats(session: AsyncSession, workspace: str) -> dict[str, object
             for language, count in by_language
         ],
     }
+
+
+# --- Code Knowledge Graph -------------------------------------------------
+#
+# `contains` liga chunk a chunk (classe → método) e some sozinho via CASCADE
+# quando o chunk de origem é reindexado. `imports` liga arquivo a arquivo por
+# `to_path` — não há chunk representando "o arquivo inteiro", então a aresta
+# não tem `to_chunk_id`, e por isso não desaparece com CASCADE quando o
+# arquivo *destino* é reindexado (o que é o comportamento certo: quem importa
+# esse arquivo continua importando, os chunks dele é que trocaram de id).
+
+
+async def insert_edges(
+    session: AsyncSession,
+    *,
+    workspace: str,
+    contains: list[tuple[uuid.UUID, uuid.UUID]],
+    imports: list[tuple[uuid.UUID, str]],
+) -> None:
+    for from_id, to_id in contains:
+        session.add(
+            CodeEdge(workspace=workspace, from_chunk_id=from_id, to_chunk_id=to_id, kind="contains")
+        )
+    for from_id, to_path in imports:
+        session.add(
+            CodeEdge(workspace=workspace, from_chunk_id=from_id, to_path=to_path, kind="imports")
+        )
+    if contains or imports:
+        await session.flush()
+
+
+async def find_chunk(
+    session: AsyncSession,
+    *,
+    workspace: str,
+    path: str,
+    symbol: str | None = None,
+    line: int | None = None,
+) -> CodeChunk | None:
+    """Localiza o chunk a partir do qual explorar o grafo.
+
+    `symbol` é preciso; `line` é aproximado (o primeiro chunk cuja faixa
+    cobre a linha); sem nenhum dos dois, devolve o primeiro chunk do arquivo
+    — normalmente o chunk `module` com os imports do topo.
+    """
+    stmt = select(CodeChunk).where(CodeChunk.workspace == workspace, CodeChunk.path == path)
+    if symbol:
+        stmt = stmt.where(CodeChunk.symbol == symbol)
+    elif line is not None:
+        stmt = stmt.where(CodeChunk.start_line <= line, CodeChunk.end_line >= line)
+    stmt = stmt.order_by(CodeChunk.start_line).limit(1)
+    return await session.scalar(stmt)
+
+
+async def children_of(
+    session: AsyncSession, *, workspace: str, chunk_id: uuid.UUID
+) -> list[CodeChunk]:
+    rows = await session.execute(
+        select(CodeChunk)
+        .join(CodeEdge, CodeEdge.to_chunk_id == CodeChunk.id)
+        .where(
+            CodeEdge.workspace == workspace,
+            CodeEdge.kind == "contains",
+            CodeEdge.from_chunk_id == chunk_id,
+        )
+        .order_by(CodeChunk.start_line)
+    )
+    return list(rows.scalars().all())
+
+
+async def container_of(
+    session: AsyncSession, *, workspace: str, chunk_id: uuid.UUID
+) -> CodeChunk | None:
+    return await session.scalar(
+        select(CodeChunk)
+        .join(CodeEdge, CodeEdge.from_chunk_id == CodeChunk.id)
+        .where(
+            CodeEdge.workspace == workspace,
+            CodeEdge.kind == "contains",
+            CodeEdge.to_chunk_id == chunk_id,
+        )
+    )
+
+
+async def imports_of(session: AsyncSession, *, workspace: str, path: str) -> list[str]:
+    """Arquivos que `path` importa e que resolveram para dentro do índice."""
+    rows = await session.execute(
+        select(CodeEdge.to_path)
+        .join(CodeChunk, CodeChunk.id == CodeEdge.from_chunk_id)
+        .where(
+            CodeEdge.workspace == workspace,
+            CodeEdge.kind == "imports",
+            CodeChunk.path == path,
+        )
+        .distinct()
+    )
+    return sorted(p for p in rows.scalars().all() if p)
+
+
+async def imported_by(session: AsyncSession, *, workspace: str, path: str) -> list[str]:
+    """Arquivos que importam `path` (aresta reversa — não passa por chunk_id
+    porque o alvo de `imports` é sempre um caminho, nunca um chunk)."""
+    rows = await session.execute(
+        select(CodeChunk.path)
+        .join(CodeEdge, CodeEdge.from_chunk_id == CodeChunk.id)
+        .where(
+            CodeEdge.workspace == workspace,
+            CodeEdge.kind == "imports",
+            CodeEdge.to_path == path,
+        )
+        .distinct()
+    )
+    return sorted(rows.scalars().all())
+
+
+@dataclass(slots=True)
+class CodeGraphResult:
+    chunk: CodeChunk | None
+    contains: list[CodeChunk]
+    contained_by: CodeChunk | None
+    imports: list[str]
+    imported_by: list[str]
+
+
+async def code_graph(
+    session: AsyncSession,
+    *,
+    workspace: str,
+    path: str,
+    symbol: str | None = None,
+    line: int | None = None,
+) -> CodeGraphResult:
+    """Vizinhança de 1 hop em torno de um símbolo: quem ele contém, quem o
+    contém, o que o arquivo dele importa e quem importa esse arquivo."""
+    chunk = await find_chunk(session, workspace=workspace, path=path, symbol=symbol, line=line)
+    if chunk is None:
+        return CodeGraphResult(
+            chunk=None, contains=[], contained_by=None, imports=[], imported_by=[]
+        )
+
+    contains = await children_of(session, workspace=workspace, chunk_id=chunk.id)
+    contained_by = await container_of(session, workspace=workspace, chunk_id=chunk.id)
+    imports = await imports_of(session, workspace=workspace, path=path)
+    imported = await imported_by(session, workspace=workspace, path=path)
+    return CodeGraphResult(
+        chunk=chunk,
+        contains=contains,
+        contained_by=contained_by,
+        imports=imports,
+        imported_by=imported,
+    )

@@ -198,6 +198,42 @@ class CodeChunk(Base):
         return f"<CodeChunk {self.path}:{self.start_line}-{self.end_line} {self.symbol or ''}>"
 
 
+class CodeEdge(Base):
+    """Uma aresta do Code Knowledge Graph — ver `context/edges.py`.
+
+    `kind="contains"` liga contêiner a filho (classe → método): `to_chunk_id`
+    aponta para outro `code_chunk`, ambos sempre no mesmo arquivo. `kind=
+    "imports"` liga arquivo a arquivo: como o alvo é o arquivo importado como
+    um todo, não um símbolo específico dele, `to_chunk_id` fica nulo e
+    `to_path` guarda o caminho resolvido — inventar um "chunk representante"
+    do arquivo destino seria arbitrário. `workspace` é desnormalizado do
+    `code_chunk` de origem pelo mesmo motivo que em `CodeChunk`: consulta sem
+    join extra.
+    """
+
+    __tablename__ = "code_edge"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workspace: Mapped[str] = mapped_column(String(512), nullable=False)
+    from_chunk_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("code_chunk.id", ondelete="CASCADE"), nullable=False
+    )
+    to_chunk_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("code_chunk.id", ondelete="CASCADE"), nullable=True
+    )
+    to_path: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    kind: Mapped[str] = mapped_column(String(16), nullable=False)  # contains | imports
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    __table_args__ = (
+        Index("ix_code_edge_workspace_from", "workspace", "from_chunk_id"),
+        Index("ix_code_edge_workspace_to", "workspace", "to_chunk_id"),
+        Index("ix_code_edge_workspace_to_path", "workspace", "to_path"),
+    )
+
+
 class Document(Base):
     """Um documento (PDF) enviado para o RAG. O blob mora no MinIO; aqui só
     ficam metadados e o estado da ingestão."""

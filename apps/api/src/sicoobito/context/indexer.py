@@ -10,14 +10,18 @@ from __future__ import annotations
 
 import asyncio
 import time
+import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from sicoobito.config import Settings
-from sicoobito.context import store
+from sicoobito.context import edges, store
 from sicoobito.context.chunker import Chunk, FileChunks, chunk_file
 from sicoobito.context.scanner import ScannedFile, read_text, scan
+from sicoobito.db.models import CodeChunk
 from sicoobito.db.session import session_scope
 from sicoobito.logging_setup import get_logger
 from sicoobito.router.engine import RouterEngine
@@ -25,13 +29,18 @@ from sicoobito.router.engine import RouterEngine
 log = get_logger(__name__)
 
 
-def _read_and_chunk(scanned: ScannedFile) -> FileChunks | None:
-    """Leitura e parse — bloqueantes, executados fora do event loop."""
+def _read_and_chunk(scanned: ScannedFile) -> tuple[FileChunks, str] | None:
+    """Leitura e parse — bloqueantes, executados fora do event loop.
+
+    Devolve o texto junto com os chunks porque `edges.import_targets` precisa
+    reparsear o arquivo para achar os imports — sem isso, precisaríamos ler o
+    arquivo do disco duas vezes.
+    """
     content = read_text(scanned.absolute)
     if content is None:
         return None
     result = chunk_file(scanned.path, content, scanned.language)
-    return result if result.chunks else None
+    return (result, content) if result.chunks else None
 
 
 @dataclass(slots=True)
@@ -103,6 +112,44 @@ class ContextIndexer:
 
         return vectors, failures
 
+    async def _insert_edges(
+        self,
+        session: AsyncSession,
+        *,
+        workspace: str,
+        path: str,
+        language: str | None,
+        content: str,
+        chunks: list[Chunk],
+        persisted: list[CodeChunk],
+        known_paths: set[str],
+    ) -> None:
+        """`contains` + `imports` do arquivo recém-(re)indexado.
+
+        `contains` sai direto de `symbol`/`parent`, sem reparsear nada.
+        `imports` precisa de um chunk de origem — usamos o chunk `module`
+        (onde o chunker já isola os imports do topo do arquivo) ou, na
+        ausência dele, o primeiro chunk do arquivo por linha.
+        """
+        pairs = list(zip(chunks, (row.id for row in persisted), strict=True))
+        contains = edges.contains_edges(pairs)
+
+        anchor_id: uuid.UUID | None = None
+        module_pairs = sorted(
+            (p for p in pairs if p[0].kind == "module"), key=lambda p: p[0].start_line
+        )
+        if module_pairs:
+            anchor_id = module_pairs[0][1]
+        elif pairs:
+            anchor_id = min(pairs, key=lambda p: p[0].start_line)[1]
+
+        imports: list[tuple[uuid.UUID, str]] = []
+        if anchor_id is not None:
+            targets = edges.import_targets(path, content, language or "", known_paths)
+            imports = [(anchor_id, target) for target in targets if target != path]
+
+        await store.insert_edges(session, workspace=workspace, contains=contains, imports=imports)
+
     async def index_workspace(self, root: Path, *, force: bool = False) -> IndexReport:
         started = time.perf_counter()
         # Varredura, leitura e parse são bloqueantes: indexar um repositório
@@ -120,6 +167,10 @@ class ContextIndexer:
 
         scanned_files: list[ScannedFile] = await asyncio.to_thread(lambda: list(scan(root)))
         present: set[str] = set()
+        # Universo de resolução para `imports`: import que não aponta para um
+        # destes caminhos é pacote externo (ou alias não suportado) e não vira
+        # aresta — ver `context/edges.py`.
+        known_paths: set[str] = {sf.path for sf in scanned_files}
 
         for scanned in scanned_files:
             report.scanned += 1
@@ -129,9 +180,10 @@ class ContextIndexer:
                 report.skipped_unchanged += 1
                 continue
 
-            result = await asyncio.to_thread(_read_and_chunk, scanned)
-            if result is None:
+            outcome = await asyncio.to_thread(_read_and_chunk, scanned)
+            if outcome is None:
                 continue
+            result, content = outcome
 
             vectors, failures = await self._embed(result.chunks)
             report.embedding_failures += failures
@@ -154,7 +206,7 @@ class ContextIndexer:
 
             try:
                 async with session_scope() as session:
-                    await store.upsert_file(
+                    _, persisted = await store.upsert_file(
                         session,
                         workspace=workspace,
                         path=scanned.path,
@@ -165,6 +217,16 @@ class ContextIndexer:
                         chunks=result.chunks,
                         embeddings=vectors,
                         fallback_chunking=result.fallback_used,
+                    )
+                    await self._insert_edges(
+                        session,
+                        workspace=workspace,
+                        path=scanned.path,
+                        language=scanned.language,
+                        content=content,
+                        chunks=result.chunks,
+                        persisted=persisted,
+                        known_paths=known_paths,
                     )
             except Exception as exc:
                 message = f"{scanned.path}: {exc}"

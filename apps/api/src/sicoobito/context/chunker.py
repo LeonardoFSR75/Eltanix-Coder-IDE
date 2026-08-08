@@ -75,12 +75,17 @@ class FileChunks:
 
 
 @lru_cache(maxsize=32)
-def _parser(language: str) -> Any | None:
-    """Parsers são caros de construir e seguros para reutilizar."""
-    try:
-        from tree_sitter_language_pack import get_parser
+def get_parser(language: str) -> Any | None:
+    """Parsers são caros de construir e seguros para reutilizar.
 
-        return get_parser(language)  # type: ignore[arg-type]
+    Público (não `_parser`) porque `context/edges.py` reaproveita o mesmo
+    cache para extrair imports — cada linguagem paga a construção do parser
+    uma vez só, não uma vez por módulo que o usa.
+    """
+    try:
+        from tree_sitter_language_pack import get_parser as _get_parser
+
+        return _get_parser(language)  # type: ignore[arg-type]
     except Exception as exc:
         log.debug("chunker.parser.unavailable", language=language, error=str(exc))
         return None
@@ -363,7 +368,7 @@ def chunk_file(path: str, text: str, language: str | None) -> FileChunks:
         result.fallback_used = True
         return result
 
-    parser = _parser(language)
+    parser = get_parser(language)
     rules = rules_for(language)
     if parser is None or rules is None:
         result.chunks = _line_chunks(path, text, language)

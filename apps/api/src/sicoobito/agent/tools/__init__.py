@@ -8,6 +8,7 @@ from sicoobito.agent.tools import (  # noqa: F401
     browser,
     documents,
     files,
+    graph,
     notes,
     plan,
     project_manager,

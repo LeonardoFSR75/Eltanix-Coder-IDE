@@ -9,8 +9,10 @@ from fastapi import APIRouter, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field
 
 from sicoobito.api.deps import AuthDep, SettingsDep
+from sicoobito.context import store as context_store
 from sicoobito.context.indexer import ContextIndexer
 from sicoobito.context.repomap import DEFAULT_TOKEN_BUDGET, build_repo_map
+from sicoobito.db.session import session_scope
 from sicoobito.workspace import projects as project_ops
 from sicoobito.workspace.projects import ProjectError
 
@@ -137,3 +139,50 @@ async def repomap(
     root = _resolve_root(settings, project)
     workspace = _indexer(request).workspace_key(root)
     return await build_repo_map(workspace, token_budget=token_budget)
+
+
+@router.get("/graph")
+async def graph(
+    request: Request,
+    settings: SettingsDep,
+    project: str,
+    path: str = Query(min_length=1),
+    symbol: str | None = None,
+    line: int | None = None,
+) -> dict[str, Any]:
+    """Vizinhança de 1 hop de um símbolo no Code Knowledge Graph.
+
+    Sem `symbol`/`line`, devolve o chunk `module` do arquivo (onde vivem os
+    imports do topo) — o suficiente para responder "o que este arquivo
+    importa" e "quem importa este arquivo" sem apontar para um símbolo.
+    """
+    root = _resolve_root(settings, project)
+    workspace = _indexer(request).workspace_key(root)
+
+    async with session_scope() as session:
+        result = await context_store.code_graph(
+            session, workspace=workspace, path=path, symbol=symbol, line=line
+        )
+
+    if result.chunk is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=f"Nenhum chunk indexado em {path!r}."
+        )
+
+    def _node(chunk: Any) -> dict[str, Any]:
+        return {
+            "path": chunk.path,
+            "symbol": chunk.symbol,
+            "parent": chunk.parent,
+            "kind": chunk.kind,
+            "start_line": chunk.start_line,
+            "end_line": chunk.end_line,
+        }
+
+    return {
+        "node": _node(result.chunk),
+        "contains": [_node(c) for c in result.contains],
+        "contained_by": _node(result.contained_by) if result.contained_by else None,
+        "imports": result.imports,
+        "imported_by": result.imported_by,
+    }
