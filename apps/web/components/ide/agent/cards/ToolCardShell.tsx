@@ -7,29 +7,31 @@ export interface ToolCardShellProps {
   title: string;
   meta?: string;
   ok?: boolean;
+  riskLevel?: "low" | "medium" | "high";
   defaultOpen?: boolean;
-  // Cards com conteúdo que precisa de mais altura (o DiffEditor do Monaco,
-  // por exemplo) passam uma classe própria em vez de herdar o max-height
-  // pensado para saída de texto.
   bodyClassName?: string;
   children?: React.ReactNode;
 }
 
-// Casca comum a todo card de tool-call: cabeçalho sempre visível (ícone,
-// título, resumo curto) + corpo colapsável para o detalhe (diff, stdout,
-// hits de busca...). Ferramentas sem card dedicado caem no fallback em
-// ToolCallCard, que usa a mesma casca com o texto truncado de antes.
 export function ToolCardShell({
   icon,
   title,
   meta,
   ok = true,
+  riskLevel,
   defaultOpen = false,
   bodyClassName,
   children,
 }: ToolCardShellProps) {
   const [open, setOpen] = useState(defaultOpen);
   const hasBody = Boolean(children);
+
+  const riskBadgeColor =
+    riskLevel === "high"
+      ? "bg-red-950 text-red-400 border-red-800"
+      : riskLevel === "medium"
+      ? "bg-amber-950 text-amber-400 border-amber-800"
+      : "bg-slate-900 text-slate-400 border-slate-700";
 
   return (
     <div className={`tool-card${ok ? "" : " fail"}`}>
@@ -42,6 +44,14 @@ export function ToolCardShell({
       >
         <span className="tool-card-icon">{icon}</span>
         <span className="tool-card-title">{title}</span>
+        {riskLevel && (
+          <span
+            className={`text-[9px] font-bold px-1.5 py-0.5 rounded border uppercase ${riskBadgeColor}`}
+            title={`Nível de Risco: ${riskLevel.toUpperCase()}`}
+          >
+            {riskLevel}
+          </span>
+        )}
         {meta && <span className="tool-card-meta">{meta}</span>}
         {hasBody && <span className="tool-card-chevron">{open ? "▾" : "▸"}</span>}
       </button>

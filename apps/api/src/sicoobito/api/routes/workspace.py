@@ -140,6 +140,44 @@ async def create_project(payload: CreateProjectPayload, settings: SettingsDep) -
     }
 
 
+class OpenPathPayload(BaseModel):
+    path: str = Field(min_length=1, description="Caminho absoluto de qualquer pasta do sistema operacional")
+
+
+@projects_router.post("/open-path")
+async def open_absolute_path(payload: OpenPathPayload) -> dict[str, Any]:
+    """Abre e autoriza qualquer pasta do SO como um projeto navegável e inspecionado."""
+    from sicoobito.workspace.inspector import ProjectInspector
+    from sicoobito.workspace.path_guard import default_path_guard
+
+    alvo = Path(payload.path).resolve()
+    if not alvo.exists() or not alvo.is_dir():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Caminho não encontrado ou não é diretório: {payload.path}",
+        )
+
+    # Registra no PathGuard
+    default_path_guard.allow(alvo)
+
+    # Inspeciona projeto em <500ms
+    inspector = ProjectInspector()
+    sig = inspector.inspect(alvo)
+
+    return {
+        "name": sig.name,
+        "path": sig.path,
+        "primary_language": sig.primary_language,
+        "frameworks": sig.frameworks,
+        "build_system": sig.build_system,
+        "has_docker": sig.has_docker,
+        "has_git": sig.has_git,
+        "has_ci_cd": sig.has_ci_cd,
+        "summary": sig.executive_summary,
+    }
+
+
+
 # ── Árvore e arquivos ───────────────────────────────────────────────────────
 
 

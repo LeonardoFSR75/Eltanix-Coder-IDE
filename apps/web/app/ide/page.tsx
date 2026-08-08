@@ -1,6 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DebugPanel, Explorer, GitPanel, SearchPanel } from "@/components/ide/Panels";
 import { StatusBar } from "@/components/ide/StatusBar";
@@ -27,8 +28,22 @@ const QuickOpen = dynamic(() => import("@/components/ide/Overlays").then((m) => 
   ssr: false,
 });
 
+const PAGINAS_NAVEGAVEIS: { id: string; label: string; href: string }[] = [
+  { id: "providers", label: "Provedores & Modelos", href: "/providers" },
+  { id: "settings", label: "Cache & Circuit Breakers", href: "/settings" },
+  { id: "mcp", label: "Servidores MCP", href: "/mcp" },
+  { id: "rag", label: "RAG de Documentos", href: "/rag" },
+  { id: "skills", label: "Habilidades (Skills)", href: "/skills" },
+  { id: "second-brain", label: "Segundo Cérebro (Notas)", href: "/second-brain" },
+  { id: "graphify", label: "Graphify Engine (Grafo de Conhecimento)", href: "/graphify" },
+  { id: "requests", label: "Requests recentes", href: "/requests" },
+  { id: "audit", label: "Auditoria", href: "/audit" },
+  { id: "profile", label: "Perfil & Conexão", href: "/profile" },
+];
+
 function Shell() {
   const ide = useIde();
+  const router = useRouter();
   const [overlay, setOverlay] = useState<"quick" | "palette" | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [cursorPos, setCursorPos] = useState<{ line: number; column: number }>({ line: 1, column: 1 });
@@ -61,8 +76,32 @@ function Shell() {
     }
   };
 
+  const handleOpenAbsolutePath = async () => {
+    const caminho = window.prompt("Digite ou cole o caminho absoluto de QUALQUER pasta do computador (ex: C:\\Projetos\\ERP ou /home/user/app):");
+    if (!caminho || !caminho.trim()) return;
+    try {
+      // Usa o gateway proxy autenticado — nunca chame a API diretamente do browser.
+      const res = await fetch("/api/gateway/api/projects/open-path", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path: caminho.trim() }),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.detail || "Erro ao abrir pasta.");
+      }
+      const data = await res.json();
+      await ide.reloadProjects();
+      ide.setProject(data.name);
+      alert(`✅ Projeto '${data.name}' aberto!\n\n${data.summary ?? ""}`);
+    } catch (err) {
+      alert(`❌ Falha ao abrir pasta: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  };
+
   const comandos = useMemo<Command[]>(
     () => [
+      { id: "open-path", title: "Abrir qualquer pasta do computador…", shortcut: "Ctrl+O", run: () => void handleOpenAbsolutePath() },
       { id: "quick", title: "Ir para arquivo…", shortcut: "Ctrl+P", run: () => setOverlay("quick") },
       { id: "explorer", title: "Mostrar Explorer", run: () => ide.setPanel("explorer") },
       { id: "search", title: "Buscar no projeto", shortcut: "Ctrl+Shift+F", run: () => ide.setPanel("search") },
@@ -79,8 +118,20 @@ function Shell() {
       { id: "close", title: "Fechar aba atual", shortcut: "Ctrl+W", run: () => ide.active && ide.closeTab(ide.active) },
       { id: "refresh", title: "Recarregar árvore de arquivos", run: () => ide.bumpRevision() },
       { id: "reload-projects", title: "Recarregar lista de projetos", run: () => void ide.reloadProjects() },
+      ...ide.projects
+        .filter((p) => p.name !== ide.project)
+        .map((p) => ({
+          id: `project-${p.name}`,
+          title: `Trocar para projeto: ${p.name}${p.branch ? ` (${p.branch})` : ""}`,
+          run: () => ide.setProject(p.name),
+        })),
+      ...PAGINAS_NAVEGAVEIS.map((pagina) => ({
+        id: `nav-${pagina.id}`,
+        title: `Ir para: ${pagina.label}`,
+        run: () => router.push(pagina.href),
+      })),
     ],
-    [ide],
+    [ide, router],
   );
 
   const onKeyDown = useCallback(
@@ -100,6 +151,9 @@ function Shell() {
       } else if (event.shiftKey && event.key.toLowerCase() === "a") {
         event.preventDefault();
         ide.toggleAgentDock();
+      } else if (event.key.toLowerCase() === "o" && !event.shiftKey) {
+        event.preventDefault();
+        void handleOpenAbsolutePath();
       } else if (event.key.toLowerCase() === "p") {
         event.preventDefault();
         setOverlay("quick");
@@ -230,6 +284,24 @@ function Shell() {
 
           <button
             type="button"
+            className="activity"
+            title="Graphify Engine (Grafo de Conhecimento)"
+            onClick={() => router.push("/graphify")}
+          >
+            🌐
+          </button>
+
+          <button
+            type="button"
+            className="activity"
+            title="Segundo Cérebro (Notas & Base)"
+            onClick={() => router.push("/second-brain")}
+          >
+            🧠
+          </button>
+
+          <button
+            type="button"
             className="activity sidebar-toggle-btn"
             style={{ marginTop: "auto" }}
             title={`Alternar barra lateral (Ctrl+B)`}
@@ -241,50 +313,44 @@ function Shell() {
 
         {ide.sidebarOpen && (
           <aside className="ide-sidebar" style={{ width: ide.sidebarWidth }}>
-            <div className="project-picker" style={{ display: "flex", gap: "6px", padding: "6px" }}>
-              <select
-                value={ide.project ?? ""}
-                onChange={(e) => ide.setProject(e.target.value)}
-                title="Projeto aberto"
-                style={{ flex: 1 }}
-              >
-                {ide.projects.length === 0 && <option value="">nenhum projeto</option>}
-                {ide.projects.map((p) => (
-                  <option key={p.name} value={p.name}>
-                    {p.name}{p.branch ? ` · ${p.branch}` : ""}
-                  </option>
-                ))}
-              </select>
-              <button
-                type="button"
-                onClick={handleCreateProject}
-                style={{
-                  fontSize: "11.5px",
-                  padding: "3px 8px",
-                  borderRadius: "4px",
-                  background: "var(--surface-2)",
-                  color: "var(--text)",
-                  border: "1px solid var(--border)",
-                  cursor: "pointer",
-                  whiteSpace: "nowrap",
-                  fontWeight: 500,
-                }}
-                title="Criar ou vincular nova pasta de projeto"
-              >
-                + Novo
-              </button>
+            <div className="project-picker">
+              <div className="project-picker-select-wrapper">
+                <span className="project-picker-icon">📁</span>
+                <select
+                  value={ide.project ?? ""}
+                  onChange={(e) => ide.setProject(e.target.value)}
+                  title="Projeto/repositório ativo no workspace"
+                  className="project-picker-select"
+                >
+                  {ide.projects.length === 0 && <option value="">Nenhum projeto aberto</option>}
+                  {ide.projects.map((p) => (
+                    <option key={p.name} value={p.name}>
+                      {p.name}{p.branch ? ` (${p.branch})` : ""}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="project-picker-actions">
+                <button
+                  type="button"
+                  onClick={handleOpenAbsolutePath}
+                  className="project-action-btn primary"
+                  title="Abrir qualquer pasta absoluta do seu computador (Windows/Linux/macOS)"
+                >
+                  📂 Abrir Pasta
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCreateProject}
+                  className="project-action-btn secondary"
+                  title="Criar uma nova pasta de projeto no diretório PROJECTS_ROOT"
+                >
+                  ✨ Novo Projeto
+                </button>
+              </div>
             </div>
             {ide.projectsError && <div className="panel-error">{ide.projectsError}</div>}
 
-            <div className="panel-title">
-              {ide.panel === "explorer"
-                ? "Explorer"
-                : ide.panel === "search"
-                ? "Busca & Substituição"
-                : ide.panel === "git"
-                ? "Controle Git"
-                : "Executar & Debugar"}
-            </div>
             {ide.panel === "explorer" && <Explorer />}
             {ide.panel === "search" && <SearchPanel />}
             {ide.panel === "git" && <GitPanel />}

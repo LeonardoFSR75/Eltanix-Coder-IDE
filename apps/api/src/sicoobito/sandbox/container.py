@@ -79,7 +79,7 @@ def _docker_client():
         try:
             _cached_docker_client.ping()
             return _cached_docker_client
-        except Exception:  # noqa: BLE001
+        except Exception:
             _cached_docker_client = None
 
     try:

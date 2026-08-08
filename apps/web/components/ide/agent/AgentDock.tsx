@@ -1,14 +1,17 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { AgentPanel } from "@/components/ide/AgentPanel";
+import { useToast } from "@/components/Toast";
 import { useIde } from "@/lib/ide-store";
+import { loadHookPrefs } from "@/lib/hook-prefs";
 import { AgentChatInput } from "./AgentChatInput";
 import { AgentDockHeader } from "./AgentDockHeader";
 import { AgentManager } from "./AgentManager";
 import { TodoCard } from "./cards";
 import { CustomizationsPopover } from "./CustomizationsPopover";
 import type { Mode } from "./modes";
+import type { NotifyKind } from "./sessionRuntime";
 import { useAgentSessions } from "./useAgentSessions";
 
 export function AgentDock({
@@ -19,6 +22,24 @@ export function AgentDock({
   onSession?: (sessionId: string | null) => void;
 }) {
   const { project, toggleAgentDock } = useIde();
+  const { addToast } = useToast();
+
+  // Hooks mínimos (aba "Hooks" do popover): lê a preferência do localStorage
+  // a cada evento em vez de assinar mudanças — é uma leitura síncrona barata,
+  // e evita re-renderizar o dock quando o usuário mexe nas preferências numa
+  // sessão que já está rodando.
+  const handleAgentNotify = useCallback(
+    (kind: NotifyKind, message: string) => {
+      const prefs = loadHookPrefs();
+      if (kind === "approval" && !prefs.notifyApproval) return;
+      if (kind === "done" && !prefs.notifyDone) return;
+      if (kind === "error" && !prefs.notifyError) return;
+      const toastType = kind === "approval" ? "info" : kind === "done" ? "success" : "error";
+      addToast(message, toastType);
+    },
+    [addToast],
+  );
+
   const {
     sessions,
     activeId,
@@ -27,7 +48,7 @@ export function AgentDock({
     switchTo,
     openClosedSession,
     newSessionSlot,
-  } = useAgentSessions({ project, onFileTouched });
+  } = useAgentSessions({ project, onFileTouched, onNotify: handleAgentNotify });
 
   const [task, setTask] = useState("");
   const [mode, setMode] = useState<Mode>("auto");
@@ -117,6 +138,7 @@ export function AgentDock({
           onClose={() => setSettingsOpen(false)}
           mode={mode}
           setMode={setMode}
+          project={project}
         />
       )}
 

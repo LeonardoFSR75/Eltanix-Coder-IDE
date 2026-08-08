@@ -2,7 +2,7 @@
 
 import { useCallback, useMemo, useReducer, useRef } from "react";
 import type { Mode } from "./modes";
-import { AgentSessionRuntime } from "./sessionRuntime";
+import { AgentSessionRuntime, type NotifyKind } from "./sessionRuntime";
 import type { SessionStatus, SessionSummary } from "./sessionTypes";
 
 function statusOf(runtime: AgentSessionRuntime): SessionStatus {
@@ -24,9 +24,11 @@ function statusOf(runtime: AgentSessionRuntime): SessionStatus {
 export function useAgentSessions({
   project,
   onFileTouched,
+  onNotify,
 }: {
   project: string | null;
   onFileTouched?: (path: string) => void;
+  onNotify?: (kind: NotifyKind, message: string) => void;
 }) {
   const runtimesRef = useRef<Map<string, AgentSessionRuntime>>(new Map());
   const activeIdRef = useRef<string | null>(null);
@@ -41,7 +43,7 @@ export function useAgentSessions({
     (task: string, mode: Mode, profile?: string | null, focusFiles?: string[], focusFolder?: string | null) => {
       if (!project) return;
       void AgentSessionRuntime.start(
-        { project, onFileTouched, onChange: notify },
+        { project, onFileTouched, onChange: notify, onNotify },
         task,
         mode,
         profile,
@@ -54,7 +56,7 @@ export function useAgentSessions({
         notify();
       });
     },
-    [project, onFileTouched, notify],
+    [project, onFileTouched, onNotify, notify],
   );
 
   const switchTo = useCallback(

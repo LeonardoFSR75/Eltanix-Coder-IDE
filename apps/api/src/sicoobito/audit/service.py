@@ -27,6 +27,7 @@ class AuditService:
         risk_level: str = "low",
         status: str = "success",
         session_id: str | None = None,
+        project_slug: str | None = None,
         metadata: dict | None = None,
     ) -> AuditLogEntry:
         async with session_scope() as session:
@@ -39,6 +40,7 @@ class AuditService:
                 risk_level=risk_level,
                 status=status,
                 session_id=session_id,
+                project_slug=project_slug,
                 metadata=metadata,
             )
 

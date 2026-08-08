@@ -52,6 +52,10 @@ class ToolContext:
     # RouterEngine — ferramentas que fazem uma segunda chamada de LLM isolada
     # da conversa principal (ex. request_code_review) usam isto.
     engine: Any | None = None
+    # Conteúdo de `.sicoobito/instructions.md` no projeto (não no worktree da
+    # sessão) — texto livre que o usuário escreveu na aba "Instruções" do
+    # popover, concatenado ao SYSTEM_PROMPT em `agent/graph.py::think()`.
+    custom_instructions: str | None = None
 
 
 @dataclass(slots=True)

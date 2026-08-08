@@ -37,6 +37,22 @@ from sicoobito.workspace.github import GitHubClient, GitHubError, parse_remote, 
 log = get_logger(__name__)
 
 
+def _load_custom_instructions(workspace_root: Path) -> str | None:
+    """Lê `.sicoobito/instructions.md` do projeto (não do worktree da sessão)
+    — best-effort: arquivo ausente ou erro de leitura não deve impedir a
+    sessão de começar, mesmo espírito de degradação graciosa do resto do
+    projeto (serviço opcional fora do ar não derruba o essencial)."""
+    caminho = workspace_root / ".sicoobito" / "instructions.md"
+    try:
+        texto = caminho.read_text(encoding="utf-8").strip()
+    except FileNotFoundError:
+        return None
+    except OSError as exc:
+        log.warning("agent.custom_instructions.read_failed", error=str(exc)[:200])
+        return None
+    return texto or None
+
+
 @dataclass(slots=True)
 class AgentSession:
     session_id: str
@@ -202,6 +218,7 @@ class AgentRunner:
             audit=self.audit,
             trace_recorder=self.trace_recorder,
             engine=self.engine,
+            custom_instructions=_load_custom_instructions(workspace_root),
         )
 
         sessao = AgentSession(

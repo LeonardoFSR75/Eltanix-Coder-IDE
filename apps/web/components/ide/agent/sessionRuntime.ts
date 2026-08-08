@@ -17,10 +17,15 @@ import type { LogLine, PendingAction, Session, TodoItem } from "./sessionTypes";
 
 export type { LogLine, PendingAction, Session, TodoItem };
 
+export type NotifyKind = "approval" | "done" | "error";
+
 interface RuntimeOptions {
   project: string;
   onFileTouched?: (path: string) => void;
   onChange: () => void;
+  // Hooks mínimos (client-side, sem execução de código): quem monta o
+  // runtime decide se/como avisar o usuário sobre estes três eventos.
+  onNotify?: (kind: NotifyKind, message: string) => void;
 }
 
 export class AgentSessionRuntime {
@@ -39,12 +44,14 @@ export class AgentSessionRuntime {
   private readonly project: string;
   private readonly onFileTouched?: (path: string) => void;
   private readonly onChange: () => void;
+  private readonly onNotify?: (kind: NotifyKind, message: string) => void;
   private abortController: AbortController | null = null;
 
   constructor(opts: RuntimeOptions) {
     this.project = opts.project;
     this.onFileTouched = opts.onFileTouched;
     this.onChange = opts.onChange;
+    this.onNotify = opts.onNotify;
   }
 
   private append(line: LogLine) {
@@ -58,7 +65,9 @@ export class AgentSessionRuntime {
 
     if (node === "error") {
       this.errored = true;
-      this.append({ kind: "error", text: String(update.message ?? "erro desconhecido") });
+      const mensagem = String(update.message ?? "erro desconhecido");
+      this.append({ kind: "error", text: mensagem });
+      this.onNotify?.("error", mensagem);
       return;
     }
 
@@ -66,6 +75,9 @@ export class AgentSessionRuntime {
       this.pending = (update.actions ?? []) as PendingAction[];
       this.running = false;
       this.onChange();
+      if (this.pending.length > 0) {
+        this.onNotify?.("approval", `${this.pending.length} ação(ões) aguardando aprovação`);
+      }
       return;
     }
 
@@ -87,10 +99,12 @@ export class AgentSessionRuntime {
       if (acoes.length > 0) {
         this.pending = acoes;
         this.onChange();
+        this.onNotify?.("approval", `${acoes.length} ação(ões) aguardando aprovação`);
       }
       if (update.finished === true) {
         this.finished = true;
         this.onChange();
+        this.onNotify?.("done", `Sessão concluída: ${this.task || this.session?.session_id || ""}`);
       }
     }
 

@@ -10,3 +10,21 @@
 import { loader } from "@monaco-editor/react";
 
 loader.config({ paths: { vs: "/vs" } });
+
+// Bug conhecido do @monaco-editor/react: em dev, o Strict Mode do React monta
+// → desmonta → remonta cada componente de propósito (para expor efeitos não
+// idempotentes). O DiffEditor kicka o carregamento assíncrono do Monaco no
+// primeiro mount; quando esse mount sintético já foi desfeito antes da
+// Promise resolver, o wrapper tenta configurar o TextModel do editor que o
+// próprio desmonte já descartou — lança "TextModel got disposed before
+// DiffEditorWidget model got reset" fora do ciclo do React (não é um erro de
+// render, não quebra nada na tela), só polui o overlay de erro do Next em
+// dev. Sem fix corrigido a montante (github.com/suren-atoyan/monaco-react),
+// então filtramos só esse erro específico — qualquer outro segue passando.
+if (typeof window !== "undefined") {
+  window.addEventListener("error", (event) => {
+    if (event.message?.includes("TextModel got disposed before DiffEditorWidget model got reset")) {
+      event.preventDefault();
+    }
+  });
+}

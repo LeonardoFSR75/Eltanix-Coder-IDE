@@ -33,12 +33,15 @@ export default function HomePage() {
           <div className="banner-badge">🚀 Central de Operações do Sistema</div>
           <h1>Painel Principal SicoobitoCode</h1>
           <p>
-            Plataforma local-first integrando <strong>IDE Agêntica</strong>, <strong>Provedores de LLM</strong>, <strong>Contabilidade de Custo</strong>, <strong>RAG</strong>, <strong>Segundo Cérebro</strong>, <strong>Skills</strong>, <strong>MCP</strong> e <strong>Auditoria</strong>.
+            Plataforma local-first integrando <strong>IDE Agêntica</strong>, <strong>Provedores de LLM</strong>, <strong>Contabilidade de Custo</strong>, <strong>RAG</strong>, <strong>Graphify Engine</strong>, <strong>Segundo Cérebro</strong>, <strong>Skills</strong>, <strong>MCP</strong> e <strong>Auditoria</strong>.
           </p>
         </div>
         <div className="banner-actions">
           <Link href="/ide" className="btn-primary glow-button">
             💻 Abrir IDE Agêntica
+          </Link>
+          <Link href="/graphify" className="btn-secondary">
+            🕸️ Explorar Graphify Engine
           </Link>
           <Link href="/rag" className="btn-secondary">
             📚 Consultar RAG & ChromaDB
@@ -53,6 +56,13 @@ export default function HomePage() {
           <div className="stat-value">IDE</div>
           <div className="stat-label">Ambiente Agêntico</div>
           <div className="stat-hint">Editor Monaco + Pyright</div>
+        </div>
+
+        <div className="stat-card">
+          <span className="stat-icon">🕸️</span>
+          <div className="stat-value">Graphify</div>
+          <div className="stat-label">Knowledge Graph</div>
+          <div className="stat-hint">GraphRAG Multidimensional</div>
         </div>
 
         <div className="stat-card">
@@ -140,7 +150,21 @@ export default function HomePage() {
             </div>
           </Link>
 
-          {/* Novas Ferramentas */}
+          <Link href="/graphify" className="module-card">
+            <div className="module-header">
+              <span className="module-icon">🕸️</span>
+              <span className="module-badge">GraphRAG</span>
+            </div>
+            <h3>Graphify & Grafo de Conhecimento</h3>
+            <p>
+              Análise de AST, extração de ecossistema de código, detecção de comunidades e busca semântica em grafos (GraphRAG).
+            </p>
+            <div className="module-footer">
+              <span>Knowledge Graph Multidimensional</span>
+              <span className="arrow-link">Explorar →</span>
+            </div>
+          </Link>
+
           <Link href="/second-brain" className="module-card">
             <div className="module-header">
               <span className="module-icon">📓</span>
@@ -238,6 +262,10 @@ export default function HomePage() {
             <div className="db-stat-item">
               <span>Índice pgvector (Documentos + Código)</span>
               <strong>{totalChunks} Chunks</strong>
+            </div>
+            <div className="db-stat-item">
+              <span>Graphify Engine & GraphRAG</span>
+              <strong>Ativo (Extração AST & Grafo de Conhecimento)</strong>
             </div>
             <div className="db-stat-item">
               <span>Redis Cache & Cache Exato</span>

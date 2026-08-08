@@ -5,6 +5,19 @@
 
 const GATEWAY = "/api/gateway";
 
+/** Erro de resposta HTTP não-ok, com o status preservado — quem chama pode
+ * distinguir "não encontrado" (ex.: arquivo opcional ainda não criado) de um
+ * erro de verdade sem precisar adivinhar pela mensagem. */
+export class HttpError extends Error {
+  constructor(
+    message: string,
+    public readonly status: number,
+  ) {
+    super(message);
+    this.name = "HttpError";
+  }
+}
+
 function getAuthHeaders(): Record<string, string> {
   if (typeof window !== "undefined") {
     const token = localStorage.getItem("sicoobito_api_key");
@@ -18,7 +31,7 @@ export async function get<T>(path: string): Promise<T> {
     cache: "no-store",
     headers: { ...getAuthHeaders() },
   });
-  if (!response.ok) throw new Error(await describeError(response));
+  if (!response.ok) throw new HttpError(await describeError(response), response.status);
   return (await response.json()) as T;
 }
 
@@ -28,7 +41,7 @@ export async function post<T>(path: string, body?: unknown): Promise<T> {
     headers: { "content-type": "application/json", ...getAuthHeaders() },
     body: JSON.stringify(body ?? {}),
   });
-  if (!response.ok) throw new Error(await describeError(response));
+  if (!response.ok) throw new HttpError(await describeError(response), response.status);
   return (await response.json()) as T;
 }
 
@@ -38,7 +51,17 @@ export async function put<T>(path: string, body: unknown): Promise<T> {
     headers: { "content-type": "application/json", ...getAuthHeaders() },
     body: JSON.stringify(body),
   });
-  if (!response.ok) throw new Error(await describeError(response));
+  if (!response.ok) throw new HttpError(await describeError(response), response.status);
+  return (await response.json()) as T;
+}
+
+export async function patch<T>(path: string, body: unknown): Promise<T> {
+  const response = await fetch(`${GATEWAY}${path}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json", ...getAuthHeaders() },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) throw new HttpError(await describeError(response), response.status);
   return (await response.json()) as T;
 }
 
@@ -47,7 +70,7 @@ export async function del<T>(path: string): Promise<T> {
     method: "DELETE",
     headers: { ...getAuthHeaders() },
   });
-  if (!response.ok) throw new Error(await describeError(response));
+  if (!response.ok) throw new HttpError(await describeError(response), response.status);
   return (await response.json()) as T;
 }
 
@@ -71,7 +94,7 @@ export async function streamEvents(
     signal,
   });
 
-  if (!response.ok) throw new Error(await describeError(response));
+  if (!response.ok) throw new HttpError(await describeError(response), response.status);
   if (!response.body) throw new Error("Resposta sem corpo.");
 
   const reader = response.body.getReader();

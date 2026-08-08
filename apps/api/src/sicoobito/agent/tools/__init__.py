@@ -10,6 +10,7 @@ from sicoobito.agent.tools import (  # noqa: F401
     files,
     notes,
     plan,
+    project_manager,
     review,
     shell,
     skills,

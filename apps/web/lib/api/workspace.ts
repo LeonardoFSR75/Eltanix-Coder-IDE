@@ -3,7 +3,7 @@
  * `/api/workspace/*`.
  */
 
-import { del, get, post, put } from "@/lib/client";
+import { del, get, HttpError, post, put } from "@/lib/client";
 
 export interface WorkspaceEntry {
   path: string;
@@ -50,6 +50,18 @@ export async function readFile(project: string, path: string): Promise<FileConte
   return get<FileContent>(
     `/api/workspace/file?project=${encodeURIComponent(project)}&path=${encodeURIComponent(path)}`,
   );
+}
+
+/** Como readFile, mas devolve `null` em vez de lançar quando o arquivo ainda
+ * não existe (404) — para configuração opcional por projeto que só passa a
+ * existir quando o usuário salva pela primeira vez (ex.: instruções custom). */
+export async function readFileOrNull(project: string, path: string): Promise<FileContent | null> {
+  try {
+    return await readFile(project, path);
+  } catch (err) {
+    if (err instanceof HttpError && err.status === 404) return null;
+    throw err;
+  }
 }
 
 export async function writeFile(project: string, path: string, content: string): Promise<void> {

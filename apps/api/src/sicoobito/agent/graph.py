@@ -110,8 +110,18 @@ def _para_api(mensagens: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def build_graph(engine: RouterEngine, context: ToolContext):
+    # Calculado uma vez por sessão, não a cada turno: instruções do projeto não
+    # mudam no meio de uma sessão, e manter o prefixo do system prompt estável
+    # entre turnos é o que permite o cache de prompt (ver docstring de
+    # SYSTEM_PROMPT em prompts.py).
+    system_prompt = SYSTEM_PROMPT
+    if context.custom_instructions:
+        system_prompt = (
+            f"{SYSTEM_PROMPT}\n\n## Instruções do projeto\n\n{context.custom_instructions}"
+        )
+
     async def think(state: AgentState) -> dict[str, Any]:
-        mensagens = _para_api([{"role": "system", "content": SYSTEM_PROMPT}, *state["messages"]])
+        mensagens = _para_api([{"role": "system", "content": system_prompt}, *state["messages"]])
 
         resultado = await engine.complete(
             requested_model=state.get("model") or "coding",

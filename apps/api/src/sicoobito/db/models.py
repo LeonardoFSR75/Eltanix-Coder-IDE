@@ -54,11 +54,9 @@ class RequestLog(Base):
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
-    # ── Origem ──────────────────────────────────────────────────────────────
-    # `source` identifica quem chamou (cline, continue, aider, ide, agent...),
-    # para saber qual ferramenta está gastando.
     source: Mapped[str] = mapped_column(String(64), default="unknown", nullable=False)
     endpoint: Mapped[str] = mapped_column(String(64), default="chat", nullable=False)
+    project_slug: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
 
     # ── Roteamento ──────────────────────────────────────────────────────────
     requested_model: Mapped[str] = mapped_column(String(128), nullable=False)
@@ -207,6 +205,7 @@ class Document(Base):
     __tablename__ = "document"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    project_slug: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
     filename: Mapped[str] = mapped_column(String(512), nullable=False)
     content_type: Mapped[str] = mapped_column(String(128), nullable=False)
     size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -269,6 +268,7 @@ class Note(Base):
     __tablename__ = "note"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    project_slug: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
     title: Mapped[str] = mapped_column(String(512), nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     tags: Mapped[list] = mapped_column(JSONB, default=list, nullable=False)
@@ -361,6 +361,7 @@ class AuditLogEntry(Base):
     risk_level: Mapped[str] = mapped_column(String(16), default="low", nullable=False)
     status: Mapped[str] = mapped_column(String(16), default="success", nullable=False)
     session_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    project_slug: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
     event_metadata: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
 
     __table_args__ = (
@@ -414,3 +415,166 @@ class AgentSessionRecord(Base):
 
     def __repr__(self) -> str:  # pragma: no cover - conveniência de debug
         return f"<AgentSessionRecord {self.session_id} {self.status} {self.task[:40]!r}>"
+
+
+class GraphNode(Base):
+    """Nó/Entidade do Grafo de Conhecimento do Segundo Cérebro (Graphify)."""
+
+    __tablename__ = "graph_node"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workspace: Mapped[str] = mapped_column(String(255), default="default", nullable=False)
+    entity_type: Mapped[str] = mapped_column(String(64), nullable=False)  # Note, Concept, Module, Class, ADR, etc.
+    name: Mapped[str] = mapped_column(String(512), nullable=False)
+    canonical_id: Mapped[str] = mapped_column(String(1024), nullable=False)
+    properties: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
+    summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    embedding: Mapped[list[float] | None] = mapped_column(Vector(EMBEDDING_DIM), nullable=True)
+
+    tsv: Mapped[str | None] = mapped_column(
+        TSVECTOR,
+        Computed(
+            "to_tsvector('simple', coalesce(name, '') || ' ' || coalesce(summary, ''))",
+            persisted=True,
+        ),
+        nullable=True,
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+    outgoing_edges: Mapped[list[GraphEdge]] = relationship(
+        "GraphEdge",
+        foreign_keys="GraphEdge.source_id",
+        back_populates="source_node",
+        cascade="all, delete-orphan",
+    )
+    incoming_edges: Mapped[list[GraphEdge]] = relationship(
+        "GraphEdge",
+        foreign_keys="GraphEdge.target_id",
+        back_populates="target_node",
+        cascade="all, delete-orphan",
+    )
+    metrics: Mapped[GraphMetrics | None] = relationship(
+        "GraphMetrics", back_populates="node", uselist=False, cascade="all, delete-orphan"
+    )
+
+    __table_args__ = (
+        Index("ix_graph_node_workspace_type", "workspace", "entity_type"),
+    )
+
+    def __repr__(self) -> str:  # pragma: no cover
+        return f"<GraphNode {self.entity_type}:{self.name!r}>"
+
+
+class GraphEdge(Base):
+    """Aresta/Relacionamento direcionado no Grafo de Conhecimento."""
+
+    __tablename__ = "graph_edge"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workspace: Mapped[str] = mapped_column(String(255), default="default", nullable=False)
+    source_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("graph_node.id", ondelete="CASCADE"), nullable=False
+    )
+    target_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("graph_node.id", ondelete="CASCADE"), nullable=False
+    )
+    relation_type: Mapped[str] = mapped_column(String(64), nullable=False)  # REFERENCIA, DEPENDE, AFETA, etc.
+    layer: Mapped[int] = mapped_column(Integer, nullable=False)  # 1=Explicit, 2=Vector, 3=LLM
+    weight: Mapped[float] = mapped_column(Numeric(5, 4), default=1.0, nullable=False)
+    evidence: Mapped[str | None] = mapped_column(Text, nullable=True)
+    edge_metadata: Mapped[dict] = mapped_column("metadata", JSONB, default=dict, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    source_node: Mapped[GraphNode] = relationship("GraphNode", foreign_keys=[source_id], back_populates="outgoing_edges")
+    target_node: Mapped[GraphNode] = relationship("GraphNode", foreign_keys=[target_id], back_populates="incoming_edges")
+
+    __table_args__ = (
+        Index("ix_graph_edge_source", "source_id", "relation_type"),
+        Index("ix_graph_edge_target", "target_id", "relation_type"),
+        Index("ix_graph_edge_workspace_layer", "workspace", "layer"),
+    )
+
+    def __repr__(self) -> str:  # pragma: no cover
+        return f"<GraphEdge {self.source_id} -[{self.relation_type}]-> {self.target_id}>"
+
+
+class GraphChunkMapping(Base):
+    """Mapeamento entre um nó do Grafo e um chunk de texto/código/documento."""
+
+    __tablename__ = "graph_chunk_mapping"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    node_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("graph_node.id", ondelete="CASCADE"), nullable=False
+    )
+    chunk_type: Mapped[str] = mapped_column(String(32), nullable=False)  # 'code', 'note', 'document'
+    chunk_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    relevance_score: Mapped[float] = mapped_column(Numeric(5, 4), default=1.0, nullable=False)
+
+    __table_args__ = (
+        Index("ix_graph_chunk_mapping_node", "node_id"),
+        Index("ix_graph_chunk_mapping_chunk", "chunk_id", "chunk_type"),
+    )
+
+
+class GraphMetrics(Base):
+    """Métricas de relevância e centralidade para nós do grafo."""
+
+    __tablename__ = "graph_metrics"
+
+    node_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("graph_node.id", ondelete="CASCADE"), primary_key=True
+    )
+    workspace: Mapped[str] = mapped_column(String(255), nullable=False)
+    in_degree: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    out_degree: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    pagerank: Mapped[float] = mapped_column(Numeric(10, 8), default=0.0, nullable=False)
+    betweenness: Mapped[float] = mapped_column(Numeric(10, 8), default=0.0, nullable=False)
+    community_id: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    is_orphan: Mapped[bool] = mapped_column(
+        Boolean, Computed("in_degree = 0 AND out_degree = 0", persisted=True), nullable=False
+    )
+    last_calculated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    node: Mapped[GraphNode] = relationship("GraphNode", back_populates="metrics")
+
+    __table_args__ = (
+        Index("ix_graph_metrics_workspace_pagerank", "workspace", "pagerank"),
+    )
+
+
+class ProjectRecord(Base):
+    """Cadastro persistido e centralizado de projetos no SicoobitoCode."""
+
+    __tablename__ = "project_record"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    slug: Mapped[str] = mapped_column(String(128), unique=True, nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    local_path: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    git_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    default_branch: Mapped[str] = mapped_column(String(128), default="main", nullable=False)
+    budget_limit_usd: Mapped[float | None] = mapped_column(Numeric(10, 4), nullable=True)
+    settings: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+    def __repr__(self) -> str:  # pragma: no cover
+        return f"<ProjectRecord {self.slug} ({self.name!r})>"
+
+

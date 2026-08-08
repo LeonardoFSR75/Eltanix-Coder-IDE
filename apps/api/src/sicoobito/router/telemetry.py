@@ -45,6 +45,7 @@ class TelemetryEntry:
     cost_saved_usd: Decimal = Decimal(0)
     savings_breakdown: dict[str, int] = field(default_factory=dict)
     complexity: str | None = None
+    project_slug: str | None = None
 
 
 async def record(entry: TelemetryEntry) -> None:
@@ -54,6 +55,7 @@ async def record(entry: TelemetryEntry) -> None:
                 RequestLog(
                     source=entry.source[:64],
                     endpoint=entry.endpoint[:64],
+                    project_slug=entry.project_slug[:128] if entry.project_slug else None,
                     requested_model=entry.requested_model[:128],
                     profile=entry.profile[:64] if entry.profile else None,
                     resolved_model=entry.resolved_model[:128] if entry.resolved_model else None,

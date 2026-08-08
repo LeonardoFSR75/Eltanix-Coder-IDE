@@ -1,19 +1,33 @@
-"""Descoberta e resolução de projetos.
+"""Descoberta, resolução e gestão centralizada de projetos.
 
 O IDE abre projetos diferentes ao longo do dia, então `PROJECTS_ROOT` aponta
 para a pasta que os contém e cada subdiretório é um projeto. Índice, sessões de
-agente e operações de git passam a ser escopados por projeto.
+agente, segundo cérebro, graphify, telemetria de custos, auditoria e operações de git
+são escopados por projeto através de um cadastro centralizado em `project_record`.
 
-`PROJECTS_ROOT` é a fronteira: nenhum caminho fora dela é alcançável, e o nome
+`PROJECTS_ROOT` é a fronteira: nenhum caminho fora dela é alcançável, e o nome/slug
 do projeto é validado como um único segmento — `..` e barras não passam.
 """
 
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from sicoobito.db.models import (
+    AgentSessionRecord,
+    AuditLogEntry,
+    GraphEdge,
+    GraphNode,
+    Note,
+    ProjectRecord,
+    RequestLog,
+)
 from sicoobito.logging_setup import get_logger
 
 log = get_logger(__name__)
@@ -34,6 +48,30 @@ class Project:
     path: Path
     is_git: bool
     branch: str | None = None
+    slug: str | None = None
+    description: str = ""
+    budget_limit_usd: float | None = None
+    settings: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class ProjectSummary:
+    slug: str
+    name: str
+    description: str
+    local_path: str | None
+    git_url: str | None
+    is_git: bool
+    branch: str | None
+    budget_limit_usd: float | None
+    total_cost_usd: float
+    total_tokens: int
+    notes_count: int
+    graph_nodes_count: int
+    graph_edges_count: int
+    audit_events_count: int
+    active_sessions_count: int
+    settings: dict[str, Any]
 
 
 def validate_name(name: str) -> str:
@@ -50,21 +88,25 @@ def validate_name(name: str) -> str:
 def resolve(projects_root: Path, name: str) -> Path:
     """Caminho absoluto do projeto, garantidamente dentro da raiz."""
     raiz = projects_root.resolve()
-    destino = (raiz / validate_name(name)).resolve()
-    # Mesmo com o nome validado, a checagem final cobre symlink apontando fora.
+    valid_name = validate_name(name)
+    destino = (raiz / valid_name).resolve()
     if destino != raiz and raiz not in destino.parents:
         raise ProjectError(f"Projeto fora de PROJECTS_ROOT: {name}")
-    if not destino.is_dir():
-        raise ProjectError(f"Projeto não encontrado: {name}")
-    return destino
+    if destino.is_dir():
+        return destino
+
+    # Busca fallback insensível a maiúsculas/minúsculas
+    if raiz.is_dir():
+        name_lower = valid_name.lower()
+        for child in raiz.iterdir():
+            if child.is_dir() and child.name.lower() == name_lower:
+                return child.resolve()
+
+    raise ProjectError(f"Projeto não encontrado: {name}")
 
 
 def _branch_of(path: Path) -> str | None:
-    """Lê o branch direto do `.git/HEAD`.
-
-    Evita abrir o repositório com o GitPython só para listar: numa pasta com
-    dezenas de projetos, isso custaria centenas de milissegundos.
-    """
+    """Lê o branch direto do `.git/HEAD`."""
     head = path / ".git" / "HEAD"
     try:
         conteudo = head.read_text(encoding="utf-8", errors="replace").strip()
@@ -76,6 +118,7 @@ def _branch_of(path: Path) -> str | None:
 
 
 def list_projects(projects_root: Path) -> list[Project]:
+    """Descobre projetos no disk sob PROJECTS_ROOT (compatibilidade legada)."""
     raiz = projects_root.resolve()
     if not raiz.is_dir():
         log.warning("projects.root.missing", path=str(raiz))
@@ -92,6 +135,125 @@ def list_projects(projects_root: Path) -> list[Project]:
                 path=filho,
                 is_git=eh_git,
                 branch=_branch_of(filho) if eh_git else None,
+                slug=filho.name,
             )
         )
     return projetos
+
+
+async def sync_projects_db(session: AsyncSession, projects_root: Path) -> list[ProjectRecord]:
+    """Sincroniza as pastas no filesystem com a tabela `project_record` do Postgres."""
+    disk_projects = list_projects(projects_root)
+    records = list((await session.execute(select(ProjectRecord))).scalars().all())
+    by_slug = {r.slug: r for r in records}
+
+    novos: list[ProjectRecord] = []
+    for dp in disk_projects:
+        if dp.slug not in by_slug:
+            rec = ProjectRecord(
+                slug=dp.slug,
+                name=dp.name,
+                description=f"Projeto local em {dp.path.name}",
+                local_path=str(dp.path),
+                default_branch=dp.branch or "main",
+                settings={},
+            )
+            session.add(rec)
+            novos.append(rec)
+
+    if novos:
+        await session.flush()
+        log.info("projects.sync_db.added", count=len(novos))
+
+    stmt = select(ProjectRecord).order_by(ProjectRecord.name)
+    res = await session.execute(stmt)
+    return list(res.scalars().all())
+
+
+async def get_project_summary(
+    session: AsyncSession, slug: str, projects_root: Path
+) -> ProjectSummary:
+    """Consolida todas as métricas (IDE, Git, Custos, Notas, Graphify, Auditoria, Sessões)."""
+    slug_valido = validate_name(slug)
+
+    # 1. Registro no BD
+    stmt_rec = select(ProjectRecord).where(ProjectRecord.slug == slug_valido)
+    rec = (await session.execute(stmt_rec)).scalar_one_or_none()
+    if not rec:
+        # Se pasta existe no disk, auto-registra
+        try:
+            path = resolve(projects_root, slug_valido)
+            rec = ProjectRecord(
+                slug=slug_valido,
+                name=slug_valido,
+                description=f"Projeto em {path.name}",
+                local_path=str(path),
+                default_branch=_branch_of(path) or "main",
+            )
+            session.add(rec)
+            await session.flush()
+        except ProjectError as err:
+            msg = f"Projeto {slug_valido!r} não cadastrado e não encontrado no filesystem."
+            raise ProjectError(msg) from err
+
+    # 2. Informações de Git local
+    local_path = Path(rec.local_path) if rec.local_path else (projects_root / rec.slug)
+    is_git = (local_path / ".git").exists()
+    branch = _branch_of(local_path) if is_git else None
+
+    # 3. Telemetria de Custos
+    stmt_custo = select(func.coalesce(func.sum(RequestLog.cost_usd), 0.0)).where(
+        RequestLog.project_slug == rec.slug
+    )
+    custo_total = (await session.execute(stmt_custo)).scalar() or 0.0
+
+    stmt_tokens = select(func.coalesce(func.sum(RequestLog.total_tokens), 0)).where(
+        RequestLog.project_slug == rec.slug
+    )
+    tokens_total = (await session.execute(stmt_tokens)).scalar() or 0
+
+    # 4. Notas (Segundo Cérebro)
+    notes_count = (await session.execute(
+        select(func.count(Note.id)).where(Note.project_slug == rec.slug)
+    )).scalar() or 0
+
+    # 5. Graphify (Grafo de Conhecimento)
+    graph_nodes = (await session.execute(
+        select(func.count(GraphNode.id)).where(GraphNode.workspace == rec.slug)
+    )).scalar() or 0
+
+    graph_edges = (await session.execute(
+        select(func.count(GraphEdge.id)).where(GraphEdge.workspace == rec.slug)
+    )).scalar() or 0
+
+    # 6. Auditoria
+    audit_count = (await session.execute(
+        select(func.count(AuditLogEntry.id)).where(AuditLogEntry.project_slug == rec.slug)
+    )).scalar() or 0
+
+    # 7. Sessões Ativas do Agente
+    sessions_active = (await session.execute(
+        select(func.count(AgentSessionRecord.session_id)).where(
+            AgentSessionRecord.project == rec.slug,
+            AgentSessionRecord.status == "open",
+        )
+    )).scalar() or 0
+
+    return ProjectSummary(
+        slug=rec.slug,
+        name=rec.name,
+        description=rec.description or "",
+        local_path=str(local_path),
+        git_url=rec.git_url,
+        is_git=is_git,
+        branch=branch,
+        budget_limit_usd=float(rec.budget_limit_usd) if rec.budget_limit_usd is not None else None,
+        total_cost_usd=float(custo_total),
+        total_tokens=int(tokens_total),
+        notes_count=int(notes_count),
+        graph_nodes_count=int(graph_nodes),
+        graph_edges_count=int(graph_edges),
+        audit_events_count=int(audit_count),
+        active_sessions_count=int(sessions_active),
+        settings=rec.settings or {},
+    )

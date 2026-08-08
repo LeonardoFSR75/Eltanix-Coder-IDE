@@ -15,7 +15,13 @@ function renderPopover(mode: (typeof MODES)[number] = "auto") {
   const onClose = vi.fn();
   const setMode = vi.fn();
   render(
-    <CustomizationsPopover anchorRef={anchorRef} onClose={onClose} mode={mode} setMode={setMode} />,
+    <CustomizationsPopover
+      anchorRef={anchorRef}
+      onClose={onClose}
+      mode={mode}
+      setMode={setMode}
+      project={null}
+    />,
   );
   return { onClose, setMode };
 }

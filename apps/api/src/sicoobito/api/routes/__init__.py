@@ -9,11 +9,12 @@ from sicoobito.api.routes.lsp import ws_router as lsp_ws_router
 from sicoobito.api.routes.mcp import router as mcp_router
 from sicoobito.api.routes.metrics import router as metrics_router
 from sicoobito.api.routes.notes import router as notes_router
+from sicoobito.api.routes.projects import router as projects_router
 from sicoobito.api.routes.skills import router as skills_router
 from sicoobito.api.routes.telemetry import router as telemetry_router
-from sicoobito.api.routes.workspace import projects_router
 from sicoobito.api.routes.workspace import router as workspace_router
 from sicoobito.api.routes.workspace import ws_router as workspace_ws_router
+from sicoobito.graphify.api.router import router as graphify_router
 
 __all__ = [
     "agent_router",
@@ -21,6 +22,7 @@ __all__ = [
     "context_router",
     "documents_router",
     "git_router",
+    "graphify_router",
     "health_router",
     "lsp_router",
     "lsp_ws_router",
@@ -33,3 +35,4 @@ __all__ = [
     "workspace_router",
     "workspace_ws_router",
 ]
+

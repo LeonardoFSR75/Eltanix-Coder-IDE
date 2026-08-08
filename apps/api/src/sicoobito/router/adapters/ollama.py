@@ -7,7 +7,12 @@ from typing import Any
 
 import httpx
 
-from sicoobito.router.adapters.base import DiscoveredModel, DiscoveryError, HealthResult, ProviderAdapter
+from sicoobito.router.adapters.base import (
+    DiscoveredModel,
+    DiscoveryError,
+    HealthResult,
+    ProviderAdapter,
+)
 from sicoobito.router.catalog import ModelSpec
 
 # Pistas no nome que indicam modelo de embedding — o Ollama não expõe essa

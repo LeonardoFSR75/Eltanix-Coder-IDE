@@ -19,6 +19,7 @@ from sicoobito.api.routes import (
     context_router,
     documents_router,
     git_router,
+    graphify_router,
     health_router,
     lsp_router,
     lsp_ws_router,
@@ -173,6 +174,7 @@ async def lifespan(app: FastAPI):
     app.state.audit = audit
     app.state.mcp_manager = mcp_manager
     app.state.trace_recorder = trace_recorder
+    app.state.projects_root = settings.projects_root
     app.state.agent_runner = AgentRunner(
         settings=settings,
         engine=engine,
@@ -241,6 +243,7 @@ def create_app() -> FastAPI:
     app.include_router(context_router)
     app.include_router(documents_router)
     app.include_router(notes_router)
+    app.include_router(graphify_router)
     app.include_router(skills_router)
     app.include_router(audit_router)
     app.include_router(mcp_router)

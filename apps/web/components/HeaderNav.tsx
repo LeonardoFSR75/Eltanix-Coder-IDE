@@ -57,6 +57,7 @@ export function HeaderNav() {
       label: "Desenvolvimento",
       icon: "💻",
       items: [
+        { href: "/projects", label: "Central de Projetos", icon: "🚀", description: "Projetos, Custos 360°, Git & Auditoria" },
         { href: "/ide", label: "IDE Agêntica", icon: "💻", description: "Editor Monaco + Terminal + Pyright" },
         { href: "/providers", label: "Provedores LLM", icon: "🌐", description: "Ollama, OpenAI & Gateway" },
         { href: "/requests", label: "Requests & Custo", icon: "📊", description: "FinOps, Tokens & Cache Exato" },
@@ -67,6 +68,7 @@ export function HeaderNav() {
       icon: "🧠",
       items: [
         { href: "/rag", label: "RAG & ChromaDB", icon: "📚", description: "Busca Vetorial & PDFs no BD" },
+        { href: "/graphify", label: "Graphify Engine", icon: "🕸️", description: "Knowledge Graph & GraphRAG" },
         { href: "/second-brain", label: "Segundo Cérebro", icon: "📓", description: "Grafo Obsidian & Wikilinks" },
       ],
     },

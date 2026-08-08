@@ -344,57 +344,59 @@ export function Explorer() {
         }
       }}
     >
-      <div className="panel-actions-bar">
-        <button
-          type="button"
-          className="icon-action-btn"
-          title="Novo Arquivo"
-          onClick={() => setDialogo({ tipo: "novo-arquivo", base: "", inicial: "" })}
-        >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-            <polyline points="14 2 14 8 20 8" />
-            <line x1="12" y1="11" x2="12" y2="17" />
-            <line x1="9" y1="14" x2="15" y2="14" />
-          </svg>
-        </button>
-        <button
-          type="button"
-          className="icon-action-btn"
-          title="Nova Pasta"
-          onClick={() => setDialogo({ tipo: "nova-pasta", base: "", inicial: "" })}
-        >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
-            <line x1="12" y1="11" x2="12" y2="17" />
-            <line x1="9" y1="14" x2="15" y2="14" />
-          </svg>
-        </button>
-        <button
-          type="button"
-          className="icon-action-btn"
-          title="Colapsar Pastas"
-          onClick={() => setExpanded(new Set())}
-        >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <polyline points="4 14 10 14 10 20" />
-            <polyline points="20 10 14 10 14 4" />
-            <line x1="14" y1="10" x2="21" y2="3" />
-            <line x1="3" y1="21" x2="10" y2="14" />
-          </svg>
-        </button>
-        <button
-          type="button"
-          className="icon-action-btn"
-          title="Recarregar Árvore"
-          onClick={() => bumpRevision()}
-          style={{ marginLeft: "auto" }}
-        >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <polyline points="23 4 23 10 17 10" />
-            <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
-          </svg>
-        </button>
+      <div className="panel-header">
+        <span className="panel-header-title">Explorer</span>
+        <div className="panel-actions-bar">
+          <button
+            type="button"
+            className="icon-action-btn"
+            title="Novo Arquivo"
+            onClick={() => setDialogo({ tipo: "novo-arquivo", base: "", inicial: "" })}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+              <polyline points="14 2 14 8 20 8" />
+              <line x1="12" y1="11" x2="12" y2="17" />
+              <line x1="9" y1="14" x2="15" y2="14" />
+            </svg>
+          </button>
+          <button
+            type="button"
+            className="icon-action-btn"
+            title="Nova Pasta"
+            onClick={() => setDialogo({ tipo: "nova-pasta", base: "", inicial: "" })}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+              <line x1="12" y1="11" x2="12" y2="17" />
+              <line x1="9" y1="14" x2="15" y2="14" />
+            </svg>
+          </button>
+          <button
+            type="button"
+            className="icon-action-btn"
+            title="Colapsar Pastas"
+            onClick={() => setExpanded(new Set())}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <polyline points="4 14 10 14 10 20" />
+              <polyline points="20 10 14 10 14 4" />
+              <line x1="14" y1="10" x2="21" y2="3" />
+              <line x1="3" y1="21" x2="10" y2="14" />
+            </svg>
+          </button>
+          <button
+            type="button"
+            className="icon-action-btn"
+            title="Recarregar Árvore"
+            onClick={() => bumpRevision()}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <polyline points="23 4 23 10 17 10" />
+              <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
+            </svg>
+          </button>
+        </div>
       </div>
 
       <div className="tree-quick-filter">
@@ -578,6 +580,9 @@ export function SearchPanel() {
 
   return (
     <div className="panel-body search-panel-body">
+      <div className="panel-header">
+        <span className="panel-header-title">Busca & Substituição</span>
+      </div>
       <div className="search-form">
         {/* Campo de Busca Principal */}
         <div className="search-field-row">
@@ -757,6 +762,9 @@ export function GitPanel() {
 
   return (
     <div className="panel-body">
+      <div className="panel-header">
+        <span className="panel-header-title">Controle Git</span>
+      </div>
       {erro && <div className="panel-error">{erro}</div>}
       {aviso && <div className="tree-hint">{aviso}</div>}
 
@@ -948,7 +956,11 @@ export function DebugPanel() {
   };
 
   return (
-    <div className="panel-body" style={{ padding: "10px", gap: "10px", display: "flex", flexDirection: "column" }}>
+    <div className="panel-body" style={{ padding: "0 0 10px 0", display: "flex", flexDirection: "column" }}>
+      <div className="panel-header">
+        <span className="panel-header-title">Executar & Debugar</span>
+      </div>
+      <div style={{ padding: "10px", gap: "10px", display: "flex", flexDirection: "column" }}>
       <div style={{ background: "var(--surface-2)", padding: "8px 10px", borderRadius: "5px", border: "1px solid var(--border)" }}>
         <div style={{ fontSize: "10px", color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: "2px" }}>
           Arquivo em Execução
@@ -1009,6 +1021,7 @@ export function DebugPanel() {
 
       <div style={{ marginTop: "auto", fontSize: "10.5px", color: "var(--text-muted)", background: "rgba(255,255,255,0.02)", border: "1px solid var(--border)", padding: "6px 8px", borderRadius: "4px", lineHeight: "1.4" }}>
         💡 Saída stdout/stderr exibida em tempo real no terminal do sandbox abaixo.
+      </div>
       </div>
     </div>
   );

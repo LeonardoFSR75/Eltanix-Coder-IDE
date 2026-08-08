@@ -721,29 +721,91 @@ code {
 }
 
 .project-picker {
-  padding: 10px 12px;
+  padding: 8px 10px;
   border-bottom: 1px solid var(--border);
-  flex-shrink: 0;
   background: var(--surface-2);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex-shrink: 0;
 }
 
-.project-picker select,
-.git-branch select {
-  width: 100%;
-  padding: 6px 10px;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--border);
+.project-picker-select-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   background: var(--bg);
-  color: var(--text);
-  font-family: inherit;
-  font-size: 12.5px;
-  outline: none;
-  cursor: pointer;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm, 6px);
+  padding: 2px 8px;
   transition: border-color 0.15s ease;
 }
 
-.project-picker select:hover,
-.git-branch select:hover {
+.project-picker-select-wrapper:focus-within,
+.project-picker-select-wrapper:hover {
+  border-color: var(--border-hover, #3b82f6);
+}
+
+.project-picker-icon {
+  font-size: 12px;
+  opacity: 0.85;
+}
+
+.project-picker-select {
+  flex: 1;
+  width: 100%;
+  padding: 5px 0;
+  background: transparent;
+  border: none;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  outline: none;
+  cursor: pointer;
+  text-overflow: ellipsis;
+}
+
+.project-picker-actions {
+  display: flex;
+  gap: 6px;
+  width: 100%;
+}
+
+.project-action-btn {
+  flex: 1;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 5px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.project-action-btn.primary {
+  background: var(--accent, #3b82f6);
+  color: #ffffff;
+  border: 1px solid transparent;
+}
+
+.project-action-btn.primary:hover {
+  filter: brightness(1.1);
+  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.3);
+}
+
+.project-action-btn.secondary {
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+
+.project-action-btn.secondary:hover {
+  background: var(--surface-hover, var(--border));
   border-color: var(--border-hover);
 }
 
@@ -1536,30 +1598,51 @@ button.primary:hover:not(:disabled) {
   color: var(--text);
 }
 
-/* Explorer Panel Action Bar */
-.panel-actions-bar {
+/* Sidebar Panel Headers & Action Bar */
+.panel-header {
   display: flex;
   align-items: center;
-  gap: 6px;
+  justify-content: space-between;
   padding: 6px 10px;
   border-bottom: 1px solid var(--border);
   background: var(--surface);
+  user-select: none;
   flex-shrink: 0;
 }
 
+.panel-header-title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-dim);
+}
+
+.panel-actions-bar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
 .icon-action-btn {
-  padding: 3px 8px;
+  padding: 3px 5px;
   font-size: 11.5px;
   font-weight: 600;
   border-radius: 4px;
-  background: var(--surface-2);
-  border: 1px solid var(--border);
+  background: transparent;
+  border: 1px solid transparent;
   color: var(--text-dim);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.15s ease;
 }
 
 .icon-action-btn:hover {
   color: var(--text);
-  border-color: var(--border-hover);
+  background: var(--surface-2);
+  border-color: var(--border);
 }
 
 /* Agent Presets */
@@ -6373,3 +6456,206 @@ button.primary:hover:not(:disabled) {
   text-overflow: ellipsis;
   border: 1px solid var(--border);
 }
+
+/* ==========================================================================
+   Graphify Engine & Knowledge Graph Styles
+   ========================================================================== */
+
+.graphify-search-card {
+  background: var(--surface-glass);
+  backdrop-filter: blur(14px);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 16px 20px;
+  margin-bottom: 20px;
+  box-shadow: var(--shadow-lg);
+}
+
+.graphify-search-form {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.graphify-search-input-wrap {
+  flex: 1;
+  min-width: 280px;
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.graphify-search-icon {
+  position: absolute;
+  left: 14px;
+  font-size: 15px;
+  color: var(--text-dim);
+  pointer-events: none;
+}
+
+.graphify-search-input {
+  width: 100%;
+  padding-left: 40px !important;
+}
+
+.graphify-tabs-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-bottom: 14px;
+  margin-bottom: 16px;
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+}
+
+.graphify-tab-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border-radius: var(--radius);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-dim);
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.2s ease;
+}
+
+.graphify-tab-btn:hover {
+  color: var(--text);
+  background: var(--surface-2);
+  border-color: var(--border-hover);
+}
+
+.graphify-tab-btn.active {
+  color: #ffffff;
+  background: var(--accent-gradient);
+  border-color: transparent;
+  box-shadow: var(--shadow-glow);
+  font-weight: 600;
+}
+
+.graphify-viewer-card {
+  position: relative;
+  width: 100%;
+  height: 600px;
+  background: var(--surface-glass);
+  backdrop-filter: blur(14px);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  box-shadow: var(--shadow-lg);
+}
+
+.graphify-controls-overlay {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  z-index: 10;
+  background: var(--surface-glass);
+  backdrop-filter: blur(16px);
+  padding: 6px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-lg);
+}
+
+.graphify-control-btn {
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.graphify-control-btn:hover {
+  background: var(--surface-3);
+  border-color: var(--border-hover);
+  color: var(--accent);
+}
+
+.graphify-legend-bar {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  z-index: 10;
+  background: var(--surface-glass);
+  backdrop-filter: blur(16px);
+  padding: 8px 14px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-lg);
+  flex-wrap: wrap;
+  max-width: calc(100% - 160px);
+}
+
+.graphify-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.graphify-legend-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.graphify-drawer {
+  position: absolute;
+  bottom: 16px;
+  left: 16px;
+  max-width: 380px;
+  width: calc(100% - 32px);
+  z-index: 10;
+  background: var(--surface-glass);
+  backdrop-filter: blur(18px);
+  border: 1px solid var(--border-hover);
+  border-radius: var(--radius);
+  padding: 16px;
+  box-shadow: var(--shadow-lg);
+}
+
+.graphify-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 8px;
+  border-radius: var(--radius-sm);
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #ffffff;
+}
+
+.graphify-answer-card {
+  background: var(--surface-glass);
+  backdrop-filter: blur(14px);
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+  border-radius: var(--radius);
+  padding: 16px 20px;
+  margin-bottom: 20px;
+  box-shadow: var(--shadow-glow);
+}
+
