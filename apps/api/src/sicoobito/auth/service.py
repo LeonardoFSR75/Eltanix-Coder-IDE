@@ -14,6 +14,7 @@ import hmac
 import secrets
 import uuid
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from sicoobito.auth import store
 from sicoobito.db.models import AppUser
@@ -51,6 +52,58 @@ def _hash_token(token: str) -> str:
 
 
 class AuthService:
+    def __init__(self) -> None:
+        self._memory_attempts: dict[str, list[datetime]] = {}
+
+    async def check_rate_limit(self, ip: str, redis: Any | None = None) -> bool:
+        """Verifica se o IP excedeu o limite de 5 tentativas por minuto.
+
+        Usa Redis se disponível; caso contrário, usa contador em memória local.
+        """
+        now = datetime.now(UTC)
+        window_start = now - timedelta(seconds=60)
+
+        if redis is not None:
+            try:
+                key = f"auth:ratelimit:{ip}"
+                count = await redis.get(key)
+                if count and int(count) >= 5:
+                    return False
+                return True
+            except Exception as exc:
+                log.warning("auth.ratelimit.redis_failed", error=str(exc)[:200])
+
+        attempts = [t for t in self._memory_attempts.get(ip, []) if t > window_start]
+        self._memory_attempts[ip] = attempts
+        return len(attempts) < 5
+
+    async def record_failed_attempt(self, ip: str, redis: Any | None = None) -> None:
+        """Registra uma tentativa malsucedida de login para o IP fornecido."""
+        now = datetime.now(UTC)
+        if redis is not None:
+            try:
+                key = f"auth:ratelimit:{ip}"
+                pipe = redis.pipeline()
+                await pipe.incr(key)
+                await pipe.expire(key, 60)
+                await pipe.execute()
+                return
+            except Exception as exc:
+                log.warning("auth.ratelimit.redis_record_failed", error=str(exc)[:200])
+
+        attempts = [t for t in self._memory_attempts.get(ip, []) if t > now - timedelta(seconds=60)]
+        attempts.append(now)
+        self._memory_attempts[ip] = attempts
+
+    async def reset_failed_attempts(self, ip: str, redis: Any | None = None) -> None:
+        """Limpa o registro de falhas para o IP após login bem-sucedido."""
+        if redis is not None:
+            try:
+                await redis.delete(f"auth:ratelimit:{ip}")
+            except Exception as exc:
+                log.warning("auth.ratelimit.redis_reset_failed", error=str(exc)[:200])
+        self._memory_attempts.pop(ip, None)
+
     async def ensure_seed_user(self, *, username: str, password: str) -> None:
         """Cria o usuário único se `app_user` estiver vazia. Idempotente e
         best-effort: um soluço aqui não pode impedir a API de subir — só
@@ -76,6 +129,19 @@ class AuthService:
         if user is None or not _verify_password(password, user.password_hash):
             return None
         return user
+
+    async def change_password(
+        self, *, user_id: uuid.UUID, old_password: str, new_password: str
+    ) -> bool:
+        """Troca a senha do usuário caso a senha antiga seja válida."""
+        async with session_scope() as session:
+            user = await store.get_user(session, user_id)
+            if user is None or not _verify_password(old_password, user.password_hash):
+                return False
+            new_hash = _hash_password(new_password)
+            await store.update_user_password(session, user, password_hash=new_hash)
+        log.info("auth.change_password.success", user_id=str(user_id))
+        return True
 
     async def create_session(
         self, *, user_id: uuid.UUID, user_agent: str | None = None
@@ -113,3 +179,16 @@ class AuthService:
             auth_session = await store.get_session_by_token_hash(session, token_hash)
             if auth_session is not None:
                 await store.revoke_session(session, auth_session, now=datetime.now(UTC))
+
+    async def purge_expired_sessions(self) -> int:
+        """Deleta do banco todas as sessões expiradas ou revogadas."""
+        try:
+            async with session_scope() as session:
+                purged = await store.purge_expired_sessions(session, now=datetime.now(UTC))
+            if purged > 0:
+                log.info("auth.sessions.purged", count=purged)
+            return purged
+        except Exception as exc:
+            log.warning("auth.sessions.purge_failed", error=str(exc)[:200])
+            return 0
+

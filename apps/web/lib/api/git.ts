@@ -11,6 +11,7 @@ export interface GitFile {
 
 export interface GitStatus {
   branch: string;
+  head?: string;
   dirty: boolean;
   files: GitFile[];
 }

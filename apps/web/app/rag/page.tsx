@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/components/Toast";
 import { useProject } from "@/components/providers/ProjectContext";
@@ -140,6 +141,20 @@ export default function RAGPage() {
               <> Sem projeto selecionado — mostrando todos os documentos.</>
             )}
           </p>
+        </div>
+        <div className="header-actions">
+          <Link
+            href={currentProject ? `/second-brain?project=${encodeURIComponent(currentProject)}` : "/second-brain"}
+            className="btn-secondary-sm"
+          >
+            📓 Segundo Cérebro
+          </Link>
+          <Link
+            href={currentProject ? `/graphify?project=${encodeURIComponent(currentProject)}` : "/graphify"}
+            className="btn-secondary-sm"
+          >
+            🕸️ Graphify Engine
+          </Link>
         </div>
       </div>
 

@@ -19,8 +19,10 @@ from pydantic import BaseModel, Field
 from sicoobito.api.deps import AuthDep, SettingsDep
 from sicoobito.api.routes.workspace import _fs_from_body, project_fs
 from sicoobito.logging_setup import get_logger
+from sicoobito.router import env_editor
 from sicoobito.workspace import git as git_ops
-from sicoobito.workspace.git import GitError, open_repo
+from sicoobito.workspace.git import GitError, get_git_user_config, open_repo, update_git_user_config
+from sicoobito.workspace.github import GitHubClient, GitHubError, _token_from_cli, resolve_token
 
 log = get_logger(__name__)
 
@@ -361,3 +363,152 @@ async def discard(payload: DiscardRequest, settings: SettingsDep) -> dict[str, A
         raise _erro(exc) from exc
     log.info("git.discard", project=payload.project, paths=len(valid_paths))
     return {"discarded": valid_paths}
+
+
+# ── Configurações de Conta Git e GitHub ──────────────────────────────────────
+
+
+class GitConfigUpdateRequest(BaseModel):
+    user_name: str | None = None
+    user_email: str | None = None
+    default_branch: str | None = None
+    autocrlf: str | None = None
+    gpg_sign: bool | None = None
+    signing_key: str | None = None
+    scope: str = Field(default="global", pattern="^(global|local)$")
+    project: str | None = None
+
+
+@router.get("/config")
+async def get_git_config(
+    settings: SettingsDep, project: str | None = Query(default=None)
+) -> dict[str, Any]:
+    """Retorna configurações do Git local/global e chaves SSH ativas."""
+    root = project_fs(settings, project).root if project else None
+    try:
+        cfg = await asyncio.to_thread(get_git_user_config, root)
+    except Exception as exc:
+        raise _erro(exc) from exc
+    return cfg
+
+
+@router.put("/config")
+async def update_git_config(
+    payload: GitConfigUpdateRequest, settings: SettingsDep
+) -> dict[str, Any]:
+    """Atualiza configurações de usuário do Git (`user.name`, `user.email`, `init.defaultBranch`, etc.)."""
+    root = project_fs(settings, payload.project).root if payload.project else None
+    try:
+        cfg = await asyncio.to_thread(
+            update_git_user_config,
+            user_name=payload.user_name,
+            user_email=payload.user_email,
+            default_branch=payload.default_branch,
+            autocrlf=payload.autocrlf,
+            gpg_sign=payload.gpg_sign,
+            signing_key=payload.signing_key,
+            scope=payload.scope,
+            root=root,
+        )
+    except GitError as exc:
+        raise _erro(exc) from exc
+    return cfg
+
+
+class GitHubConfigUpdateRequest(BaseModel):
+    github_token: str = Field(default="")
+
+
+class GitHubTokenTestRequest(BaseModel):
+    token: str = Field(min_length=1)
+
+
+@router.get("/github/config")
+async def get_github_config(settings: SettingsDep) -> dict[str, Any]:
+    """Status e dados do perfil GitHub associado ao token atual."""
+    raw_token = settings.github_token
+    token = resolve_token(raw_token)
+
+    token_source = (
+        "settings"
+        if raw_token
+        else ("gh_cli" if _token_from_cli() else "none")
+    )
+
+    if not token:
+        return {
+            "status": "not_configured",
+            "token_configured": False,
+            "token_source": token_source,
+            "error": "Nenhum token do GitHub configurado.",
+            "user": None,
+        }
+
+    try:
+        client = GitHubClient(token)
+        user_info = await client.whoami()
+        masked = f"{token[:4]}...{token[-4:]}" if len(token) > 8 else "***"
+        return {
+            "status": "authenticated",
+            "token_configured": bool(raw_token),
+            "token_source": token_source,
+            "masked_token": masked,
+            "user": {
+                "login": user_info.get("login"),
+                "name": user_info.get("name"),
+                "email": user_info.get("email"),
+                "avatar_url": user_info.get("avatar_url"),
+                "html_url": user_info.get("html_url"),
+                "bio": user_info.get("bio"),
+                "public_repos": user_info.get("public_repos"),
+                "total_private_repos": user_info.get("total_private_repos"),
+                "created_at": user_info.get("created_at"),
+            },
+        }
+    except GitHubError as exc:
+        return {
+            "status": "error",
+            "token_configured": bool(raw_token),
+            "token_source": token_source,
+            "error": str(exc),
+            "user": None,
+        }
+
+
+@router.post("/github/config/test")
+async def test_github_token(payload: GitHubTokenTestRequest) -> dict[str, Any]:
+    """Testa um token PAT do GitHub em tempo real sem salvá-lo."""
+    try:
+        client = GitHubClient(payload.token.strip())
+        user_info = await client.whoami()
+        return {
+            "valid": True,
+            "user": {
+                "login": user_info.get("login"),
+                "name": user_info.get("name"),
+                "email": user_info.get("email"),
+                "avatar_url": user_info.get("avatar_url"),
+                "html_url": user_info.get("html_url"),
+                "bio": user_info.get("bio"),
+                "public_repos": user_info.get("public_repos"),
+            },
+        }
+    except GitHubError as exc:
+        return {"valid": False, "error": str(exc), "user": None}
+
+
+@router.put("/github/config")
+async def update_github_config(
+    payload: GitHubConfigUpdateRequest, settings: SettingsDep
+) -> dict[str, Any]:
+    """Salva o token do GitHub no arquivo `.env` e atualiza a configuração ativa."""
+    token_str = payload.github_token.strip()
+    settings.github_token = token_str
+
+    try:
+        env_editor.write_values(settings.env_file_path, {"GITHUB_TOKEN": token_str})
+    except Exception as exc:
+        log.warning("git.github.persist_failed", error=str(exc))
+
+    return await get_github_config(settings)
+

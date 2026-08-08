@@ -84,9 +84,19 @@ export default function SettingsPage() {
           <span className="page-badge">⚙️ Status do Gateway & Infraestrutura</span>
           <h1>Infraestrutura, Cache & Circuit Breakers</h1>
           <p>
-            Estado operacional dos bancos de dados, cache exato e disjuntores por modelo. Credenciais e perfis de
-            roteamento ficam em <Link href="/providers">Provedores</Link>.
+            Estado operacional dos bancos de dados, cache exato e disjuntores por modelo. Para credenciais de LLMs veja <Link href="/providers">Provedores</Link> e para autor Git/token PAT veja <Link href="/settings/git">Conta Git & GitHub</Link>.
           </p>
+        </div>
+        <div className="header-actions">
+          <Link href="/providers" className="btn-secondary-sm">
+            🌐 Provedores LLM
+          </Link>
+          <Link href="/settings/git" className="btn-secondary-sm">
+            🐙 Conta Git & GitHub
+          </Link>
+          <Link href="/audit" className="btn-secondary-sm">
+            🛡️ Trilha de Auditoria
+          </Link>
         </div>
       </div>
 

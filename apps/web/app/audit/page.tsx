@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import { AuditEntry, listAudit } from "@/lib/api/audit";
 import { useToast } from "@/components/Toast";
 
@@ -83,6 +84,12 @@ export default function AuditPage() {
           </p>
         </div>
         <div className="header-actions">
+          <Link href="/settings" className="btn-secondary-sm">
+            ⚙️ Configurações
+          </Link>
+          <Link href="/projects" className="btn-secondary-sm">
+            🚀 Central do Projeto
+          </Link>
           <button type="button" className="btn-secondary" onClick={handleExportCSV}>
             📊 Exportar CSV
           </button>

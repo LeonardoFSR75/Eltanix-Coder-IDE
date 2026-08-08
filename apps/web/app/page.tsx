@@ -1,9 +1,10 @@
-import { redirect } from "next/navigation";
+import ProjectsPage from "./projects/page";
 
-/**
- * A Central de Projetos é a landing real da plataforma — "entro pelo
- * projeto" é o modelo, não um painel solto sem contexto de projeto.
- */
+export const metadata = {
+  title: "Central de Projetos | SicoobitoCode",
+  description: "Cadastre e gerencie o ecossistema unificado de projetos no SicoobitoCode.",
+};
+
 export default function HomePage() {
-  redirect("/projects");
+  return <ProjectsPage />;
 }

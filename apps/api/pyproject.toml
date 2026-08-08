@@ -45,6 +45,7 @@ dependencies = [
     "pypdf>=5.0",
     # MCP real — cliente para conectar servidores externos como ferramentas do agente
     "mcp>=2.0",
+    "aiosqlite>=0.22.1",
 ]
 
 [project.optional-dependencies]

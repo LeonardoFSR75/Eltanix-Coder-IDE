@@ -14,7 +14,8 @@ export default function ProjectDetailPage({ params }: Props) {
   const { slug } = use(params);
   const [summary, setSummary] = useState<ProjectSummary | null>(null);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<"overview" | "second_brain" | "graphify" | "costs" | "audit">("overview");
+  type TabType = "overview" | "second_brain" | "graphify" | "costs" | "audit";
+  const [activeTab, setActiveTab] = useState<TabType>("overview");
   const [editingBudget, setEditingBudget] = useState(false);
   const [budgetVal, setBudgetVal] = useState("");
   const { addToast } = useToast();
@@ -32,8 +33,9 @@ export default function ProjectDetailPage({ params }: Props) {
       const data = await getProjectSummary(slug);
       setSummary(data);
       setBudgetVal(data.budget_limit_usd ? String(data.budget_limit_usd) : "");
-    } catch (err: any) {
-      addToast(`Erro ao carregar resumo do projeto: ${err.message}`, "error");
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      addToast(`Erro ao carregar resumo do projeto: ${message}`, "error");
     } finally {
       setLoading(false);
     }
@@ -51,8 +53,9 @@ export default function ProjectDetailPage({ params }: Props) {
       addToast("Limite de orçamento atualizado!", "success");
       setEditingBudget(false);
       loadData();
-    } catch (err: any) {
-      addToast(`Erro ao atualizar orçamento: ${err.message}`, "error");
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      addToast(`Erro ao atualizar orçamento: ${message}`, "error");
     }
   };
 
@@ -120,7 +123,35 @@ export default function ProjectDetailPage({ params }: Props) {
               </p>
             </div>
 
-            <div style={{ display: "flex", gap: "0.75rem" }}>
+            <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
+              <Link
+                href={`/trello?project=${encodeURIComponent(summary.slug)}`}
+                style={{
+                  padding: "0.75rem 1.25rem",
+                  borderRadius: "var(--radius)",
+                  backgroundColor: "var(--surface-2)",
+                  color: "var(--text)",
+                  border: "1px solid var(--border)",
+                  textDecoration: "none",
+                  fontWeight: 600,
+                }}
+              >
+                📋 Quadro Trello
+              </Link>
+              <Link
+                href={`/settings/git?project=${encodeURIComponent(summary.slug)}`}
+                style={{
+                  padding: "0.75rem 1.25rem",
+                  borderRadius: "var(--radius)",
+                  backgroundColor: "var(--surface-2)",
+                  color: "var(--text)",
+                  border: "1px solid var(--border)",
+                  textDecoration: "none",
+                  fontWeight: 600,
+                }}
+              >
+                🐙 Configurar Git
+              </Link>
               <Link
                 href={`/ide?project=${encodeURIComponent(summary.slug)}`}
                 style={{
@@ -209,7 +240,7 @@ export default function ProjectDetailPage({ params }: Props) {
           ].map((tab) => (
             <button
               key={tab.id}
-              onClick={() => setActiveTab(tab.id as any)}
+              onClick={() => setActiveTab(tab.id as TabType)}
               style={{
                 padding: "0.75rem 1.25rem",
                 background: "none",
@@ -271,28 +302,60 @@ export default function ProjectDetailPage({ params }: Props) {
                   </ul>
                 </div>
               )}
+
+              <div style={{ marginTop: "1.5rem" }}>
+                <Link
+                  href={`/settings/git?project=${encodeURIComponent(summary.slug)}`}
+                  style={{
+                    display: "inline-block",
+                    padding: "0.5rem 1rem",
+                    borderRadius: "var(--radius)",
+                    backgroundColor: "var(--surface-2)",
+                    color: "var(--text)",
+                    textDecoration: "none",
+                    border: "1px solid var(--border)",
+                  }}
+                >
+                  ⚙️ Gerenciar Identidade & Remotos Git do Projeto →
+                </Link>
+              </div>
             </div>
           )}
 
           {activeTab === "second_brain" && (
             <div>
-              <h3 style={{ marginTop: 0 }}>Segundo Cérebro Vinculado</h3>
+              <h3 style={{ marginTop: 0 }}>Segundo Cérebro & Base de Conhecimento</h3>
               <p style={{ color: "var(--text-dim)" }}>
-                Este projeto possui {summary.notes_count} notas registradas. Você pode pesquisá-las ou criar novas notas no contexto deste projeto.
+                Este projeto possui {summary.notes_count} notas e {summary.documents_count} documentos vetorizados.
               </p>
-              <Link
-                href={`/second-brain?project=${encodeURIComponent(summary.slug)}`}
-                style={{
-                  display: "inline-block",
-                  padding: "0.5rem 1rem",
-                  borderRadius: "var(--radius)",
-                  backgroundColor: "var(--surface-2)",
-                  color: "var(--text)",
-                  textDecoration: "none",
-                }}
-              >
-                Ir para o Segundo Cérebro →
-              </Link>
+              <div style={{ display: "flex", gap: "1rem", marginTop: "1rem" }}>
+                <Link
+                  href={`/second-brain?project=${encodeURIComponent(summary.slug)}`}
+                  style={{
+                    padding: "0.5rem 1rem",
+                    borderRadius: "var(--radius)",
+                    backgroundColor: "var(--surface-2)",
+                    color: "var(--text)",
+                    textDecoration: "none",
+                    border: "1px solid var(--border)",
+                  }}
+                >
+                  📓 Notas Obsidian & Wikilinks →
+                </Link>
+                <Link
+                  href={`/rag?project=${encodeURIComponent(summary.slug)}`}
+                  style={{
+                    padding: "0.5rem 1rem",
+                    borderRadius: "var(--radius)",
+                    backgroundColor: "var(--surface-2)",
+                    color: "var(--text)",
+                    textDecoration: "none",
+                    border: "1px solid var(--border)",
+                  }}
+                >
+                  📚 Documentos PDFs & Busca RAG →
+                </Link>
+              </div>
             </div>
           )}
 

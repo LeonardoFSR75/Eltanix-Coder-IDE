@@ -122,9 +122,17 @@ function RenderedAssistantText({ text }: { text: string }) {
         }
         if (!part.trim()) return null;
 
+        // Sanitizar HTML para prevenir XSS antes de aplicar marcações markdown
+        const escapedPart = part
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;")
+          .replace(/'/g, "&#039;");
+
         // Processar formatação inline básica
-        const formatted = part
-          .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+        const formatted = escapedPart
+          .replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>")
           .replace(/`([^`]+)`/g, '<code class="inline-code">$1</code>');
 
         return (

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   MCPCatalogTemplate,
@@ -192,6 +193,11 @@ export default function MCPPage() {
             ferramenta MCP exige aprovação antes de rodar — só servidores marcados como
             confiáveis abaixo têm suas ferramentas somente-leitura liberadas direto.
           </p>
+        </div>
+        <div className="header-actions">
+          <Link href="/skills" className="btn-secondary-sm">
+            ⚡ Skills do Agente
+          </Link>
         </div>
       </div>
 

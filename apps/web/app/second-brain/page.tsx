@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { NoteRecord, createNote, deleteNote, listNotes, updateNote } from "@/lib/api/notes";
 import { useToast } from "@/components/Toast";
 import { useProject } from "@/components/providers/ProjectContext";
@@ -193,6 +194,18 @@ export default function SecondBrainPage() {
           </p>
         </div>
         <div className="header-actions">
+          <Link
+            href={currentProject ? `/rag?project=${encodeURIComponent(currentProject)}` : "/rag"}
+            className="btn-secondary-sm"
+          >
+            📚 RAG & Documentos
+          </Link>
+          <Link
+            href={currentProject ? `/graphify?project=${encodeURIComponent(currentProject)}` : "/graphify"}
+            className="btn-secondary-sm"
+          >
+            🕸️ Graphify Engine
+          </Link>
           <button type="button" className="btn-primary glow-button" onClick={handleCreateNote}>
             + Nova Nota
           </button>

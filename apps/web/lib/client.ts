@@ -143,6 +143,13 @@ export async function logout(): Promise<void> {
   await fetch("/api/session", { method: "DELETE" });
 }
 
+export async function changePassword(oldPassword: string, newPassword: string): Promise<void> {
+  await post<{ status: string }>("/api/auth/change-password", {
+    old_password: oldPassword,
+    new_password: newPassword,
+  });
+}
+
 async function describeError(response: Response): Promise<string> {
   try {
     const body = await response.json();

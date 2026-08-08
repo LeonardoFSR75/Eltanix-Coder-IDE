@@ -87,6 +87,13 @@ export async function getEgoGraph(
   );
 }
 
-export async function indexWorkspace(workspace = "default"): Promise<{ status: string; nodes_indexed: number }> {
-  return post<{ status: string; nodes_indexed: number }>("/api/graphify/index", { workspace });
+export async function indexWorkspace(
+  workspace = "default",
+  project?: string,
+): Promise<{ status: string; nodes_indexed: number }> {
+  return post<{ status: string; nodes_indexed: number }>("/api/graphify/index", {
+    workspace,
+    project: project || workspace,
+    scan_workspace: true,
+  });
 }

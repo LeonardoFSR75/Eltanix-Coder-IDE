@@ -37,7 +37,7 @@ export function HeaderNav() {
   // Grupos cujo destino sabe filtrar por projeto (ver `?project=` em cada
   // página) — trocar de projeto aqui já leva a navegação seguinte filtrada,
   // fechando o ciclo "entro pelo Hub, tudo que abro dali já sabe do projeto".
-  const PROJECT_AWARE_PATHS = new Set(["/rag", "/graphify", "/second-brain", "/requests"]);
+  const PROJECT_AWARE_PATHS = new Set(["/ide", "/trello", "/rag", "/graphify", "/second-brain", "/requests"]);
   const projectHref = (href: string) =>
     currentProject && PROJECT_AWARE_PATHS.has(href)
       ? `${href}?project=${encodeURIComponent(currentProject)}`
@@ -61,45 +61,29 @@ export function HeaderNav() {
     router.push("/login");
   }, [logout, addToast, router]);
 
-  // ✅ FIX: navGroups movido para fora do componente (sem closures dinâmicos)
-  // O item de logout é identificado por isAction: true e tratado separadamente no render
   const navGroups: NavGroup[] = [
     {
-      label: "Desenvolvimento",
-      icon: "💻",
+      label: "Projeto",
+      icon: "📁",
       items: [
-        { href: "/projects", label: "Central de Projetos", icon: "🚀", description: "Projetos, Custos 360°, Git & Auditoria" },
-        { href: "/ide", label: "IDE Agêntica", icon: "💻", description: "Editor Monaco + Terminal + Pyright" },
-        { href: "/providers", label: "Provedores LLM", icon: "🌐", description: "Ollama, OpenAI & Gateway" },
-        { href: "/requests", label: "Requests & Custo", icon: "📊", description: "FinOps, Tokens & Cache Exato" },
+        { href: "/ide", label: "IDE Agêntica", icon: "💻", description: "Editor Monaco + Terminal + Agente" },
+        { href: "/trello", label: "Quadro Trello (Kanban)", icon: "📋", description: "Quadro de tarefas, sprints e cartões do projeto" },
+        { href: "/graphify", label: "Graphify Engine", icon: "🕸️", description: "Knowledge Graph & GraphRAG do projeto" },
+        { href: "/second-brain", label: "Segundo Cérebro", icon: "📓", description: "Notas Obsidian & Wikilinks do projeto" },
+        { href: "/rag", label: "RAG & Documentos", icon: "📚", description: "Busca vetorial & PDFs do projeto" },
+        { href: "/requests", label: "FinOps & Custos", icon: "📊", description: "Consumo de tokens e custos do projeto" },
       ],
     },
     {
-      label: "Inteligência & RAG",
-      icon: "🧠",
+      label: "Plataforma",
+      icon: "🌐",
       items: [
-        { href: "/rag", label: "RAG & ChromaDB", icon: "📚", description: "Busca Vetorial & PDFs no BD" },
-        { href: "/graphify", label: "Graphify Engine", icon: "🕸️", description: "Knowledge Graph & GraphRAG" },
-        { href: "/second-brain", label: "Segundo Cérebro", icon: "📓", description: "Grafo Obsidian & Wikilinks" },
-      ],
-    },
-    {
-      label: "Agentes & MCP",
-      icon: "⚡",
-      items: [
-        { href: "/skills", label: "Skills do Agente", icon: "⚡", description: "Sandbox & Prompts de Ferramentas" },
-        { href: "/mcp", label: "Servidores MCP", icon: "🔌", description: "JSON-RPC 2.0 (STDIO / SSE)" },
-      ],
-    },
-    {
-      label: "Governança & Conta",
-      icon: "🛡️",
-      items: [
-        { href: "/profile", label: "Meu Perfil & Chaves API", icon: "👤", description: "Gestão de Usuário & Credenciais" },
-        { href: "/login", label: "Autenticação", icon: "🔑", description: "Login e sessão atual" },
-        { href: "/audit", label: "Logs de Auditoria", icon: "🛡️", description: "Trilha de Segurança & Guardrails" },
-        { href: "/settings", label: "Configurações", icon: "⚙️", description: "ChromaDB Host & Banco de Dados" },
-        { href: "#logout", label: "Sair da Conta (Logout)", icon: "🚪", description: "Encerrar sessão atual", isAction: true },
+        { href: "/skills", label: "Skills do Agente", icon: "⚡", description: "Prompts & Sandboxes de ferramentas" },
+        { href: "/mcp", label: "Servidores MCP", icon: "🔌", description: "Integrações Protocolo MCP (STDIO / SSE)" },
+        { href: "/providers", label: "Provedores LLM", icon: "🌐", description: "Ollama, OpenAI & Gateway da API" },
+        { href: "/settings/git", label: "Conta Git & GitHub", icon: "🐙", description: "Identidade de autor & token do GitHub (PAT)" },
+        { href: "/audit", label: "Trilha de Auditoria", icon: "🛡️", description: "Logs globais de segurança & guardrails" },
+        { href: "/settings", label: "Configurações", icon: "⚙️", description: "Parâmetros do sistema & banco de dados" },
       ],
     },
   ];
@@ -111,7 +95,7 @@ export function HeaderNav() {
   return (
     <header className={`topbar ${isIde ? "topbar-ide" : ""}`}>
       <div className="brand-wrap">
-        <Link href="/" className="brand-link">
+        <Link href="/projects" className="brand-link">
           <div className="brand-logo">S</div>
           <span className="brand-name">
             Sicoobito<span className="brand-highlight">Code</span>
@@ -119,15 +103,16 @@ export function HeaderNav() {
         </Link>
       </div>
 
-      <nav className="nav tree-nav" ref={navRef}>
-        {/* Link Direto Home */}
+      {user && pathname !== "/login" && (
+        <nav className="nav tree-nav" ref={navRef}>
+        {/* Link Direto Central de Projetos (Home) */}
         <Link
-          href="/"
-          className={`nav-link ${pathname === "/" ? "active" : ""}`}
+          href="/projects"
+          className={`nav-link ${pathname === "/" || pathname === "/projects" ? "active" : ""}`}
           onClick={() => setActiveDropdown(null)}
         >
-          <span className="nav-icon">🏠</span>
-          Home
+          <span className="nav-icon">🚀</span>
+          Central de Projetos
         </Link>
 
         {/* Dropdowns Agrupados por Categoria */}
@@ -198,6 +183,7 @@ export function HeaderNav() {
           );
         })}
       </nav>
+      )}
 
       <div className="topbar-actions">
         {user && projects.length > 0 && (
@@ -226,22 +212,73 @@ export function HeaderNav() {
         </button>
 
         {user ? (
-          <div className="user-profile-badge-wrapper">
-            <Link href="/profile" className="user-profile-badge" title="Configurações">
+          <div className="user-profile-badge-wrapper" style={{ position: "relative" }}>
+            <button
+              type="button"
+              className={`user-profile-badge ${activeDropdown === "user_menu" ? "active" : ""}`}
+              onClick={() => toggleDropdown("user_menu")}
+              title="Menu do Usuário"
+              style={{ background: "none", border: "1px solid var(--border)", cursor: "pointer", textAlign: "left" }}
+            >
               <span className="user-avatar">🔑</span>
               <div className="user-info">
                 <span className="user-name">{user.displayName || user.username}</span>
-                <span className="user-role">Conectado</span>
+                <span className="user-role">
+                  Conectado <span style={{ fontSize: "9px", marginLeft: "2px" }}>{activeDropdown === "user_menu" ? "▲" : "▼"}</span>
+                </span>
               </div>
-            </Link>
-            <button
-              type="button"
-              onClick={handleUserLogout}
-              className="logout-nav-btn"
-              title="Sair da Conta (Logout)"
-            >
-              🚪 Sair
             </button>
+
+            {activeDropdown === "user_menu" && (
+              <div
+                className="nav-dropdown-menu animate-fade-in"
+                style={{ right: 0, left: "auto", minWidth: "240px", top: "calc(100% + 6px)" }}
+              >
+                <div className="dropdown-header">
+                  <span className="dropdown-category-title">USUÁRIO & SESSÃO</span>
+                </div>
+                <div className="dropdown-items-list">
+                  <Link
+                    href="/profile"
+                    className={`dropdown-item ${pathname === "/profile" ? "active" : ""}`}
+                    onClick={() => setActiveDropdown(null)}
+                  >
+                    <span className="item-icon">👤</span>
+                    <div className="item-text">
+                      <span className="item-label">Meu Perfil & Senha</span>
+                      <span className="item-desc">Gestão de conta & alteração de senha</span>
+                    </div>
+                  </Link>
+
+                  <Link
+                    href="/login"
+                    className={`dropdown-item ${pathname === "/login" ? "active" : ""}`}
+                    onClick={() => setActiveDropdown(null)}
+                  >
+                    <span className="item-icon">🔑</span>
+                    <div className="item-text">
+                      <span className="item-label">Status da Sessão</span>
+                      <span className="item-desc">Sessão ativa e credenciais</span>
+                    </div>
+                  </Link>
+
+                  <button
+                    type="button"
+                    className="dropdown-item dropdown-item-danger"
+                    onClick={() => {
+                      setActiveDropdown(null);
+                      handleUserLogout();
+                    }}
+                  >
+                    <span className="item-icon">🚪</span>
+                    <div className="item-text">
+                      <span className="item-label">Sair da Conta (Logout)</span>
+                      <span className="item-desc">Encerrar sessão ativa</span>
+                    </div>
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         ) : (
           <Link href="/login" className="login-nav-btn">

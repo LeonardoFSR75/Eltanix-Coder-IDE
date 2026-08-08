@@ -15,6 +15,7 @@ from sicoobito.agent.tools import (  # noqa: F401
     review,
     shell,
     skills,
+    trello,
     vcs,
 )
 from sicoobito.agent.tools.base import (

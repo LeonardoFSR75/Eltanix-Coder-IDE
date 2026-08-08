@@ -10,6 +10,7 @@ agente tem um diretório e um branch próprios, e o seu permanece intocado.
 from __future__ import annotations
 
 import shutil
+import subprocess
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -326,3 +327,103 @@ def remote_url(root: Path, remote: str = "origin") -> str | None:
         if candidate.name == remote:
             return next(iter(candidate.urls), None)
     return None
+
+
+def _get_git_config_val(key: str, scope: str = "global", root: Path | None = None) -> str:
+    cmd = ["git", "config"]
+    if scope == "global":
+        cmd.append("--global")
+    elif scope == "local" and root:
+        cmd.extend(["--file", str(root / ".git" / "config")])
+    else:
+        cmd.append("--get")
+    cmd.extend(["--get", key])
+
+    try:
+        res = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=5,
+            cwd=str(root) if root and root.exists() else None,
+        )
+        if res.returncode == 0:
+            return res.stdout.strip()
+    except Exception as exc:
+        log.debug("git.config.get_failed", key=key, error=str(exc))
+    return ""
+
+
+def get_git_user_config(root: Path | None = None) -> dict[str, Any]:
+    """Retorna as configurações do Git (user.name, user.email, etc) e chaves SSH."""
+    name = _get_git_config_val("user.name", scope="global", root=root)
+    email = _get_git_config_val("user.email", scope="global", root=root)
+    default_branch = _get_git_config_val("init.defaultBranch", scope="global", root=root) or "main"
+    autocrlf = _get_git_config_val("core.autocrlf", scope="global", root=root) or "input"
+    gpg_sign = _get_git_config_val("commit.gpgsign", scope="global", root=root) == "true"
+    signing_key = _get_git_config_val("user.signingkey", scope="global", root=root)
+
+    local_name = _get_git_config_val("user.name", scope="local", root=root) if root else ""
+    local_email = _get_git_config_val("user.email", scope="local", root=root) if root else ""
+
+    # Verifica presença de chaves SSH
+    ssh_dir = Path.home() / ".ssh"
+    ssh_keys: list[str] = []
+    if ssh_dir.exists() and ssh_dir.is_dir():
+        for fn in ["id_ed25519.pub", "id_rsa.pub", "id_ecdsa.pub", "id_dsa.pub"]:
+            if (ssh_dir / fn).exists():
+                ssh_keys.append(fn.replace(".pub", ""))
+
+    return {
+        "user_name": name,
+        "user_email": email,
+        "default_branch": default_branch,
+        "autocrlf": autocrlf,
+        "gpg_sign": gpg_sign,
+        "signing_key": signing_key,
+        "local_user_name": local_name or None,
+        "local_user_email": local_email or None,
+        "ssh_keys": ssh_keys,
+        "has_ssh": len(ssh_keys) > 0,
+    }
+
+
+def update_git_user_config(
+    user_name: str | None = None,
+    user_email: str | None = None,
+    default_branch: str | None = None,
+    autocrlf: str | None = None,
+    gpg_sign: bool | None = None,
+    signing_key: str | None = None,
+    scope: str = "global",
+    root: Path | None = None,
+) -> dict[str, Any]:
+    """Atualiza a configuração do Git (global ou local no repositório)."""
+    updates: dict[str, str] = {}
+    if user_name is not None:
+        updates["user.name"] = user_name.strip()
+    if user_email is not None:
+        updates["user.email"] = user_email.strip()
+    if default_branch is not None:
+        updates["init.defaultBranch"] = default_branch.strip()
+    if autocrlf is not None:
+        updates["core.autocrlf"] = autocrlf.strip()
+    if gpg_sign is not None:
+        updates["commit.gpgsign"] = "true" if gpg_sign else "false"
+    if signing_key is not None:
+        updates["user.signingkey"] = signing_key.strip()
+
+    cwd = str(root) if root and root.exists() else None
+    flag = "--global" if scope == "global" else "--local"
+
+    for key, val in updates.items():
+        cmd = ["git", "config", flag, key, val]
+        try:
+            res = subprocess.run(cmd, capture_output=True, text=True, timeout=5, cwd=cwd)
+            if res.returncode != 0:
+                raise GitError(f"Falha ao executar `git config {flag} {key}`: {res.stderr.strip()}")
+        except Exception as exc:
+            raise GitError(f"Erro ao atualizar git config: {exc}") from exc
+
+    return get_git_user_config(root=root)
+

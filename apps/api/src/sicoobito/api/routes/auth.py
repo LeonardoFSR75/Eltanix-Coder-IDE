@@ -28,6 +28,18 @@ class LoginRequest(BaseModel):
     password: str = Field(min_length=1)
 
 
+class ChangePasswordRequest(BaseModel):
+    old_password: str = Field(min_length=1)
+    new_password: str = Field(min_length=6, max_length=128)
+
+
+def _client_ip(request: Request) -> str:
+    forwarded = request.headers.get("x-forwarded-for")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.client.host if request.client else "127.0.0.1"
+
+
 @router.post("/login")
 async def login(
     payload: LoginRequest,
@@ -35,11 +47,23 @@ async def login(
     user_agent: str | None = Header(default=None),
 ) -> dict[str, Any]:
     service = _service(request)
+    redis = getattr(request.app.state, "redis", None)
+    ip = _client_ip(request)
+
+    if not await service.check_rate_limit(ip, redis):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Muitas tentativas de login. Tente novamente em 1 minuto.",
+        )
+
     user = await service.authenticate(username=payload.username, password=payload.password)
     if user is None:
+        await service.record_failed_attempt(ip, redis)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Usuário ou senha inválidos."
         )
+
+    await service.reset_failed_attempts(ip, redis)
     token, expires_at = await service.create_session(user_id=user.id, user_agent=user_agent)
     return {"token": token, "expires_at": expires_at.isoformat()}
 
@@ -68,3 +92,33 @@ async def me(
     if user is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Sessão inválida.")
     return {"id": str(user.id), "username": user.username, "display_name": user.display_name}
+
+
+@router.post("/change-password", dependencies=[AuthDep])
+async def change_password(
+    payload: ChangePasswordRequest,
+    request: Request,
+    sicoobito_session: str | None = Cookie(default=None),
+) -> dict[str, Any]:
+    if not sicoobito_session:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Troca de senha requer sessão de usuário.",
+        )
+    service = _service(request)
+    user = await service.validate_session(sicoobito_session)
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Sessão inválida.")
+
+    success = await service.change_password(
+        user_id=user.id,
+        old_password=payload.old_password,
+        new_password=payload.new_password,
+    )
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Senha atual incorreta.",
+        )
+    return {"status": "ok", "message": "Senha alterada com sucesso."}
+

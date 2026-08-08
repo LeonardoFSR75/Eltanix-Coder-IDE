@@ -11,6 +11,8 @@ import {
   getEgoGraph,
   indexWorkspace,
 } from "@/lib/api/graphify";
+import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { useProject } from "@/components/providers/ProjectContext";
 
 type ViewTab = "universe" | "domain" | "concept" | "architecture" | "brain";
@@ -52,8 +54,10 @@ const TAB_DETAILS: Record<ViewTab, { label: string; description: string; types: 
 };
 
 export default function GraphifyDashboard() {
-  const { currentProject } = useProject();
-  const workspace = currentProject ?? "default";
+  const { currentProject, projects, setCurrentProject } = useProject();
+  const router = useRouter();
+  const workspace = currentProject;
+
   const [activeTab, setActiveTab] = useState<ViewTab>("universe");
   const [searchQuery, setSearchQuery] = useState("");
   const [nodes, setNodes] = useState<GraphNode[]>([]);
@@ -66,6 +70,7 @@ export default function GraphifyDashboard() {
   const [answerText, setAnswerText] = useState<string | null>(null);
 
   const fetchGraphData = useCallback(async () => {
+    if (!workspace) return;
     setIsLoading(true);
     setError(null);
     try {
@@ -87,7 +92,7 @@ export default function GraphifyDashboard() {
 
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!searchQuery.trim()) return;
+    if (!searchQuery.trim() || !workspace) return;
     setIsLoading(true);
     setError(null);
     setAnswerText(null);
@@ -104,6 +109,7 @@ export default function GraphifyDashboard() {
   };
 
   const handleSelectNode = async (node: GraphNode) => {
+    if (!workspace) return;
     setSelectedNode(node);
     setIsLoading(true);
     try {
@@ -118,9 +124,10 @@ export default function GraphifyDashboard() {
   };
 
   const handleIndex = async () => {
+    if (!workspace) return;
     setIsIndexing(true);
     try {
-      await indexWorkspace(workspace);
+      await indexWorkspace(workspace, workspace);
       await fetchGraphData();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erro ao iniciar indexação.");
@@ -130,8 +137,70 @@ export default function GraphifyDashboard() {
   };
 
   useEffect(() => {
-    void fetchGraphData();
-  }, [fetchGraphData]);
+    if (workspace) {
+      void fetchGraphData();
+    }
+  }, [workspace, fetchGraphData]);
+
+  if (!currentProject) {
+    return (
+      <div className="shell">
+        <div className="page-header">
+          <div>
+            <span className="page-badge">🌐 Grafo de Conhecimento Multidimensional</span>
+            <h1>Graphify Engine & GraphRAG</h1>
+            <p>
+              O Graphify Engine opera exclusivamente no contexto de um projeto. Selecione um projeto para visualizar o Grafo de Conhecimento e utilizar o GraphRAG.
+            </p>
+          </div>
+        </div>
+
+        <div className="panel-box" style={{ textAlign: "center", padding: "48px 24px" }}>
+          <div style={{ fontSize: "56px", marginBottom: "16px" }}>📁</div>
+          <h2 style={{ fontSize: "20px", fontWeight: 700, margin: "0 0 12px", color: "var(--text)" }}>
+            Nenhum Projeto Selecionado
+          </h2>
+          <p style={{ color: "var(--text-dim)", maxWidth: "540px", margin: "0 auto 24px", lineHeight: 1.6 }}>
+            O Grafo de Conhecimento do Graphify mapeia módulos, ASTs, símbolos e notas escopados por projeto. Escolha um dos projetos abaixo para carregar seu grafo:
+          </p>
+
+          {projects.length > 0 ? (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: "16px", maxWidth: "800px", margin: "0 auto" }}>
+              {projects.map((p) => (
+                <button
+                  key={p.slug}
+                  type="button"
+                  onClick={() => setCurrentProject(p.slug)}
+                  className="card"
+                  style={{ textAlign: "left", cursor: "pointer", border: "1px solid var(--border)", transition: "all 0.2s ease" }}
+                >
+                  <div style={{ fontWeight: 700, color: "var(--accent)", marginBottom: "4px" }}>
+                    🚀 {p.name}
+                  </div>
+                  <div style={{ fontSize: "12px", color: "var(--text-dim)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {p.description || p.slug}
+                  </div>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div>
+              <p style={{ color: "var(--text-muted)", fontSize: "13px", marginBottom: "16px" }}>
+                Nenhum projeto foi encontrado no cadastro local.
+              </p>
+              <button
+                type="button"
+                onClick={() => router.push("/projects")}
+                className="btn-primary glow-button"
+              >
+                🚀 Ir para a Central de Projetos
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   const isEmpty = !isLoading && nodes.length === 0 && !error;
 
@@ -144,11 +213,22 @@ export default function GraphifyDashboard() {
           <h1>Graphify Engine & GraphRAG</h1>
           <p>
             Extração de AST, ecossistemas de código, comunidades e busca semântica em grafos.
-            Workspace atual: <code className="inline-code">{workspace}</code>
-            {!currentProject && " (nenhum projeto selecionado)"}.
+            Projeto atual: <code className="inline-code">{currentProject}</code>.
           </p>
         </div>
         <div className="header-actions">
+          <Link
+            href={currentProject ? `/rag?project=${encodeURIComponent(currentProject)}` : "/rag"}
+            className="btn-secondary-sm"
+          >
+            📚 RAG & Documentos
+          </Link>
+          <Link
+            href={currentProject ? `/second-brain?project=${encodeURIComponent(currentProject)}` : "/second-brain"}
+            className="btn-secondary-sm"
+          >
+            📓 Segundo Cérebro
+          </Link>
           <button
             type="button"
             onClick={fetchGraphData}
@@ -163,9 +243,9 @@ export default function GraphifyDashboard() {
             onClick={handleIndex}
             disabled={isIndexing}
             className="btn-primary glow-button"
-            title="Indexar workspace no Grafo de Conhecimento"
+            title="Indexar workspace do projeto no Grafo de Conhecimento"
           >
-            {isIndexing ? "⏳ Indexando..." : "⚡ Indexar Workspace"}
+            {isIndexing ? "⏳ Indexando..." : "⚡ Indexar Projeto"}
           </button>
         </div>
       </div>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { ErrorNotice } from "@/components/ErrorNotice";
 import { ProviderStudio } from "@/components/providers/ProviderStudio";
 import { getProvidersHealth, type ProvidersHealthResponse } from "@/lib/api/health";
@@ -65,9 +66,25 @@ export default function ProvidersPage() {
   return (
     <div className="shell">
       <div className="providers-page">
-        <h1 className="page-title" style={{ marginBottom: 20 }}>
-          Estúdio de Configuração de Provedores
-        </h1>
+        <div className="page-header" style={{ marginBottom: 20 }}>
+          <div>
+            <span className="page-badge">🌐 Provedores LLM & Gateway</span>
+            <h1 className="page-title" style={{ margin: "4px 0 0 0" }}>
+              Estúdio de Configuração de Provedores
+            </h1>
+            <p className="text-xs text-muted" style={{ margin: "4px 0 0 0" }}>
+              Gerencie chaves de API, modelos suportados e regras de fallback para LiteLLM.
+            </p>
+          </div>
+          <div className="header-actions">
+            <Link href="/settings" className="btn-secondary-sm">
+              ⚙️ Infraestrutura & Cache
+            </Link>
+            <Link href="/settings/git" className="btn-secondary-sm">
+              🐙 Conta Git & GitHub
+            </Link>
+          </div>
+        </div>
         <ProviderStudio
           initialHealth={data.health}
           initialCatalog={data.catalog}

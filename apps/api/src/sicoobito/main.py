@@ -145,6 +145,7 @@ async def lifespan(app: FastAPI):
             hint="defina SICOOBITO_ADMIN_PASSWORD no .env para fixar a senha do primeiro login",
         )
     await auth.ensure_seed_user(username=settings.admin_username, password=admin_password)
+    await auth.purge_expired_sessions()
 
     mcp_manager = MCPManager(settings)
     await mcp_manager.connect_all()

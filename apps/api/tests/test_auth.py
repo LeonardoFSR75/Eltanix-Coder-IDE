@@ -212,3 +212,76 @@ async def _always_valid_user(_token: str) -> object:
 
 async def _always_invalid_user(_token: str) -> None:
     return None
+
+
+# ── Novas funcionalidades (Troca de senha, Purga, Rate Limit) ──────────────
+
+
+async def test_purge_expired_sessions(pg_session):
+    user = await store.create_user(
+        pg_session, username=f"user-{uuid.uuid4().hex[:8]}", password_hash=_hash_password("x")
+    )
+    agora = datetime.now(UTC)
+
+    # Sessão expirada
+    await store.create_session(
+        pg_session,
+        user_id=user.id,
+        token_hash=_hash_token("expirada"),
+        expires_at=agora - timedelta(minutes=10),
+    )
+    # Sessão revogada
+    sess_rev = await store.create_session(
+        pg_session,
+        user_id=user.id,
+        token_hash=_hash_token("revogada"),
+        expires_at=agora + timedelta(days=1),
+    )
+    await store.revoke_session(pg_session, sess_rev, now=agora)
+
+    # Sessão válida
+    await store.create_session(
+        pg_session,
+        user_id=user.id,
+        token_hash=_hash_token("valida"),
+        expires_at=agora + timedelta(days=1),
+    )
+
+    purged = await store.purge_expired_sessions(pg_session, now=agora)
+    assert purged == 2
+    assert await store.get_session_by_token_hash(pg_session, _hash_token("valida")) is not None
+
+
+async def test_change_password_store(pg_session):
+    username = f"user-{uuid.uuid4().hex[:8]}"
+    user = await store.create_user(
+        pg_session,
+        username=username,
+        password_hash=_hash_password("senha-antiga-123"),
+        display_name="Teste",
+    )
+
+    # Troca de senha
+    nova_hash = _hash_password("senha-nova-456")
+    await store.update_user_password(pg_session, user, password_hash=nova_hash)
+
+    user_refreshed = await store.get_user(pg_session, user.id)
+    assert user_refreshed is not None
+    assert _verify_password("senha-nova-456", user_refreshed.password_hash)
+    assert not _verify_password("senha-antiga-123", user_refreshed.password_hash)
+
+
+async def test_rate_limiting_in_memory():
+    from sicoobito.auth.service import AuthService
+
+    service = AuthService()
+    ip = "192.168.1.100"
+
+    assert await service.check_rate_limit(ip)
+    for _ in range(5):
+        await service.record_failed_attempt(ip)
+
+    assert not await service.check_rate_limit(ip)
+    await service.reset_failed_attempts(ip)
+    assert await service.check_rate_limit(ip)
+

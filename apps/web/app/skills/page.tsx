@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   SkillCategory,
@@ -136,6 +137,9 @@ export default function SkillsPage() {
           </p>
         </div>
         <div className="header-actions">
+          <Link href="/mcp" className="btn-secondary-sm">
+            🔌 Servidores MCP
+          </Link>
           <button type="button" className="btn-primary glow-button" onClick={startNewSkill}>
             + Criar Nova Skill
           </button>

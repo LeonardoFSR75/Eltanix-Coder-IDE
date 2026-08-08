@@ -21,8 +21,9 @@ export default function ProjectsPage() {
     try {
       const data = await listProjects();
       setProjects(data);
-    } catch (err: any) {
-      addToast(`Erro ao carregar projetos: ${err.message}`, "error");
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      addToast(`Erro ao carregar projetos: ${message}`, "error");
     } finally {
       setLoading(false);
     }
@@ -51,8 +52,9 @@ export default function ProjectsPage() {
       setGitUrl("");
       setBudgetLimit("");
       loadData();
-    } catch (err: any) {
-      addToast(`Falha ao cadastrar projeto: ${err.message}`, "error");
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      addToast(`Falha ao cadastrar projeto: ${message}`, "error");
     } finally {
       setSubmitting(false);
     }
@@ -94,15 +96,15 @@ export default function ProjectsPage() {
             style={{
               padding: "0.75rem 1.25rem",
               borderRadius: "var(--radius)",
-              background: "var(--accent-gradient)",
-              color: "#fff",
-              border: "none",
+              background: "var(--btn-primary-bg, var(--surface-3))",
+              color: "var(--btn-primary-text, var(--text))",
+              border: "1px solid var(--btn-primary-border, var(--border))",
               fontWeight: 600,
               cursor: "pointer",
               display: "flex",
               alignItems: "center",
               gap: "0.5rem",
-              boxShadow: "var(--shadow-glow)",
+              boxShadow: "var(--shadow-lg)",
             }}
           >
             <span>✨</span> Novo Projeto

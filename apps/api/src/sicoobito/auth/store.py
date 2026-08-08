@@ -7,7 +7,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from sicoobito.db.models import AppUser, AuthSession
@@ -28,6 +28,13 @@ async def create_user(
     session.add(user)
     await session.flush()
     return user
+
+
+async def update_user_password(
+    session: AsyncSession, user: AppUser, *, password_hash: str
+) -> None:
+    user.password_hash = password_hash
+    await session.flush()
 
 
 async def get_user_by_username(session: AsyncSession, username: str) -> AppUser | None:
@@ -73,3 +80,17 @@ async def revoke_session(
     session: AsyncSession, auth_session: AuthSession, *, now: datetime
 ) -> None:
     auth_session.revoked_at = now
+
+
+async def purge_expired_sessions(session: AsyncSession, *, now: datetime) -> int:
+    """Remove registros de sessão onde a data de expiração já passou ou a sessão
+    foi revogada."""
+    stmt = delete(AuthSession).where(
+        or_(
+            AuthSession.expires_at < now,
+            AuthSession.revoked_at.is_not(None),
+        )
+    )
+    result = await session.execute(stmt)
+    return result.rowcount or 0
+

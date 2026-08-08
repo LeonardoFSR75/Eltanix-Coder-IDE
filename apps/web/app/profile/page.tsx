@@ -1,11 +1,14 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/components/providers/AuthContext";
 import { useToast } from "@/components/Toast";
 import { getHealth, type HealthStatus } from "@/lib/api/health";
 import { getMetricsSummary, type Summary } from "@/lib/api/metrics";
+
+import { changePassword } from "@/lib/client";
 
 export default function ProfilePage() {
   const { user, logout } = useAuth();
@@ -15,6 +18,11 @@ export default function ProfilePage() {
   const [health, setHealth] = useState<HealthStatus | null>(null);
   const [metrics, setMetrics] = useState<Summary | null>(null);
   const [loading, setLoading] = useState(true);
+
+  const [oldPassword, setOldPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
 
   useEffect(() => {
     Promise.all([getHealth(), getMetricsSummary()])
@@ -35,18 +43,47 @@ export default function ProfilePage() {
     router.push("/login");
   };
 
+  const handleChangePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!oldPassword || !newPassword) {
+      addToast("Preencha a senha atual e a nova senha.", "warning");
+      return;
+    }
+    if (newPassword.length < 6) {
+      addToast("A nova senha deve ter pelo menos 6 caracteres.", "warning");
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      addToast("A nova senha e a confirmação não conferem.", "warning");
+      return;
+    }
+
+    setIsChangingPassword(true);
+    try {
+      await changePassword(oldPassword, newPassword);
+      addToast("Senha alterada com sucesso!", "success");
+      setOldPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
+    } catch (err) {
+      addToast(err instanceof Error ? err.message : "Falha ao alterar senha.", "error");
+    } finally {
+      setIsChangingPassword(false);
+    }
+  };
+
   return (
     <div className="shell">
       <div className="page-header">
         <div>
           <span className="page-badge">👤 Perfil</span>
           <h1>Perfil & Conexão</h1>
-          <p>
-            Login de sessão único (etapa 1) — troca de senha e múltiplos usuários ficam para uma
-            próxima rodada.
-          </p>
+          <p>Gestão de sessão, alteração de credenciais e status de conexões da plataforma.</p>
         </div>
         <div className="header-actions">
+          <Link href="/settings/git" className="btn-secondary-sm">
+            🐙 Conta Git & GitHub
+          </Link>
           <button type="button" className="btn-danger-sm" onClick={handleLogout}>
             🚪 Sair
           </button>
@@ -114,6 +151,56 @@ export default function ProfilePage() {
           )}
         </div>
       </div>
+
+      <section className="section-block">
+        <div className="panel-box">
+          <div className="panel-header">
+            <h3>🔑 Alterar Senha</h3>
+          </div>
+          <form onSubmit={handleChangePassword} className="config-form max-w-md">
+            <div className="form-group">
+              <label htmlFor="old-password-input">Senha Atual</label>
+              <input
+                id="old-password-input"
+                type="password"
+                className="input-text"
+                value={oldPassword}
+                onChange={(e) => setOldPassword(e.target.value)}
+                placeholder="••••••••"
+              />
+            </div>
+            <div className="form-group">
+              <label htmlFor="new-password-input">Nova Senha (mín. 6 caracteres)</label>
+              <input
+                id="new-password-input"
+                type="password"
+                className="input-text"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                placeholder="••••••••"
+              />
+            </div>
+            <div className="form-group">
+              <label htmlFor="confirm-password-input">Confirmar Nova Senha</label>
+              <input
+                id="confirm-password-input"
+                type="password"
+                className="input-text"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                placeholder="••••••••"
+              />
+            </div>
+            <button
+              type="submit"
+              className="btn-primary"
+              disabled={isChangingPassword || !oldPassword || !newPassword || !confirmPassword}
+            >
+              {isChangingPassword ? "Alterando..." : "Salvar Nova Senha"}
+            </button>
+          </form>
+        </div>
+      </section>
 
       <section className="section-block">
         <div className="panel-box">

@@ -17,6 +17,7 @@ from datetime import datetime
 
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
+    JSON,
     Boolean,
     Computed,
     DateTime,
@@ -35,9 +36,13 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sicoobito.config import get_settings
 from sicoobito.db.base import Base
 
+JSON_TYPE = JSONB().with_variant(JSON(), "sqlite")
+TSVECTOR_TYPE = TSVECTOR().with_variant(Text(), "sqlite")
+
 # Lido na importação porque a dimensão faz parte do DDL: alterá-la em runtime
 # não faria sentido sem migrar a tabela.
 EMBEDDING_DIM = get_settings().embedding_dim
+VECTOR_TYPE = Vector(EMBEDDING_DIM).with_variant(Text(), "sqlite")
 
 
 class RequestLog(Base):
@@ -64,7 +69,7 @@ class RequestLog(Base):
     resolved_model: Mapped[str | None] = mapped_column(String(128), nullable=True)
     provider: Mapped[str | None] = mapped_column(String(64), nullable=True)
     # Candidatos tentados antes do que respondeu; lista vazia = acertou de primeira.
-    fallback_from: Mapped[list] = mapped_column(JSONB, default=list, nullable=False)
+    fallback_from: Mapped[list] = mapped_column(JSON_TYPE, default=list, nullable=False)
     attempts: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
 
     # ── Resultado ───────────────────────────────────────────────────────────
@@ -98,7 +103,7 @@ class RequestLog(Base):
     # Tokens economizados por técnica. Sem este detalhamento, `tokens_saved`
     # diz que houve economia mas não qual engine a produziu — e aí não há como
     # decidir qual delas vale o custo de manter.
-    savings_breakdown: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
+    savings_breakdown: Mapped[dict] = mapped_column(JSON_TYPE, default=dict, nullable=False)
     complexity: Mapped[str | None] = mapped_column(String(16), nullable=True)
 
     __table_args__ = (
@@ -174,7 +179,7 @@ class CodeChunk(Base):
     content: Mapped[str] = mapped_column(Text, nullable=False)
     token_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
-    embedding: Mapped[list[float] | None] = mapped_column(Vector(EMBEDDING_DIM), nullable=True)
+    embedding: Mapped[list[float] | None] = mapped_column(VECTOR_TYPE, nullable=True)
     # Coluna gerada pelo Postgres (ver migração 0002): não precisa manutenção e
     # nunca fica dessincronizada do `content`. Config `simple` porque stemming
     # de inglês estraga identificador de código.
@@ -182,7 +187,7 @@ class CodeChunk(Base):
     # `Computed` não é decoração: sem ele o SQLAlchemy inclui `tsv` no INSERT, e
     # o Postgres recusa qualquer escrita numa coluna GENERATED ALWAYS.
     tsv: Mapped[str | None] = mapped_column(
-        TSVECTOR,
+        TSVECTOR_TYPE,
         Computed("to_tsvector('simple', content)", persisted=True),
         nullable=True,
     )
@@ -281,9 +286,9 @@ class DocumentChunk(Base):
     page_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     token_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-    embedding: Mapped[list[float] | None] = mapped_column(Vector(EMBEDDING_DIM), nullable=True)
+    embedding: Mapped[list[float] | None] = mapped_column(VECTOR_TYPE, nullable=True)
     tsv: Mapped[str | None] = mapped_column(
-        TSVECTOR,
+        TSVECTOR_TYPE,
         Computed("to_tsvector('simple', content)", persisted=True),
         nullable=True,
     )
@@ -307,8 +312,8 @@ class Note(Base):
     project_slug: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
     title: Mapped[str] = mapped_column(String(512), nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
-    tags: Mapped[list] = mapped_column(JSONB, default=list, nullable=False)
-    links: Mapped[list] = mapped_column(JSONB, default=list, nullable=False)
+    tags: Mapped[list] = mapped_column(JSON_TYPE, default=list, nullable=False)
+    links: Mapped[list] = mapped_column(JSON_TYPE, default=list, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -336,9 +341,9 @@ class NoteChunk(Base):
     chunk_index: Mapped[int] = mapped_column(Integer, nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     token_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-    embedding: Mapped[list[float] | None] = mapped_column(Vector(EMBEDDING_DIM), nullable=True)
+    embedding: Mapped[list[float] | None] = mapped_column(VECTOR_TYPE, nullable=True)
     tsv: Mapped[str | None] = mapped_column(
-        TSVECTOR,
+        TSVECTOR_TYPE,
         Computed("to_tsvector('simple', content)", persisted=True),
         nullable=True,
     )
@@ -398,7 +403,7 @@ class AuditLogEntry(Base):
     status: Mapped[str] = mapped_column(String(16), default="success", nullable=False)
     session_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
     project_slug: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
-    event_metadata: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
+    event_metadata: Mapped[dict] = mapped_column(JSON_TYPE, default=dict, nullable=False)
 
     __table_args__ = (
         Index("ix_audit_log_created_at", "created_at"),
@@ -463,12 +468,12 @@ class GraphNode(Base):
     entity_type: Mapped[str] = mapped_column(String(64), nullable=False)  # Note, Concept, Module, Class, ADR, etc.
     name: Mapped[str] = mapped_column(String(512), nullable=False)
     canonical_id: Mapped[str] = mapped_column(String(1024), nullable=False)
-    properties: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
+    properties: Mapped[dict] = mapped_column(JSON_TYPE, default=dict, nullable=False)
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)
-    embedding: Mapped[list[float] | None] = mapped_column(Vector(EMBEDDING_DIM), nullable=True)
+    embedding: Mapped[list[float] | None] = mapped_column(VECTOR_TYPE, nullable=True)
 
     tsv: Mapped[str | None] = mapped_column(
-        TSVECTOR,
+        TSVECTOR_TYPE,
         Computed(
             "to_tsvector('simple', coalesce(name, '') || ' ' || coalesce(summary, ''))",
             persisted=True,
@@ -524,7 +529,7 @@ class GraphEdge(Base):
     layer: Mapped[int] = mapped_column(Integer, nullable=False)  # 1=Explicit, 2=Vector, 3=LLM
     weight: Mapped[float] = mapped_column(Numeric(5, 4), default=1.0, nullable=False)
     evidence: Mapped[str | None] = mapped_column(Text, nullable=True)
-    edge_metadata: Mapped[dict] = mapped_column("metadata", JSONB, default=dict, nullable=False)
+    edge_metadata: Mapped[dict] = mapped_column("metadata", JSON_TYPE, default=dict, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -602,7 +607,7 @@ class ProjectRecord(Base):
     git_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
     default_branch: Mapped[str] = mapped_column(String(128), default="main", nullable=False)
     budget_limit_usd: Mapped[float | None] = mapped_column(Numeric(10, 4), nullable=True)
-    settings: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
+    settings: Mapped[dict] = mapped_column(JSON_TYPE, default=dict, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

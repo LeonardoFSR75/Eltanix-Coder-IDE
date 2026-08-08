@@ -22,9 +22,13 @@ loader.config({ paths: { vs: "/vs" } });
 // dev. Sem fix corrigido a montante (github.com/suren-atoyan/monaco-react),
 // então filtramos só esse erro específico — qualquer outro segue passando.
 if (typeof window !== "undefined") {
-  window.addEventListener("error", (event) => {
-    if (event.message?.includes("TextModel got disposed before DiffEditorWidget model got reset")) {
-      event.preventDefault();
-    }
-  });
+  const win = window as unknown as Record<string, boolean | undefined>;
+  if (!win.__monaco_loader_installed__) {
+    win.__monaco_loader_installed__ = true;
+    window.addEventListener("error", (event) => {
+      if (event.message?.includes("TextModel got disposed before DiffEditorWidget model got reset")) {
+        event.preventDefault();
+      }
+    });
+  }
 }
