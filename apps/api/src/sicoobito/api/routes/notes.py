@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Request, status
+from fastapi import APIRouter, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field
 
 from sicoobito.api.deps import AuthDep
@@ -31,6 +31,7 @@ def _audit(request: Request) -> AuditService | None:
 def _view(note: Any) -> dict[str, Any]:
     return {
         "id": str(note.id),
+        "project_slug": note.project_slug,
         "title": note.title,
         "content": note.content,
         "tags": note.tags,
@@ -44,18 +45,22 @@ class NoteIn(BaseModel):
     title: str = Field(min_length=1, max_length=512)
     content: str = Field(default="")
     tags: list[str] = Field(default_factory=list)
+    project: str | None = Field(default=None, description="Slug do projeto — vazio = nota global")
 
 
 @router.get("")
-async def list_notes(request: Request) -> dict[str, Any]:
-    notes = await _service(request).list_all()
+async def list_notes(request: Request, project: str | None = Query(default=None)) -> dict[str, Any]:
+    notes = await _service(request).list_all(project_slug=project)
     return {"notes": [_view(n) for n in notes]}
 
 
 @router.post("")
 async def create_note(payload: NoteIn, request: Request) -> dict[str, Any]:
     note = await _service(request).create(
-        title=payload.title, content=payload.content, tags=payload.tags
+        title=payload.title,
+        content=payload.content,
+        tags=payload.tags,
+        project_slug=payload.project,
     )
     if audit := _audit(request):
         await audit.record(
@@ -102,11 +107,14 @@ async def delete_note(note_id: uuid.UUID, request: Request) -> dict[str, Any]:
 class SearchRequest(BaseModel):
     query: str = Field(min_length=1)
     limit: int = Field(default=8, ge=1, le=50)
+    project: str | None = Field(default=None)
 
 
 @router.post("/search")
 async def search_notes(payload: SearchRequest, request: Request) -> dict[str, Any]:
-    hits = await _service(request).search(payload.query, limit=payload.limit)
+    hits = await _service(request).search(
+        payload.query, limit=payload.limit, project_slug=payload.project
+    )
     return {
         "query": payload.query,
         "hits": [

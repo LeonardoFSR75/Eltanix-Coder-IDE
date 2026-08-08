@@ -50,9 +50,13 @@ export async function getMetricsSummary(days = 30): Promise<Summary> {
   return get<Summary>(`/api/metrics/summary?days=${days}`);
 }
 
-export async function getRecentRequests(limit = 50): Promise<RecentRequest[]> {
+export async function getRecentRequests(
+  limit = 50,
+  project?: string | null,
+): Promise<RecentRequest[]> {
+  const projectParam = project ? `&project=${encodeURIComponent(project)}` : "";
   const { requests } = await get<{ requests: RecentRequest[] }>(
-    `/api/metrics/recent?limit=${limit}`,
+    `/api/metrics/recent?limit=${limit}${projectParam}`,
   );
   return requests;
 }

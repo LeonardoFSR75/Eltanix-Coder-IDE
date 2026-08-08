@@ -8,17 +8,13 @@ import { getHealth, type HealthStatus } from "@/lib/api/health";
 import { getMetricsSummary, type Summary } from "@/lib/api/metrics";
 
 export default function ProfilePage() {
-  const { apiKeyValid, maskedKey, setApiKey, logout } = useAuth();
+  const { user, logout } = useAuth();
   const { addToast } = useToast();
   const router = useRouter();
 
   const [health, setHealth] = useState<HealthStatus | null>(null);
   const [metrics, setMetrics] = useState<Summary | null>(null);
   const [loading, setLoading] = useState(true);
-
-  const [changingKey, setChangingKey] = useState(false);
-  const [newKey, setNewKey] = useState("");
-  const [validating, setValidating] = useState(false);
 
   useEffect(() => {
     Promise.all([getHealth(), getMetricsSummary()])
@@ -33,23 +29,9 @@ export default function ProfilePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const handleChangeKey = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setValidating(true);
-    const ok = await setApiKey(newKey);
-    setValidating(false);
-    if (ok) {
-      setChangingKey(false);
-      setNewKey("");
-      addToast("Chave atualizada e validada.", "success");
-    } else {
-      addToast("Chave inválida ou backend inacessível.", "error");
-    }
-  };
-
-  const handleLogout = () => {
-    logout();
-    addToast("Chave local removida.", "info");
+  const handleLogout = async () => {
+    await logout();
+    addToast("Sessão encerrada.", "info");
     router.push("/login");
   };
 
@@ -57,16 +39,16 @@ export default function ProfilePage() {
     <div className="shell">
       <div className="page-header">
         <div>
-          <span className="page-badge">👤 Configurações Locais</span>
+          <span className="page-badge">👤 Perfil</span>
           <h1>Perfil & Conexão</h1>
           <p>
-            O backend usa uma única chave de API compartilhada — não há contas de usuário.
-            Esta tela mostra a chave ativa e o estado real do gateway.
+            Login de sessão único (etapa 1) — troca de senha e múltiplos usuários ficam para uma
+            próxima rodada.
           </p>
         </div>
         <div className="header-actions">
           <button type="button" className="btn-danger-sm" onClick={handleLogout}>
-            🚪 Sair (limpar chave local)
+            🚪 Sair
           </button>
         </div>
       </div>
@@ -74,62 +56,31 @@ export default function ProfilePage() {
       <div className="grid grid-3-1">
         <div className="panel-box">
           <div className="panel-header">
-            <h3>Chave de API</h3>
-            <span className={`badge-tag ${apiKeyValid ? "green" : "red"}`}>
-              {apiKeyValid ? "Válida" : "Inválida"}
+            <h3>Sessão</h3>
+            <span className={`badge-tag ${user ? "green" : "red"}`}>
+              {user ? "Conectado" : "Desconectado"}
             </span>
           </div>
 
           <div className="config-form">
             <div className="form-group">
-              <label>Chave atual</label>
+              <label>Usuário</label>
               <input
                 type="text"
                 className="input-text font-mono"
-                value={maskedKey || "(nenhuma — backend aberto)"}
+                value={user?.username ?? "—"}
                 readOnly
               />
             </div>
-
-            {!changingKey ? (
-              <button
-                type="button"
-                className="btn-secondary btn-block"
-                onClick={() => setChangingKey(true)}
-              >
-                Trocar chave
-              </button>
-            ) : (
-              <form onSubmit={handleChangeKey} className="config-form">
-                <div className="form-group">
-                  <label htmlFor="new-key-input">Nova chave</label>
-                  <input
-                    id="new-key-input"
-                    type="text"
-                    className="input-text font-mono"
-                    value={newKey}
-                    onChange={(e) => setNewKey(e.target.value)}
-                    placeholder="Deixe em branco para remover"
-                    autoComplete="off"
-                  />
-                </div>
-                <div className="editor-actions">
-                  <button type="submit" className="btn-primary" disabled={validating}>
-                    {validating ? "Validando…" : "Salvar"}
-                  </button>
-                  <button
-                    type="button"
-                    className="btn-secondary"
-                    onClick={() => {
-                      setChangingKey(false);
-                      setNewKey("");
-                    }}
-                  >
-                    Cancelar
-                  </button>
-                </div>
-              </form>
-            )}
+            <div className="form-group">
+              <label>Nome de exibição</label>
+              <input
+                type="text"
+                className="input-text font-mono"
+                value={user?.displayName ?? "—"}
+                readOnly
+              />
+            </div>
           </div>
         </div>
 

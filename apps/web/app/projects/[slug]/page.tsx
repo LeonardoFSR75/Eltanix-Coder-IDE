@@ -2,8 +2,8 @@
 
 import React, { useEffect, useState, use } from "react";
 import Link from "next/link";
-import { HeaderNav } from "@/components/HeaderNav";
 import { useToast } from "@/components/Toast";
+import { useProject } from "@/components/providers/ProjectContext";
 import { getProjectSummary, ProjectSummary, updateProject } from "@/lib/api/projects";
 
 interface Props {
@@ -18,6 +18,13 @@ export default function ProjectDetailPage({ params }: Props) {
   const [editingBudget, setEditingBudget] = useState(false);
   const [budgetVal, setBudgetVal] = useState("");
   const { addToast } = useToast();
+  const { setCurrentProject } = useProject();
+
+  // Entrar no Hub 360° de um projeto já o torna o projeto atual da app —
+  // fecha o ciclo "entro pelo Hub, tudo que abro dali já sabe do projeto".
+  useEffect(() => {
+    setCurrentProject(slug);
+  }, [slug, setCurrentProject]);
 
   const loadData = async () => {
     setLoading(true);
@@ -52,7 +59,6 @@ export default function ProjectDetailPage({ params }: Props) {
   if (loading) {
     return (
       <div style={{ minHeight: "100vh", backgroundColor: "var(--bg)", color: "var(--text)" }}>
-        <HeaderNav />
         <div style={{ padding: "4rem", textAlign: "center", color: "var(--text-muted)" }}>
           Carregando Hub 360° do Projeto...
         </div>
@@ -63,7 +69,6 @@ export default function ProjectDetailPage({ params }: Props) {
   if (!summary) {
     return (
       <div style={{ minHeight: "100vh", backgroundColor: "var(--bg)", color: "var(--text)" }}>
-        <HeaderNav />
         <div style={{ padding: "4rem", textAlign: "center" }}>
           <h2>Projeto não encontrado</h2>
           <Link href="/projects" style={{ color: "var(--accent)" }}>
@@ -76,7 +81,6 @@ export default function ProjectDetailPage({ params }: Props) {
 
   return (
     <div style={{ minHeight: "100vh", backgroundColor: "var(--bg)", color: "var(--text)" }}>
-      <HeaderNav />
       <main style={{ maxWidth: "1280px", margin: "0 auto", padding: "2rem 1.5rem" }}>
         {/* Breadcrumb & Top Bar */}
         <div style={{ marginBottom: "1.5rem" }}>
@@ -166,6 +170,13 @@ export default function ProjectDetailPage({ params }: Props) {
           </div>
 
           <div style={metricCardStyle}>
+            <span style={{ fontSize: "0.8rem", color: "var(--text-dim)" }}>Documentos (RAG)</span>
+            <span style={{ fontSize: "1.4rem", fontWeight: 700, color: "var(--accent-emerald)" }}>
+              {summary.documents_count}
+            </span>
+          </div>
+
+          <div style={metricCardStyle}>
             <span style={{ fontSize: "0.8rem", color: "var(--text-dim)" }}>Graphify Knowledge</span>
             <span style={{ fontSize: "1.4rem", fontWeight: 700, color: "var(--warn)" }}>
               {summary.graph_nodes_count} nós | {summary.graph_edges_count} arestas
@@ -235,6 +246,31 @@ export default function ProjectDetailPage({ params }: Props) {
                   </p>
                 </div>
               </div>
+
+              {summary.recent_commits.length > 0 && (
+                <div style={{ marginTop: "1.5rem" }}>
+                  <label style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>Commits Recentes</label>
+                  <ul style={{ listStyle: "none", padding: 0, margin: "0.5rem 0 0 0" }}>
+                    {summary.recent_commits.map((c) => (
+                      <li
+                        key={c.sha}
+                        style={{
+                          padding: "0.5rem 0",
+                          borderBottom: "1px solid var(--border)",
+                          fontSize: "0.85rem",
+                          display: "flex",
+                          gap: "0.75rem",
+                          color: "var(--text-dim)",
+                        }}
+                      >
+                        <code style={{ color: "var(--accent)" }}>{c.sha}</code>
+                        <span style={{ flex: 1, color: "var(--text)" }}>{c.message}</span>
+                        <span>{c.author}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
             </div>
           )}
 
@@ -245,7 +281,7 @@ export default function ProjectDetailPage({ params }: Props) {
                 Este projeto possui {summary.notes_count} notas registradas. Você pode pesquisá-las ou criar novas notas no contexto deste projeto.
               </p>
               <Link
-                href="/second-brain"
+                href={`/second-brain?project=${encodeURIComponent(summary.slug)}`}
                 style={{
                   display: "inline-block",
                   padding: "0.5rem 1rem",
@@ -267,7 +303,7 @@ export default function ProjectDetailPage({ params }: Props) {
                 Nós extraídos de símbolos, dependências e notas: {summary.graph_nodes_count} nós | {summary.graph_edges_count} relacionamentos.
               </p>
               <Link
-                href="/graphify"
+                href={`/graphify?project=${encodeURIComponent(summary.slug)}`}
                 style={{
                   display: "inline-block",
                   padding: "0.5rem 1rem",
@@ -315,6 +351,20 @@ export default function ProjectDetailPage({ params }: Props) {
                   </div>
                 )}
               </div>
+              <Link
+                href={`/requests?project=${encodeURIComponent(summary.slug)}`}
+                style={{
+                  display: "inline-block",
+                  marginTop: "1rem",
+                  padding: "0.5rem 1rem",
+                  borderRadius: "var(--radius)",
+                  backgroundColor: "var(--surface-2)",
+                  color: "var(--text)",
+                  textDecoration: "none",
+                }}
+              >
+                Ver Requests Detalhados →
+              </Link>
             </div>
           )}
 

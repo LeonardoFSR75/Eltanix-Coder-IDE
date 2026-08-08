@@ -42,7 +42,7 @@ from sicoobito.workspace.projects import (
 )
 async def manage_project(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
     action = args.get("action", "summary")
-    slug = args.get("project_slug") or ctx.project
+    slug = args.get("project_slug") or ctx.project_slug
 
     if action == "list":
         projects = list_disk_projects(ctx.projects_root)
@@ -71,12 +71,14 @@ async def manage_project(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
                     "total_tokens": summary.total_tokens,
                 },
                 "second_brain": {"notes_count": summary.notes_count},
+                "documents": {"count": summary.documents_count},
                 "graphify": {
                     "nodes_count": summary.graph_nodes_count,
                     "edges_count": summary.graph_edges_count,
                 },
                 "audit": {"events_count": summary.audit_events_count},
                 "sessions": {"active_count": summary.active_sessions_count},
+                "recent_commits": summary.recent_commits,
                 "settings": summary.settings,
             }
             content_str = (
@@ -86,9 +88,11 @@ async def manage_project(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
                 f"Custos: ${summary.total_cost_usd:.4f} USD (Orçamento: {summary.budget_limit_usd or 'Sem limite'})\n"
                 f"Tokens Consumidos: {summary.total_tokens:,}\n"
                 f"Segundo Cérebro: {summary.notes_count} nota(s)\n"
+                f"Documentos: {summary.documents_count}\n"
                 f"Graphify: {summary.graph_nodes_count} nó(s) | {summary.graph_edges_count} aresta(s)\n"
                 f"Eventos de Auditoria: {summary.audit_events_count}\n"
                 f"Sessões Ativas: {summary.active_sessions_count}\n"
+                f"Commits recentes: {len(summary.recent_commits)}\n"
             )
             return ToolResult(ok=True, content=content_str, data=data)
         except ProjectError as exc:

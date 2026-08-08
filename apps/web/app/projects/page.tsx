@@ -2,7 +2,6 @@
 
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
-import { HeaderNav } from "@/components/HeaderNav";
 import { useToast } from "@/components/Toast";
 import { createProject, listProjects, ProjectRecord } from "@/lib/api/projects";
 
@@ -61,7 +60,6 @@ export default function ProjectsPage() {
 
   return (
     <div style={{ minHeight: "100vh", backgroundColor: "var(--bg)", color: "var(--text)" }}>
-      <HeaderNav />
       <main style={{ maxWidth: "1280px", margin: "0 auto", padding: "2rem 1.5rem" }}>
         {/* Header Section */}
         <div

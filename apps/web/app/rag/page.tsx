@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/components/Toast";
+import { useProject } from "@/components/providers/ProjectContext";
 import {
   DocumentSearchHit,
   DocumentSummary,
@@ -33,6 +34,7 @@ const STATUS_COLOR: Record<DocumentSummary["status"], string> = {
 export default function RAGPage() {
   const { addToast } = useToast();
   const router = useRouter();
+  const { currentProject } = useProject();
 
   const [documents, setDocuments] = useState<DocumentSummary[]>([]);
   const [loadingDocs, setLoadingDocs] = useState(true);
@@ -44,13 +46,13 @@ export default function RAGPage() {
 
   const refreshDocuments = useCallback(async () => {
     try {
-      setDocuments(await listDocuments());
+      setDocuments(await listDocuments(currentProject));
     } catch (err) {
       addToast(err instanceof Error ? err.message : "Falha ao listar documentos.", "error");
     } finally {
       setLoadingDocs(false);
     }
-  }, [addToast]);
+  }, [addToast, currentProject]);
 
   useEffect(() => {
     refreshDocuments();
@@ -77,7 +79,7 @@ export default function RAGPage() {
     }
     setUploading(true);
     try {
-      const { document_id, upload_url } = await requestUploadUrl(file);
+      const { document_id, upload_url } = await requestUploadUrl(file, currentProject);
       await uploadToPresignedUrl(upload_url, file);
       await confirmUpload(document_id);
       addToast(`"${file.name}" enviado — indexando em segundo plano.`, "success");
@@ -103,7 +105,7 @@ export default function RAGPage() {
     if (!searchQuery.trim()) return;
     setIsSearching(true);
     try {
-      const hits = await searchDocuments(searchQuery, 5);
+      const hits = await searchDocuments(searchQuery, 5, currentProject);
       setSearchResults(hits);
       if (hits.length === 0) {
         addToast("Nenhum trecho encontrado.", "info");
@@ -132,6 +134,11 @@ export default function RAGPage() {
             Envie PDFs para o índice híbrido (pgvector + full-text) do backend. O agente do
             IDE já enxerga este material sozinho, via a ferramenta{" "}
             <code className="inline-code">search_documents</code>.
+            {currentProject ? (
+              <> Filtrado pelo projeto <strong>{currentProject}</strong> (mais os globais).</>
+            ) : (
+              <> Sem projeto selecionado — mostrando todos os documentos.</>
+            )}
           </p>
         </div>
       </div>

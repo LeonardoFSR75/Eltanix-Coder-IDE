@@ -68,10 +68,14 @@ class NoteService:
                 log.warning("notes.embed.failed", error=str(exc)[:200])
         await store.replace_chunks(session, note_id, chunks=chunks, embeddings=vectors)
 
-    async def create(self, *, title: str, content: str, tags: list[str]) -> Note:
+    async def create(
+        self, *, title: str, content: str, tags: list[str], project_slug: str | None = None
+    ) -> Note:
         async with session_scope() as session:
             links = await self._resolve_links(session, content)
-            note = await store.create_note(session, title=title, content=content, tags=tags)
+            note = await store.create_note(
+                session, title=title, content=content, tags=tags, project_slug=project_slug
+            )
             note.links = links
             await self._embed_and_index(session, note.id, content)
             # `_embed_and_index` grava chunks depois do INSERT da nota, o que
@@ -97,7 +101,12 @@ class NoteService:
         return note
 
     async def upsert_by_title(
-        self, *, title: str, content: str, tags: list[str] | None = None
+        self,
+        *,
+        title: str,
+        content: str,
+        tags: list[str] | None = None,
+        project_slug: str | None = None,
     ) -> Note:
         """Cria ou atualiza por título — é o que sustenta a ferramenta `save_note`
         do agente: perguntar "existe uma nota com esse título" e decidir
@@ -110,22 +119,26 @@ class NoteService:
             )
             assert updated is not None
             return updated
-        return await self.create(title=title, content=content, tags=tags or [])
+        return await self.create(
+            title=title, content=content, tags=tags or [], project_slug=project_slug
+        )
 
     async def delete(self, note_id: uuid.UUID) -> bool:
         async with session_scope() as session:
             note = await store.delete_note(session, note_id)
         return note is not None
 
-    async def list_all(self) -> list[Note]:
+    async def list_all(self, *, project_slug: str | None = None) -> list[Note]:
         async with session_scope() as session:
-            return await store.list_notes(session)
+            return await store.list_notes(session, project_slug=project_slug)
 
     async def get(self, note_id: uuid.UUID) -> Note | None:
         async with session_scope() as session:
             return await store.get_note(session, note_id)
 
-    async def search(self, query: str, *, limit: int = 8) -> list[NoteSearchHit]:
+    async def search(
+        self, query: str, *, limit: int = 8, project_slug: str | None = None
+    ) -> list[NoteSearchHit]:
         inicio = time.perf_counter()
         query_embedding: list[float] | None = None
         try:
@@ -144,7 +157,11 @@ class NoteService:
         try:
             async with session_scope() as session:
                 return await store.hybrid_search(
-                    session, query_text=query, query_embedding=query_embedding, limit=limit
+                    session,
+                    query_text=query,
+                    query_embedding=query_embedding,
+                    limit=limit,
+                    project_slug=project_slug,
                 )
         except Exception:
             status = "error"

@@ -11,6 +11,7 @@ do projeto é validado como um único segmento — `..` e barras não passam.
 
 from __future__ import annotations
 
+import asyncio
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -22,6 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sicoobito.db.models import (
     AgentSessionRecord,
     AuditLogEntry,
+    Document,
     GraphEdge,
     GraphNode,
     Note,
@@ -67,10 +69,12 @@ class ProjectSummary:
     total_cost_usd: float
     total_tokens: int
     notes_count: int
+    documents_count: int
     graph_nodes_count: int
     graph_edges_count: int
     audit_events_count: int
     active_sessions_count: int
+    recent_commits: list[dict[str, str]]
     settings: dict[str, Any]
 
 
@@ -217,6 +221,11 @@ async def get_project_summary(
         select(func.count(Note.id)).where(Note.project_slug == rec.slug)
     )).scalar() or 0
 
+    # 4b. Documentos (RAG)
+    documents_count = (await session.execute(
+        select(func.count(Document.id)).where(Document.project_slug == rec.slug)
+    )).scalar() or 0
+
     # 5. Graphify (Grafo de Conhecimento)
     graph_nodes = (await session.execute(
         select(func.count(GraphNode.id)).where(GraphNode.workspace == rec.slug)
@@ -239,6 +248,17 @@ async def get_project_summary(
         )
     )).scalar() or 0
 
+    # 8. Git Intelligence — poucos commits recentes, best-effort: sem Git ou
+    # repositório inválido não pode derrubar o resumo do projeto.
+    recent_commits: list[dict[str, str]] = []
+    if is_git:
+        try:
+            from sicoobito.workspace import git as git_ops
+
+            recent_commits = await asyncio.to_thread(git_ops.log_recent, local_path, 5)
+        except Exception as exc:
+            log.warning("projects.summary.git_log_failed", slug=rec.slug, error=str(exc)[:200])
+
     return ProjectSummary(
         slug=rec.slug,
         name=rec.name,
@@ -251,9 +271,11 @@ async def get_project_summary(
         total_cost_usd=float(custo_total),
         total_tokens=int(tokens_total),
         notes_count=int(notes_count),
+        documents_count=int(documents_count),
         graph_nodes_count=int(graph_nodes),
         graph_edges_count=int(graph_edges),
         audit_events_count=int(audit_count),
         active_sessions_count=int(sessions_active),
+        recent_commits=recent_commits,
         settings=rec.settings or {},
     )

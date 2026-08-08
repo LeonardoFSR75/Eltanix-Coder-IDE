@@ -37,6 +37,8 @@ class ToolContext:
     session_id: str
     workspace_root: Any  # Path — sem anotar para não importar pathlib no protocolo
     fs: Any  # WorkspaceFS
+    project_slug: str = ""
+    projects_root: Any = None  # Path — raiz que contém todos os projetos
     sandbox: Any | None = None  # Sandbox
     indexer: Any | None = None  # ContextIndexer
     github: Any | None = None  # GitHubClient

@@ -1,16 +1,22 @@
 /**
  * Proxy autenticado para o backend.
  *
- * O IDE precisa de interatividade no cliente (Monaco, SSE do agente), mas a
- * chave da API não pode chegar ao browser. Toda chamada do cliente passa por
- * aqui, e é o servidor Next que anexa a credencial.
+ * O IDE precisa de interatividade no cliente (Monaco, SSE do agente). Toda
+ * chamada do cliente passa por aqui.
+ *
+ * A UI web autentica por SESSÃO (cookie httpOnly `sicoobito_session`, ver
+ * `app/api/session/route.ts`), nunca pela `SICOOBITO_API_KEY` do ambiente —
+ * de propósito: essa chave é um segredo de servidor-para-servidor para
+ * integrações externas (CI, cline, cursor, aider), e anexá-la automaticamente
+ * em toda chamada do browser tornaria o login opcional na prática, por mais
+ * que o backend exija sessão (`require_session`). Só repassamos a credencial
+ * que o PRÓPRIO cliente mandou explicitamente — nunca inventamos uma.
  *
  * Respostas de streaming são repassadas sem bufferizar — o agente emite eventos
  * ao longo de minutos, e acumulá-los destruiria a razão de existir do stream.
  */
 
 const BASE_URL = process.env.SICOOBITO_API_URL ?? "http://localhost:8000";
-const API_KEY = process.env.SICOOBITO_API_KEY ?? "";
 
 type Params = { params: Promise<{ path: string[] }> };
 
@@ -21,14 +27,17 @@ async function proxy(request: Request, { params }: Params): Promise<Response> {
 
   const headers = new Headers();
 
-  // Se o cliente (browser) enviou uma chave própria, usa a do cliente;
-  // caso contrário, o servidor Next anexa a SICOOBITO_API_KEY do ambiente.
+  // Chave de API explícita do próprio chamador (ferramenta externa que fala
+  // direto com o gateway) — nunca a chave de ambiente do servidor Next.
   const clientAuth = request.headers.get("authorization") || request.headers.get("x-api-key");
   if (clientAuth) {
     headers.set("Authorization", clientAuth.startsWith("Bearer ") ? clientAuth : `Bearer ${clientAuth}`);
-  } else if (API_KEY) {
-    headers.set("Authorization", `Bearer ${API_KEY}`);
   }
+
+  // Sessão de usuário: o cookie httpOnly setado por `app/api/session/route.ts`
+  // segue para o backend, que o lê nativamente via `Cookie()` do FastAPI.
+  const cookie = request.headers.get("cookie");
+  if (cookie) headers.set("cookie", cookie);
 
   const contentType = request.headers.get("content-type");
   if (contentType) headers.set("content-type", contentType);

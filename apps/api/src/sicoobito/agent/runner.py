@@ -205,6 +205,8 @@ class AgentRunner:
             session_id=session_id,
             workspace_root=worktree_path,
             fs=WorkspaceFS(worktree_path),
+            project_slug=workspace_root.name,
+            projects_root=self.settings.effective_projects_root,
             sandbox=sandbox,
             indexer=self.indexer,
             github=github,

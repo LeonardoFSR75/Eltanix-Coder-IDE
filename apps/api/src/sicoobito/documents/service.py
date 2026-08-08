@@ -154,7 +154,9 @@ class DocumentService:
             embed_failures=failures,
         )
 
-    async def search(self, query: str, *, limit: int = 8) -> list[DocumentSearchHit]:
+    async def search(
+        self, query: str, *, limit: int = 8, project_slug: str | None = None
+    ) -> list[DocumentSearchHit]:
         inicio = time.perf_counter()
         query_embedding: list[float] | None = None
         try:
@@ -173,7 +175,11 @@ class DocumentService:
         try:
             async with session_scope() as session:
                 return await store.hybrid_search(
-                    session, query_text=query, query_embedding=query_embedding, limit=limit
+                    session,
+                    query_text=query,
+                    query_embedding=query_embedding,
+                    limit=limit,
+                    project_slug=project_slug,
                 )
         except Exception:
             status = "error"

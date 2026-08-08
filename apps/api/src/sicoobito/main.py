@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import secrets
 from contextlib import asynccontextmanager, suppress
 
 from fastapi import FastAPI
@@ -16,6 +17,7 @@ from sicoobito.api.middleware import CorrelationIdMiddleware
 from sicoobito.api.routes import (
     agent_router,
     audit_router,
+    auth_router,
     context_router,
     documents_router,
     git_router,
@@ -35,6 +37,7 @@ from sicoobito.api.routes import (
 from sicoobito.api.tickets import TicketStore
 from sicoobito.api.v1 import router as openai_router
 from sicoobito.audit.service import AuditService
+from sicoobito.auth.service import AuthService
 from sicoobito.browser.client import BrowserConfig
 from sicoobito.config import get_settings
 from sicoobito.context.indexer import ContextIndexer
@@ -76,9 +79,9 @@ async def lifespan(app: FastAPI):
     setup_logging(settings.log_level, settings.log_json)
 
     if not settings.api_key:
-        log.warning(
-            "auth.disabled",
-            detail="SICOOBITO_API_KEY vazia — a API aceita qualquer chamada local.",
+        log.info(
+            "auth.no_service_key",
+            detail="SICOOBITO_API_KEY vazia — só login de usuário autentica a UI web.",
         )
 
     init_engine(settings.database_url)
@@ -124,6 +127,24 @@ async def lifespan(app: FastAPI):
     notes = NoteService(settings=settings, engine=engine, trace_recorder=trace_recorder)
     skills = SkillService()
     audit = AuditService()
+
+    auth = AuthService()
+    admin_password = settings.admin_password
+    if not admin_password:
+        # Sem senha fixada, gera uma por processo — só é de fato usada na
+        # primeira subida (ensure_seed_user não faz nada se já existe
+        # usuário); nas seguintes é ruído barato e descartado.
+        admin_password = secrets.token_urlsafe(12)
+        # `generated_password`, não `password`: o processor de redação de
+        # `logging_setup.py` mascara qualquer campo chamado `password` — o
+        # ponto inteiro deste log é o operador conseguir LER a senha aqui.
+        log.warning(
+            "auth.seed_user.generated_password",
+            username=settings.admin_username,
+            generated_password=admin_password,
+            hint="defina SICOOBITO_ADMIN_PASSWORD no .env para fixar a senha do primeiro login",
+        )
+    await auth.ensure_seed_user(username=settings.admin_username, password=admin_password)
 
     mcp_manager = MCPManager(settings)
     await mcp_manager.connect_all()
@@ -172,6 +193,7 @@ async def lifespan(app: FastAPI):
     app.state.notes = notes
     app.state.skills = skills
     app.state.audit = audit
+    app.state.auth = auth
     app.state.mcp_manager = mcp_manager
     app.state.trace_recorder = trace_recorder
     app.state.projects_root = settings.projects_root
@@ -238,6 +260,7 @@ def create_app() -> FastAPI:
     app.add_middleware(CorrelationIdMiddleware)
 
     app.include_router(openai_router)
+    app.include_router(auth_router)
     app.include_router(health_router)
     app.include_router(metrics_router)
     app.include_router(context_router)

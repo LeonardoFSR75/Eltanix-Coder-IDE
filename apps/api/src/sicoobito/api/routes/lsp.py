@@ -66,13 +66,15 @@ async def ticket(request: Request, project: str, language: str) -> dict[str, Any
 async def lsp_socket(websocket: WebSocket, project: str, language: str) -> None:
     settings = get_settings()
 
-    if settings.api_key:
-        store: TicketStore | None = getattr(websocket.app.state, "tickets", None)
-        bilhete = websocket.query_params.get("ticket", "")
-        if store is None or not await store.consume(bilhete, _escopo(project, language)):
-            log.warning("lsp.rejected", project=project, language=language)
-            await websocket.close(code=4401, reason="ticket inválido ou expirado")
-            return
+    # Sempre exigido, com ou sem SICOOBITO_API_KEY: o ticket só é emitido por
+    # `POST .../ticket`, atrás de `AuthDep` (`require_session`) — ver mesmo
+    # ajuste em `workspace.py::terminal`.
+    store: TicketStore | None = getattr(websocket.app.state, "tickets", None)
+    bilhete = websocket.query_params.get("ticket", "")
+    if store is None or not await store.consume(bilhete, _escopo(project, language)):
+        log.warning("lsp.rejected", project=project, language=language)
+        await websocket.close(code=4401, reason="ticket inválido ou expirado")
+        return
 
     spec = server_for_language(language)
     if spec is None:

@@ -133,6 +133,7 @@ def build_graph(engine: RouterEngine, context: ToolContext):
                 "temperature": 0,
             },
             source=f"agent:{state.get('mode', 'agent')}",
+            project_slug=context.project_slug or None,
         )
 
         escolha = (resultado.payload.get("choices") or [{}])[0]

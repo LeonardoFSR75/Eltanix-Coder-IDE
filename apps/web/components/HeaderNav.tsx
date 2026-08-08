@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useTheme } from "@/lib/theme";
 import { useAuth } from "@/components/providers/AuthContext";
+import { useProject } from "@/components/providers/ProjectContext";
 import { useToast } from "@/components/Toast";
 
 interface NavItem {
@@ -25,12 +26,22 @@ export function HeaderNav() {
   const pathname = usePathname();
   const router = useRouter();
   const { theme, toggleTheme } = useTheme();
-  const { apiKeyValid, maskedKey, logout } = useAuth();
+  const { user, logout } = useAuth();
+  const { currentProject, projects, setCurrentProject } = useProject();
   const { addToast } = useToast();
   const isIde = pathname.startsWith("/ide");
 
   const [activeDropdown, setActiveDropdown] = useState<string | null>(null);
   const navRef = useRef<HTMLDivElement | null>(null);
+
+  // Grupos cujo destino sabe filtrar por projeto (ver `?project=` em cada
+  // página) — trocar de projeto aqui já leva a navegação seguinte filtrada,
+  // fechando o ciclo "entro pelo Hub, tudo que abro dali já sabe do projeto".
+  const PROJECT_AWARE_PATHS = new Set(["/rag", "/graphify", "/second-brain", "/requests"]);
+  const projectHref = (href: string) =>
+    currentProject && PROJECT_AWARE_PATHS.has(href)
+      ? `${href}?project=${encodeURIComponent(currentProject)}`
+      : href;
 
   // Fechar dropdowns ao clicar fora
   useEffect(() => {
@@ -44,9 +55,9 @@ export function HeaderNav() {
   }, []);
 
   // ✅ FIX: useCallback para evitar re-criação da função em cada render
-  const handleUserLogout = useCallback(() => {
-    logout();
-    addToast("Chave local removida.", "info");
+  const handleUserLogout = useCallback(async () => {
+    await logout();
+    addToast("Sessão encerrada.", "info");
     router.push("/login");
   }, [logout, addToast, router]);
 
@@ -85,7 +96,7 @@ export function HeaderNav() {
       icon: "🛡️",
       items: [
         { href: "/profile", label: "Meu Perfil & Chaves API", icon: "👤", description: "Gestão de Usuário & Credenciais" },
-        { href: "/login", label: "Autenticação / Passkey", icon: "🔑", description: "Entrar & Alternar Contas" },
+        { href: "/login", label: "Autenticação", icon: "🔑", description: "Login e sessão atual" },
         { href: "/audit", label: "Logs de Auditoria", icon: "🛡️", description: "Trilha de Segurança & Guardrails" },
         { href: "/settings", label: "Configurações", icon: "⚙️", description: "ChromaDB Host & Banco de Dados" },
         { href: "#logout", label: "Sair da Conta (Logout)", icon: "🚪", description: "Encerrar sessão atual", isAction: true },
@@ -168,7 +179,7 @@ export function HeaderNav() {
                       return (
                         <Link
                           key={item.href}
-                          href={item.href}
+                          href={projectHref(item.href)}
                           className={`dropdown-item ${isItemActive ? "active" : ""}`}
                           onClick={() => setActiveDropdown(null)}
                         >
@@ -189,6 +200,22 @@ export function HeaderNav() {
       </nav>
 
       <div className="topbar-actions">
+        {user && projects.length > 0 && (
+          <select
+            className="project-picker-select"
+            value={currentProject ?? ""}
+            onChange={(e) => setCurrentProject(e.target.value || null)}
+            title="Projeto atual"
+          >
+            <option value="">Sem projeto</option>
+            {projects.map((p) => (
+              <option key={p.slug} value={p.slug}>
+                {p.name}
+              </option>
+            ))}
+          </select>
+        )}
+
         <button
           type="button"
           className="theme-btn"
@@ -198,13 +225,13 @@ export function HeaderNav() {
           {theme === "dark" ? "☀️" : "🌙"}
         </button>
 
-        {apiKeyValid ? (
+        {user ? (
           <div className="user-profile-badge-wrapper">
             <Link href="/profile" className="user-profile-badge" title="Configurações">
               <span className="user-avatar">🔑</span>
               <div className="user-info">
-                <span className="user-name">Conectado</span>
-                <span className="user-role">{maskedKey || "sem chave"}</span>
+                <span className="user-name">{user.displayName || user.username}</span>
+                <span className="user-role">Conectado</span>
               </div>
             </Link>
             <button

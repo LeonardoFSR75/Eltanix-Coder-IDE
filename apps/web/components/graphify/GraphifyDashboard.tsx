@@ -11,6 +11,7 @@ import {
   getEgoGraph,
   indexWorkspace,
 } from "@/lib/api/graphify";
+import { useProject } from "@/components/providers/ProjectContext";
 
 type ViewTab = "universe" | "domain" | "concept" | "architecture" | "brain";
 
@@ -51,6 +52,8 @@ const TAB_DETAILS: Record<ViewTab, { label: string; description: string; types: 
 };
 
 export default function GraphifyDashboard() {
+  const { currentProject } = useProject();
+  const workspace = currentProject ?? "default";
   const [activeTab, setActiveTab] = useState<ViewTab>("universe");
   const [searchQuery, setSearchQuery] = useState("");
   const [nodes, setNodes] = useState<GraphNode[]>([]);
@@ -67,9 +70,9 @@ export default function GraphifyDashboard() {
     setError(null);
     try {
       const [nodesData, edgesData, metricsData] = await Promise.all([
-        listGraphNodes("default", 150),
-        listGraphEdges("default", 500),
-        getGraphMetrics("default"),
+        listGraphNodes(workspace, 150),
+        listGraphEdges(workspace, 500),
+        getGraphMetrics(workspace),
       ]);
       setNodes(nodesData);
       setEdges(edgesData);
@@ -80,7 +83,7 @@ export default function GraphifyDashboard() {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [workspace]);
 
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -89,7 +92,7 @@ export default function GraphifyDashboard() {
     setError(null);
     setAnswerText(null);
     try {
-      const data = await queryGraph(searchQuery, "default", 20);
+      const data = await queryGraph(searchQuery, workspace, 20);
       setNodes(data.nodes ?? []);
       setEdges(data.edges ?? []);
       setAnswerText(data.answer ?? null);
@@ -104,7 +107,7 @@ export default function GraphifyDashboard() {
     setSelectedNode(node);
     setIsLoading(true);
     try {
-      const ego = await getEgoGraph(node.id, "default", 2);
+      const ego = await getEgoGraph(node.id, workspace, 2);
       setNodes(ego.nodes);
       setEdges(ego.edges);
     } catch {
@@ -117,7 +120,7 @@ export default function GraphifyDashboard() {
   const handleIndex = async () => {
     setIsIndexing(true);
     try {
-      await indexWorkspace("default");
+      await indexWorkspace(workspace);
       await fetchGraphData();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erro ao iniciar indexação.");
@@ -141,6 +144,8 @@ export default function GraphifyDashboard() {
           <h1>Graphify Engine & GraphRAG</h1>
           <p>
             Extração de AST, ecossistemas de código, comunidades e busca semântica em grafos.
+            Workspace atual: <code className="inline-code">{workspace}</code>
+            {!currentProject && " (nenhum projeto selecionado)"}.
           </p>
         </div>
         <div className="header-actions">

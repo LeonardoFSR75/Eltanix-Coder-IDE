@@ -12,7 +12,7 @@ from __future__ import annotations
 import uuid
 from typing import Any
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException, Request, status
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field
 
 from sicoobito.api.deps import AuthDep, SettingsDep
@@ -57,6 +57,7 @@ class UploadUrlRequest(BaseModel):
     filename: str = Field(min_length=1, max_length=512)
     content_type: str
     size_bytes: int = Field(gt=0)
+    project: str | None = Field(default=None, description="Slug do projeto — vazio = global")
 
 
 @router.post("/upload-url")
@@ -86,6 +87,7 @@ async def request_upload_url(
             size_bytes=payload.size_bytes,
             bucket=blob.bucket,
             object_key=object_key,
+            project_slug=payload.project,
         )
         document_id = document.id
 
@@ -131,14 +133,15 @@ async def confirm_upload(
 
 
 @router.get("")
-async def list_documents() -> dict[str, Any]:
+async def list_documents(project: str | None = Query(default=None)) -> dict[str, Any]:
     async with session_scope() as session:
-        documents = await store.list_documents(session)
+        documents = await store.list_documents(session, project_slug=project)
 
     return {
         "documents": [
             {
                 "id": str(d.id),
+                "project_slug": d.project_slug,
                 "filename": d.filename,
                 "content_type": d.content_type,
                 "size_bytes": d.size_bytes,
@@ -166,6 +169,7 @@ async def get_document(document_id: uuid.UUID) -> dict[str, Any]:
 
     return {
         "id": str(document.id),
+        "project_slug": document.project_slug,
         "filename": document.filename,
         "content_type": document.content_type,
         "size_bytes": document.size_bytes,
@@ -215,11 +219,14 @@ async def delete_document(document_id: uuid.UUID, request: Request) -> dict[str,
 class SearchRequest(BaseModel):
     query: str = Field(min_length=1)
     limit: int = Field(default=8, ge=1, le=50)
+    project: str | None = Field(default=None)
 
 
 @router.post("/search")
 async def search_documents(payload: SearchRequest, request: Request) -> dict[str, Any]:
-    hits = await _service(request).search(payload.query, limit=payload.limit)
+    hits = await _service(request).search(
+        payload.query, limit=payload.limit, project_slug=payload.project
+    )
     return {
         "query": payload.query,
         "hits": [

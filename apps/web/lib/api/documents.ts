@@ -10,6 +10,7 @@ import { del, get, post } from "@/lib/client";
 
 export interface DocumentSummary {
   id: string;
+  project_slug: string | null;
   filename: string;
   content_type: string;
   size_bytes: number;
@@ -33,8 +34,9 @@ export interface DocumentSearchHit {
   text_rank: number | null;
 }
 
-export async function listDocuments(): Promise<DocumentSummary[]> {
-  const { documents } = await get<{ documents: DocumentSummary[] }>("/api/documents");
+export async function listDocuments(project?: string | null): Promise<DocumentSummary[]> {
+  const query = project ? `?project=${encodeURIComponent(project)}` : "";
+  const { documents } = await get<{ documents: DocumentSummary[] }>(`/api/documents${query}`);
   return documents;
 }
 
@@ -44,11 +46,13 @@ export async function getDocument(documentId: string): Promise<DocumentSummary> 
 
 export async function requestUploadUrl(
   file: File,
+  project?: string | null,
 ): Promise<{ document_id: string; upload_url: string }> {
   return post<{ document_id: string; upload_url: string }>("/api/documents/upload-url", {
     filename: file.name,
     content_type: file.type || "application/pdf",
     size_bytes: file.size,
+    project: project || undefined,
   });
 }
 
@@ -67,8 +71,8 @@ export async function confirmUpload(documentId: string): Promise<{ status: strin
   return post<{ status: string }>(`/api/documents/${documentId}/confirm`);
 }
 
-export async function uploadDocument(file: File): Promise<string> {
-  const { document_id, upload_url } = await requestUploadUrl(file);
+export async function uploadDocument(file: File, project?: string | null): Promise<string> {
+  const { document_id, upload_url } = await requestUploadUrl(file, project);
   await uploadToPresignedUrl(upload_url, file);
   await confirmUpload(document_id);
   return document_id;
@@ -81,10 +85,12 @@ export async function deleteDocument(documentId: string): Promise<void> {
 export async function searchDocuments(
   query: string,
   limit = 8,
+  project?: string | null,
 ): Promise<DocumentSearchHit[]> {
   const { hits } = await post<{ hits: DocumentSearchHit[] }>("/api/documents/search", {
     query,
     limit,
+    project: project || undefined,
   });
   return hits;
 }

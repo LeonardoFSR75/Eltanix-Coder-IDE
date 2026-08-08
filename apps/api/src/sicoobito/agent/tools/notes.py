@@ -85,7 +85,10 @@ async def save_note(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
         return ToolResult.failure("Gravação de notas indisponível.")
 
     note = await ctx.notes.upsert_by_title(
-        title=args["title"], content=args["content"], tags=args.get("tags")
+        title=args["title"],
+        content=args["content"],
+        tags=args.get("tags"),
+        project_slug=ctx.project_slug or None,
     )
     return ToolResult(
         ok=True,

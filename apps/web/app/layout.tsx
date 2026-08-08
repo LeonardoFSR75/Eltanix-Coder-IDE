@@ -4,6 +4,7 @@ import { HeaderNav } from "@/components/HeaderNav";
 import { ThemeProvider } from "@/lib/theme";
 import { ToastProvider } from "@/components/Toast";
 import { AuthProvider } from "@/components/providers/AuthContext";
+import { ProjectProvider } from "@/components/providers/ProjectContext";
 import "./globals.css";
 
 const inter = Inter({
@@ -30,10 +31,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <ThemeProvider>
           <ToastProvider>
             <AuthProvider>
-              <div className="app-root">
-                <HeaderNav />
-                {children}
-              </div>
+              <ProjectProvider>
+                <div className="app-root">
+                  <HeaderNav />
+                  {children}
+                </div>
+              </ProjectProvider>
             </AuthProvider>
           </ToastProvider>
         </ThemeProvider>

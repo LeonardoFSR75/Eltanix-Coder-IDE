@@ -3,9 +3,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { NoteRecord, createNote, deleteNote, listNotes, updateNote } from "@/lib/api/notes";
 import { useToast } from "@/components/Toast";
+import { useProject } from "@/components/providers/ProjectContext";
 
 export default function SecondBrainPage() {
   const { addToast } = useToast();
+  const { currentProject } = useProject();
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
   const [notes, setNotes] = useState<NoteRecord[]>([]);
@@ -29,7 +31,7 @@ export default function SecondBrainPage() {
 
   const refreshNotes = useCallback(async () => {
     try {
-      const loaded = await listNotes();
+      const loaded = await listNotes(currentProject);
       setNotes(loaded);
       return loaded;
     } catch (err) {
@@ -38,14 +40,14 @@ export default function SecondBrainPage() {
     } finally {
       setLoading(false);
     }
-  }, [addToast]);
+  }, [addToast, currentProject]);
 
   useEffect(() => {
     refreshNotes().then((loaded) => {
       if (loaded.length > 0) selectNote(loaded[0]);
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [currentProject]);
 
   // Salvar nota alterada — `links` é resolvido no servidor a partir dos
   // [[wikilinks]] no conteúdo, não calculado aqui.
@@ -79,6 +81,7 @@ export default function SecondBrainPage() {
         title: "Nova Nota de Conhecimento",
         content: "Digite seu conhecimento aqui... Use [[Nome da Nota]] para conectar conceitos.",
         tags: ["#novo"],
+        project: currentProject,
       });
       setNotes((prev) => [created, ...prev]);
       selectNote(created);

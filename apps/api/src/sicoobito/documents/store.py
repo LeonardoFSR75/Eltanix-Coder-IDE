@@ -47,6 +47,7 @@ async def create_document(
     size_bytes: int,
     bucket: str,
     object_key: str,
+    project_slug: str | None = None,
 ) -> Document:
     document = Document(
         filename=filename,
@@ -55,6 +56,7 @@ async def create_document(
         minio_bucket=bucket,
         minio_object=object_key,
         status="pending",
+        project_slug=project_slug,
     )
     session.add(document)
     await session.flush()
@@ -65,10 +67,17 @@ async def get_document(session: AsyncSession, document_id: uuid.UUID) -> Documen
     return await session.get(Document, document_id)
 
 
-async def list_documents(session: AsyncSession) -> list[Document]:
-    rows = (
-        await session.execute(select(Document).order_by(Document.uploaded_at.desc()))
-    ).scalars().all()
+async def list_documents(
+    session: AsyncSession, *, project_slug: str | None = None
+) -> list[Document]:
+    """Sem `project_slug`, lista tudo. Com ele, documentos do projeto mais os
+    "globais" (sem projeto) — mesmo fallback de `hybrid_search`."""
+    stmt = select(Document).order_by(Document.uploaded_at.desc())
+    if project_slug:
+        stmt = stmt.where(
+            (Document.project_slug == project_slug) | (Document.project_slug.is_(None))
+        )
+    rows = (await session.execute(stmt)).scalars().all()
     return list(rows)
 
 
@@ -135,11 +144,16 @@ async def hybrid_search(
     query_embedding: list[float] | None,
     limit: int = 8,
     candidate_pool: int = 50,
+    project_slug: str | None = None,
 ) -> list[DocumentSearchHit]:
     """Busca vetorial + full-text fundidas por RRF, sobre todos os documentos.
 
     Sem embedding disponível (modelo local fora do ar), degrada para
     full-text puro, igual à busca de código.
+
+    Com `project_slug`, restringe aos documentos daquele projeto mais os
+    "globais" (sem projeto) — documento sem projeto continua visível em
+    qualquer busca, é a exceção documentada, não um vazamento.
     """
     params: dict[str, object] = {
         "pool": candidate_pool,
@@ -147,15 +161,21 @@ async def hybrid_search(
         "k": RRF_K,
         "q": query_text,
     }
+    project_filter = ""
+    if project_slug:
+        params["project_slug"] = project_slug
+        project_filter = "AND (d.project_slug = :project_slug OR d.project_slug IS NULL)"
 
-    text_cte = """
+    text_cte = f"""
         texto AS (
-            SELECT id,
+            SELECT c.id,
                    ROW_NUMBER() OVER (
-                       ORDER BY ts_rank_cd(tsv, websearch_to_tsquery('simple', :q)) DESC
+                       ORDER BY ts_rank_cd(c.tsv, websearch_to_tsquery('simple', :q)) DESC
                    ) AS rank
-            FROM document_chunk
-            WHERE tsv @@ websearch_to_tsquery('simple', :q)
+            FROM document_chunk c
+            JOIN document d ON d.id = c.document_id
+            WHERE c.tsv @@ websearch_to_tsquery('simple', :q)
+            {project_filter}
             LIMIT :pool
         )
     """
@@ -164,10 +184,14 @@ async def hybrid_search(
         params["embedding"] = str(query_embedding)
         sql = f"""
             WITH vetor AS (
-                SELECT id,
-                       ROW_NUMBER() OVER (ORDER BY embedding <=> CAST(:embedding AS vector)) AS rank
-                FROM document_chunk
-                WHERE embedding IS NOT NULL
+                SELECT c.id,
+                       ROW_NUMBER() OVER (
+                           ORDER BY c.embedding <=> CAST(:embedding AS vector)
+                       ) AS rank
+                FROM document_chunk c
+                JOIN document d ON d.id = c.document_id
+                WHERE c.embedding IS NOT NULL
+                {project_filter}
                 LIMIT :pool
             ),
             {text_cte},

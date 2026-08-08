@@ -36,9 +36,14 @@ class NoteSearchHit:
 
 
 async def create_note(
-    session: AsyncSession, *, title: str, content: str, tags: list[str]
+    session: AsyncSession,
+    *,
+    title: str,
+    content: str,
+    tags: list[str],
+    project_slug: str | None = None,
 ) -> Note:
-    note = Note(title=title, content=content, tags=tags, links=[])
+    note = Note(title=title, content=content, tags=tags, links=[], project_slug=project_slug)
     session.add(note)
     await session.flush()
     return note
@@ -52,10 +57,13 @@ async def get_note_by_title(session: AsyncSession, title: str) -> Note | None:
     return await session.scalar(select(Note).where(func.lower(Note.title) == title.lower()))
 
 
-async def list_notes(session: AsyncSession) -> list[Note]:
-    rows = (
-        await session.execute(select(Note).order_by(Note.updated_at.desc()))
-    ).scalars().all()
+async def list_notes(session: AsyncSession, *, project_slug: str | None = None) -> list[Note]:
+    """Sem `project_slug`, lista tudo. Com ele, notas do projeto mais as
+    "globais" (sem projeto) — mesmo fallback de `hybrid_search`."""
+    stmt = select(Note).order_by(Note.updated_at.desc())
+    if project_slug:
+        stmt = stmt.where((Note.project_slug == project_slug) | (Note.project_slug.is_(None)))
+    rows = (await session.execute(stmt)).scalars().all()
     return list(rows)
 
 
@@ -123,22 +131,31 @@ async def hybrid_search(
     query_embedding: list[float] | None,
     limit: int = 8,
     candidate_pool: int = 50,
+    project_slug: str | None = None,
 ) -> list[NoteSearchHit]:
+    """Com `project_slug`, restringe às notas do projeto mais as "globais"
+    (sem projeto) — mesmo fallback documentado em `documents/store.py`."""
     params: dict[str, object] = {
         "pool": candidate_pool,
         "limit": limit,
         "k": RRF_K,
         "q": query_text,
     }
+    project_filter = ""
+    if project_slug:
+        params["project_slug"] = project_slug
+        project_filter = "AND (n.project_slug = :project_slug OR n.project_slug IS NULL)"
 
-    text_cte = """
+    text_cte = f"""
         texto AS (
-            SELECT id,
+            SELECT c.id,
                    ROW_NUMBER() OVER (
-                       ORDER BY ts_rank_cd(tsv, websearch_to_tsquery('simple', :q)) DESC
+                       ORDER BY ts_rank_cd(c.tsv, websearch_to_tsquery('simple', :q)) DESC
                    ) AS rank
-            FROM note_chunk
-            WHERE tsv @@ websearch_to_tsquery('simple', :q)
+            FROM note_chunk c
+            JOIN note n ON n.id = c.note_id
+            WHERE c.tsv @@ websearch_to_tsquery('simple', :q)
+            {project_filter}
             LIMIT :pool
         )
     """
@@ -147,10 +164,14 @@ async def hybrid_search(
         params["embedding"] = str(query_embedding)
         sql = f"""
             WITH vetor AS (
-                SELECT id,
-                       ROW_NUMBER() OVER (ORDER BY embedding <=> CAST(:embedding AS vector)) AS rank
-                FROM note_chunk
-                WHERE embedding IS NOT NULL
+                SELECT c.id,
+                       ROW_NUMBER() OVER (
+                           ORDER BY c.embedding <=> CAST(:embedding AS vector)
+                       ) AS rank
+                FROM note_chunk c
+                JOIN note n ON n.id = c.note_id
+                WHERE c.embedding IS NOT NULL
+                {project_filter}
                 LIMIT :pool
             ),
             {text_cte},

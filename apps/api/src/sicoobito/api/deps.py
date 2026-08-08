@@ -6,9 +6,10 @@ import hmac
 import re
 from typing import Annotated
 
-from fastapi import Depends, Header, HTTPException, Request, status
+from fastapi import Cookie, Depends, Header, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from sicoobito.auth.service import AuthService
 from sicoobito.config import Settings, get_settings
 from sicoobito.db.session import get_session
 from sicoobito.router.engine import RouterEngine
@@ -50,6 +51,43 @@ def require_api_key(
         )
 
 
+async def require_session(
+    request: Request,
+    settings: Annotated[Settings, Depends(get_settings)],
+    authorization: Annotated[str | None, Header()] = None,
+    x_api_key: Annotated[str | None, Header()] = None,
+    sicoobito_session: Annotated[str | None, Cookie()] = None,
+) -> None:
+    """Dependência viva das rotas (`AuthDep`) — substitui a checagem isolada de
+    `require_api_key`.
+
+    A chave de API de serviço continua valendo (CI, cline, cursor, aider —
+    tudo que já usa `X-Api-Key`/`Authorization: Bearer`), e passa a valer
+    também uma sessão de usuário via cookie httpOnly. Ao contrário de
+    `require_api_key`, esta função **nunca** fica aberta por omissão: sem
+    nenhuma das duas credenciais válidas, é sempre 401 — é exatamente essa
+    mudança de comportamento que torna o login obrigatório.
+    """
+    if settings.api_key:
+        presented = x_api_key
+        if not presented and authorization:
+            scheme, _, token = authorization.partition(" ")
+            presented = token.strip() if scheme.lower() == "bearer" else authorization.strip()
+        if presented and hmac.compare_digest(presented, settings.api_key):
+            return
+
+    if sicoobito_session:
+        auth: AuthService | None = getattr(request.app.state, "auth", None)
+        if auth is not None and await auth.validate_session(sicoobito_session) is not None:
+            return
+
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Autenticação necessária — chave de API ou login.",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
+
 # Assinaturas de User-Agent das ferramentas que costumam apontar para o gateway.
 _SOURCE_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
     ("cline", re.compile(r"cline", re.I)),
@@ -81,8 +119,21 @@ def identify_source(
     return "unknown"
 
 
+def identify_project(
+    x_sicoobito_project: Annotated[str | None, Header()] = None,
+) -> str | None:
+    """Projeto de origem da chamada, para atribuição de custo por projeto.
+
+    Opcional: ferramentas externas (cline, cursor, aider) não têm o conceito de
+    projeto do SicoobitoCode e simplesmente não mandam o header — nesse caso o
+    custo fica sem projeto associado, igual acontecia antes desta dependency existir.
+    """
+    return x_sicoobito_project[:128] if x_sicoobito_project else None
+
+
 EngineDep = Annotated[RouterEngine, Depends(get_engine)]
 SettingsDep = Annotated[Settings, Depends(get_settings)]
 SourceDep = Annotated[str, Depends(identify_source)]
+ProjectDep = Annotated[str | None, Depends(identify_project)]
 DbSessionDep = Annotated[AsyncSession, Depends(get_session)]
-AuthDep = Depends(require_api_key)
+AuthDep = Depends(require_session)

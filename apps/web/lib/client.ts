@@ -125,6 +125,24 @@ export async function streamEvents(
   }
 }
 
+/**
+ * Login/logout de sessão — fala com `/api/session` (não com o gateway
+ * genérico), que é o único Route Handler capaz de setar o cookie httpOnly de
+ * resposta. Ver `app/api/session/route.ts`.
+ */
+export async function login(username: string, password: string): Promise<void> {
+  const response = await fetch("/api/session", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ username, password }),
+  });
+  if (!response.ok) throw new HttpError(await describeError(response), response.status);
+}
+
+export async function logout(): Promise<void> {
+  await fetch("/api/session", { method: "DELETE" });
+}
+
 async function describeError(response: Response): Promise<string> {
   try {
     const body = await response.json();

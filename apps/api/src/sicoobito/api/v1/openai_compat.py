@@ -15,7 +15,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, status
 from fastapi.responses import StreamingResponse
 
-from sicoobito.api.deps import AuthDep, EngineDep, SourceDep
+from sicoobito.api.deps import AuthDep, EngineDep, ProjectDep, SourceDep
 from sicoobito.api.schemas import ChatCompletionRequest, EmbeddingRequest, ModelCard, ModelList
 from sicoobito.logging_setup import get_logger
 from sicoobito.router.budget import BudgetExceededError
@@ -65,13 +65,14 @@ async def chat_completions(
     payload: ChatCompletionRequest,
     engine: EngineDep,
     source: SourceDep,
+    project: ProjectDep,
 ):
     params = payload.to_params()
 
     try:
         if payload.stream:
             return StreamingResponse(
-                _sse(engine, payload.model, params, source),
+                _sse(engine, payload.model, params, source, project),
                 media_type="text/event-stream",
                 headers={
                     "Cache-Control": "no-cache",
@@ -81,7 +82,7 @@ async def chat_completions(
             )
 
         result = await engine.complete(
-            requested_model=payload.model, params=params, source=source
+            requested_model=payload.model, params=params, source=source, project_slug=project
         )
     except BudgetExceededError as exc:
         raise HTTPException(
@@ -127,11 +128,15 @@ async def chat_completions(
 
 
 async def _sse(
-    engine: Any, requested_model: str, params: dict[str, Any], source: str
+    engine: Any,
+    requested_model: str,
+    params: dict[str, Any],
+    source: str,
+    project: str | None = None,
 ) -> AsyncIterator[str]:
     try:
         async for chunk in engine.stream(
-            requested_model=requested_model, params=params, source=source
+            requested_model=requested_model, params=params, source=source, project_slug=project
         ):
             yield f"data: {json.dumps(chunk, default=str)}\n\n"
     except (NoCandidatesError, AllCandidatesFailedError, BudgetExceededError) as exc:
@@ -146,10 +151,15 @@ async def _sse(
 
 
 @router.post("/embeddings")
-async def embeddings(payload: EmbeddingRequest, engine: EngineDep, source: SourceDep):
+async def embeddings(
+    payload: EmbeddingRequest, engine: EngineDep, source: SourceDep, project: ProjectDep
+):
     try:
         result = await engine.embed(
-            requested_model=payload.model, inputs=payload.inputs(), source=source
+            requested_model=payload.model,
+            inputs=payload.inputs(),
+            source=source,
+            project_slug=project,
         )
     except NoCandidatesError as exc:
         raise HTTPException(

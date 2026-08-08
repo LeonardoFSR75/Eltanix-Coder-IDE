@@ -10,6 +10,7 @@ import { del, get, post, put } from "@/lib/client";
 
 export interface NoteRecord {
   id: string;
+  project_slug: string | null;
   title: string;
   content: string;
   tags: string[];
@@ -29,8 +30,9 @@ export interface NoteSearchHit {
   text_rank: number | null;
 }
 
-export async function listNotes(): Promise<NoteRecord[]> {
-  const { notes } = await get<{ notes: NoteRecord[] }>("/api/notes");
+export async function listNotes(project?: string | null): Promise<NoteRecord[]> {
+  const query = project ? `?project=${encodeURIComponent(project)}` : "";
+  const { notes } = await get<{ notes: NoteRecord[] }>(`/api/notes${query}`);
   return notes;
 }
 
@@ -38,6 +40,7 @@ export async function createNote(input: {
   title: string;
   content: string;
   tags: string[];
+  project?: string | null;
 }): Promise<NoteRecord> {
   return post<NoteRecord>("/api/notes", input);
 }
@@ -53,7 +56,15 @@ export async function deleteNote(noteId: string): Promise<void> {
   await del(`/api/notes/${noteId}`);
 }
 
-export async function searchNotes(query: string, limit = 8): Promise<NoteSearchHit[]> {
-  const { hits } = await post<{ hits: NoteSearchHit[] }>("/api/notes/search", { query, limit });
+export async function searchNotes(
+  query: string,
+  limit = 8,
+  project?: string | null,
+): Promise<NoteSearchHit[]> {
+  const { hits } = await post<{ hits: NoteSearchHit[] }>("/api/notes/search", {
+    query,
+    limit,
+    project: project || undefined,
+  });
   return hits;
 }

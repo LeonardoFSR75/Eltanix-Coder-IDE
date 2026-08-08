@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
+import re
 import shutil
+from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request, status
@@ -46,6 +49,10 @@ class ProjectCreateIn(BaseModel):
     git_url: str | None = Field(default=None)
     budget_limit_usd: float | None = Field(default=None)
     settings: dict[str, Any] = Field(default_factory=dict)
+
+
+class OpenPathIn(BaseModel):
+    path: str = Field(min_length=1, description="Caminho absoluto de qualquer pasta do SO")
 
 
 class ProjectUpdateIn(BaseModel):
@@ -159,6 +166,86 @@ async def create_project(payload: ProjectCreateIn, request: Request) -> dict[str
     return res
 
 
+@router.post("/open-path")
+async def open_absolute_path(payload: OpenPathIn, request: Request) -> dict[str, Any]:
+    """Abre e autoriza qualquer pasta do SO como projeto — fora de PROJECTS_ROOT.
+
+    Diferente de `create_project`, o caminho não precisa estar sob PROJECTS_ROOT:
+    a fronteira de segurança aqui é o `PathGuard` (autorização explícita por
+    caminho), não `resolve()`. O registro em `ProjectRecord` é o que faz essa
+    pasta aparecer na Central de Projetos depois de aberta.
+    """
+    from sicoobito.workspace.inspector import ProjectInspector
+    from sicoobito.workspace.path_guard import default_path_guard
+
+    alvo = await asyncio.to_thread(lambda: Path(payload.path).resolve())
+    if not alvo.exists() or not alvo.is_dir():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Caminho não encontrado ou não é diretório: {payload.path}",
+        )
+
+    default_path_guard.allow(alvo)
+
+    inspector = ProjectInspector()
+    sig = inspector.inspect(alvo)
+
+    try:
+        slug = validate_name(alvo.name)
+    except ProjectError:
+        slug = re.sub(r"[^A-Za-z0-9._-]", "-", alvo.name).strip("-") or "projeto"
+
+    async with session_scope() as session:
+        stmt = select(ProjectRecord).where(ProjectRecord.slug == slug)
+        rec = (await session.execute(stmt)).scalar_one_or_none()
+        if rec and rec.local_path != str(alvo):
+            # Slug já usado por outro caminho — sufixa para não colidir.
+            base_slug, suffix = slug, 2
+            while rec and rec.local_path != str(alvo):
+                slug = f"{base_slug}-{suffix}"
+                stmt = select(ProjectRecord).where(ProjectRecord.slug == slug)
+                rec = (await session.execute(stmt)).scalar_one_or_none()
+                suffix += 1
+
+        if not rec:
+            rec = ProjectRecord(
+                slug=slug,
+                name=sig.name,
+                description=sig.executive_summary or "",
+                local_path=str(alvo),
+                default_branch="main",
+            )
+            session.add(rec)
+        else:
+            rec.name = sig.name
+            rec.local_path = str(alvo)
+
+        await session.flush()
+
+    if audit := _audit(request):
+        await audit.record(
+            actor="user",
+            module="projects",
+            action="open_path",
+            details=f"Pasta aberta como projeto: {alvo}",
+            event_metadata={"slug": slug, "path": str(alvo)},
+            project_slug=slug,
+        )
+
+    return {
+        "slug": slug,
+        "name": sig.name,
+        "path": sig.path,
+        "primary_language": sig.primary_language,
+        "frameworks": sig.frameworks,
+        "build_system": sig.build_system,
+        "has_docker": sig.has_docker,
+        "has_git": sig.has_git,
+        "has_ci_cd": sig.has_ci_cd,
+        "summary": sig.executive_summary,
+    }
+
+
 @router.get("/{slug}/summary")
 async def get_summary(slug: str, request: Request) -> dict[str, Any]:
     """Retorna a visão geral 360° do projeto (IDE, Git, Custos, Notas, Graphify, Auditoria, Sessões)."""
@@ -178,10 +265,12 @@ async def get_summary(slug: str, request: Request) -> dict[str, Any]:
                 "total_cost_usd": summary.total_cost_usd,
                 "total_tokens": summary.total_tokens,
                 "notes_count": summary.notes_count,
+                "documents_count": summary.documents_count,
                 "graph_nodes_count": summary.graph_nodes_count,
                 "graph_edges_count": summary.graph_edges_count,
                 "audit_events_count": summary.audit_events_count,
                 "active_sessions_count": summary.active_sessions_count,
+                "recent_commits": summary.recent_commits,
                 "settings": summary.settings,
             }
     except Exception as exc:
@@ -202,10 +291,12 @@ async def get_summary(slug: str, request: Request) -> dict[str, Any]:
                 "total_cost_usd": 0.0,
                 "total_tokens": 0,
                 "notes_count": 0,
+                "documents_count": 0,
                 "graph_nodes_count": 0,
                 "graph_edges_count": 0,
                 "audit_events_count": 0,
                 "active_sessions_count": 0,
+                "recent_commits": [],
                 "settings": {},
             }
         except ProjectError as err:

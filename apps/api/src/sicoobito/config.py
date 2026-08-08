@@ -38,6 +38,11 @@ class Settings(BaseSettings):
 
     # ── Núcleo ──────────────────────────────────────────────────────────────
     api_key: str = Field(default="", alias="SICOOBITO_API_KEY")
+    # Usuário único do login (etapa 1 — ver `auth/service.py`). Sem senha
+    # definida, o lifespan gera uma aleatória e loga uma vez: login continua
+    # obrigatório, só a senha do primeiro acesso fica no log em vez do `.env`.
+    admin_username: str = Field(default="admin", alias="SICOOBITO_ADMIN_USERNAME")
+    admin_password: str = Field(default="", alias="SICOOBITO_ADMIN_PASSWORD")
     log_level: str = Field(default="INFO", alias="SICOOBITO_LOG_LEVEL")
     log_json: bool = Field(default=False, alias="SICOOBITO_LOG_JSON")
     config_dir: Path = Field(default=REPO_ROOT / "config", alias="SICOOBITO_CONFIG_DIR")

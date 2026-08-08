@@ -11,6 +11,7 @@ from __future__ import annotations
 import pytest
 
 from sicoobito.agent.tools import RiskClass, ToolContext, registry
+from sicoobito.agent.tools.project_manager import manage_project
 from sicoobito.agent.tools.shell import summarize_output
 from sicoobito.workspace.fs import WorkspaceFS
 
@@ -355,3 +356,22 @@ def test_error_lines_survive_truncation():
 
     assert "test_critico" in resumo
     assert "assert 1 == 2" in resumo
+
+
+# ── manage_project (regressão: ToolContext precisa de project_slug/projects_root) ──
+
+
+async def test_manage_project_list_does_not_raise_attribute_error(tmp_path):
+    """`ToolContext` ganhou `project_slug`/`projects_root` justamente porque
+    `manage_project` os lia sem que o dataclass os declarasse — sem esses
+    campos isto dava `AttributeError` toda vez que a ferramenta rodava."""
+    ctx = ToolContext(
+        session_id="teste",
+        workspace_root=tmp_path,
+        fs=WorkspaceFS(tmp_path),
+        project_slug=tmp_path.name,
+        projects_root=tmp_path.parent,
+    )
+    resultado = await manage_project.handler(ctx, {"action": "list"})
+    assert resultado.ok
+    assert "projects" in resultado.data

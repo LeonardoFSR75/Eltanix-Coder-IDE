@@ -1,90 +1,79 @@
 "use client";
 
 import React, { createContext, useCallback, useContext, useEffect, useState } from "react";
-import { get } from "@/lib/client";
+import { get, login as apiLogin, logout as apiLogout } from "@/lib/client";
 
 /**
- * O backend usa uma única chave de API compartilhada (`SICOOBITO_API_KEY`),
- * não contas de usuário — ver `api/deps.py::require_api_key`. Este contexto
- * reflete exatamente isso: guarda a chave local e se ela é válida contra o
- * backend, nada de perfil, papel ou avatar fabricados.
+ * O backend agora exige login de sessão (`require_session` em
+ * `api/deps.py`) — a chave de API compartilhada continua existindo, mas só
+ * para integrações externas (CI, cline, cursor, aider), nunca para a UI web.
+ * Este contexto reflete a sessão real: `user` vem de `GET /api/auth/me`
+ * (cookie httpOnly, nunca localStorage).
  */
 
-const STORAGE_KEY = "sicoobito_api_key";
+interface AuthUser {
+  id: string;
+  username: string;
+  displayName: string | null;
+}
 
-function maskKey(key: string): string {
-  return key.length <= 4 ? "••••" : `••••${key.slice(-4)}`;
+interface MeResponse {
+  id: string;
+  username: string;
+  display_name: string | null;
 }
 
 interface AuthContextType {
-  hasApiKey: boolean;
-  // null enquanto a primeira checagem contra o backend não terminou.
-  apiKeyValid: boolean | null;
+  user: AuthUser | null;
   checking: boolean;
-  maskedKey: string | null;
-  setApiKey: (key: string) => Promise<boolean>;
-  logout: () => void;
+  login: (username: string, password: string) => Promise<boolean>;
+  logout: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [hasApiKey, setHasApiKey] = useState(false);
-  const [maskedKey, setMaskedKey] = useState<string | null>(null);
-  const [apiKeyValid, setApiKeyValid] = useState<boolean | null>(null);
+  const [user, setUser] = useState<AuthUser | null>(null);
   const [checking, setChecking] = useState(true);
 
-  // Sem chave, `require_api_key` ainda pode aceitar a chamada — se o
-  // backend não tiver `SICOOBITO_API_KEY` configurada, fica aberto de
-  // propósito para uso estritamente local. Por isso a validação é sempre
-  // "chamar /health e ver o que volta", não "existe uma chave salva".
-  const validate = useCallback(async (): Promise<boolean> => {
+  const refresh = useCallback(async () => {
     setChecking(true);
     try {
-      await get("/api/health");
-      setApiKeyValid(true);
-      return true;
+      const me = await get<MeResponse>("/api/auth/me");
+      setUser({ id: me.id, username: me.username, displayName: me.display_name });
     } catch {
-      setApiKeyValid(false);
-      return false;
+      // 401 é o caso normal de "não logado ainda" — qualquer outro status
+      // também deixa `user` nulo, as páginas protegidas tratam igual.
+      setUser(null);
     } finally {
       setChecking(false);
     }
   }, []);
 
   useEffect(() => {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    setHasApiKey(!!stored);
-    setMaskedKey(stored ? maskKey(stored) : null);
-    validate();
-  }, [validate]);
+    refresh();
+  }, [refresh]);
 
-  const setApiKey = useCallback(
-    async (key: string): Promise<boolean> => {
-      const trimmed = key.trim();
-      if (trimmed) {
-        localStorage.setItem(STORAGE_KEY, trimmed);
-      } else {
-        localStorage.removeItem(STORAGE_KEY);
+  const login = useCallback(
+    async (username: string, password: string): Promise<boolean> => {
+      try {
+        await apiLogin(username, password);
+      } catch {
+        return false;
       }
-      setHasApiKey(!!trimmed);
-      setMaskedKey(trimmed ? maskKey(trimmed) : null);
-      return validate();
+      await refresh();
+      return true;
     },
-    [validate],
+    [refresh],
   );
 
-  const logout = useCallback(() => {
-    localStorage.removeItem(STORAGE_KEY);
-    setHasApiKey(false);
-    setMaskedKey(null);
-    setApiKeyValid(null);
+  const logout = useCallback(async () => {
+    await apiLogout();
+    setUser(null);
   }, []);
 
   return (
-    <AuthContext.Provider
-      value={{ hasApiKey, apiKeyValid, checking, maskedKey, setApiKey, logout }}
-    >
+    <AuthContext.Provider value={{ user, checking, login, logout }}>
       {children}
     </AuthContext.Provider>
   );

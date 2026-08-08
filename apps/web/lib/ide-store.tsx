@@ -33,6 +33,7 @@ import {
 } from "react";
 import { get, post } from "@/lib/client";
 import { clearBuffer } from "@/lib/editor-buffer-cache";
+import { useProject } from "@/components/providers/ProjectContext";
 
 export interface Project {
   name: string;
@@ -217,6 +218,11 @@ function load(): Persisted {
 }
 
 export function IdeProvider({ children }: { children: ReactNode }) {
+  // Projeto atual é compartilhado com o resto da app (Central de Projetos,
+  // HeaderNav) via `ProjectContext` — o IDE não guarda mais sua própria
+  // fonte de verdade, só reage a ela e propaga de volta quando o usuário
+  // troca de projeto por aqui (picker, Ctrl+O, criar projeto).
+  const { currentProject: globalProject, setCurrentProject: setGlobalProject } = useProject();
   const [project, setProjectState] = useState<string | null>(null);
   const [projects, setProjects] = useState<Project[]>([]);
   const [projectsError, setProjectsError] = useState<string | null>(null);
@@ -341,6 +347,26 @@ export function IdeProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const setProject = useCallback(
+    (name: string) => {
+      setProjectState(name);
+      setGlobalProject(name);
+      // Trocar de projeto com abas/grupos de outro abertos mostraria arquivos
+      // que não existem mais no contexto atual — volta para um painel só.
+      setGroups({ [DEFAULT_GROUP_ID]: newGroup(DEFAULT_GROUP_ID) });
+      setLayout({ type: "leaf", groupId: DEFAULT_GROUP_ID });
+      setActiveGroupIdState(DEFAULT_GROUP_ID);
+    },
+    [setGlobalProject],
+  );
+
+  // Projeto trocado por fora do IDE (Central de Projetos, HeaderNav) —
+  // reflete aqui, com o mesmo reset de abas/grupos de `setProject`.
+  useEffect(() => {
+    if (globalProject && globalProject !== project) setProject(globalProject);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [globalProject]);
+
   const createProject = useCallback(
     async (name: string, gitInit: boolean = false) => {
       const p = await post<Project & { created: boolean }>("/api/projects", {
@@ -348,10 +374,10 @@ export function IdeProvider({ children }: { children: ReactNode }) {
         git_init: gitInit,
       });
       await reloadProjects();
-      setProjectState(p.name);
+      setProject(p.name);
       return p;
     },
-    [reloadProjects],
+    [reloadProjects, setProject],
   );
 
   useEffect(() => {
@@ -375,15 +401,6 @@ export function IdeProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     void reloadFiles();
   }, [reloadFiles, revision]);
-
-  const setProject = useCallback((name: string) => {
-    setProjectState(name);
-    // Trocar de projeto com abas/grupos de outro abertos mostraria arquivos
-    // que não existem mais no contexto atual — volta para um painel só.
-    setGroups({ [DEFAULT_GROUP_ID]: newGroup(DEFAULT_GROUP_ID) });
-    setLayout({ type: "leaf", groupId: DEFAULT_GROUP_ID });
-    setActiveGroupIdState(DEFAULT_GROUP_ID);
-  }, []);
 
   const openFile = useCallback(
     (path: string, posicao?: { line: number; column: number }, groupId?: string) => {

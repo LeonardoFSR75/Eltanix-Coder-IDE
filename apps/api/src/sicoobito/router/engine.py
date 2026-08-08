@@ -243,6 +243,7 @@ class RouterEngine:
         requested_model: str,
         params: dict[str, Any],
         source: str = "unknown",
+        project_slug: str | None = None,
     ) -> CompletionResult:
         await self.budget.check()
 
@@ -271,6 +272,7 @@ class RouterEngine:
                     usage_estimated=True,
                     cost_known=False,
                     complexity=verdict.complexity if verdict else None,
+                    project_slug=project_slug,
                 )
             )
             raise NoCandidatesError(
@@ -307,6 +309,7 @@ class RouterEngine:
                         tokens_saved=cached.tokens_saved,
                         cost_saved_usd=saved_cost.usd,
                         cost_known=saved_cost.known,
+                        project_slug=project_slug,
                     )
                 )
                 return CompletionResult(
@@ -360,6 +363,7 @@ class RouterEngine:
                             prompt_tokens=estimated,
                             usage_estimated=True,
                             cost_known=False,
+                            project_slug=project_slug,
                         )
                     )
                     raise
@@ -402,6 +406,7 @@ class RouterEngine:
                     cost_saved_usd=self._savings_value(spec.id, compression.tokens_saved),
                     savings_breakdown=compression.savings,
                     complexity=verdict.complexity if verdict else None,
+                    project_slug=project_slug,
                 )
             )
             log.info(
@@ -440,6 +445,7 @@ class RouterEngine:
                 usage_estimated=True,
                 cost_known=False,
                 complexity=verdict.complexity if verdict else None,
+                project_slug=project_slug,
             )
         )
         raise AllCandidatesFailedError(
@@ -454,6 +460,7 @@ class RouterEngine:
         requested_model: str,
         params: dict[str, Any],
         source: str = "unknown",
+        project_slug: str | None = None,
     ) -> AsyncIterator[dict[str, Any]]:
         """Streaming com fallback antes do primeiro chunk.
 
@@ -513,6 +520,7 @@ class RouterEngine:
                 started=started,
                 compression=compression,
                 verdict=verdict,
+                project_slug=project_slug,
             ):
                 yield event
             return
@@ -537,6 +545,7 @@ class RouterEngine:
         started: float,
         compression: Any = None,
         verdict: Any = None,
+        project_slug: str | None = None,
     ) -> AsyncIterator[dict[str, Any]]:
         ttft_ms: int | None = None
         usage = Usage()
@@ -609,6 +618,7 @@ class RouterEngine:
                     ),
                     savings_breakdown=compression.savings if compression else {},
                     complexity=verdict.complexity if verdict else None,
+                    project_slug=project_slug,
                 )
             )
 
@@ -632,6 +642,7 @@ class RouterEngine:
         requested_model: str,
         inputs: list[str],
         source: str = "unknown",
+        project_slug: str | None = None,
     ) -> CompletionResult:
         await self.budget.check()
 
@@ -687,6 +698,7 @@ class RouterEngine:
                     usage_estimated=usage.estimated,
                     cost_usd=cost.usd,
                     cost_known=cost.known,
+                    project_slug=project_slug,
                 )
             )
             return CompletionResult(

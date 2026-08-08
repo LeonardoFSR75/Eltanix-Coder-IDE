@@ -7,10 +7,11 @@ import { useToast } from "@/components/Toast";
 
 export default function LoginPage() {
   const router = useRouter();
-  const { setApiKey, apiKeyValid, maskedKey } = useAuth();
+  const { login, user } = useAuth();
   const { addToast } = useToast();
 
-  const [apiKey, setApiKeyInput] = useState("");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
   const [isValidating, setIsValidating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -18,13 +19,13 @@ export default function LoginPage() {
     e.preventDefault();
     setIsValidating(true);
     setError(null);
-    const ok = await setApiKey(apiKey);
+    const ok = await login(username, password);
     setIsValidating(false);
     if (ok) {
-      addToast("Chave validada — conectado ao backend.", "success");
-      router.push("/");
+      addToast("Login realizado.", "success");
+      router.push("/projects");
     } else {
-      setError("Chave inválida ou backend inacessível. Confira SICOOBITO_API_KEY e tente de novo.");
+      setError("Usuário ou senha inválidos.");
     }
   };
 
@@ -40,49 +41,57 @@ export default function LoginPage() {
           </div>
           <h1>Acesso ao SicoobitoCode</h1>
           <p className="login-subtitle">
-            Plataforma local-first com uma única chave de API compartilhada — sem contas de
-            usuário, sem senha.
+            Plataforma local-first — login obrigatório por usuário e senha.
           </p>
         </div>
 
-        {apiKeyValid && (
+        {user && (
           <div className="already-logged-banner">
-            <span>
-              Você já está conectado{maskedKey ? ` com a chave ${maskedKey}` : " (backend sem chave configurada)"}.
-            </span>
-            <button type="button" className="btn-secondary-sm" onClick={() => router.push("/")}>
-              Ir para Home
+            <span>Você já está conectado como {user.displayName || user.username}.</span>
+            <button type="button" className="btn-secondary-sm" onClick={() => router.push("/projects")}>
+              Ir para a Central de Projetos
             </button>
           </div>
         )}
 
         <form onSubmit={handleSubmit} className="login-form">
           <div className="form-group">
-            <label htmlFor="apikey-input">Chave de API do Sicoobito (SICOOBITO_API_KEY)</label>
+            <label htmlFor="username-input">Usuário</label>
             <input
-              id="apikey-input"
+              id="username-input"
               type="text"
-              className="input-text font-mono"
-              value={apiKey}
-              onChange={(e) => setApiKeyInput(e.target.value)}
-              placeholder="Deixe em branco se o backend não exige chave"
-              autoComplete="off"
+              className="input-text"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              autoComplete="username"
+              autoFocus
+            />
+          </div>
+          <div className="form-group">
+            <label htmlFor="password-input">Senha</label>
+            <input
+              id="password-input"
+              type="password"
+              className="input-text"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              autoComplete="current-password"
             />
           </div>
           {error && <p className="text-xs" style={{ color: "var(--danger)" }}>{error}</p>}
           <button
             type="submit"
             className="btn-primary btn-block btn-lg glow-button"
-            disabled={isValidating}
+            disabled={isValidating || !username || !password}
           >
-            {isValidating ? "Validando contra o backend..." : "Entrar"}
+            {isValidating ? "Entrando..." : "Entrar"}
           </button>
         </form>
 
         <div className="login-footer">
           <div className="security-tag">
-            <span className="pulse-dot-green" /> A chave fica só no seu navegador (localStorage) —
-            o proxy do Next é quem a anexa nas chamadas ao backend.
+            <span className="pulse-dot-green" /> A sessão fica num cookie httpOnly — o servidor Next
+            nunca expõe o token ao JavaScript do browser.
           </div>
         </div>
       </div>

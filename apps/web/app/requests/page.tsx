@@ -4,14 +4,16 @@ import { useEffect, useState } from "react";
 import { ErrorNotice } from "@/components/ErrorNotice";
 import { getRecentRequests, type RecentRequest } from "@/lib/api/metrics";
 import { formatDateTime, formatMs, formatTokens, formatUsd } from "@/lib/format";
+import { useProject } from "@/components/providers/ProjectContext";
 
 export default function RequestsPage() {
+  const { currentProject } = useProject();
   const [requests, setRequests] = useState<RecentRequest[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    getRecentRequests(100)
+    getRecentRequests(100, currentProject)
       .then((data) => {
         if (!cancelled) setRequests(data);
       })
@@ -21,7 +23,7 @@ export default function RequestsPage() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [currentProject]);
 
   if (error) return <ErrorNotice error={error} />;
   if (requests === null) return null;
@@ -30,7 +32,10 @@ export default function RequestsPage() {
     <div className="shell">
       <section>
         <h2>
-          Requests recentes<span className="sub">últimos 100</span>
+          Requests recentes
+          <span className="sub">
+            últimos 100{currentProject ? ` · projeto ${currentProject}` : ""}
+          </span>
         </h2>
         <div className="table-wrap">
           {requests.length > 0 ? (

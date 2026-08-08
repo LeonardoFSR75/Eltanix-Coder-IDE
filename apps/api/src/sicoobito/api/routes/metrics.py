@@ -286,13 +286,15 @@ async def savings(days: int = Query(default=30, ge=1, le=365)) -> dict[str, Any]
 
 
 @router.get("/recent")
-async def recent(limit: int = Query(default=50, ge=1, le=500)) -> dict[str, Any]:
+async def recent(
+    limit: int = Query(default=50, ge=1, le=500),
+    project: str | None = Query(default=None),
+) -> dict[str, Any]:
+    stmt = select(RequestLog).order_by(RequestLog.created_at.desc()).limit(limit)
+    if project:
+        stmt = stmt.where(RequestLog.project_slug == project)
     async with session_scope() as session:
-        rows = (
-            await session.execute(
-                select(RequestLog).order_by(RequestLog.created_at.desc()).limit(limit)
-            )
-        ).scalars().all()
+        rows = (await session.execute(stmt)).scalars().all()
 
     return {
         "requests": [

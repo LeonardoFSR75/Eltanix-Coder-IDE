@@ -26,7 +26,7 @@ from pydantic import BaseModel, Field
 
 from sicoobito.api.deps import AuthDep, SettingsDep
 from sicoobito.api.tickets import TICKET_TTL_SECONDS, TicketStore
-from sicoobito.config import Settings, get_settings
+from sicoobito.config import Settings
 from sicoobito.context.languages import detect_language
 from sicoobito.logging_setup import get_logger
 from sicoobito.workspace import projects as project_ops
@@ -37,7 +37,6 @@ from sicoobito.workspace.projects import ProjectError
 log = get_logger(__name__)
 
 router = APIRouter(prefix="/api/workspace", tags=["workspace"], dependencies=[AuthDep])
-projects_router = APIRouter(prefix="/api/projects", tags=["projects"], dependencies=[AuthDep])
 
 # O WebSocket vive num router **sem** a dependência de autenticação por header:
 # o browser não consegue enviar `Authorization` ao abrir um WebSocket, e a
@@ -90,92 +89,6 @@ def _erro_de_caminho(exc: Exception) -> HTTPException:
     if isinstance(exc, FileExistsError):
         return HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
     return HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
-
-
-class CreateProjectPayload(BaseModel):
-    name: str = Field(min_length=1, description="Nome da pasta do projeto")
-    git_init: bool = Field(default=False, description="Inicializar repositório Git local")
-
-
-@projects_router.get("")
-async def list_projects(settings: SettingsDep) -> dict[str, Any]:
-    raiz = _projects_root(settings)
-    projetos = await asyncio.to_thread(project_ops.list_projects, raiz)
-    return {
-        "root": str(raiz),
-        "projects": [
-            {"name": p.name, "path": str(p.path), "is_git": p.is_git, "branch": p.branch}
-            for p in projetos
-        ],
-    }
-
-
-@projects_router.post("")
-async def create_project(payload: CreateProjectPayload, settings: SettingsDep) -> dict[str, Any]:
-    raiz = _projects_root(settings)
-    nome_limpo = project_ops.validate_name(payload.name)
-    pasta_destino = raiz / nome_limpo
-
-    try:
-        pasta_destino.mkdir(parents=True, exist_ok=True)
-        if payload.git_init and not (pasta_destino / ".git").exists():
-            import subprocess
-
-            subprocess.run(["git", "init", str(pasta_destino)], check=False, capture_output=True)
-    except Exception as exc:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Falha ao criar/vincular pasta de projeto: {exc}",
-        ) from exc
-
-    eh_git = (pasta_destino / ".git").exists()
-    branch = project_ops._branch_of(pasta_destino) if eh_git else None
-
-    return {
-        "name": nome_limpo,
-        "path": str(pasta_destino),
-        "is_git": eh_git,
-        "branch": branch,
-        "created": True,
-    }
-
-
-class OpenPathPayload(BaseModel):
-    path: str = Field(min_length=1, description="Caminho absoluto de qualquer pasta do sistema operacional")
-
-
-@projects_router.post("/open-path")
-async def open_absolute_path(payload: OpenPathPayload) -> dict[str, Any]:
-    """Abre e autoriza qualquer pasta do SO como um projeto navegável e inspecionado."""
-    from sicoobito.workspace.inspector import ProjectInspector
-    from sicoobito.workspace.path_guard import default_path_guard
-
-    alvo = Path(payload.path).resolve()
-    if not alvo.exists() or not alvo.is_dir():
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Caminho não encontrado ou não é diretório: {payload.path}",
-        )
-
-    # Registra no PathGuard
-    default_path_guard.allow(alvo)
-
-    # Inspeciona projeto em <500ms
-    inspector = ProjectInspector()
-    sig = inspector.inspect(alvo)
-
-    return {
-        "name": sig.name,
-        "path": sig.path,
-        "primary_language": sig.primary_language,
-        "frameworks": sig.frameworks,
-        "build_system": sig.build_system,
-        "has_docker": sig.has_docker,
-        "has_git": sig.has_git,
-        "has_ci_cd": sig.has_ci_cd,
-        "summary": sig.executive_summary,
-    }
-
 
 
 # ── Árvore e arquivos ───────────────────────────────────────────────────────
@@ -416,15 +329,17 @@ async def terminal(websocket: WebSocket, session_id: str) -> None:
     volta inteira. Um PTY de verdade exigiria multiplexar o stream do Docker e
     tratar sequências de escape.
     """
-    settings = get_settings()
-
-    if settings.api_key:
-        store: TicketStore | None = getattr(websocket.app.state, "tickets", None)
-        ticket = websocket.query_params.get("ticket", "")
-        if store is None or not await store.consume(ticket, f"terminal:{session_id}"):
-            log.warning("workspace.terminal.rejected", session=session_id)
-            await websocket.close(code=4401, reason="ticket inválido ou expirado")
-            return
+    # O ticket é sempre exigido, com ou sem SICOOBITO_API_KEY configurada: ele
+    # só é emitido por `POST /terminal/{id}/ticket`, uma rota atrás de
+    # `AuthDep` (`require_session`) — condicionar isto à chave de API de
+    # serviço reabriria exatamente o buraco que tornar o login obrigatório
+    # deveria fechar.
+    store: TicketStore | None = getattr(websocket.app.state, "tickets", None)
+    ticket = websocket.query_params.get("ticket", "")
+    if store is None or not await store.consume(ticket, f"terminal:{session_id}"):
+        log.warning("workspace.terminal.rejected", session=session_id)
+        await websocket.close(code=4401, reason="ticket inválido ou expirado")
+        return
 
     await websocket.accept()
 

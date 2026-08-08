@@ -68,7 +68,7 @@ class FakeRouterEngine:
         self._respostas = list(respostas)
         self.chamadas = 0
 
-    async def complete(self, *, requested_model, params, source):
+    async def complete(self, *, requested_model, params, source, project_slug=None):
         self.chamadas += 1
         payload = self._respostas.pop(0)
         return _FakeResult(payload=payload)

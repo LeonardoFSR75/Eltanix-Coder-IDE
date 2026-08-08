@@ -30,10 +30,12 @@ export interface ProjectSummary {
   total_cost_usd: number;
   total_tokens: number;
   notes_count: number;
+  documents_count: number;
   graph_nodes_count: number;
   graph_edges_count: number;
   audit_events_count: number;
   active_sessions_count: number;
+  recent_commits: { sha: string; author: string; date: string; message: string }[];
   settings: Record<string, any>;
 }
 
