@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import json
+
 from sicoobito.optimizer.cache import ResponseCache
 from sicoobito.optimizer.tokens import count_text, estimate_prompt_tokens
-from sicoobito.router.errors import FailureKind, classify
+from sicoobito.router.errors import FailureKind, classify, extract_failed_tool_call
 
 
 class ContextWindowExceededError(Exception):
@@ -45,6 +47,49 @@ def test_content_policy_is_fatal():
 def test_credit_balance_low_is_transient_allowing_fallback():
     exc = BadRequestError("Your credit balance is too low to access the Anthropic API.")
     assert classify(exc) is FailureKind.TRANSIENT
+
+
+def _groq_tool_use_failed(failed_generation: str) -> BadRequestError:
+    """Reproduz o formato real que a Groq devolve — mensagem JSON serializada,
+    com `failed_generation` como campo string dentro dela."""
+    inner = json.dumps(
+        {
+            "error": {
+                "message": (
+                    "Failed to call a function. Please adjust your prompt. "
+                    "See 'failed_generation' for more details."
+                ),
+                "type": "invalid_request_error",
+                "code": "tool_use_failed",
+                "failed_generation": failed_generation,
+            }
+        }
+    )
+    return BadRequestError(f"GroqException - {inner}")
+
+
+def test_extract_failed_tool_call_recovers_groq_pseudo_xml_format():
+    exc = _groq_tool_use_failed(
+        '<function=list_files{"path": "apps/api/src/sicoobito/agent/tools"}</function>'
+    )
+    assert extract_failed_tool_call(exc) == (
+        "list_files",
+        {"path": "apps/api/src/sicoobito/agent/tools"},
+    )
+
+
+def test_extract_failed_tool_call_returns_none_for_unrelated_error():
+    assert extract_failed_tool_call(BadRequestError("invalid tool schema")) is None
+
+
+def test_extract_failed_tool_call_returns_none_when_generation_is_not_parseable():
+    exc = _groq_tool_use_failed("desculpa, não consigo ajudar com isso")
+    assert extract_failed_tool_call(exc) is None
+
+
+def test_extract_failed_tool_call_returns_none_when_args_are_not_valid_json():
+    exc = _groq_tool_use_failed("<function=list_files{path: sem aspas}</function>")
+    assert extract_failed_tool_call(exc) is None
 
 
 def test_cache_is_disabled_without_redis():

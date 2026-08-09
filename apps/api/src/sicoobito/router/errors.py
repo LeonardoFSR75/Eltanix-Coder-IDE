@@ -12,7 +12,55 @@ Nem toda falha merece a mesma reação. Três categorias importam:
 
 from __future__ import annotations
 
+import json
+import re
 from enum import StrEnum
+from typing import Any
+
+# Alguns modelos servidos pela Groq (ex.: llama-3.3-70b-versatile) às vezes
+# emitem a function-call num formato pseudo-XML (`<function=nome{...}`) em vez
+# de preencher `tool_calls` — a API rejeita com 400 (`tool_use_failed`) e
+# devolve o texto bruto em `failed_generation`, escapado como string JSON.
+_FAILED_GENERATION_RE = re.compile(r'"failed_generation"\s*:\s*"((?:[^"\\]|\\.)*)"')
+_FUNCTION_CALL_RE = re.compile(r"<function=([a-zA-Z_][a-zA-Z0-9_]*)")
+
+
+def extract_failed_tool_call(exc: Exception) -> tuple[str, dict[str, Any]] | None:
+    """Recupera nome+argumentos de uma function-call de um erro `tool_use_failed`.
+
+    Retorna `None` sempre que não reconhece o formato — o chamador trata isso
+    como falha normal (próximo candidato), sem regressão de comportamento.
+    """
+    text = str(exc)
+    if "tool_use_failed" not in text:
+        return None
+
+    match = _FAILED_GENERATION_RE.search(text)
+    if not match:
+        return None
+    try:
+        # group(1) é o corpo de uma string JSON válida (aspas já removidas) —
+        # reembrulhar em aspas e usar json.loads desescapa (\", \\, \uXXXX...)
+        # do jeito certo, em vez de reimplementar as regras de escape do JSON.
+        raw = json.loads(f'"{match.group(1)}"')
+    except json.JSONDecodeError:
+        return None
+
+    fn_match = _FUNCTION_CALL_RE.search(raw)
+    if not fn_match:
+        return None
+
+    brace_start = raw.find("{", fn_match.end())
+    if brace_start == -1:
+        return None
+    try:
+        args, _ = json.JSONDecoder().raw_decode(raw, brace_start)
+    except (json.JSONDecodeError, ValueError):
+        return None
+    if not isinstance(args, dict):
+        return None
+
+    return fn_match.group(1), args
 
 
 class FailureKind(StrEnum):

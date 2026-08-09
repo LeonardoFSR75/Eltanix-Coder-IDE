@@ -8,8 +8,10 @@ O `num_retries` do litellm fica em zero de propósito — quem decide reencaminh
 
 from __future__ import annotations
 
+import json
 import os
 import time
+import uuid
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from decimal import Decimal
@@ -40,6 +42,7 @@ from sicoobito.router.errors import (
     FailureKind,
     NoCandidatesError,
     classify,
+    extract_failed_tool_call,
 )
 from sicoobito.router.health import HealthTracker
 from sicoobito.router.policy import RoutingPolicy
@@ -53,6 +56,30 @@ litellm.suppress_debug_info = True
 
 # Provedores que falam o dialeto OpenAI e aceitam `stream_options`.
 _OPENAI_DIALECT = {"openai", "azure_foundry"}
+
+
+def _synthetic_tool_call_payload(nome: str, argumentos: dict[str, Any]) -> dict[str, Any]:
+    """Monta um payload no formato de `choices[0].message.tool_calls` a partir
+    de uma function-call recuperada de um erro `tool_use_failed` (ver
+    `router.errors.extract_failed_tool_call`) — o resto do pipeline (agent/
+    graph.py) não sabe que essa chamada não veio direto do provedor."""
+    return {
+        "choices": [
+            {
+                "message": {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [
+                        {
+                            "id": f"call_recovered_{uuid.uuid4().hex[:24]}",
+                            "type": "function",
+                            "function": {"name": nome, "arguments": json.dumps(argumentos)},
+                        }
+                    ],
+                }
+            }
+        ]
+    }
 
 
 @dataclass(slots=True)
@@ -330,6 +357,54 @@ class RouterEngine:
                 response = await self.litellm_router.acompletion(model=spec.id, **prepared)
             except Exception as exc:
                 latency = int((time.perf_counter() - started) * 1000)
+
+                # Alguns modelos (ex.: Groq llama-3.3-70b-versatile) às vezes erram o
+                # formato da function-call; a API rejeita com `tool_use_failed` em vez
+                # de simplesmente não chamar nenhuma tool. Recuperar aqui evita gastar
+                # uma tentativa inteira de fallback num modelo às vezes mais caro/lento
+                # por um erro de formatação que já sabemos corrigir.
+                recovered = extract_failed_tool_call(exc)
+                if recovered is not None:
+                    nome, argumentos = recovered
+                    log.warning(
+                        "router.tool_call.recovered",
+                        model=spec.id,
+                        tool=nome,
+                        latency_ms=latency,
+                    )
+                    payload = _synthetic_tool_call_payload(nome, argumentos)
+                    usage = Usage(prompt_tokens=estimated, estimated=True)
+                    cost = self.prices.cost(spec.id, usage)
+                    await self.health.record_success(spec.id, latency)
+                    await record(
+                        TelemetryEntry(
+                            requested_model=requested_model,
+                            source=source,
+                            profile=decision.profile,
+                            resolved_model=spec.id,
+                            provider=spec.provider,
+                            fallback_from=tried,
+                            attempts=len(tried) + 1,
+                            latency_ms=latency,
+                            prompt_tokens=usage.prompt_tokens,
+                            usage_estimated=True,
+                            cost_usd=cost.usd,
+                            cost_known=cost.known,
+                            project_slug=project_slug,
+                        )
+                    )
+                    return CompletionResult(
+                        payload=payload,
+                        model_id=spec.id,
+                        provider=spec.provider,
+                        usage=usage,
+                        cost_usd=cost.usd,
+                        cost_known=cost.known,
+                        latency_ms=latency,
+                        fallback_from=tried,
+                        attempts=len(tried) + 1,
+                    )
+
                 kind = classify(exc)
                 last_error = exc
                 tried.append(spec.id)
