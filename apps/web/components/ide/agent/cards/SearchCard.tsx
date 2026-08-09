@@ -1,6 +1,6 @@
 "use client";
 
-import { ToolCardShell } from "./ToolCardShell";
+import { riskLevelForTool, ToolCardShell } from "./ToolCardShell";
 import type { ToolCardProps } from "./types";
 
 interface Hit {
@@ -9,11 +9,17 @@ interface Hit {
   score?: number;
 }
 
-export function SearchCard({ content, data, ok }: ToolCardProps) {
+export function SearchCard({ tool, content, data, ok }: ToolCardProps) {
   const hits = (data.hits as Hit[] | undefined) ?? [];
 
   return (
-    <ToolCardShell icon="🔍" title="buscar no código" meta={`${hits.length} trecho(s)`} ok={ok}>
+    <ToolCardShell
+      icon="🔍"
+      title="buscar no código"
+      meta={`${hits.length} trecho(s)`}
+      riskLevel={riskLevelForTool(tool)}
+      ok={ok}
+    >
       {hits.length > 0 ? (
         <ul className="tool-card-list">
           {hits.map((hit, i) => (

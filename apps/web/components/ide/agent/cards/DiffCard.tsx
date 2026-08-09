@@ -4,7 +4,7 @@ import { useState } from "react";
 import { autoDetectLanguage, DiffView } from "@/components/ide/Editor";
 import { revertFile } from "@/lib/api/agent";
 import { useIde } from "@/lib/ide-store";
-import { ToolCardShell } from "./ToolCardShell";
+import { riskLevelForTool, ToolCardShell } from "./ToolCardShell";
 import type { ToolCardProps } from "./types";
 
 type Decision = "pending" | "accepted" | "rejected";
@@ -33,12 +33,13 @@ export function DiffCard({
   const existed = data.existed !== false;
   const verb = tool === "write_file" ? "escrever" : "editar";
   const language = autoDetectLanguage(path);
+  const riskLevel = riskLevelForTool(tool);
 
   // A ferramenta pode ter falhado (arquivo não encontrado, trecho ambíguo
   // etc.) — sem `path`, não há diff nenhum para revisar, só o erro.
   if (!ok || !path) {
     return (
-      <ToolCardShell icon="✏️" title={`${verb} — falhou`} ok={false} defaultOpen>
+      <ToolCardShell icon="✏️" title={`${verb} — falhou`} riskLevel={riskLevel} ok={false} defaultOpen>
         <pre className="tool-card-pre">{content}</pre>
       </ToolCardShell>
     );
@@ -63,6 +64,7 @@ export function DiffCard({
     <ToolCardShell
       icon="✏️"
       title={`${verb} ${path}`}
+      riskLevel={riskLevel}
       ok={ok}
       defaultOpen
       bodyClassName="tool-card-body-diff"

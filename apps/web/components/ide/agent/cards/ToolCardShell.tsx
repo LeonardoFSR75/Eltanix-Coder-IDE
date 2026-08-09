@@ -13,6 +13,33 @@ export interface ToolCardShellProps {
   children?: React.ReactNode;
 }
 
+// Espelha a RiskClass declarada em cada ferramenta nativa (ver
+// agent/tools/*.py) — READ/WRITE/EXEC → low/medium/high. É estático porque,
+// para as ferramentas nativas com card dedicado, o risco não depende dos
+// argumentos da chamada, só do nome da tool.
+const TOOL_RISK: Record<string, "low" | "medium" | "high"> = {
+  read_file: "low",
+  list_files: "low",
+  search_code: "low",
+  git_status: "low",
+  git_diff: "low",
+  code_history: "low",
+  request_code_review: "low",
+  code_graph: "low",
+  find_circular_imports: "low",
+  find_orphan_modules: "low",
+  write_file: "medium",
+  edit_file: "medium",
+  git_commit: "medium",
+  open_pull_request: "medium",
+  run_command: "high",
+  browser_action: "high",
+};
+
+export function riskLevelForTool(tool: string): "low" | "medium" | "high" | undefined {
+  return TOOL_RISK[tool];
+}
+
 export function ToolCardShell({
   icon,
   title,
@@ -25,13 +52,6 @@ export function ToolCardShell({
 }: ToolCardShellProps) {
   const [open, setOpen] = useState(defaultOpen);
   const hasBody = Boolean(children);
-
-  const riskBadgeColor =
-    riskLevel === "high"
-      ? "bg-red-950 text-red-400 border-red-800"
-      : riskLevel === "medium"
-      ? "bg-amber-950 text-amber-400 border-amber-800"
-      : "bg-slate-900 text-slate-400 border-slate-700";
 
   return (
     <div className={`tool-card${ok ? "" : " fail"}`}>
@@ -46,8 +66,8 @@ export function ToolCardShell({
         <span className="tool-card-title">{title}</span>
         {riskLevel && (
           <span
-            className={`text-[9px] font-bold px-1.5 py-0.5 rounded border uppercase ${riskBadgeColor}`}
-            title={`Nível de Risco: ${riskLevel.toUpperCase()}`}
+            className={`tool-card-risk-badge ${riskLevel}`}
+            title={`Nível de risco: ${riskLevel.toUpperCase()}`}
           >
             {riskLevel}
           </span>

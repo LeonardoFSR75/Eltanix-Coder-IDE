@@ -179,7 +179,7 @@ export function ProviderStudio({ initialHealth, initialCatalog, initialCredentia
                     <tr key={m.id}>
                       <td>
                         <code>{m.id}</code>
-                        <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{m.provider}</div>
+                        <div style={{ fontSize: 10.5, color: "var(--text-muted)" }}>{m.provider}</div>
                       </td>
                       <td>
                         {!m.enabled ? (

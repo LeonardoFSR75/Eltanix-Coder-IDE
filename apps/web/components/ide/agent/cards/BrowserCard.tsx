@@ -1,6 +1,6 @@
 "use client";
 
-import { ToolCardShell } from "./ToolCardShell";
+import { riskLevelForTool, ToolCardShell } from "./ToolCardShell";
 import type { ToolCardProps } from "./types";
 
 // `browser_action` cobre navigate/click/type/screenshot/content num tool
@@ -8,7 +8,7 @@ import type { ToolCardProps } from "./types";
 // foi essa além do que `data` deixa transparecer (imagem = screenshot, url+
 // título = navigate, texto = content); o resumo em `content` (montado no
 // backend) cobre os demais casos sem precisar de mais estado.
-export function BrowserCard({ content, data, ok }: ToolCardProps) {
+export function BrowserCard({ tool, content, data, ok }: ToolCardProps) {
   const image = typeof data.image_base64 === "string" ? data.image_base64 : null;
   const url = typeof data.url === "string" ? data.url : undefined;
   const title = typeof data.title === "string" ? data.title : undefined;
@@ -18,6 +18,7 @@ export function BrowserCard({ content, data, ok }: ToolCardProps) {
       icon="🌐"
       title={content.length > 90 ? `${content.slice(0, 90)}…` : content}
       meta={url}
+      riskLevel={riskLevelForTool(tool)}
       ok={ok}
       defaultOpen={Boolean(image)}
     >

@@ -212,7 +212,7 @@ export function ModelDiscovery({ onModelsAdded, onStatus }: ModelDiscoveryProps)
                           <td>
                             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                               {CAPABILITY_OPTIONS.map((cap) => (
-                                <label key={cap} style={{ fontSize: 12, display: "flex", gap: 4, alignItems: "center" }}>
+                                <label key={cap} style={{ fontSize: 11.5, display: "flex", gap: 4, alignItems: "center" }}>
                                   <input
                                     type="checkbox"
                                     checked={edit.capabilities.includes(cap)}

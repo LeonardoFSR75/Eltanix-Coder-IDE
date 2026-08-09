@@ -51,7 +51,6 @@ profiles:
     models:
       - anthropic/claude-sonnet-4-6
       - groq/llama-3.3-70b-versatile
-      - groq/deepseek-r1-distill-llama-70b
       - databricks/llama-3.3-70b
       - foundry/gpt-4o
       - ollama/qwen2.5-coder:7b

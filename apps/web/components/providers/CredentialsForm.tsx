@@ -34,7 +34,7 @@ function buildValues(view: CredentialsView): Record<FieldKey, string> {
   };
 }
 
-const labelStyle = { display: "block", fontSize: 12, marginBottom: 4, color: "var(--text-dim)" } as const;
+const labelStyle = { display: "block", fontSize: 11.5, marginBottom: 4, color: "var(--text-dim)" } as const;
 const labelStyleSpaced = { ...labelStyle, margin: "12px 0 4px" } as const;
 
 export function CredentialsForm({ initial, onSaved, onError }: CredentialsFormProps) {

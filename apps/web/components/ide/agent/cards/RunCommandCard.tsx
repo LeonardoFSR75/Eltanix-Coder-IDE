@@ -1,9 +1,9 @@
 "use client";
 
-import { ToolCardShell } from "./ToolCardShell";
+import { riskLevelForTool, ToolCardShell } from "./ToolCardShell";
 import type { ToolCardProps } from "./types";
 
-export function RunCommandCard({ content, data, ok }: ToolCardProps) {
+export function RunCommandCard({ tool, content, data, ok }: ToolCardProps) {
   const command = String(data.command ?? "");
   const exitCode = data.exit_code as number | null | undefined;
   const durationMs = data.duration_ms as number | undefined;
@@ -21,6 +21,7 @@ export function RunCommandCard({ content, data, ok }: ToolCardProps) {
       icon="💻"
       title={command || "executar comando"}
       meta={metaParts.join(" · ")}
+      riskLevel={riskLevelForTool(tool)}
       ok={ok && !failed}
       defaultOpen={failed}
     >

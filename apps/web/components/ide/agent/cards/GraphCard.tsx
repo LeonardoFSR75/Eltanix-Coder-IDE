@@ -1,6 +1,6 @@
 "use client";
 
-import { ToolCardShell } from "./ToolCardShell";
+import { riskLevelForTool, ToolCardShell } from "./ToolCardShell";
 import type { ToolCardProps } from "./types";
 
 interface GraphNode {
@@ -9,7 +9,7 @@ interface GraphNode {
   kind: string;
 }
 
-export function GraphCard({ content, data, ok }: ToolCardProps) {
+export function GraphCard({ tool, content, data, ok }: ToolCardProps) {
   const node = data.node as GraphNode | undefined;
   const contains = (data.contains as GraphNode[] | undefined) ?? [];
   const containedBy = data.contained_by as GraphNode | null | undefined;
@@ -20,6 +20,7 @@ export function GraphCard({ content, data, ok }: ToolCardProps) {
     <ToolCardShell
       icon="🕸️"
       title={node ? `grafo · ${node.symbol ?? node.path}` : "code graph"}
+      riskLevel={riskLevelForTool(tool)}
       ok={ok}
     >
       {node ? (

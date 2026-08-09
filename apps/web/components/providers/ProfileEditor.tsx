@@ -76,7 +76,7 @@ export function ProfileEditor({
         <div className="card" style={{ padding: 16 }}>
           {mode === "create" && (
             <div style={{ marginBottom: 12 }}>
-              <label style={{ display: "block", fontSize: 12, marginBottom: 4, color: "var(--text-dim)" }}>
+              <label style={{ display: "block", fontSize: 11.5, marginBottom: 4, color: "var(--text-dim)" }}>
                 Nome do perfil
               </label>
               <input
@@ -90,7 +90,7 @@ export function ProfileEditor({
           )}
 
           <div style={{ marginBottom: 12 }}>
-            <label style={{ display: "block", fontSize: 12, marginBottom: 4, color: "var(--text-dim)" }}>
+            <label style={{ display: "block", fontSize: 11.5, marginBottom: 4, color: "var(--text-dim)" }}>
               Estratégia
             </label>
             <select
@@ -107,13 +107,13 @@ export function ProfileEditor({
           </div>
 
           <div style={{ marginBottom: 12 }}>
-            <label style={{ display: "block", fontSize: 12, marginBottom: 4, color: "var(--text-dim)" }}>
+            <label style={{ display: "block", fontSize: 11.5, marginBottom: 4, color: "var(--text-dim)" }}>
               Cadeia de fallback (a ordem é a ordem de tentativa)
             </label>
             <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 8 }}>
               {models.map((m, idx) => (
                 <div key={m} style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <span style={{ color: "var(--text-dim)", fontSize: 12, width: 20 }}>{idx + 1}.</span>
+                  <span style={{ color: "var(--text-dim)", fontSize: 11.5, width: 20 }}>{idx + 1}.</span>
                   <code className="kbd-badge" style={{ flex: 1 }}>
                     {m}
                   </code>
@@ -140,7 +140,7 @@ export function ProfileEditor({
                   </button>
                 </div>
               ))}
-              {models.length === 0 && <em style={{ fontSize: 12 }}>nenhum modelo ainda</em>}
+              {models.length === 0 && <em style={{ fontSize: 11.5 }}>nenhum modelo ainda</em>}
             </div>
             <div style={{ display: "flex", gap: 8 }}>
               <select
@@ -165,7 +165,7 @@ export function ProfileEditor({
 
           {strategy === "score" && (
             <div style={{ marginBottom: 12 }}>
-              <label style={{ display: "block", fontSize: 12, marginBottom: 4, color: "var(--text-dim)" }}>
+              <label style={{ display: "block", fontSize: 11.5, marginBottom: 4, color: "var(--text-dim)" }}>
                 Pesos (só entram em jogo na estratégia &quot;score&quot;)
               </label>
               <div
@@ -177,7 +177,7 @@ export function ProfileEditor({
               >
                 {WEIGHT_KEYS.map((k) => (
                   <div key={k}>
-                    <label style={{ display: "block", fontSize: 11, color: "var(--text-dim)" }}>{k}</label>
+                    <label style={{ display: "block", fontSize: 10.5, color: "var(--text-dim)" }}>{k}</label>
                     <input
                       type="number"
                       min={0}

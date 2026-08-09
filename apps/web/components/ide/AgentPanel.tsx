@@ -10,6 +10,7 @@ interface AgentPanelProps {
   session: Session | null;
   log: LogLine[];
   pending: PendingAction[];
+  running?: boolean;
   onDecide: (decisions: Record<string, boolean>) => void;
   onPresetSelect?: (prompt: string) => void;
 }
@@ -176,7 +177,7 @@ function ThinkingIndicator() {
 
 /* ── Painel Principal do Agente ─────────────────────────────────── */
 
-export function AgentPanel({ session, log, pending, onDecide, onPresetSelect }: AgentPanelProps) {
+export function AgentPanel({ session, log, pending, running, onDecide, onPresetSelect }: AgentPanelProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [decisions, setDecisions] = useState<Record<string, boolean>>({});
 
@@ -196,9 +197,11 @@ export function AgentPanel({ session, log, pending, onDecide, onPresetSelect }: 
 
   const allDecided = pending.length > 0 && pending.every((a) => decisions[a.tool_call_id] !== undefined);
 
-  // Verifica se o último item do log indica que o agente está processando
-  const isThinking = log.length > 0 && log[log.length - 1]?.kind === "info" &&
-    (log[log.length - 1]?.text?.includes("Executando") || log[log.length - 1]?.text?.includes("rodando"));
+  // `running` vem do sessionRuntime (via AgentDock) — reflete se há um turno
+  // em voo de verdade, ao contrário de inspecionar texto de log (nenhum
+  // evento real emite "Executando"/"rodando", então isso nunca disparava).
+  // Some quando já existe aprovação pendente para não duplicar indicador.
+  const isThinking = Boolean(running) && pending.length === 0;
 
   return (
     <div className="agent-panel-container">

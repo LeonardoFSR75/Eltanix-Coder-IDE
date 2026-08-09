@@ -269,7 +269,7 @@ export function CustomizationsPopover({
                         width: "100%",
                         minHeight: 140,
                         fontFamily: "var(--font-mono)",
-                        fontSize: 12,
+                        fontSize: 11.5,
                         resize: "vertical",
                       }}
                       value={instructionsText}

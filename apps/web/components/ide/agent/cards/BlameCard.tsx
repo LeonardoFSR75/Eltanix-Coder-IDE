@@ -1,6 +1,6 @@
 "use client";
 
-import { ToolCardShell } from "./ToolCardShell";
+import { riskLevelForTool, ToolCardShell } from "./ToolCardShell";
 import type { ToolCardProps } from "./types";
 
 interface BlameHunk {
@@ -17,7 +17,7 @@ interface CoChangeEntry {
   count: number;
 }
 
-export function BlameCard({ content, data, ok }: ToolCardProps) {
+export function BlameCard({ tool, content, data, ok }: ToolCardProps) {
   const hunks = (data.hunks as BlameHunk[] | undefined) ?? [];
   const coChanged = (data.co_changed as CoChangeEntry[] | undefined) ?? [];
 
@@ -26,6 +26,7 @@ export function BlameCard({ content, data, ok }: ToolCardProps) {
       icon="🕘"
       title="histórico do código"
       meta={hunks.length ? `${hunks.length} trecho(s)` : undefined}
+      riskLevel={riskLevelForTool(tool)}
       ok={ok}
     >
       {hunks.length > 0 ? (

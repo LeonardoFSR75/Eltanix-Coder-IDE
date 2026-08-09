@@ -1,11 +1,12 @@
 "use client";
 
-import { ToolCardShell } from "./ToolCardShell";
+import { riskLevelForTool, ToolCardShell } from "./ToolCardShell";
 import type { ToolCardProps } from "./types";
 
 export function ExplorerCard({ tool, content, data, ok }: ToolCardProps) {
   const cycles = (data.cycles as string[][] | undefined) ?? [];
   const orphans = (data.orphans as string[] | undefined) ?? [];
+  const riskLevel = riskLevelForTool(tool);
 
   if (tool === "find_circular_imports") {
     return (
@@ -13,6 +14,7 @@ export function ExplorerCard({ tool, content, data, ok }: ToolCardProps) {
         icon="🔁"
         title="dependência circular"
         meta={`${cycles.length} ciclo(s)`}
+        riskLevel={riskLevel}
         ok={ok}
       >
         {cycles.length > 0 ? (
@@ -29,7 +31,13 @@ export function ExplorerCard({ tool, content, data, ok }: ToolCardProps) {
   }
 
   return (
-    <ToolCardShell icon="🕳️" title="módulos órfãos" meta={`${orphans.length} candidato(s)`} ok={ok}>
+    <ToolCardShell
+      icon="🕳️"
+      title="módulos órfãos"
+      meta={`${orphans.length} candidato(s)`}
+      riskLevel={riskLevel}
+      ok={ok}
+    >
       {orphans.length > 0 ? (
         <ul className="tool-card-list">
           {orphans.map((path) => (

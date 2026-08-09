@@ -152,6 +152,19 @@ def build_graph(engine: RouterEngine, context: ToolContext):
             atualizacao["result"] = mensagem.get("content") or ""
             return atualizacao
 
+        limite = state.get("max_iterations", DEFAULT_MAX_ITERATIONS)
+        if atualizacao["iterations"] >= limite:
+            # route_after_think também checa isso, mas só decide o próximo nó —
+            # não consegue atualizar o estado. É aqui que finished/result
+            # precisam ser setados para a UI mostrar algo em vez de só parar.
+            log.warning("agent.iteration_limit", session=state.get("session_id"))
+            atualizacao["finished"] = True
+            atualizacao["result"] = mensagem.get("content") or (
+                f"Atingi o limite de {limite} iterações sem concluir a tarefa. "
+                "Revise o que foi feito até aqui — posso continuar se você pedir."
+            )
+            return atualizacao
+
         pendentes: list[PendingApproval] = []
         for chamada in tool_calls:
             nome = (chamada.get("function") or {}).get("name", "")

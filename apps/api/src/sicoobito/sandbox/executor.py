@@ -55,10 +55,10 @@ class RemoteSandbox:
     def _headers(self) -> dict[str, str]:
         return {"Authorization": f"Bearer {self.config.token}"} if self.config.token else {}
 
-    async def _get_client(self, timeout: float = 120.0) -> tuple[httpx.AsyncClient, bool]:
+    async def _get_client(self, timeout_seconds: float = 120.0) -> tuple[httpx.AsyncClient, bool]:
         if self._client is not None and not self._client.is_closed:
             return self._client, False
-        return httpx.AsyncClient(timeout=timeout), True
+        return httpx.AsyncClient(timeout=timeout_seconds), True
 
     async def start(self) -> str:
         payload = {
@@ -69,7 +69,7 @@ class RemoteSandbox:
             "image": self.config.image,
             "network": self.config.network,
         }
-        client, is_owned = await self._get_client(timeout=120.0)
+        client, is_owned = await self._get_client(timeout_seconds=120.0)
         try:
             resposta = await client.post(
                 f"{self.config.base_url}/sandboxes", json=payload, headers=self._headers()
@@ -110,7 +110,7 @@ class RemoteSandbox:
         payload = {"command": command, "timeout": limite, "workdir": workdir}
         inicio = time.perf_counter()
 
-        client, is_owned = await self._get_client(timeout=limite + _TIMEOUT_MARGEM)
+        client, is_owned = await self._get_client(timeout_seconds=limite + _TIMEOUT_MARGEM)
         try:
             resposta = await client.post(
                 f"{self.config.base_url}/sandboxes/{self.session_id}/exec",
@@ -155,7 +155,7 @@ class RemoteSandbox:
         if not self._started:
             return
         self._started = False
-        client, is_owned = await self._get_client(timeout=60.0)
+        client, is_owned = await self._get_client(timeout_seconds=60.0)
         try:
             await client.delete(
                 f"{self.config.base_url}/sandboxes/{self.session_id}",
