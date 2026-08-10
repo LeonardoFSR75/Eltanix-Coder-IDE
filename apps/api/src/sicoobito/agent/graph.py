@@ -436,8 +436,14 @@ def build_graph(engine: RouterEngine, context: ToolContext):
                     call_id, nome, resultado.content, ok=resultado.ok, data=resultado.data
                 )
             )
+            # `resultado.ok` não serve aqui: `run_command` sempre devolve
+            # `ok=True` de propósito (o modelo precisa do resultado mesmo
+            # quando o comando falha), o que fazia o detector de repetição
+            # nunca contar um `pip install` repetido sem rede como falha.
+            # `status_da_ferramenta` (mesma lógica de `_telemetry_status`)
+            # reflete o exit code/timeout reais.
             ultima_falha, contagem_falha = _next_repetition_state(
-                fingerprint, resultado.ok, ultima_falha, contagem_falha
+                fingerprint, status_da_ferramenta == "ok", ultima_falha, contagem_falha
             )
             if caminho := resultado.data.get("path"):
                 alterados.append(str(caminho))

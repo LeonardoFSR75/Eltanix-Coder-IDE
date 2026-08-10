@@ -27,6 +27,12 @@ class ExecutorConfig:
     base_url: str
     token: str = ""
     ttl_seconds: int = 3600
+    # Default de `run_command` quando o modelo não passa `timeout` explícito.
+    # Antes ficava hardcoded em 300 aqui dentro, ignorando
+    # `SANDBOX_TIMEOUT_SECONDS` — que só valia no modo local (`SandboxConfig`,
+    # `sandbox/container.py`). Em produção (`EXECUTOR_URL` setado, ADR 0002)
+    # o valor da env var não tinha efeito nenhum sobre o timeout real.
+    timeout_seconds: int = 300
 
 
 class RemoteSandbox:
@@ -105,7 +111,7 @@ class RemoteSandbox:
         if not self._started:
             await self.start()
 
-        limite = timeout or 300
+        limite = timeout or self.config.timeout_seconds
         payload = {"command": command, "timeout": limite, "workdir": workdir}
         inicio = time.perf_counter()
 

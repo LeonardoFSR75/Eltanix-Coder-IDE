@@ -195,6 +195,7 @@ async def lifespan(app: FastAPI):
             ExecutorConfig(
                 base_url=settings.executor_url.rstrip("/"),
                 token=settings.executor_token,
+                timeout_seconds=settings.sandbox_timeout_seconds,
             )
         )
         log.info("sandbox.mode", mode="executor", url=settings.executor_url)
