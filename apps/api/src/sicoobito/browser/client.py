@@ -88,8 +88,16 @@ class BrowserClient:
             raise BrowserError(f"serviço de navegador retornou erro: {resposta.text[:300]}")
         return resposta.json()
 
-    async def stop(self) -> None:
-        if not self._started:
+    async def stop(self, *, force: bool = False) -> None:
+        """`force=True` ignora `_started`: o painel manual do IDE cria uma
+        instância nova de `BrowserClient` a cada requisição HTTP (ver
+        `api/routes/browser.py`), então `_started` nunca reflete se a sessão
+        do lado do serviço existe de verdade — só se ESTA instância chegou a
+        chamar `start()`. O `AgentRunner` mantém uma instância por sessão do
+        agente durante toda a vida dela, onde `_started` continua confiável e
+        o padrão (`force=False`) evita um DELETE inútil para sessões que
+        nunca chegaram a usar o navegador."""
+        if not self._started and not force:
             return
         self._started = False
         try:

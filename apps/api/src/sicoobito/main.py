@@ -7,6 +7,7 @@ import secrets
 from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 
+import httpx
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from redis.asyncio import Redis
@@ -20,6 +21,7 @@ from sicoobito.api.routes import (
     agent_router,
     audit_router,
     auth_router,
+    browser_router,
     context_router,
     documents_router,
     git_router,
@@ -229,6 +231,13 @@ async def lifespan(app: FastAPI):
     app.state.trace_recorder = trace_recorder
     app.state.agent_coordinator = agent_coordinator
     app.state.projects_root = settings.projects_root
+    app.state.browser_config = browser_config
+    # Cliente HTTP próprio do painel manual do IDE — separado do que o
+    # `AgentRunner` mantém internamente (`_get_browser_http`) porque as duas
+    # origens de sessão (agente vs. painel) têm ciclos de vida distintos.
+    app.state.browser_http = httpx.AsyncClient(
+        limits=httpx.Limits(max_keepalive_connections=10, max_connections=30)
+    )
     app.state.agent_runner = AgentRunner(
         settings=settings,
         engine=engine,
@@ -263,6 +272,7 @@ async def lifespan(app: FastAPI):
         # ficariam órfãos consumindo memória até alguém notar.
         await sandboxes.shutdown()
         await app.state.agent_runner.aclose()
+        await app.state.browser_http.aclose()
         await mcp_manager.disconnect_all()
         if redis is not None:
             await redis.aclose()
@@ -294,6 +304,7 @@ def create_app() -> FastAPI:
 
     app.include_router(openai_router)
     app.include_router(auth_router)
+    app.include_router(browser_router)
     app.include_router(health_router)
     app.include_router(metrics_router)
     app.include_router(context_router)

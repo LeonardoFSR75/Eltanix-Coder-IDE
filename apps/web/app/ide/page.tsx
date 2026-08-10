@@ -3,7 +3,7 @@
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { DebugPanel, Explorer, GitPanel, SearchPanel } from "@/components/ide/Panels";
+import { BrowserPanel, DebugPanel, Explorer, GitPanel, SearchPanel } from "@/components/ide/Panels";
 import { StatusBar } from "@/components/ide/StatusBar";
 import { TopMenuBar } from "@/components/ide/TopMenuBar";
 import { IdeProvider, useIde, type PanelId } from "@/lib/ide-store";
@@ -148,6 +148,7 @@ function Shell() {
       { id: "explorer", title: "Mostrar Explorer", run: () => ide.setPanel("explorer") },
       { id: "search", title: "Buscar no projeto", shortcut: "Ctrl+Shift+F", run: () => ide.setPanel("search") },
       { id: "git", title: "Mostrar controle de versão", run: () => ide.setPanel("git") },
+      { id: "browser", title: "Mostrar navegador", run: () => ide.setPanel("browser") },
       { id: "agent", title: "Mostrar agente", run: () => ide.setAgentDockOpen(true) },
       { id: "toggle-sidebar", title: "Alternar barra lateral", shortcut: "Ctrl+B", run: () => ide.toggleSidebar() },
       {
@@ -345,6 +346,25 @@ function Shell() {
 
           <button
             type="button"
+            className={`activity${ide.panel === "browser" && ide.sidebarOpen ? " active" : ""}`}
+            title="Navegador (verificação visual)"
+            onClick={() => {
+              if (ide.panel === "browser" && ide.sidebarOpen) ide.toggleSidebar();
+              else {
+                ide.setPanel("browser");
+                ide.setSidebarOpen(true);
+              }
+            }}
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="10" />
+              <line x1="2" y1="12" x2="22" y2="12" />
+              <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+            </svg>
+          </button>
+
+          <button
+            type="button"
             className="activity"
             title="Graphify Engine (Grafo de Conhecimento)"
             onClick={() => router.push("/graphify")}
@@ -449,6 +469,7 @@ function Shell() {
             {ide.panel === "search" && <SearchPanel />}
             {ide.panel === "git" && <GitPanel />}
             {ide.panel === "debug" && <DebugPanel />}
+            {ide.panel === "browser" && <BrowserPanel />}
           </aside>
         )}
 

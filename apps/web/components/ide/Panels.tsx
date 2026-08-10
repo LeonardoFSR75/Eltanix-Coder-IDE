@@ -9,6 +9,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { browserAction, closeBrowserSession } from "@/lib/api/browser";
 import {
   createEntry,
   deleteEntry,
@@ -1057,6 +1058,224 @@ export function DebugPanel() {
       <div style={{ marginTop: "auto", fontSize: "10.5px", color: "var(--text-muted)", background: "rgba(255,255,255,0.02)", border: "1px solid var(--border)", padding: "6px 8px", borderRadius: "4px", lineHeight: "1.4" }}>
         💡 Saída stdout/stderr exibida em tempo real no terminal do sandbox abaixo.
       </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Navegador ───────────────────────────────────────────────────────────────
+
+/** Um id de sessão por painel aberto — o serviço `browser` reaproveita a
+ * mesma página (cookies, formulário preenchido) entre uma ação e a próxima,
+ * então precisa ser estável durante a vida do painel, não gerado a cada ação. */
+function useStablePanelSessionId(): string {
+  const ref = useRef<string>("");
+  if (!ref.current) {
+    ref.current =
+      typeof crypto !== "undefined" && "randomUUID" in crypto
+        ? crypto.randomUUID()
+        : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+  }
+  return ref.current;
+}
+
+export function BrowserPanel() {
+  const sessionId = useStablePanelSessionId();
+  const [urlInput, setUrlInput] = useState("http://web:5400");
+  const [currentUrl, setCurrentUrl] = useState<string | null>(null);
+  const [title, setTitle] = useState<string | null>(null);
+  const [image, setImage] = useState<string | null>(null);
+  const [content, setContent] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
+  const imgRef = useRef<HTMLImageElement>(null);
+
+  const capturar = useCallback(async () => {
+    try {
+      const shot = await browserAction({ sessionId, action: "screenshot" });
+      setImage(shot.image_base64 ?? null);
+      setErro(null);
+    } catch (err) {
+      setErro(err instanceof Error ? err.message : String(err));
+    }
+  }, [sessionId]);
+
+  const navegar = useCallback(
+    async (destino: string) => {
+      const bruto = destino.trim();
+      if (!bruto) return;
+      const alvo = /^https?:\/\//i.test(bruto) ? bruto : `https://${bruto}`;
+      setLoading(true);
+      setErro(null);
+      setContent(null);
+      try {
+        const resultado = await browserAction({ sessionId, action: "navigate", url: alvo });
+        setCurrentUrl(resultado.url ?? alvo);
+        setTitle(resultado.title ?? null);
+        setUrlInput(resultado.url ?? alvo);
+        await capturar();
+      } catch (err) {
+        setErro(err instanceof Error ? err.message : String(err));
+      } finally {
+        setLoading(false);
+      }
+    },
+    [sessionId, capturar],
+  );
+
+  // Clicar na captura navega o navegador de verdade para aquele ponto, na
+  // escala real da página (a imagem exibida pode estar redimensionada pelo
+  // CSS) — depois recaptura para o usuário ver o efeito do clique.
+  const clicarNaCaptura = useCallback(
+    async (e: React.MouseEvent<HTMLImageElement>) => {
+      if (!currentUrl || !imgRef.current || loading) return;
+      const img = imgRef.current;
+      const rect = img.getBoundingClientRect();
+      const x = (e.clientX - rect.left) * (img.naturalWidth / rect.width);
+      const y = (e.clientY - rect.top) * (img.naturalHeight / rect.height);
+      setLoading(true);
+      setErro(null);
+      try {
+        await browserAction({ sessionId, action: "click", x, y });
+        await capturar();
+      } catch (err) {
+        setErro(err instanceof Error ? err.message : String(err));
+      } finally {
+        setLoading(false);
+      }
+    },
+    [sessionId, currentUrl, loading, capturar],
+  );
+
+  const verConteudo = useCallback(async () => {
+    setErro(null);
+    try {
+      const resultado = await browserAction({ sessionId, action: "content" });
+      setContent(resultado.text ?? "");
+    } catch (err) {
+      setErro(err instanceof Error ? err.message : String(err));
+    }
+  }, [sessionId]);
+
+  const reiniciar = useCallback(async () => {
+    try {
+      await closeBrowserSession(sessionId);
+    } catch {
+      // Sessão pode já não existir do lado do serviço — sem problema, o
+      // ponto é garantir que a próxima navegação comece de uma página vazia.
+    }
+    setImage(null);
+    setContent(null);
+    setCurrentUrl(null);
+    setTitle(null);
+    setErro(null);
+  }, [sessionId]);
+
+  // Fecha a página do Chromium ao desmontar o painel (troca de projeto,
+  // fechar aba) — sem isso a sessão fica presa até o TTL do serviço expirar.
+  useEffect(() => {
+    return () => {
+      void closeBrowserSession(sessionId).catch(() => {});
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  return (
+    <div className="panel-body">
+      <div className="panel-header">
+        <span className="panel-header-title">Navegador</span>
+        <div className="panel-actions-bar">
+          <button
+            type="button"
+            className="icon-action-btn"
+            title="Tirar novo screenshot"
+            onClick={() => void capturar()}
+            disabled={!currentUrl || loading}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <polyline points="23 4 23 10 17 10" />
+              <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
+            </svg>
+          </button>
+          <button
+            type="button"
+            className="icon-action-btn"
+            title="Fechar sessão do navegador (recomeçar do zero)"
+            onClick={() => void reiniciar()}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      <div className="browser-panel-toolbar">
+        <input
+          type="text"
+          className="browser-panel-url-input"
+          value={urlInput}
+          placeholder="http://web:5400 ou https://exemplo.com"
+          onChange={(e) => setUrlInput(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && void navegar(urlInput)}
+        />
+        <button
+          type="button"
+          className="primary browser-panel-go-btn"
+          onClick={() => void navegar(urlInput)}
+          disabled={loading || !urlInput.trim()}
+        >
+          {loading ? "…" : "Ir"}
+        </button>
+      </div>
+
+      {erro && <div className="panel-error">{erro}</div>}
+      {title && (
+        <div className="browser-panel-status" title={currentUrl ?? undefined}>
+          {title} — {currentUrl}
+        </div>
+      )}
+
+      <div className="browser-panel-viewport">
+        {image ? (
+          <img
+            ref={imgRef}
+            src={`data:image/png;base64,${image}`}
+            alt={title || currentUrl || "captura da página"}
+            onClick={(e) => void clicarNaCaptura(e)}
+            title="Clique para interagir com a página nesse ponto"
+          />
+        ) : (
+          <div className="tree-hint">
+            Digite uma URL acima e pressione &quot;Ir&quot; para abrir uma página num navegador de
+            verdade — o serviço é isolado numa rede própria que só alcança{" "}
+            <code>web</code>/<code>api</code>, nunca a internet pública.
+          </div>
+        )}
+      </div>
+
+      <div className="explorer-subsections">
+        <details className="explorer-collapsible">
+          <summary className="explorer-collapsible-header">
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="chevron-icon">
+              <polyline points="9 18 15 12 9 6" />
+            </svg>
+            <span>Texto visível da página</span>
+          </summary>
+          <div className="explorer-collapsible-content">
+            <button
+              type="button"
+              className="theme-btn"
+              style={{ marginBottom: 6 }}
+              onClick={() => void verConteudo()}
+              disabled={!currentUrl}
+            >
+              Ler texto da página
+            </button>
+            {content !== null && <pre className="tool-card-pre">{content || "(página sem texto visível)"}</pre>}
+          </div>
+        </details>
       </div>
     </div>
   );

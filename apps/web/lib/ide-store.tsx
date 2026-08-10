@@ -49,7 +49,7 @@ export interface FileEntry {
   size_bytes: number;
 }
 
-export type PanelId = "explorer" | "search" | "git" | "debug";
+export type PanelId = "explorer" | "search" | "git" | "debug" | "browser";
 
 /** Onde posicionar o cursor ao abrir — usado por "ir para definição" e busca. */
 export interface Reveal {

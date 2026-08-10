@@ -4346,6 +4346,67 @@ button.primary:hover:not(:disabled) {
   border: 1px solid var(--border);
 }
 
+.browser-panel-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.browser-panel-url-input {
+  flex: 1;
+  min-width: 0;
+  padding: 5px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+}
+
+.browser-panel-url-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.browser-panel-go-btn {
+  flex-shrink: 0;
+  padding: 5px 12px;
+  font-size: 11.5px;
+}
+
+.browser-panel-status {
+  padding: 4px 10px;
+  font-size: 10.5px;
+  color: var(--text-dim);
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex-shrink: 0;
+}
+
+.browser-panel-viewport {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 10px;
+  display: flex;
+  align-items: flex-start;
+}
+
+.browser-panel-viewport img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  cursor: crosshair;
+}
+
 .todo-card {
   flex-shrink: 0;
   margin: 0 10px 8px;
