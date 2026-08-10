@@ -1,4 +1,5 @@
 from sicoobito.api.routes.agent import router as agent_router
+from sicoobito.api.routes.approval_policy import router as approval_policy_router
 from sicoobito.api.routes.audit import router as audit_router
 from sicoobito.api.routes.auth import router as auth_router
 from sicoobito.api.routes.browser import router as browser_router
@@ -20,6 +21,7 @@ from sicoobito.graphify.api.router import router as graphify_router
 
 __all__ = [
     "agent_router",
+    "approval_policy_router",
     "audit_router",
     "auth_router",
     "browser_router",

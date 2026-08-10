@@ -17,16 +17,33 @@ import { listAgentTools, type AgentToolInfo as ToolInfo } from "@/lib/api/agent"
 import { listSkills, toggleSkill, type SkillRecord } from "@/lib/api/skills";
 import { listMcpServers, type MCPServerRecord } from "@/lib/api/mcp";
 import { readFileOrNull, writeFile } from "@/lib/api/workspace";
+import {
+  getApprovalPolicy,
+  newEditPathRule,
+  newExecCommandRule,
+  updateApprovalPolicy,
+  type ApprovalPolicy,
+  type ApprovalRule,
+} from "@/lib/api/approvalPolicy";
 import { loadHookPrefs, saveHookPrefs, type HookPrefs } from "@/lib/hook-prefs";
 import { MODE_HINT, MODES, type Mode } from "./modes";
 
-type CategoriaId = "overview" | "agents" | "skills" | "instructions" | "hooks" | "mcp" | "tools";
+type CategoriaId =
+  | "overview"
+  | "agents"
+  | "skills"
+  | "instructions"
+  | "approval"
+  | "hooks"
+  | "mcp"
+  | "tools";
 
 const CATEGORIAS: { id: CategoriaId; label: string; enabled: boolean }[] = [
   { id: "overview", label: "Visão geral", enabled: true },
   { id: "agents", label: "Agentes", enabled: true },
   { id: "skills", label: "Habilidades", enabled: true },
   { id: "instructions", label: "Instruções", enabled: true },
+  { id: "approval", label: "Auto-aprovação", enabled: true },
   { id: "hooks", label: "Hooks", enabled: true },
   { id: "mcp", label: "Servidores MCP", enabled: true },
   { id: "tools", label: "Ferramentas", enabled: true },
@@ -61,6 +78,11 @@ export function CustomizationsPopover({
   const [instructionsErro, setInstructionsErro] = useState<string | null>(null);
   const [instructionsMsg, setInstructionsMsg] = useState<string | null>(null);
   const [savingInstructions, setSavingInstructions] = useState(false);
+  const [approvalPolicy, setApprovalPolicy] = useState<ApprovalPolicy | null>(null);
+  const [approvalLoadedFor, setApprovalLoadedFor] = useState<string | null>(null);
+  const [approvalErro, setApprovalErro] = useState<string | null>(null);
+  const [approvalMsg, setApprovalMsg] = useState<string | null>(null);
+  const [savingApproval, setSavingApproval] = useState(false);
   const [hookPrefs, setHookPrefs] = useState<HookPrefs>(() => loadHookPrefs());
 
   const handleToggleHookPref = (key: keyof HookPrefs) => {
@@ -138,6 +160,62 @@ export function CustomizationsPopover({
     } finally {
       setSavingInstructions(false);
     }
+  };
+
+  useEffect(() => {
+    if (categoria !== "approval" || !project || approvalLoadedFor === project) return;
+    getApprovalPolicy(project)
+      .then((p) => {
+        setApprovalPolicy(p);
+        setApprovalLoadedFor(project);
+      })
+      .catch((err) => setApprovalErro(err instanceof Error ? err.message : String(err)));
+  }, [categoria, project, approvalLoadedFor]);
+
+  const handleSaveApproval = async () => {
+    if (!project || !approvalPolicy) return;
+    setSavingApproval(true);
+    setApprovalErro(null);
+    setApprovalMsg(null);
+    try {
+      // Linha em branco no textarea de prefixos vira string vazia no estado
+      // local (o usuário pode estar no meio de digitar a próxima) — filtrada
+      // só no momento de salvar, não a cada tecla.
+      const rulesSaneadas = approvalPolicy.rules.map((r) =>
+        r.kind === "exec_command_prefix"
+          ? { ...r, allowed_prefixes: r.allowed_prefixes.map((p) => p.trim()).filter(Boolean) }
+          : { ...r, path_glob: r.path_glob.trim() },
+      );
+      const salvo = await updateApprovalPolicy(project, {
+        second_opinion: approvalPolicy.second_opinion,
+        rules: rulesSaneadas,
+      });
+      setApprovalPolicy(salvo);
+      setApprovalMsg("Salvo — vale a partir da próxima ferramenta WRITE/EXEC pendente.");
+    } catch (err) {
+      setApprovalErro(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSavingApproval(false);
+    }
+  };
+
+  const handleAddRule = (rule: ApprovalRule) => {
+    setApprovalPolicy((prev) => (prev ? { ...prev, rules: [...prev.rules, rule] } : prev));
+    setApprovalMsg(null);
+  };
+
+  const handleRemoveRule = (index: number) => {
+    setApprovalPolicy((prev) =>
+      prev ? { ...prev, rules: prev.rules.filter((_, i) => i !== index) } : prev,
+    );
+    setApprovalMsg(null);
+  };
+
+  const handleUpdateRule = (index: number, rule: ApprovalRule) => {
+    setApprovalPolicy((prev) =>
+      prev ? { ...prev, rules: prev.rules.map((r, i) => (i === index ? rule : r)) } : prev,
+    );
+    setApprovalMsg(null);
   };
 
   const handleToggleSkill = async (skillId: string) => {
@@ -287,6 +365,170 @@ export function CustomizationsPopover({
                       onClick={() => void handleSaveInstructions()}
                     >
                       {savingInstructions ? "salvando…" : "💾 Salvar instruções"}
+                    </button>
+                  </>
+                )}
+              </>
+            )}
+          </div>
+        )}
+
+        {categoria === "approval" && (
+          <div className="customizations-list">
+            {!project && (
+              <div className="tree-hint">Selecione um projeto para configurar a auto-aprovação.</div>
+            )}
+            {project && (
+              <>
+                <p className="customizations-item-desc" style={{ marginBottom: 8 }}>
+                  Regras opt-in que dispensam a pausa de aprovação para ações WRITE/EXEC — restritas ao
+                  que descrevem explicitamente, qualquer ambiguidade continua pausando como sempre.
+                  Guardado em <code>.sicoobito/approval_policy.yaml</code>.
+                </p>
+                {approvalErro && <div className="panel-error">{approvalErro}</div>}
+                {approvalMsg && (
+                  <div className="tree-hint ok-hint" style={{ color: "var(--accent-emerald)" }}>
+                    {approvalMsg}
+                  </div>
+                )}
+                {approvalLoadedFor !== project && !approvalErro && (
+                  <div className="tree-hint">carregando…</div>
+                )}
+                {approvalLoadedFor === project && approvalPolicy && (
+                  <>
+                    <label
+                      className="customizations-item"
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 8,
+                        cursor: "pointer",
+                        marginBottom: 8,
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={approvalPolicy.second_opinion}
+                        onChange={(e) =>
+                          setApprovalPolicy((prev) =>
+                            prev ? { ...prev, second_opinion: e.target.checked } : prev,
+                          )
+                        }
+                      />
+                      Pedir segunda opinião automática antes de aprovar (consultiva — nunca aprova
+                      sozinha)
+                    </label>
+
+                    {approvalPolicy.rules.length === 0 && (
+                      <div className="tree-hint">
+                        Nenhuma regra ainda — toda ação WRITE/EXEC continua pausando para aprovação.
+                      </div>
+                    )}
+
+                    {approvalPolicy.rules.map((rule, i) => (
+                      <div key={i} className="customizations-item">
+                        {rule.kind === "edit_path_glob" ? (
+                          <>
+                            <div className="customizations-item-title">
+                              Edição de arquivo
+                              <button
+                                type="button"
+                                className="theme-btn"
+                                style={{ marginLeft: "auto", padding: "1px 8px", fontSize: "11px" }}
+                                onClick={() => handleRemoveRule(i)}
+                              >
+                                ✕ remover
+                              </button>
+                            </div>
+                            <div style={{ display: "flex", gap: 8, marginTop: 4, flexWrap: "wrap" }}>
+                              <input
+                                className="studio-input"
+                                style={{ flex: "1 1 160px" }}
+                                placeholder="glob do caminho, ex: docs/*.md"
+                                value={rule.path_glob}
+                                onChange={(e) => handleUpdateRule(i, { ...rule, path_glob: e.target.value })}
+                              />
+                              <input
+                                className="studio-input"
+                                type="number"
+                                min={1}
+                                style={{ width: 90 }}
+                                value={rule.max_changed_lines}
+                                onChange={(e) =>
+                                  handleUpdateRule(i, {
+                                    ...rule,
+                                    max_changed_lines: Number(e.target.value) || 1,
+                                  })
+                                }
+                              />
+                            </div>
+                            <div className="customizations-item-desc" style={{ marginTop: 4 }}>
+                              até {rule.max_changed_lines} linha(s) alterada(s), ferramentas:{" "}
+                              {rule.tools.join(", ")}
+                            </div>
+                          </>
+                        ) : (
+                          <>
+                            <div className="customizations-item-title">
+                              Comando de shell
+                              <button
+                                type="button"
+                                className="theme-btn"
+                                style={{ marginLeft: "auto", padding: "1px 8px", fontSize: "11px" }}
+                                onClick={() => handleRemoveRule(i)}
+                              >
+                                ✕ remover
+                              </button>
+                            </div>
+                            <textarea
+                              className="studio-input"
+                              style={{
+                                width: "100%",
+                                minHeight: 50,
+                                fontFamily: "var(--font-mono)",
+                                fontSize: 11.5,
+                                resize: "vertical",
+                                marginTop: 4,
+                              }}
+                              placeholder={"um prefixo por linha, ex:\nnpm test\npytest"}
+                              value={rule.allowed_prefixes.join("\n")}
+                              onChange={(e) =>
+                                handleUpdateRule(i, {
+                                  ...rule,
+                                  allowed_prefixes: e.target.value.split("\n"),
+                                })
+                              }
+                            />
+                          </>
+                        )}
+                      </div>
+                    ))}
+
+                    <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                      <button
+                        type="button"
+                        className="theme-btn"
+                        onClick={() => handleAddRule(newEditPathRule())}
+                      >
+                        + regra de edição
+                      </button>
+                      <button
+                        type="button"
+                        className="theme-btn"
+                        onClick={() => handleAddRule(newExecCommandRule())}
+                      >
+                        + regra de comando
+                      </button>
+                    </div>
+
+                    <button
+                      type="button"
+                      className="theme-btn"
+                      style={{ marginTop: 8 }}
+                      disabled={savingApproval}
+                      onClick={() => void handleSaveApproval()}
+                    >
+                      {savingApproval ? "salvando…" : "💾 Salvar política"}
                     </button>
                   </>
                 )}

@@ -19,6 +19,7 @@ from sicoobito.agent.tools import registry as tool_registry
 from sicoobito.api.middleware import CorrelationIdMiddleware
 from sicoobito.api.routes import (
     agent_router,
+    approval_policy_router,
     audit_router,
     auth_router,
     browser_router,
@@ -316,6 +317,7 @@ def create_app() -> FastAPI:
     app.include_router(mcp_router)
     app.include_router(telemetry_router)
     app.include_router(agent_router)
+    app.include_router(approval_policy_router)
     app.include_router(workspace_router)
     app.include_router(workspace_ws_router)
     app.include_router(projects_router)
