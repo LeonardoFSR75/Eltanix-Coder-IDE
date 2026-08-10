@@ -13,6 +13,9 @@ export interface AgentSessionRecord {
   profile: string | null;
   branch: string | null;
   status: "open" | "closed";
+  // Preenchido só para sessões criadas via `spawn_agent` (orquestração
+  // multiagente, ver ADR 0004) — `null` para qualquer sessão raiz.
+  parent_session_id: string | null;
   created_at: string;
   updated_at: string;
   live: boolean;
@@ -23,6 +26,22 @@ export interface AgentToolInfo {
   description: string;
   risk: string;
   requires_approval: boolean;
+}
+
+export type AgentLiveStatus =
+  | "running"
+  | "waiting_approval"
+  | "waiting_for_message"
+  | "completed"
+  | "failed"
+  | "stopped";
+
+export interface AgentGraphNode {
+  session_id: string;
+  display_name: string;
+  status: AgentLiveStatus;
+  parent_id: string | null;
+  depth: number;
 }
 
 export async function listAgentSessions(
@@ -38,6 +57,16 @@ export async function listAgentSessions(
 export async function listAgentTools(): Promise<AgentToolInfo[]> {
   const { tools } = await get<{ tools: AgentToolInfo[] }>("/api/agent/tools");
   return tools;
+}
+
+/** Árvore de agentes a partir de `sessionId` (ele + todos os descendentes),
+ * com status ao vivo do `AgentCoordinator` — inclusive `waiting_approval`
+ * para um filho headless, que a lista de sessões sozinha não revela. */
+export async function getAgentGraph(sessionId: string): Promise<AgentGraphNode[]> {
+  const { agents } = await get<{ agents: AgentGraphNode[] }>(
+    `/api/agent/sessions/${encodeURIComponent(sessionId)}/graph`,
+  );
+  return agents;
 }
 
 export async function revertFile(

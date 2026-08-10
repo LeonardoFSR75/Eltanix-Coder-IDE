@@ -9,7 +9,12 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { listAgentSessions, type AgentSessionRecord as SessionRecord } from "@/lib/api/agent";
+import {
+  getAgentGraph,
+  listAgentSessions,
+  type AgentLiveStatus,
+  type AgentSessionRecord as SessionRecord,
+} from "@/lib/api/agent";
 import { fuzzyScore } from "@/lib/ide-store";
 import type { SessionStatus, SessionSummary } from "./sessionTypes";
 
@@ -20,7 +25,22 @@ interface Row {
   branch: string;
   status: SessionStatus;
   updatedAt: string | null;
+  parentId: string | null;
 }
+
+// Status ao vivo do AgentCoordinator (ADR 0004) só existe para sessões que
+// passaram por spawn_agent — mapeado pro mesmo enum de sempre pra não
+// precisar de pill/CSS novo. `waiting_for_message` cai em "running": pro
+// usuário, um filho esperando resposta ainda está ativo, a distinção que
+// importa de verdade é "esperando aprovação humana".
+const LIVE_STATUS_MAP: Record<AgentLiveStatus, SessionStatus> = {
+  running: "running",
+  waiting_for_message: "running",
+  waiting_approval: "awaiting-approval",
+  completed: "done",
+  failed: "error",
+  stopped: "closed",
+};
 
 const STATUS_LABEL: Record<SessionStatus, string> = {
   running: "rodando",
@@ -61,6 +81,7 @@ export function AgentManager({
   const [query, setQuery] = useState("");
   const [erro, setErro] = useState<string | null>(null);
   const [carregando, setCarregando] = useState(false);
+  const [liveStatusById, setLiveStatusById] = useState<Map<string, SessionStatus>>(new Map());
 
   const carregar = useCallback(async () => {
     if (!project) return;
@@ -82,6 +103,34 @@ export function AgentManager({
 
   const liveById = useMemo(() => new Map(liveSessions.map((s) => [s.id, s])), [liveSessions]);
 
+  // Raízes com pelo menos um filho no histórico (orquestração multiagente,
+  // ADR 0004) ganham uma consulta ao AgentCoordinator pra saber se algum
+  // descendente está `waiting_approval` — a lista de sessões sozinha não
+  // revela isso pra um filho headless que nunca abriu SSE nesta aba.
+  useEffect(() => {
+    const raizesComFilhos = new Set(
+      historico.filter((r) => r.parent_session_id).map((r) => r.parent_session_id as string),
+    );
+    if (raizesComFilhos.size === 0) {
+      setLiveStatusById(new Map());
+      return;
+    }
+    let cancelado = false;
+    Promise.all(
+      [...raizesComFilhos].map((raiz) => getAgentGraph(raiz).catch(() => [])),
+    ).then((arvores) => {
+      if (cancelado) return;
+      const mapa = new Map<string, SessionStatus>();
+      for (const no of arvores.flat()) {
+        mapa.set(no.session_id, LIVE_STATUS_MAP[no.status]);
+      }
+      setLiveStatusById(mapa);
+    });
+    return () => {
+      cancelado = true;
+    };
+  }, [historico]);
+
   const rows = useMemo<Row[]>(() => {
     const vistos = new Set<string>();
     const linhas: Row[] = [];
@@ -95,8 +144,9 @@ export function AgentManager({
         task: s.task,
         mode: registro?.mode ?? "",
         branch: s.branch || registro?.branch || "",
-        status: s.status,
+        status: liveStatusById.get(s.id) ?? s.status,
         updatedAt: registro?.updated_at ?? null,
+        parentId: registro?.parent_session_id ?? null,
       });
     }
 
@@ -110,22 +160,49 @@ export function AgentManager({
         // `live` aqui é "rodando em algum processo do backend", não
         // necessariamente nesta aba — tratamos como encerrada para o clique
         // recair em "carregar transcript", que funciona nos dois casos.
-        status: r.status === "closed" ? "closed" : r.live ? "running" : "closed",
+        status: liveStatusById.get(r.session_id) ?? (r.status === "closed" ? "closed" : r.live ? "running" : "closed"),
         updatedAt: r.updated_at,
+        parentId: r.parent_session_id,
       });
     }
 
     return linhas;
-  }, [liveSessions, historico]);
+  }, [liveSessions, historico, liveStatusById]);
 
-  const filtradas = useMemo(() => {
-    if (!query.trim()) return rows;
+  // Sem busca: ordem de árvore (pai, depois seus filhos recursivamente,
+  // depois a próxima raiz) — é assim que orquestração multiagente (ADR
+  // 0004) fica visível sem precisar abrir GET /api/agent/sessions na mão.
+  const arvore = useMemo<(Row & { depth: number })[]>(() => {
+    const idsPresentes = new Set(rows.map((r) => r.id));
+    const filhosDe = new Map<string | null, Row[]>();
+    for (const r of rows) {
+      // Pai fora da janela dos últimos 50 registros (ou de outro projeto):
+      // trata como raiz em vez de esconder a linha.
+      const pai = r.parentId && idsPresentes.has(r.parentId) ? r.parentId : null;
+      if (!filhosDe.has(pai)) filhosDe.set(pai, []);
+      filhosDe.get(pai)!.push(r);
+    }
+    const resultado: (Row & { depth: number })[] = [];
+    const visitar = (pai: string | null, depth: number) => {
+      for (const r of filhosDe.get(pai) ?? []) {
+        resultado.push({ ...r, depth });
+        visitar(r.id, depth + 1);
+      }
+    };
+    visitar(null, 0);
+    return resultado;
+  }, [rows]);
+
+  // Com busca: lista plana ordenada por score — indentação só faz sentido
+  // navegando a árvore inteira, não um recorte filtrado dela.
+  const filtradas = useMemo<(Row & { depth: number })[]>(() => {
+    if (!query.trim()) return arvore;
     return rows
       .map((r) => ({ r, score: fuzzyScore(r.task, query) }))
       .filter((x): x is { r: Row; score: number } => x.score !== null)
       .sort((a, b) => b.score - a.score)
-      .map(({ r }) => r);
-  }, [rows, query]);
+      .map(({ r }) => ({ ...r, depth: 0 }));
+  }, [arvore, rows, query]);
 
   if (!project) return null;
 
@@ -164,10 +241,16 @@ export function AgentManager({
               key={r.id}
               type="button"
               className={`agent-session-item${r.id === activeId ? " active" : ""}`}
+              style={r.depth > 0 ? { marginLeft: Math.min(r.depth, 3) * 16 } : undefined}
               title={isLive ? "Trocar para esta sessão" : "Abrir o transcript desta sessão"}
               onClick={() => (isLive ? onOpenLive(r.id) : onOpenClosed(r.id, r.task))}
             >
               <div className="agent-session-item-top">
+                {r.depth > 0 && (
+                  <span className="agent-session-item-child-marker" title="Agente filho (spawn_agent)">
+                    ↳
+                  </span>
+                )}
                 <span className={`session-status-pill ${r.status}`}>{STATUS_LABEL[r.status]}</span>
                 <span className="agent-session-item-task">{r.task}</span>
               </div>

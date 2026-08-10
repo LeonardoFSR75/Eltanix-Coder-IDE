@@ -164,6 +164,33 @@ async def get_session(session_id: str, request: Request) -> dict[str, Any]:
     return _session_view(_session(request, session_id))
 
 
+@router.get("/sessions/{session_id}/graph")
+async def get_session_graph(session_id: str, request: Request) -> dict[str, Any]:
+    """Árvore de agentes a partir de `session_id` — mesmo dado que a tool
+    `view_agent_graph` do agente vê, exposto como rota para o painel do IDE
+    não depender de uma chamada de ferramenta para descobrir se um filho
+    está esperando aprovação (ADR 0004: hoje isso só era visível abrindo
+    `GET /api/agent/sessions` na mão e notando `parent_session_id`)."""
+    coordinator = getattr(request.app.state, "agent_coordinator", None)
+    if coordinator is None:
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE, "Orquestração multiagente não inicializada."
+        )
+    nos = await coordinator.graph_snapshot(session_id)
+    return {
+        "agents": [
+            {
+                "session_id": n.session_id,
+                "display_name": n.display_name,
+                "status": n.status,
+                "parent_id": n.parent_id,
+                "depth": n.depth,
+            }
+            for n in nos
+        ]
+    }
+
+
 class ApprovalDecision(BaseModel):
     approved: bool
     reason: str = ""

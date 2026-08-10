@@ -3181,6 +3181,12 @@ textarea:focus-visible,
   padding-left: 16px;
 }
 
+.agent-session-item-child-marker {
+  color: var(--text-dim);
+  font-size: 12px;
+  line-height: 1;
+}
+
 .customizations-popover {
   position: fixed;
   width: 420px;
