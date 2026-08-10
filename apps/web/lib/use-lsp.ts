@@ -168,7 +168,7 @@ export function useLsp({ project, path, language, onNavigate }: Opcoes) {
         }
         return;
       }
-      if (cancelado) return;
+      if (cancelado || !model || model.isDisposed()) return;
 
       const monacoLanguage = MONACO_DE_LSP[lspLanguage] ?? lspLanguage;
       registerProviders(monaco, monacoLanguage);
@@ -191,9 +191,12 @@ export function useLsp({ project, path, language, onNavigate }: Opcoes) {
     return () => {
       cancelado = true;
       desassinar?.();
-      closeDocument(model);
+      if (model && !model.isDisposed()) {
+        closeDocument(model);
+      }
     };
   }, [project, path, lspLanguage, montado]);
+
 
   // Trocar de projeto invalida os servidores: eles indexaram outra raiz.
   const projetoAnterior = useRef(project);

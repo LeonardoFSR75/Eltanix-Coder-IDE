@@ -98,6 +98,7 @@ export function openDocument(
   path: string,
   languageId: string,
 ): void {
+  if (!model || model.isDisposed()) return;
   closeDocument(model);
   documentos.set(model, { model, path, connection, version: 1 });
   connection.notify("textDocument/didOpen", {
@@ -106,6 +107,7 @@ export function openDocument(
 }
 
 export function closeDocument(model: Monaco.editor.ITextModel): void {
+  if (!model || model.isDisposed()) return;
   const documento = documentos.get(model);
   if (!documento) return;
   documento.connection.notify("textDocument/didClose", { textDocument: { uri: documento.path } });
@@ -116,6 +118,7 @@ export function documentChanged(
   model: Monaco.editor.ITextModel,
   evento: Monaco.editor.IModelContentChangedEvent,
 ): void {
+  if (!model || model.isDisposed()) return;
   const documento = documentoDe(model);
   if (!documento) return;
 
@@ -145,6 +148,7 @@ export function documentChanged(
 }
 
 export function documentSaved(model: Monaco.editor.ITextModel): void {
+  if (!model || model.isDisposed()) return;
   const documento = documentoDe(model);
   if (!documento) return;
   documento.connection.notify("textDocument/didSave", {
@@ -161,6 +165,7 @@ export function applyDiagnostics(
   path: string,
   itens: Diagnostic[],
 ): void {
+  if (!model || model.isDisposed()) return;
   const documento = documentoDe(model);
   // Diagnósticos chegam para qualquer arquivo do projeto que o servidor tenha
   // analisado, não só o aberto. Marcar o modelo errado colocaria sublinhados
@@ -181,8 +186,10 @@ export function applyDiagnostics(
 }
 
 export function clearDiagnostics(monaco: MonacoNs, model: Monaco.editor.ITextModel): void {
+  if (!model || model.isDisposed()) return;
   monaco.editor.setModelMarkers(model, "sicoobito-lsp", []);
 }
+
 
 // ── provedores ────────────────────────────────────────────────────────────
 
