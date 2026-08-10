@@ -1,5 +1,15 @@
 # Git Intelligence & Code Knowledge Graph — Proposta de Arquitetura
 
+> **Status (2026-08-10): Fases 1-3 implementadas.** Este documento nasceu
+> como proposta em 2026-08-08 e as Fases 1 (Smart Blame), 2 (Code Knowledge
+> Graph) e 3 (ExplorerAgent) foram construídas no mesmo dia — ver commits
+> `ff7f62f`, `bf5f3d5`, `d6ddee8`. A seção "Diagnóstico Atual" abaixo ficou
+> **historicamente desatualizada**: descreve o estado de antes dessas três
+> fases, mantida como registro do raciocínio original. O estado real de cada
+> item construído está marcado inline com ✅ e caminho de arquivo. As Fases
+> 4-6 (Git-Aware RAG, Visualizações, Benchmarking) continuam como roadmap —
+> nada nelas foi implementado ainda.
+>
 > Escopo: evolução do SicoobitoCode nas frentes de Git Intelligence,
 > exploração de projeto, Code Knowledge Graph, ExplorerAgent, Git-Aware RAG,
 > visualizações e benchmarking. Três frentes (Smart Blame + Histórico
@@ -14,7 +24,7 @@
 > meta hipotética que exigiria reescrever o storage e o modelo de sessão
 > do zero.
 
-## Diagnóstico Atual
+## Diagnóstico Atual (histórico — ver aviso de status acima)
 
 **Git** já tem uma camada funcional, mas rasa:
 
@@ -31,11 +41,14 @@
 - Frontend: `apps/web/lib/api/git.ts`, `components/ide/agent/cards/
   GitCard.tsx` e `DiffCard.tsx`, indicador de branch em `StatusBar.tsx`.
 
-O que **não existe**: `git blame`, associação de commits a símbolos,
-qualquer noção de grafo (commits×autores×arquivos×símbolos), navegação
-temporal de código, e busca de histórico além da lista plana de
-`log_recent`/`/api/git/log`. Nenhum ADR documenta essa camada — só as duas
-existentes tratam de LLM (`0001`) e executor isolado (`0002`).
+O que **não existia** (no momento em que este documento foi escrito, antes
+das Fases 1-3): `git blame`, associação de commits a símbolos, qualquer
+noção de grafo (commits×autores×arquivos×símbolos), navegação temporal de
+código, e busca de histórico além da lista plana de `log_recent`/
+`/api/git/log`. Tudo isso **já existe hoje** — ver "Status" no topo do
+documento. Nenhum ADR documenta essa camada — só as quatro existentes
+tratam de LLM (`0001`), executor isolado (`0002`), Graph RAG (`0003`) e
+orquestração multiagente (`0004`).
 
 **RAG / Tree-Sitter** extrai granularidade de símbolo, mas é plano:
 
@@ -82,14 +95,14 @@ existentes tratam de LLM (`0001`) e executor isolado (`0002`).
 
 ## Oportunidades de Evolução
 
-| # | Frente | Prioridade | Nível neste doc |
-|---|--------|-----------|------------------|
-| 1 | Smart Blame + Histórico Semântico | Alta | Detalhado |
-| 2 | Code Knowledge Graph | Alta | Detalhado |
-| 3 | ExplorerAgent | Alta | Detalhado |
-| 4 | Git-Aware RAG (recência, contexto evolutivo, feature-centric) | Média | Roadmap |
-| 5 | Visualizações (mapa, heatmap, ownership) | Média | Roadmap |
-| 6 | Benchmarking contínuo vs concorrentes | Baixa (contínuo, não um projeto) | Roadmap |
+| # | Frente | Prioridade | Nível neste doc | Status |
+|---|--------|-----------|------------------|--------|
+| 1 | Smart Blame + Histórico Semântico | Alta | Detalhado | ✅ Feito (`ff7f62f`) |
+| 2 | Code Knowledge Graph | Alta | Detalhado | ✅ Feito (`bf5f3d5`) |
+| 3 | ExplorerAgent | Alta | Detalhado | ✅ Feito (`d6ddee8`) |
+| 4 | Git-Aware RAG (recência, contexto evolutivo, feature-centric) | Média | Roadmap | Não iniciado |
+| 5 | Visualizações (mapa, heatmap, ownership) | Média | Roadmap | Não iniciado |
+| 6 | Benchmarking contínuo vs concorrentes | Baixa (contínuo, não um projeto) | Roadmap | Não iniciado |
 
 As frentes 1-3 formam uma cadeia de dependência natural: blame alimenta o
 grafo com dados de autoria, o grafo alimenta o ExplorerAgent com estrutura
@@ -152,37 +165,44 @@ um enum que já existe.
   `context/indexer.py`.
 - Tool `agent/tools/vcs.py::code_history` (`RiskClass.READ`).
 - Tool `agent/tools/graph.py::code_graph` (`RiskClass.READ`) — subgrafo
-  em torno de um símbolo, N hops.
+  em torno de um símbolo, N hops. Também ganhou `find_circular_imports` e
+  `find_orphan_modules` (não previstos originalmente aqui, entraram junto
+  na Fase 3/ExplorerAgent).
 - Novo valor de `Mode` em `agent/state.py` (`"explore"`) + prompt em
   `agent/prompts.py`.
-- Rotas `GET /api/git/blame`, `GET /api/code-graph/{symbol}`.
+- Rotas `GET /api/git/blame`, `GET /api/git/co-change` (`api/routes/git.py`)
+  e `GET /api/context/graph` (`api/routes/context.py` — implementado ali,
+  não num `code_graph.py` novo como planejado abaixo).
 - Frontend: `BlameCard.tsx` (reaproveita padrão de `GitCard.tsx`), case
   novo em `ToolCallCard.tsx` para `code_history`/`code_graph`.
 
 ## Estrutura de Pastas
 
-Só arquivos novos ou alterados (não a árvore inteira):
+Planejado originalmente vs. o que de fato existe hoje (ver nota de status no
+topo do documento):
 
 ```
 apps/api/src/sicoobito/
-├── workspace/git.py            (alterado: + blame, + co_change)
+├── workspace/git.py            (alterado: + blame, + co_change)      ✅
 ├── context/
-│   ├── languages.py            (alterado: + import query por linguagem)
-│   ├── edges.py                (novo)
-│   └── indexer.py              (alterado: chama edges.py no passo incremental)
+│   ├── languages.py            (alterado: + import query por linguagem)  ✅
+│   ├── edges.py                (novo)                                ✅
+│   └── indexer.py              (alterado: chama edges.py no passo incremental) ✅
 ├── agent/
-│   ├── tools/vcs.py            (alterado: + code_history)
-│   ├── tools/graph.py          (novo: + code_graph)
-│   ├── state.py                (alterado: + mode "explore")
-│   └── prompts.py              (alterado: + prompt do modo explore)
+│   ├── tools/vcs.py            (alterado: + code_history)            ✅
+│   ├── tools/graph.py          (novo: + code_graph, + find_circular_imports,
+│   │                             + find_orphan_modules)               ✅
+│   ├── state.py                (alterado: + mode "explore")          ✅
+│   └── prompts.py              (alterado: + prompt do modo explore)  ✅
 ├── api/routes/
-│   ├── git.py                  (alterado: + GET /blame)
-│   └── code_graph.py           (novo: + GET /{symbol})
-└── db/models.py                (alterado: + CodeEdge)
+│   ├── git.py                  (alterado: + GET /blame, + GET /co-change) ✅
+│   └── context.py              (alterado: + GET /graph — não um arquivo
+│                                 `code_graph.py` novo como planejado)  ✅
+└── db/models.py                (alterado: + CodeEdge)                ✅
 
 apps/web/components/ide/agent/cards/
-├── BlameCard.tsx                (novo)
-└── ToolCallCard.tsx            (alterado: + cases code_history/code_graph)
+├── BlameCard.tsx                (novo)                               ✅
+└── ToolCallCard.tsx            (alterado: + cases code_history/code_graph) ✅
 ```
 
 ## Fluxo de Dados
@@ -223,13 +243,16 @@ query "autenticação"
 
 ## APIs
 
+Planejado (assinatura efetivamente implementada é `GET /api/context/graph`,
+não `/api/code-graph/{symbol}` — mesmo formato de resposta, path diferente):
+
 ```
 GET /api/git/blame?path={path}&rev={rev=HEAD}
   → 200: BlameResponse { path, hunks: BlameHunk[] }
   BlameHunk { start_line, end_line, sha, author, date, message }
 
-GET /api/code-graph/{symbol_id}?depth={depth=1}
-  → 200: CodeGraphResponse { nodes: CodeNode[], edges: CodeEdgeDTO[] }
+GET /api/context/graph?project={slug}&path={path}&symbol={symbol?}&line={line?}
+  → 200: { nodes: CodeNode[], edges: CodeEdgeDTO[] }
   CodeNode { chunk_id, path, symbol, kind }
   CodeEdgeDTO { from_chunk_id, to_chunk_id, kind }  # contains|imports
 ```
@@ -276,17 +299,21 @@ primeiro do que `calls` ruidoso.
 
 ## Fases de Implementação
 
-1. **Smart Blame** — `blame()`, `co_change()`, cache Redis, tool
-   `code_history`, rota `/api/git/blame`, `BlameCard.tsx`.
-2. **Code Knowledge Graph (contains + imports)** — tabela `code_edge`,
+1. ✅ **Smart Blame** — `blame()`, `co_change()`, cache Redis, tool
+   `code_history`, rota `/api/git/blame`, `BlameCard.tsx`. Feito.
+2. ✅ **Code Knowledge Graph (contains + imports)** — tabela `code_edge`,
    `context/edges.py`, integração em `indexer.py`, tool `code_graph`,
-   rota `/api/code-graph/{symbol}`.
-3. **ExplorerAgent** — modo `explore`, prompt dedicado, detecção de ciclo
-   (`imports`) e módulo órfão sobre `code_edge`.
-4. **Git-Aware RAG** — expansão por vizinhança no `hybrid_search`,
-   ranking por recência usando `blame`/`co_change`.
-5. **Visualizações** — heatmap de mudanças (a partir de `co_change` +
+   rota `/api/context/graph`. Feito.
+3. ✅ **ExplorerAgent** — modo `explore`, prompt dedicado, detecção de ciclo
+   (`imports`) e módulo órfão sobre `code_edge`. Feito.
+4. ⬜ **Git-Aware RAG** — expansão por vizinhança no `hybrid_search`,
+   ranking por recência usando `blame`/`co_change`. **Não iniciado** — é o
+   próximo item real do roadmap.
+5. ⬜ **Visualizações** — heatmap de mudanças (a partir de `co_change` +
    `log_recent`), depois mapa de dependências (a partir de `code_edge`).
+   **Não iniciado** — não existe nenhum componente de heatmap/mapa de
+   dependências em `apps/web` hoje; `code_graph` só aparece como card de
+   resultado de tool call, sem view gráfica dedicada.
 
 ## Quick Wins
 
@@ -300,11 +327,17 @@ primeiro do que `calls` ruidoso.
 
 ## Roadmap 30/60/90 Dias
 
-- **30 dias**: Fase 1 completa (Smart Blame + co-change) + arestas
-  `contains` da Fase 2 (não exige nova query, entra junto).
-- **60 dias**: arestas `imports` (Fase 2 completa) + modo `explore`
-  (Fase 3) com detecção de ciclo/órfão.
-- **90 dias**: Git-Aware RAG (Fase 4: expansão por grafo + ranking por
+> Roadmap original abaixo, mantido para registro — na prática as Fases 1-3
+> (previstas para 30-60 dias) saíram todas no mesmo dia (2026-08-08) em que
+> este documento foi escrito. O que resta do roadmap original é só Fase 4 e
+> 5.
+
+- ~~**30 dias**: Fase 1 completa (Smart Blame + co-change) + arestas
+  `contains` da Fase 2 (não exige nova query, entra junto).~~ ✅ feito em
+  2026-08-08.
+- ~~**60 dias**: arestas `imports` (Fase 2 completa) + modo `explore`
+  (Fase 3) com detecção de ciclo/órfão.~~ ✅ feito em 2026-08-08.
+- **Próximo**: Git-Aware RAG (Fase 4: expansão por grafo + ranking por
   recência) + primeira visualização (heatmap de mudanças, Fase 5).
 
 ## Riscos
@@ -361,15 +394,18 @@ final de cada fase, sem métrica vaga:
 
 ## Benchmarking (visão contínua)
 
-| Capacidade | Cursor/Windsurf | Sourcegraph | Copilot Workspace | SicoobitoCode hoje | Após Fases 1-3 |
+| Capacidade | Cursor/Windsurf | Sourcegraph | Copilot Workspace | SicoobitoCode antes (pré 2026-08-08) | SicoobitoCode hoje (pós Fases 1-3) |
 |---|---|---|---|---|---|
-| Blame com contexto de intenção | Parcial | Sim | Não | Não | Sim |
-| Grafo de símbolos cross-file | Não | Sim | Não | Não | Sim (contains+imports) |
-| Agente que audita arquitetura | Não | Não | Parcial | Não | Sim (ExplorerAgent) |
-| Busca por conceito sem termo literal | Parcial (embeddings) | Sim | Não | Parcial (só embeddings) | Sim (grafo + RRF) |
+| Blame com contexto de intenção | Parcial | Sim | Não | Não | ✅ Sim (`code_history`) |
+| Grafo de símbolos cross-file | Não | Sim | Não | Não | ✅ Sim (contains+imports) |
+| Agente que audita arquitetura | Não | Não | Parcial | Não | ✅ Sim (modo `explore`) |
+| Busca por conceito sem termo literal | Parcial (embeddings) | Sim | Não | Parcial (só embeddings) | Parcial (só embeddings — expansão por grafo é Fase 4, ainda não integrada ao `hybrid_search`) |
 | Escala multi-repo/enterprise | N/A | Sim | Parcial | Não (não-objetivo) | Não (não-objetivo) |
 
 O objetivo não é paridade em todas as linhas — é fechar as três lacunas
 de maior valor percebido (blame com contexto, grafo cross-file, agente
 auditor) mantendo a filosofia local-first do projeto, não replicar
-infraestrutura de escala enterprise que o produto não precisa hoje.
+infraestrutura de escala enterprise que o produto não precisa hoje. A
+lacuna de "busca por conceito" só fecha de fato quando a Fase 4
+(Git-Aware RAG) entrar — hoje o grafo e a busca híbrida existem lado a
+lado, mas não se alimentam um do outro.

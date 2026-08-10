@@ -33,6 +33,11 @@ Guias específicos: [apps/api/CLAUDE.md](apps/api/CLAUDE.md), [apps/web/CLAUDE.m
   breaker; MinIO fora → upload de documento indisponível; MCP com comando inválido →
   aquele servidor marca `status: "error"`, os outros continuam. Todo `except Exception`
   nesse espírito deve logar e seguir, nunca propagar e travar o resto da plataforma.
+- **Login é obrigatório para o browser** (`docs/adr/0005-login-obrigatorio.md`): toda rota
+  usa `AuthDep = Depends(require_session)` (`api/deps.py`) — aceita `SICOOBITO_API_KEY`
+  válida (canal de serviço para CI/cline/cursor/aider) OU cookie de sessão válido, e nunca
+  fica aberta por omissão. `require_api_key` ainda existe no código mas não é mais o guard
+  de rota nenhuma — não reintroduzir esse padrão em rota nova.
 
 ## Comandos
 
@@ -70,13 +75,17 @@ por modelo ficam no Redis (`router/health.py`).
 
 ## Segurança
 
-Uma única `SICOOBITO_API_KEY` compartilhada (sem contas de usuário) — ver
-`api/deps.py::require_api_key`. Sem ela definida, a API aceita qualquer chamada local de
-propósito. O gateway do Next (`apps/web/app/api/gateway/[...path]/route.ts`) injeta essa
-chave no servidor; o browser nunca a vê. As portas publicadas no `docker-compose.yml` são
-`127.0.0.1` apenas — é essa a fronteira de segurança real, não o login da UI. `.env` nunca
-é commitado (só `.env.example`); antes de commitar algo que toque credenciais, confirme
-que não há segredo em texto puro no diff.
+Duas credenciais, dois propósitos (`docs/adr/0005-login-obrigatorio.md`):
+`SICOOBITO_API_KEY` é o canal de serviço para ferramenta externa (CI, cline, continue,
+aider, cursor) — o gateway do Next (`apps/web/app/api/gateway/[...path]/route.ts`) **não**
+a reencaminha para chamadas do browser do usuário. Login de usuário (`AppUser` +
+`AuthSession` em `db/models.py`, `auth/service.py`) é obrigatório para o browser: senha em
+`scrypt`, sessão por cookie `httpOnly` (só o hash SHA-256 do token persiste). Etapa 1 de um
+plano em duas etapas — um único usuário seed (`SICOOBITO_ADMIN_USERNAME`/
+`SICOOBITO_ADMIN_PASSWORD`, ver `main.py::lifespan`), sem RBAC ainda. As portas publicadas
+no `docker-compose.yml` seguem `127.0.0.1` apenas — continua sendo uma camada de defesa,
+não a única. `.env` nunca é commitado (só `.env.example`); antes de commitar algo que
+toque credenciais, confirme que não há segredo em texto puro no diff.
 
 ## Convenções de código
 
