@@ -193,7 +193,12 @@ interface IdeState {
   // recarrega o conteúdo em vez de mostrar a versão antiga em memória.
   fileSyncVersion: Record<string, number>;
   notifyFileChanged: (path: string) => void;
+
+  // Sessão ativa do agente para integração com o Monaco Editor
+  activeSessionId: string | null;
+  setActiveSessionId: (id: string | null) => void;
 }
+
 
 const Ctx = createContext<IdeState | null>(null);
 
@@ -244,8 +249,10 @@ export function IdeProvider({ children }: { children: ReactNode }) {
   const [files, setFiles] = useState<FileEntry[]>([]);
   const [revision, setRevision] = useState(0);
   const [fileSyncVersion, setFileSyncVersion] = useState<Record<string, number>>({});
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [reveal, setReveal] = useState<Reveal | null>(null);
   const [hydrated, setHydrated] = useState(false);
+
 
   const activeGroup = groups[activeGroupId] ?? Object.values(groups)[0] ?? newGroup(DEFAULT_GROUP_ID);
 
@@ -647,6 +654,8 @@ export function IdeProvider({ children }: { children: ReactNode }) {
       bumpRevision,
       fileSyncVersion,
       notifyFileChanged,
+      activeSessionId,
+      setActiveSessionId,
     }),
     [
       project, projects, projectsError, setProject, reloadProjects, createProject,
@@ -657,8 +666,9 @@ export function IdeProvider({ children }: { children: ReactNode }) {
       agentDockOpen, toggleAgentDock, sidebarWidth, agentDockWidth, terminalHeight,
       codeToInsert, insertCode, clearInsertedCode,
       routerLatency, routerStatus, checkRouterHealth, files, reloadFiles, revision, bumpRevision,
-      fileSyncVersion, notifyFileChanged,
+      fileSyncVersion, notifyFileChanged, activeSessionId, setActiveSessionId,
     ],
+
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

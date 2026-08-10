@@ -8,6 +8,7 @@ import { useLsp, type LspStatus } from "@/lib/use-lsp";
 import { useTheme } from "@/lib/theme";
 import { useIde } from "@/lib/ide-store";
 
+import { acceptFile, revertFile } from "@/lib/api/agent";
 import { logAuditEvent } from "@/lib/api/audit";
 import { readFile, writeFile } from "@/lib/api/workspace";
 import {
@@ -104,6 +105,8 @@ export function Editor({
     fileSyncVersion,
     codeToInsert,
     clearInsertedCode,
+    activeSessionId,
+    notifyFileChanged,
   } = useIde();
   const group = groups[groupId];
   const path = group?.active ?? null;
@@ -122,6 +125,26 @@ export function Editor({
   const [headContent, setHeadContent] = useState<string | null>(null);
   const originalRef = useRef("");
   const editorInstanceRef = useRef<any>(null);
+
+  const acceptAgentCode = useCallback(async () => {
+    if (!path || !activeSessionId) return;
+    try {
+      await acceptFile(activeSessionId, path);
+      notifyFileChanged(path);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }, [path, activeSessionId, notifyFileChanged]);
+
+  const rejectAgentCode = useCallback(async () => {
+    if (!path || !activeSessionId) return;
+    try {
+      await revertFile(activeSessionId, path, "", false);
+      notifyFileChanged(path);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }, [path, activeSessionId, notifyFileChanged]);
 
   const dirtyRef = useRef(false);
   useEffect(() => {
@@ -194,7 +217,7 @@ export function Editor({
     setLoading(true);
     setError(null);
     setShowDiff(false);
-    readFile(project, path)
+    readFile(project, path, activeSessionId)
       .then((data) => {
         if (cancelled) return;
         setContent(data.content);
@@ -218,7 +241,8 @@ export function Editor({
     return () => {
       cancelled = true;
     };
-  }, [project, path, syncVersion, groupId, markDirty]);
+  }, [project, path, syncVersion, activeSessionId, groupId, markDirty]);
+
 
   const save = useCallback(async () => {
     if (!path || !project || !dirty) return;
@@ -323,12 +347,39 @@ export function Editor({
       <div className="editor-bar">
         <LspBadge status={lsp.status} />
 
-        <div className="editor-bar-actions" style={{ marginLeft: "auto", display: "flex", gap: 4, alignItems: "center" }}>
+        <div className="editor-bar-actions" style={{ marginLeft: "auto", display: "flex", gap: 6, alignItems: "center" }}>
+          {activeSessionId && (
+            <div style={{ display: "flex", gap: 4, alignItems: "center", background: "rgba(99, 102, 241, 0.15)", padding: "2px 8px", borderRadius: 4, border: "1px solid var(--accent, #6366f1)", marginRight: 8 }}>
+              <span style={{ fontSize: "11px", fontWeight: 600, color: "var(--accent, #6366f1)" }}>
+                🤖 Agente (Worktree)
+              </span>
+              <button
+                type="button"
+                className="primary"
+                onClick={() => void acceptAgentCode()}
+                style={{ padding: "2px 8px", fontSize: "11px", backgroundColor: "#10b981", borderColor: "#10b981" }}
+                title="Aceitar alterações do agente e gravar no projeto principal"
+              >
+                ✓ Aceitar na IDE
+              </button>
+              <button
+                type="button"
+                className="theme-btn"
+                onClick={() => void rejectAgentCode()}
+                style={{ padding: "2px 6px", fontSize: "11px", color: "#ef4444" }}
+                title="Reverter alterações do agente"
+              >
+                ✕ Rejeitar
+              </button>
+            </div>
+          )}
+
           {!lsp.status.language && language && (
             <span className="kbd-badge" title="Linguagem detectada" style={{ fontSize: "11px", padding: "1px 6px" }}>
               ⚡ {language}
             </span>
           )}
+
 
           <button
             type="button"

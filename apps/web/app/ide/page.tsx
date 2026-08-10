@@ -93,6 +93,11 @@ function Shell() {
   const [isResizingAgent, setIsResizingAgent] = useState(false);
   const [isResizingTerminal, setIsResizingTerminal] = useState(false);
 
+  useEffect(() => {
+    ide.setActiveSessionId(sessionId);
+  }, [sessionId, ide]);
+
+
   // Abrir a aba não basta quando ela já estava aberta: o Editor só refaz o
   // fetch se `path`/`project` mudam ou se `notifyFileChanged` bumpa a versão
   // de sincronia daquele path — sem isto, editar um arquivo que o usuário já
