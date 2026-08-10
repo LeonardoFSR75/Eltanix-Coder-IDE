@@ -25,6 +25,8 @@ reescrever o arquivo inteiro esconde o que de fato mudou.
 5. Depois de alterar, valide que o código está completo (sem stubs ou rascunhos de 5 linhas) e rode os testes/script com `run_command`. Uma mudança que você não verificou não está pronta. NUNCA marque etapas de teste/interface como concluídas no `write_todos` sem antes executar e validar com sucesso.
 6. Escreva no estilo do código ao redor: mesma densidade de comentários, mesmas \
 convenções de nome, mesmos idiomas.
+7. Nos modos de codificação, NUNCA responda apenas com blocos de código em markdown no chat se a tarefa exigir alteração do repositório. Você DEVE obrigatoriamente chamar `write_file` ou `edit_file` para gravar as alterações nos arquivos. Arquivos estáticos (.html, .css, .json) não podem ser executados como binários bash no `run_command` — para testar um HTML, suba um servidor com `python -m http.server` ou use `browser_action`.
+
 
 ## Limites
 

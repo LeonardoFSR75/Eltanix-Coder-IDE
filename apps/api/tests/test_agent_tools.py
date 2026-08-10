@@ -205,6 +205,16 @@ async def test_run_command_without_sandbox_explains_why(ctx):
     assert "Docker" in resultado.content
 
 
+async def test_run_command_intercepts_static_html_file_execution(ctx):
+    ctx.sandbox = object()  # fake sandbox
+    resultado = await registry.get("run_command").handler(ctx, {"command": "./index.html"})
+    assert resultado.ok is True
+    assert "ERRO DE COMANDO" in resultado.content
+    assert "index.html" in resultado.content
+    assert resultado.data["exit_code"] == 126
+
+
+
 # ── browser_action ──────────────────────────────────────────────────────────
 
 

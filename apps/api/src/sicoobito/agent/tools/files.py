@@ -111,7 +111,20 @@ async def write_file(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
         return ToolResult.failure(str(exc))
 
     syntax_warning = ""
-    if path.endswith(".py"):
+    if path.endswith((".html", ".htm")):
+        import re
+        if "\n" not in content or content.count("\n") < 3:
+            formatted = re.sub(r'>(<[^\/])', r'>\n\1', content)
+            formatted = re.sub(r'>(</)', r'>\n\1', formatted)
+            if formatted != content:
+                content = formatted
+                try:
+                    ctx.fs.write(path, content)
+                except Exception:
+                    pass
+        if "<html" not in content.lower() or "<body" not in content.lower():
+            syntax_warning = " AVISO: O HTML gerado está sem estrutura completa <html>/<head>/<body>."
+    elif path.endswith(".py"):
         import ast
         try:
             ast.parse(content, filename=path)
@@ -123,6 +136,7 @@ async def write_file(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
             json.loads(content)
         except json.JSONDecodeError as json_err:
             syntax_warning = f" AVISO DE SINTAXE: O JSON é inválido: {json_err.msg}."
+
 
     return ToolResult(
         ok=True,

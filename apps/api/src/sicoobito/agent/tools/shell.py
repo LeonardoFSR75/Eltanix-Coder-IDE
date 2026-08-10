@@ -68,11 +68,26 @@ async def run_command(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
             "Sandbox indisponível — o Docker precisa estar rodando para executar comandos."
         )
 
-    comando = args["command"]
+    comando = args["command"].strip()
+    partes = comando.split()
+    primeiro = partes[0] if partes else ""
+    extensoes_estaticas = (".html", ".htm", ".css", ".json", ".txt", ".md", ".png", ".jpg", ".svg")
+    if any(primeiro.lower().endswith(ext) for ext in extensoes_estaticas) or any(primeiro.lower().startswith("./") and primeiro.lower().endswith(ext) for ext in extensoes_estaticas):
+        return ToolResult(
+            ok=True,
+            content=(
+                f"[saída 126]\n"
+                f"ERRO DE COMANDO: '{primeiro}' é um arquivo estático de dados e não um binário executável.\n"
+                f"Para testar ou servir um arquivo HTML/Web no sandbox, utilize 'python -m http.server' ou a ferramenta 'browser_action'."
+            ),
+            data={"command": comando, "exit_code": 126, "duration_ms": 0, "timed_out": False},
+        )
+
     try:
         resultado = await ctx.sandbox.exec(comando, timeout=args.get("timeout"))
     except SandboxError as exc:
         return ToolResult.failure(str(exc))
+
 
     corpo = summarize_output(resultado.stdout)
     if resultado.stderr.strip():

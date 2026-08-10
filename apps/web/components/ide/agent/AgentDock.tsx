@@ -21,8 +21,9 @@ export function AgentDock({
   onFileTouched?: (path: string) => void;
   onSession?: (sessionId: string | null) => void;
 }) {
-  const { project, toggleAgentDock } = useIde();
+  const { project, toggleAgentDock, groups, activeGroupId } = useIde();
   const { addToast } = useToast();
+
 
   // Hooks mínimos (aba "Hooks" do popover): lê a preferência do localStorage
   // a cada evento em vez de assinar mudanças — é uma leitura síncrona barata,
@@ -94,9 +95,12 @@ export function AgentDock({
     if (active && active.session && !active.readOnly) {
       void active.sendMessage(promptValue);
     } else {
-      startSession(promptValue, mode, profile, focusFiles, focusFolder);
+      const activeTabs = groups[activeGroupId]?.tabs ?? [];
+      const filesToPass = focusFiles.length > 0 ? focusFiles : activeTabs;
+      startSession(promptValue, mode, profile, filesToPass, focusFolder);
       setSessionsVersion((v) => v + 1);
     }
+
     setTask("");
     setTimeout(() => {
       submittingRef.current = false;
