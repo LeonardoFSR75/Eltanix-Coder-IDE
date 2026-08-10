@@ -9,16 +9,34 @@
 #
 # `models` também aceita o fallback: quando o primeiro candidato falha ou o
 # contexto não cabe na janela, o próximo assume.
+#
+# Foco atual do projeto é usar Databricks Model Serving como motor principal
+# (ver `databricks-first` abaixo) — por isso ele também aparece cedo nas
+# listas dos outros perfis, como fallback preferencial sobre Anthropic/Groq/
+# Foundry. Isso só muda a ORDEM de tentativa em `priority`/`score`; `cheap` e
+# `fast` continuam escolhendo por custo/latência medidos, não por posição na
+# lista (ver nota em cada um).
 
-default_profile: auto
+default_profile: databricks-first
 
 profiles:
-  # Padrão: pondera saúde, custo, latência e sucesso. Prefere local quando cabe.
-  #
-  # O modelo local aqui é o pequeno, de propósito. Sem GPU, o 7b só é
-  # utilizável se o Docker tiver RAM sobrando — e o perfil `auto` é o que
-  # responde quando ninguém escolheu nada, então ele não pode ser o que trava a
-  # máquina. Para qualidade local explícita existe `local-first`.
+  # O "formato padrão Databricks": prioridade estrita no motor Databricks,
+  # com fallback para os provedores diretos só se ele estiver indisponível
+  # (sem credencial, contexto estourado ou circuito aberto — ver
+  # `router/policy.py::_build_candidate`). Copiar este bloco é o jeito
+  # padronizado de declarar "Databricks primeiro" pra um perfil novo.
+  databricks-first:
+    strategy: priority
+    models:
+      - databricks/llama-3.3-70b
+      - anthropic/claude-sonnet-4-6
+      - groq/llama-3.3-70b-versatile
+      - foundry/gpt-4o
+
+  # Perfil padrão de quem não escolheu nada explicitamente. Pondera saúde,
+  # custo, latência e sucesso — Databricks vem primeiro na lista como
+  # desempate (`score` só usa a ordem quando o cálculo empata, ver
+  # `RoutingPolicy._order_by_score`), não como prioridade garantida.
   auto:
     strategy: score
     weights:
@@ -28,50 +46,66 @@ profiles:
       success_rate: 0.15
       context_fit: 0.1
     models:
+      - databricks/llama-3.3-70b
       - anthropic/claude-haiku-4-5-20251001
       - anthropic/claude-sonnet-4-6
       - groq/llama-3.3-70b-versatile
-      - databricks/llama-3.3-70b
       - foundry/gpt-4o-mini
       - groq/llama-3.1-8b-instant
       - ollama/qwen2.5-coder:1.5b
 
+  # O modelo local aqui é o pequeno, de propósito. Sem GPU, o 7b só é
+  # utilizável se o Docker tiver RAM sobrando.
+  #
+  # Databricks continua fallback aqui, mas DEPOIS do Ollama local — colocá-lo
+  # antes contradiria o próprio propósito do perfil (e quebraria
+  # `test_policy.py::test_local_first_prefers_ollama`, que protege essa
+  # garantia). "Privilegiar Databricks" vale para os perfis de nuvem; aqui o
+  # que se privilegia é não pagar/depender de rede quando o modelo local cabe.
   local-first:
     strategy: priority
     models:
       - ollama/qwen2.5-coder:7b
       - ollama/qwen2.5-coder:1.5b
-      - anthropic/claude-haiku-4-5-20251001
       - databricks/llama-3.3-70b
+      - anthropic/claude-haiku-4-5-20251001
       - foundry/gpt-4o-mini
 
-  # Tarefas de codificação de verdade: qualidade primeiro.
+  # Tarefas de codificação de verdade — é o perfil padrão do modo Agente
+  # quando nenhum modelo é escolhido na IDE (ver
+  # `agent/api/routes/agent.py::_session_view`), então é o que mais importa
+  # pro foco em Databricks primeiro no dia a dia.
   coding:
     strategy: priority
     models:
+      - databricks/llama-3.3-70b
       - anthropic/claude-sonnet-4-6
       - groq/llama-3.3-70b-versatile
-      - databricks/llama-3.3-70b
       - foundry/gpt-4o
       - ollama/qwen2.5-coder:7b
 
+  # `cost` ordena pelo valor estimado de cada candidato, não pela posição
+  # aqui — Databricks só vem cedo na lista por legibilidade/documentação do
+  # que se prefere em caso de empate de custo.
   cheap:
     strategy: cost
     models:
       - groq/llama-3.1-8b-instant
-      - anthropic/claude-haiku-4-5-20251001
       - databricks/llama-3.3-70b
+      - anthropic/claude-haiku-4-5-20251001
       - foundry/gpt-4o-mini
       - openai/gpt-4o-mini
       - ollama/qwen2.5-coder:1.5b
 
+  # `latency` ordena pelo p95 medido, não pela posição aqui — mesma ressalva
+  # do `cheap` acima.
   fast:
     strategy: latency
     models:
       - groq/llama-3.1-8b-instant
       - groq/llama-3.3-70b-versatile
-      - anthropic/claude-haiku-4-5-20251001
       - databricks/llama-3.3-70b
+      - anthropic/claude-haiku-4-5-20251001
       - foundry/gpt-4o-mini
       - ollama/qwen2.5-coder:1.5b
 
@@ -80,9 +114,9 @@ profiles:
   utility:
     strategy: priority
     models:
+      - databricks/llama-3.3-70b
       - groq/llama-3.1-8b-instant
       - anthropic/claude-haiku-4-5-20251001
-      - databricks/llama-3.3-70b
       - foundry/gpt-4o-mini
       - ollama/qwen2.5-coder:1.5b
 

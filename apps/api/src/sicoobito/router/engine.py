@@ -58,6 +58,15 @@ litellm.suppress_debug_info = True
 # Provedores que falam o dialeto OpenAI e aceitam `stream_options`.
 _OPENAI_DIALECT = {"openai", "azure_foundry"}
 
+# Endpoints Llama servidos pelo Databricks Foundation Model API rejeitam com
+# 400 ("Multiple tool calls are not supported") qualquer resposta que tente
+# propor mais de uma tool_call no mesmo turno — diferente de OpenAI/Anthropic/
+# Groq, que aceitam parallel tool calling por padrão. `agent/graph.py` já
+# itera `tool_calls` no plural (múltiplas chamadas por turno são um caso
+# normal do produto), então a correção é pedir explicitamente ao modelo para
+# não paralelizar quando o provedor é este, não redesenhar o grafo.
+_NO_PARALLEL_TOOL_CALLS = {"databricks"}
+
 
 def _synthetic_tool_call_payload(nome: str, argumentos: dict[str, Any]) -> dict[str, Any]:
     """Monta um payload no formato de `choices[0].message.tool_calls` a partir
@@ -231,6 +240,8 @@ class RouterEngine:
             # Sem isso, provedores OpenAI-compatible não mandam `usage` no fim do
             # stream e a contabilidade viraria estimativa.
             prepared.setdefault("stream_options", {"include_usage": True})
+        if prepared.get("tools") and spec.provider in _NO_PARALLEL_TOOL_CALLS:
+            prepared["parallel_tool_calls"] = False
         return prepared
 
     def _apply_prompt_cache(

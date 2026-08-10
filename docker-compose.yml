@@ -219,9 +219,17 @@ services:
       MINIO_PUBLIC_ENDPOINT: ${MINIO_PUBLIC_ENDPOINT:-localhost:5407}
       MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
       MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin}
-    env_file:
-      - path: .env
-        required: false
+    # Sem `env_file: .env` aqui de propósito: o Compose só lê esse arquivo UMA
+    # VEZ, na criação do container, e credencial de provedor OS-env sempre
+    # ganha de valor de `.env` no pydantic-settings — mesmo vazia. Resultado:
+    # qualquer chave salva pela tela de Provedores DEPOIS que o container já
+    # existia (ex. Databricks) ficava permanentemente sombreada por um
+    # snapshot vazio, e a tela mostrava "não configurado" para sempre, mesmo
+    # com o `.env` correto em disco. `config.py::Settings` já lê `/app/.env`
+    # direto (bind mount abaixo) a cada `Settings()` — é essa a única fonte
+    # de verdade; os adaptadores de provedor (`router/adapters/*.py`) sempre
+    # montam `api_key`/`api_base` explícito a partir de `Settings`, nunca
+    # dependem do litellm pegar isso sozinho do ambiente.
     ports:
       - "127.0.0.1:5401:5401"
     volumes:
