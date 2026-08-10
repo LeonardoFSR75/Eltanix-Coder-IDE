@@ -90,9 +90,7 @@ class SearchRequest(BaseModel):
 
 
 @router.post("/search")
-async def search(
-    payload: SearchRequest, request: Request, settings: SettingsDep
-) -> dict[str, Any]:
+async def search(payload: SearchRequest, request: Request, settings: SettingsDep) -> dict[str, Any]:
     root = _resolve_root(settings, payload.project)
     hits = await _indexer(request).search(
         root=root, query=payload.query, limit=payload.limit, path_prefix=payload.path_prefix
@@ -121,9 +119,7 @@ async def search(
 
 
 @router.get("/status")
-async def status_(
-    request: Request, settings: SettingsDep, project: str
-) -> dict[str, Any]:
+async def status_(request: Request, settings: SettingsDep, project: str) -> dict[str, Any]:
     root = _resolve_root(settings, project)
     stats = await _indexer(request).stats(root)
     return {"workspace": str(root), **stats}

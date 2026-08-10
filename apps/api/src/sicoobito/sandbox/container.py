@@ -122,9 +122,7 @@ class Sandbox:
 
         # Sessão retomada depois de um reload: reaproveita o container.
         existing = await asyncio.to_thread(
-            lambda: self._client.containers.list(
-                all=True, filters={"name": self.container_name}
-            )
+            lambda: self._client.containers.list(all=True, filters={"name": self.container_name})
         )
         if existing:
             container = existing[0]
@@ -273,9 +271,7 @@ class Sandbox:
             archive.addfile(info, BytesIO(data))
         buffer.seek(0)
 
-        await asyncio.to_thread(
-            lambda: self._container.put_archive(WORKDIR, buffer.getvalue())
-        )
+        await asyncio.to_thread(lambda: self._container.put_archive(WORKDIR, buffer.getvalue()))
 
     async def stop(self, *, remove: bool = True) -> None:
         if self._container is None:

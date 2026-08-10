@@ -116,13 +116,14 @@ def test_remove_worktree_cleans_up(repo):
     assert "sicoobito/descartavel" not in {b.name for b in Repo(repo).branches}
 
 
-def test_worktree_on_a_repo_without_commits_fails_with_guidance(tmp_path):
+def test_worktree_auto_initializes_commit_if_empty(tmp_path):
     vazio = tmp_path / "vazio"
     vazio.mkdir()
     Repo.init(vazio, initial_branch="main")
 
-    with pytest.raises(GitError, match="commit inicial"):
-        git_ops.create_worktree(vazio, "x")
+    worktree = git_ops.create_worktree(vazio, "x")
+    assert worktree.path.exists()
+    assert Repo(vazio).head.is_valid()
 
 
 def test_open_repo_on_a_plain_directory_fails(tmp_path):

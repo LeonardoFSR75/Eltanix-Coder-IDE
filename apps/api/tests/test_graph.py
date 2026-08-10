@@ -114,6 +114,20 @@ def test_para_api_keeps_tool_calls_field_on_assistant_messages():
     assert limpas[0]["tool_calls"] == mensagens[0]["tool_calls"]
 
 
+def test_para_api_filters_out_empty_assistant_messages():
+    mensagens = [
+        {"role": "user", "content": "olá"},
+        {"role": "assistant", "content": "", "tool_calls": None},
+        {"role": "user", "content": "continuar"},
+    ]
+
+    limpas = _para_api(mensagens)
+
+    assert len(limpas) == 2
+    assert [m["role"] for m in limpas] == ["user", "user"]
+
+
+
 # ── Guard de repetição ──────────────────────────────────────────────────────
 #
 # Sem isto, um agente que tenta a mesma `edit_file` com os mesmos argumentos e

@@ -6,9 +6,10 @@ from pathlib import Path
 from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, HTTPException, Query, status
 
-from sicoobito.api.deps import DbSessionDep, SettingsDep
+from sicoobito.api.deps import AuthDep, DbSessionDep, SettingsDep
+from sicoobito.graphify.engine import GraphifyEngine
 from sicoobito.graphify.metrics.analytics import GraphAnalytics
 from sicoobito.graphify.pipeline.indexer import GraphIndexer
 from sicoobito.graphify.rag.graph_rag import GraphRAGQueryEngine
@@ -17,11 +18,51 @@ from sicoobito.graphify.schema import (
     GraphNodeRead,
     GraphRAGQueryRequest,
     GraphRAGResult,
+    MultiWorkspaceQueryRequest,
     SubgraphResponse,
 )
 from sicoobito.graphify.store import GraphStore
+from sicoobito.workspace import projects as project_ops
+from sicoobito.workspace.projects import ProjectError
 
-router = APIRouter(prefix="/api/graphify", tags=["graphify"])
+router = APIRouter(prefix="/api/graphify", tags=["graphify"], dependencies=[AuthDep])
+
+
+def _resolve_scan_target(root: Path | None, project_name: str) -> Path | None:
+    """Resolve o alvo de scan sempre dentro de uma raiz conhecida — nunca
+    aceita `project_name` como caminho literal (evita path traversal)."""
+    candidate_roots = [r for r in (root, Path("/projects")) if r is not None]
+    for candidate_root in candidate_roots:
+        if not candidate_root.exists():
+            continue
+        try:
+            return project_ops.resolve(candidate_root, project_name)
+        except ProjectError:
+            continue
+    # Nenhum projeto com esse nome — como fallback, escaneia a raiz inteira
+    # (comportamento anterior), nunca um caminho derivado do input do usuário.
+    if root and root.exists():
+        return root
+    return None
+
+
+def _derive_workspace(payload: dict[str, Any]) -> str:
+    """`workspace` é sempre derivado de `project` — não são campos
+    independentes. Sem essa checagem, um caller poderia escanear os arquivos
+    do projeto A para dentro do workspace do projeto B, corrompendo o grafo
+    de B. Levanta 400 se o caller mandar um `workspace` explícito que diverge
+    do `project` (em vez de sobrescrever silenciosamente)."""
+    project_name = payload.get("project") or "SicoobitoCode"
+    requested_workspace = payload.get("workspace")
+    if requested_workspace and requested_workspace != project_name:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"workspace ({requested_workspace!r}) deve ser igual a project "
+                f"({project_name!r}) — o workspace é sempre derivado do projeto."
+            ),
+        )
+    return project_name
 
 
 @router.post("/index", response_model=dict[str, Any])
@@ -34,22 +75,18 @@ async def index_content(
     store = GraphStore(db)
     indexer = GraphIndexer(store)
 
+    project_name = _derive_workspace(payload)
+    workspace_name = project_name
+    payload["workspace"] = workspace_name
+
     content = payload.get("content")
     scan_requested = payload.get("scan_workspace") or not content
 
     if scan_requested:
-        workspace_name = payload.get("workspace", "default")
-        project_name = payload.get("project") or "SicoobitoCode"
-
         root = settings.effective_projects_root
-        if root and (root / project_name).exists():
-            target_path = root / project_name
-        elif root and root.exists():
-            target_path = root
-        else:
-            target_path = Path("/projects") / project_name
+        target_path = _resolve_scan_target(root, project_name)
 
-        if target_path.exists():
+        if target_path and target_path.exists():
             result = await indexer.index_directory(target_path, workspace=workspace_name)
             await db.commit()
             return result
@@ -70,6 +107,18 @@ async def query_graph_rag(req: GraphRAGQueryRequest, db: DbSessionDep):
         workspace=req.workspace,
         top_k=req.top_k,
         max_hops=req.max_hops,
+    )
+
+
+@router.post("/query/multi")
+async def query_graph_rag_multi(
+    req: MultiWorkspaceQueryRequest, db: DbSessionDep
+) -> dict[str, dict[str, Any]]:
+    """Busca GraphRAG opt-in através de múltiplos workspaces (projetos) — sem
+    fundir score entre eles, ver `GraphifyEngine.search_multi_workspace`."""
+    engine = GraphifyEngine(db)
+    return await engine.search_multi_workspace(
+        req.query, req.workspaces, top_k=req.top_k, max_hops=req.max_hops
     )
 
 
@@ -131,7 +180,7 @@ async def get_ego_subgraph(
 ):
     """Retorna o subgrafo ego de vizinhança a N hops a partir de um nó."""
     store = GraphStore(db)
-    nodes, edges = await store.get_ego_subgraph(node_id, max_hops=max_hops)
+    nodes, edges = await store.get_ego_subgraph(node_id, workspace=workspace, max_hops=max_hops)
     return SubgraphResponse(
         nodes=[
             GraphNodeRead(

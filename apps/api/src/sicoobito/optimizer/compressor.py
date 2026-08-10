@@ -77,9 +77,7 @@ def truncate_output(text: str, *, head: int = HEAD_LINES, tail: int = TAIL_LINES
 
     partes = ["\n".join(lines[:head])]
     if erros:
-        partes.append(
-            f"\n... [{len(meio)} linhas omitidas; as com erro foram preservadas] ...\n"
-        )
+        partes.append(f"\n... [{len(meio)} linhas omitidas; as com erro foram preservadas] ...\n")
         partes.append("\n".join(erros))
     else:
         partes.append(f"\n... [{len(meio)} linhas omitidas] ...\n")

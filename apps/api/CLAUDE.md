@@ -38,7 +38,8 @@ o banco nem rodar migração de novo entre execuções.
 |---|---|
 | `router/` | Única porta de saída para LLM — engine, adaptadores por provedor, catálogo YAML, health/circuit breaker (Redis), custo (`RequestLog`) |
 | `agent/` | `graph.py` (LangGraph think→approve→act), `tools/` (registro + handlers), `runner.py` (sessão, worktree, streaming) |
-| `context/`, `documents/`, `notes/` | As três fontes de RAG — cada uma com `store.py` (SQL/RRF), `service.py` ou `indexer.py` (orquestração) |
+| `context/`, `documents/`, `notes/`, `graphify/` | As quatro fontes de RAG — cada uma com `store.py`, `service.py`/`indexer.py` ou `graph_rag.py` (expansão via CTE/GQL) |
+| `graphify/` | Engine de Grafo de Conhecimento: extração L1 (Wikilinks, Tags, AST/TS Imports), arestas L2/L3, `GraphStore` e `GraphRAGQueryEngine` |
 | `mcp/` | Cliente MCP real — `config.py`/`config_editor.py` (YAML), `client.py` (conexão stdio/HTTP), `manager.py` (registra tools no `ToolRegistry`) |
 | `telemetry/` | `TraceRecorder` — buffer em memória de spans de tool/RAG (não confundir com `router/telemetry.py`, que é custo de LLM em Postgres) |
 | `evals/` | Harness de hit@k/MRR contra os buscadores reais — `uv run sicoobito-eval-rag` |

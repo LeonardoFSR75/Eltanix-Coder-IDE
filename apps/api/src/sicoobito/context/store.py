@@ -27,6 +27,13 @@ log = get_logger(__name__)
 RRF_K = 60
 
 
+def _escape_like(value: str) -> str:
+    """Escapa `%`/`_` antes de virar operador LIKE — sem isto, um
+    `path_prefix` contendo esses caracteres filtra mais do que o caminho
+    literal pretendido (ex.: `path_prefix="%"` casaria tudo)."""
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
 @dataclass(slots=True)
 class SearchHit:
     path: str
@@ -71,9 +78,7 @@ async def upsert_file(
     simples e não deixa chunk órfão apontando para linha errada.
     """
     existing = await session.scalar(
-        select(IndexedFile).where(
-            IndexedFile.workspace == workspace, IndexedFile.path == path
-        )
+        select(IndexedFile).where(IndexedFile.workspace == workspace, IndexedFile.path == path)
     )
 
     if existing is None:
@@ -119,9 +124,7 @@ async def upsert_file(
     return existing, persisted
 
 
-async def delete_missing(
-    session: AsyncSession, *, workspace: str, present_paths: set[str]
-) -> int:
+async def delete_missing(session: AsyncSession, *, workspace: str, present_paths: set[str]) -> int:
     """Remove do índice arquivos que sumiram do disco."""
     rows = (
         await session.execute(
@@ -173,8 +176,8 @@ async def hybrid_search(
         "q": query_text,
     }
     if path_prefix:
-        filters.append("path LIKE :path_prefix")
-        params["path_prefix"] = f"{path_prefix}%"
+        filters.append(r"path LIKE :path_prefix ESCAPE '\'")
+        params["path_prefix"] = f"{_escape_like(path_prefix)}%"
     where_clause = " AND ".join(filters)
 
     # `websearch_to_tsquery` tolera aspas e operadores digitados pelo usuário
@@ -273,9 +276,7 @@ async def index_stats(session: AsyncSession, workspace: str) -> dict[str, object
             select(
                 func.count(CodeChunk.id),
                 func.coalesce(func.sum(CodeChunk.token_count), 0),
-                func.coalesce(
-                    func.sum(case((CodeChunk.embedding.is_not(None), 1), else_=0)), 0
-                ),
+                func.coalesce(func.sum(case((CodeChunk.embedding.is_not(None), 1), else_=0)), 0),
             ).where(CodeChunk.workspace == workspace)
         )
     ).one()

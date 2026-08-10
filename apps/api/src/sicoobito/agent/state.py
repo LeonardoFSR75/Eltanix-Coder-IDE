@@ -8,7 +8,15 @@ from typing import Annotated, Any, Literal, TypedDict
 AgentMode = Literal["ask", "edit", "agent", "plan", "auto", "orchestra", "explore"]
 
 
-class PendingApproval(TypedDict):
+class ReviewNote(TypedDict):
+    """Nota consultiva de uma segunda opinião automática (Fase C) — nunca
+    decide a aprovação sozinha, só informa o humano que ainda vai decidir."""
+
+    verdict: Literal["approved", "needs_revision", "unavailable"]
+    summary: str
+
+
+class PendingApproval(TypedDict, total=False):
     """Chamada de ferramenta aguardando decisão humana."""
 
     tool_call_id: str
@@ -16,6 +24,10 @@ class PendingApproval(TypedDict):
     risk: str
     arguments: dict[str, Any]
     summary: str
+    # Presente só quando `.sicoobito/approval_policy.yaml` liga
+    # `second_opinion` e a ferramenta é `edit_file`/`write_file` — ver
+    # `agent/graph.py::_attach_review_notes`.
+    review: ReviewNote
 
 
 class TodoItem(TypedDict):

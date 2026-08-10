@@ -39,10 +39,14 @@ class ProjectInspector:
         has_git = (resolved / ".git").exists()
 
         # 2. Checa Docker
-        has_docker = (resolved / "docker-compose.yml").exists() or (resolved / "Dockerfile").exists()
+        has_docker = (resolved / "docker-compose.yml").exists() or (
+            resolved / "Dockerfile"
+        ).exists()
 
         # 3. Checa CI/CD
-        has_ci_cd = (resolved / ".github" / "workflows").exists() or (resolved / ".gitlab-ci.yml").exists()
+        has_ci_cd = (resolved / ".github" / "workflows").exists() or (
+            resolved / ".gitlab-ci.yml"
+        ).exists()
 
         # 4. Checagem Node.js / TypeScript / React / Next.js
         pkg_json = resolved / "package.json"
@@ -72,7 +76,7 @@ class ProjectInspector:
             if primary_lang == "unknown":
                 primary_lang = "Python"
                 build_sys = "uv/pip/poetry"
-            
+
             if pyproject.exists():
                 try:
                     txt = pyproject.read_text(encoding="utf-8")

@@ -33,6 +33,7 @@ from sicoobito.optimizer.cache import ResponseCache
 # primeiro silenciosamente.
 from sicoobito.optimizer.complexity import classify as classify_complexity
 from sicoobito.optimizer.compressor import ContextCompressor
+from sicoobito.optimizer.semantic_cache import SemanticCache
 from sicoobito.optimizer.tokens import count_text, estimate_prompt_tokens
 from sicoobito.router.adapters import ProviderAdapter, build_adapters
 from sicoobito.router.budget import BudgetGuard
@@ -107,6 +108,7 @@ class RouterEngine:
         cache: ResponseCache,
         budget: BudgetGuard,
         compressor: ContextCompressor | None = None,
+        semantic_cache: SemanticCache | None = None,
     ) -> None:
         self.settings = settings
         self.catalog = catalog
@@ -114,6 +116,10 @@ class RouterEngine:
         self.health = health
         self.cache = cache
         self.budget = budget
+        # None por padrão: só existe quando SEMANTIC_CACHE_ENABLED liga e
+        # `main.py::lifespan` monta o `SemanticCache` (ver docstring do
+        # módulo — desligado é o caminho seguro, não uma omissão).
+        self.semantic_cache = semantic_cache
         self.compressor = compressor or ContextCompressor(enabled=settings.compression_enabled)
         self.adapters: dict[str, ProviderAdapter] = build_adapters(settings)
         self.policy = RoutingPolicy(catalog, prices, health)
@@ -220,9 +226,7 @@ class RouterEngine:
 
     def _prepare_params(self, spec: ModelSpec, params: dict[str, Any]) -> dict[str, Any]:
         prepared = {k: v for k, v in params.items() if v is not None}
-        prepared["messages"] = self._apply_prompt_cache(
-            list(prepared.get("messages") or []), spec
-        )
+        prepared["messages"] = self._apply_prompt_cache(list(prepared.get("messages") or []), spec)
         if prepared.get("stream") and spec.provider in _OPENAI_DIALECT:
             # Sem isso, provedores OpenAI-compatible não mandam `usage` no fim do
             # stream e a contabilidade viraria estimativa.
@@ -286,25 +290,36 @@ class RouterEngine:
             requested_model=effective_model, estimated_prompt_tokens=estimated
         )
         if not decision.candidates:
-            reasons = [f"{c.spec.id}: {c.excluded_reason}" for c in decision.excluded]
-            await record(
-                TelemetryEntry(
-                    requested_model=requested_model,
-                    source=source,
-                    profile=decision.profile,
-                    status="error",
-                    error_type="NoCandidatesError",
-                    error_message="; ".join(reasons) or "catálogo vazio",
-                    prompt_tokens=estimated,
-                    usage_estimated=True,
-                    cost_known=False,
-                    complexity=verdict.complexity if verdict else None,
-                    project_slug=project_slug,
+            fallback_decision = await self.policy.select(
+                requested_model="auto", estimated_prompt_tokens=estimated
+            )
+            if fallback_decision.candidates:
+                log.warning(
+                    "router.emergency_fallback.activated",
+                    requested=requested_model,
+                    fallback=fallback_decision.candidates[0].spec.id,
                 )
-            )
-            raise NoCandidatesError(
-                f"Nenhum modelo elegível para '{requested_model}'.", excluded=reasons
-            )
+                decision = fallback_decision
+            else:
+                reasons = [f"{c.spec.id}: {c.excluded_reason}" for c in decision.excluded]
+                await record(
+                    TelemetryEntry(
+                        requested_model=requested_model,
+                        source=source,
+                        profile=decision.profile,
+                        status="error",
+                        error_type="NoCandidatesError",
+                        error_message="; ".join(reasons) or "catálogo vazio",
+                        prompt_tokens=estimated,
+                        usage_estimated=True,
+                        cost_known=False,
+                        complexity=verdict.complexity if verdict else None,
+                        project_slug=project_slug,
+                    )
+                )
+                raise NoCandidatesError(
+                    f"Nenhum modelo elegível para '{requested_model}'.", excluded=reasons
+                )
 
         tried: list[str] = []
         last_error: Exception | None = None
@@ -341,6 +356,50 @@ class RouterEngine:
                 )
                 return CompletionResult(
                     payload=cached.payload,
+                    model_id=spec.id,
+                    provider=spec.provider,
+                    usage=Usage(),
+                    cost_usd=Decimal(0),
+                    cost_known=True,
+                    latency_ms=0,
+                    cache_hit=True,
+                    fallback_from=tried,
+                    attempts=len(tried) + 1,
+                )
+
+            # Só roda quando o cache exato já deu miss — a busca semântica
+            # embeda a mensagem, então tem custo/latência próprios, e não faz
+            # sentido pagar isso quando o hash exato já resolveu.
+            if self.semantic_cache is not None and (
+                semantic_hit := await self.semantic_cache.lookup(spec.id, prepared, source=source)
+            ):
+                log.info("router.semantic_cache.hit", model=spec.id, source=source)
+                saved_cost = self.prices.cost(
+                    spec.id,
+                    Usage(
+                        prompt_tokens=semantic_hit.prompt_tokens,
+                        completion_tokens=semantic_hit.completion_tokens,
+                    ),
+                )
+                await record(
+                    TelemetryEntry(
+                        requested_model=requested_model,
+                        source=source,
+                        profile=decision.profile,
+                        resolved_model=spec.id,
+                        provider=spec.provider,
+                        fallback_from=tried,
+                        attempts=len(tried) + 1,
+                        latency_ms=0,
+                        cache_hit=True,
+                        tokens_saved=semantic_hit.tokens_saved,
+                        cost_saved_usd=saved_cost.usd,
+                        cost_known=saved_cost.known,
+                        project_slug=project_slug,
+                    )
+                )
+                return CompletionResult(
+                    payload=semantic_hit.payload,
                     model_id=spec.id,
                     provider=spec.provider,
                     usage=Usage(),
@@ -460,6 +519,14 @@ class RouterEngine:
                 prompt_tokens=usage.prompt_tokens + usage.cache_read_tokens,
                 completion_tokens=usage.completion_tokens,
             )
+            if self.semantic_cache is not None:
+                # Mesma chave que `cache.set()` acabou de gravar — indexa o
+                # embedding só depois do sucesso real do provedor, nunca antes
+                # (uma resposta que falhou no meio do caminho não deve virar
+                # candidato de cache).
+                await self.semantic_cache.record(
+                    spec.id, prepared, self.cache.key(spec.id, prepared), source=source
+                )
             await record(
                 TelemetryEntry(
                     requested_model=requested_model,
@@ -553,10 +620,21 @@ class RouterEngine:
             requested_model=effective_model, estimated_prompt_tokens=estimated
         )
         if not decision.candidates:
-            reasons = [f"{c.spec.id}: {c.excluded_reason}" for c in decision.excluded]
-            raise NoCandidatesError(
-                f"Nenhum modelo elegível para '{requested_model}'.", excluded=reasons
+            fallback_decision = await self.policy.select(
+                requested_model="auto", estimated_prompt_tokens=estimated
             )
+            if fallback_decision.candidates:
+                log.warning(
+                    "router.stream.emergency_fallback.activated",
+                    requested=requested_model,
+                    fallback=fallback_decision.candidates[0].spec.id,
+                )
+                decision = fallback_decision
+            else:
+                reasons = [f"{c.spec.id}: {c.excluded_reason}" for c in decision.excluded]
+                raise NoCandidatesError(
+                    f"Nenhum modelo elegível para '{requested_model}'.", excluded=reasons
+                )
 
         tried: list[str] = []
         last_error: Exception | None = None

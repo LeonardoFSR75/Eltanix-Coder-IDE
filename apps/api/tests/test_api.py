@@ -117,9 +117,7 @@ def test_set_default_profile_updates_memory_and_disk(client, tmp_path):
     engine = client.app.state.engine
     original_default = engine.catalog.default_profile
     routes_copy = tmp_path / "routes.yaml"
-    routes_copy.write_text(
-        get_settings().routes_file.read_text(encoding="utf-8"), encoding="utf-8"
-    )
+    routes_copy.write_text(get_settings().routes_file.read_text(encoding="utf-8"), encoding="utf-8")
 
     fake_settings = Settings(SICOOBITO_CONFIG_DIR=tmp_path)
     client.app.dependency_overrides[get_settings] = lambda: fake_settings
@@ -153,9 +151,7 @@ def _routes_copy(tmp_path):
     from sicoobito.config import get_settings
 
     routes_file = tmp_path / "routes.yaml"
-    routes_file.write_text(
-        get_settings().routes_file.read_text(encoding="utf-8"), encoding="utf-8"
-    )
+    routes_file.write_text(get_settings().routes_file.read_text(encoding="utf-8"), encoding="utf-8")
     return routes_file
 
 
@@ -390,10 +386,18 @@ def test_providers_editor_append_models_multiple_entries(tmp_path):
     providers_editor.append_models(
         data,
         [
-            {"id": "databricks/novo-a", "provider": "databricks", "endpoint": "novo-a",
-             "capabilities": ["chat"]},
-            {"id": "databricks/novo-b", "provider": "databricks", "endpoint": "novo-b",
-             "capabilities": ["embedding"]},
+            {
+                "id": "databricks/novo-a",
+                "provider": "databricks",
+                "endpoint": "novo-a",
+                "capabilities": ["chat"],
+            },
+            {
+                "id": "databricks/novo-b",
+                "provider": "databricks",
+                "endpoint": "novo-b",
+                "capabilities": ["embedding"],
+            },
         ],
     )
     providers_editor.dump(providers_file, data)
@@ -705,9 +709,7 @@ def test_confirm_discovery_rejects_unknown_capability(client):
         "/api/providers/ollama/discover/confirm",
         headers={"Authorization": "Bearer chave-de-teste"},
         json={
-            "models": [
-                {"id": "ollama/teste-cap", "model": "teste-cap", "capabilities": ["voo"]}
-            ]
+            "models": [{"id": "ollama/teste-cap", "model": "teste-cap", "capabilities": ["voo"]}]
         },
     )
     assert response.status_code == 422
@@ -755,9 +757,15 @@ def test_confirm_discovery_adds_model_and_persists(client, tmp_path):
         client.app.dependency_overrides.pop(get_settings, None)
 
 
-def test_chat_without_any_reachable_provider_returns_503_not_500(client):
-    # Sem Ollama no ar e sem credenciais de nuvem, nenhum candidato é elegível.
-    # O cliente precisa ver "sem provedor", não um stack trace.
+def test_chat_without_any_reachable_provider_returns_503_not_500(client, monkeypatch):
+    # Sem provedores elegíveis no ar, nenhum candidato é retornado.
+    # O cliente precisa ver "sem provedor" (503), não um stack trace (500).
+    from sicoobito.router.policy import RoutingDecision
+
+    async def _mock_select(*args, **kwargs):
+        return RoutingDecision(profile=None, strategy="none", candidates=[], excluded=[])
+
+    monkeypatch.setattr(client.app.state.engine.policy, "select", _mock_select)
     response = client.post(
         "/v1/chat/completions",
         headers={"Authorization": "Bearer chave-de-teste"},

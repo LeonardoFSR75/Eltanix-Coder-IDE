@@ -1,4 +1,4 @@
-"""Extrator de Relacionamentos Camada 1: Sintáticos (Wikilinks [[Nota]], Tags #tag, AST Imports, TS/JS Imports)."""
+"""Extrator de Relacionamentos Camada 1: Sintáticos (Wikilinks, Tags, AST, TS/JS Imports)."""
 
 from __future__ import annotations
 
@@ -51,7 +51,13 @@ def extract_ts_imports(code_content: str) -> list[str]:
         target = (m[0] or m[1]).strip()
         if target and target not in modules:
             # Pega o último componente significativo se for relativo/alias
-            base_mod = target.split("/")[-1].replace(".ts", "").replace(".tsx", "").replace(".js", "").replace(".jsx", "")
+            base_mod = (
+                target.split("/")[-1]
+                .replace(".ts", "")
+                .replace(".tsx", "")
+                .replace(".js", "")
+                .replace(".jsx", "")
+            )
             if base_mod and base_mod not in modules:
                 modules.append(base_mod)
     return modules

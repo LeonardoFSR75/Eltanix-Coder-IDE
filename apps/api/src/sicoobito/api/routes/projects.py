@@ -47,6 +47,10 @@ class ProjectCreateIn(BaseModel):
     name: str = Field(min_length=1, max_length=255)
     description: str = Field(default="")
     git_url: str | None = Field(default=None)
+    init_git: bool = Field(default=True, description="Inicializa repositório Git automaticamente")
+    create_github_repo: bool = Field(
+        default=False, description="Cria repositório remoto PRIVADO no GitHub automaticamente"
+    )
     budget_limit_usd: float | None = Field(default=None)
     settings: dict[str, Any] = Field(default_factory=dict)
 
@@ -79,7 +83,9 @@ async def list_projects(request: Request) -> dict[str, Any]:
                     "local_path": r.local_path,
                     "git_url": r.git_url,
                     "default_branch": r.default_branch,
-                    "budget_limit_usd": float(r.budget_limit_usd) if r.budget_limit_usd is not None else None,
+                    "budget_limit_usd": float(r.budget_limit_usd)
+                    if r.budget_limit_usd is not None
+                    else None,
                     "settings": r.settings,
                     "created_at": r.created_at.isoformat(),
                     "updated_at": r.updated_at.isoformat(),
@@ -111,57 +117,123 @@ async def list_projects(request: Request) -> dict[str, Any]:
 async def create_project(payload: ProjectCreateIn, request: Request) -> dict[str, Any]:
     """Cadastra um novo projeto e cria a pasta correspondente sob PROJECTS_ROOT."""
     projects_root = _projects_root(request)
-    slug = validate_name(payload.name)
+    try:
+        slug = validate_name(payload.name)
+    except ProjectError as err:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(err),
+        ) from err
+
     target_path = projects_root / slug
 
     if not target_path.exists():
         target_path.mkdir(parents=True, exist_ok=True)
 
-    async with session_scope() as session:
-        stmt = select(ProjectRecord).where(ProjectRecord.slug == slug)
-        rec = (await session.execute(stmt)).scalar_one_or_none()
-        if not rec:
-            rec = ProjectRecord(
-                slug=slug,
-                name=payload.name,
-                description=payload.description,
-                local_path=str(target_path),
-                git_url=payload.git_url,
-                budget_limit_usd=payload.budget_limit_usd,
-                settings=payload.settings,
-            )
-            session.add(rec)
-        else:
-            rec.name = payload.name
-            rec.description = payload.description
-            rec.git_url = payload.git_url
-            rec.budget_limit_usd = payload.budget_limit_usd
-            rec.settings = payload.settings
+    effective_git_url = payload.git_url
 
-        await session.flush()
-        await session.refresh(rec)
+    if payload.init_git and not (target_path / ".git").exists():
+        try:
+            from git import Repo
 
-        budget_limit = float(rec.budget_limit_usd) if rec.budget_limit_usd is not None else None
+            repo = Repo.init(target_path)
+            try:
+                gitignore_path = target_path / ".gitignore"
+                if not gitignore_path.exists():
+                    gitignore_path.write_text(
+                        ".sicoobito/\nnode_modules/\n__pycache__/\n", encoding="utf-8"
+                    )
+                repo.index.add([str(gitignore_path.relative_to(target_path))])
+                repo.index.commit("Initial commit")
+            except Exception as exc:
+                log.warning("git.initial_commit.failed", path=str(target_path), error=str(exc))
+
+            if payload.create_github_repo and not effective_git_url:
+                try:
+                    from sicoobito.workspace.github import GitHubClient, resolve_token
+
+                    settings = get_settings()
+                    token = resolve_token(settings.github_token)
+                    if token:
+                        gh = GitHubClient(token)
+                        repo_data = await gh.create_repository(
+                            name=slug,
+                            description=payload.description,
+                            private=True,
+                        )
+                        effective_git_url = repo_data.get("clone_url") or repo_data.get("html_url")
+                except Exception as exc:
+                    log.warning("github.private_repo.create_failed", slug=slug, error=str(exc))
+
+            if effective_git_url:
+                try:
+                    repo.create_remote("origin", effective_git_url)
+                except Exception as exc:
+                    log.warning("git.remote.create_failed", path=str(target_path), error=str(exc))
+        except Exception as exc:
+            log.warning("git.init.failed", path=str(target_path), error=str(exc))
+
+    try:
+        async with session_scope() as session:
+            stmt = select(ProjectRecord).where(ProjectRecord.slug == slug)
+            rec = (await session.execute(stmt)).scalar_one_or_none()
+            if not rec:
+                rec = ProjectRecord(
+                    slug=slug,
+                    name=payload.name,
+                    description=payload.description,
+                    local_path=str(target_path),
+                    git_url=effective_git_url,
+                    budget_limit_usd=payload.budget_limit_usd,
+                    settings=payload.settings,
+                )
+                session.add(rec)
+            else:
+                rec.name = payload.name
+                rec.description = payload.description
+                rec.git_url = effective_git_url
+                rec.budget_limit_usd = payload.budget_limit_usd
+                rec.settings = payload.settings
+
+            await session.flush()
+            await session.refresh(rec)
+
+            budget_limit = float(rec.budget_limit_usd) if rec.budget_limit_usd is not None else None
+            res = {
+                "id": str(rec.id),
+                "slug": rec.slug,
+                "name": rec.name,
+                "description": rec.description,
+                "local_path": rec.local_path,
+                "git_url": rec.git_url,
+                "budget_limit_usd": budget_limit,
+                "settings": rec.settings,
+            }
+    except Exception as exc:
+        log.warning("projects.db.unavailable", error=str(exc))
         res = {
-            "id": str(rec.id),
-            "slug": rec.slug,
-            "name": rec.name,
-            "description": rec.description,
-            "local_path": rec.local_path,
-            "git_url": rec.git_url,
-            "budget_limit_usd": budget_limit,
-            "settings": rec.settings,
+            "id": slug,
+            "slug": slug,
+            "name": payload.name,
+            "description": payload.description,
+            "local_path": str(target_path),
+            "git_url": payload.git_url,
+            "budget_limit_usd": payload.budget_limit_usd,
+            "settings": payload.settings,
         }
 
     if audit := _audit(request):
-        await audit.record(
-            actor="user",
-            module="projects",
-            action="create",
-            details=f"Projeto cadastrado: {slug}",
-            event_metadata={"slug": slug, "git_url": payload.git_url},
-            project_slug=slug,
-        )
+        try:
+            await audit.record(
+                actor="user",
+                module="projects",
+                action="create",
+                details=f"Projeto cadastrado: {slug}",
+                metadata={"slug": slug, "git_url": payload.git_url},
+                project_slug=slug,
+            )
+        except Exception as exc:
+            log.warning("projects.audit.failed", error=str(exc))
 
     return res
 
@@ -223,14 +295,17 @@ async def open_absolute_path(payload: OpenPathIn, request: Request) -> dict[str,
         await session.flush()
 
     if audit := _audit(request):
-        await audit.record(
-            actor="user",
-            module="projects",
-            action="open_path",
-            details=f"Pasta aberta como projeto: {alvo}",
-            event_metadata={"slug": slug, "path": str(alvo)},
-            project_slug=slug,
-        )
+        try:
+            await audit.record(
+                actor="user",
+                module="projects",
+                action="open_path",
+                details=f"Pasta aberta como projeto: {alvo}",
+                metadata={"slug": slug, "path": str(alvo)},
+                project_slug=slug,
+            )
+        except Exception as exc:
+            log.warning("projects.audit.failed", error=str(exc))
 
     return {
         "slug": slug,
@@ -248,7 +323,7 @@ async def open_absolute_path(payload: OpenPathIn, request: Request) -> dict[str,
 
 @router.get("/{slug}/summary")
 async def get_summary(slug: str, request: Request) -> dict[str, Any]:
-    """Retorna a visão geral 360° do projeto (IDE, Git, Custos, Notas, Graphify, Auditoria, Sessões)."""
+    """Retorna a visão geral 360° do projeto (IDE, Git, Custos, Notas, Graphify, etc.)."""
     projects_root = _projects_root(request)
     try:
         async with session_scope() as session:
@@ -306,7 +381,11 @@ async def get_summary(slug: str, request: Request) -> dict[str, Any]:
 @router.patch("/{slug}")
 async def update_project(slug: str, payload: ProjectUpdateIn, request: Request) -> dict[str, Any]:
     """Atualiza metadados e limites do projeto."""
-    slug_valido = validate_name(slug)
+    try:
+        slug_valido = validate_name(slug)
+    except ProjectError as err:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(err)) from err
+
     async with session_scope() as session:
         stmt = select(ProjectRecord).where(ProjectRecord.slug == slug_valido)
         rec = (await session.execute(stmt)).scalar_one_or_none()
@@ -340,26 +419,35 @@ async def update_project(slug: str, payload: ProjectUpdateIn, request: Request) 
         }
 
     if audit := _audit(request):
-        await audit.record(
-            actor="user",
-            module="projects",
-            action="update",
-            details=f"Projeto atualizado: {slug_valido}",
-            event_metadata={"slug": slug_valido},
-            project_slug=slug_valido,
-        )
+        try:
+            await audit.record(
+                actor="user",
+                module="projects",
+                action="update",
+                details=f"Projeto atualizado: {slug_valido}",
+                metadata={"slug": slug_valido},
+                project_slug=slug_valido,
+            )
+        except Exception as exc:
+            log.warning("projects.audit.failed", error=str(exc))
 
     return res
 
 
 @router.delete("/{slug}")
 async def delete_project(slug: str, request: Request, delete_files: bool = False) -> dict[str, Any]:
-    """Remove o registro do projeto no banco de dados (e opcionalmente apaga os arquivos no disk)."""
-    slug_valido = validate_name(slug)
+    """Remove o registro do projeto no banco de dados (e opcionalmente no disco)."""
+    try:
+        slug_valido = validate_name(slug)
+    except ProjectError as err:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(err)) from err
+
     projects_root = _projects_root(request)
 
     async with session_scope() as session:
-        rec = (await session.execute(select(ProjectRecord).where(ProjectRecord.slug == slug_valido))).scalar_one_or_none()
+        rec = (
+            await session.execute(select(ProjectRecord).where(ProjectRecord.slug == slug_valido))
+        ).scalar_one_or_none()
         if rec:
             await session.delete(rec)
 
@@ -371,13 +459,16 @@ async def delete_project(slug: str, request: Request, delete_files: bool = False
             pass
 
     if audit := _audit(request):
-        await audit.record(
-            actor="user",
-            module="projects",
-            action="delete",
-            details=f"Projeto removido: {slug_valido} (arquivos_apagados={delete_files})",
-            event_metadata={"slug": slug_valido, "delete_files": delete_files},
-            project_slug=slug_valido,
-        )
+        try:
+            await audit.record(
+                actor="user",
+                module="projects",
+                action="delete",
+                details=f"Projeto removido: {slug_valido} (arquivos_apagados={delete_files})",
+                metadata={"slug": slug_valido, "delete_files": delete_files},
+                project_slug=slug_valido,
+            )
+        except Exception as exc:
+            log.warning("projects.audit.failed", error=str(exc))
 
     return {"status": "ok", "slug": slug_valido, "files_deleted": delete_files}

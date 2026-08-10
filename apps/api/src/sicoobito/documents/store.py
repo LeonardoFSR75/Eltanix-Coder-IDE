@@ -67,12 +67,18 @@ async def get_document(session: AsyncSession, document_id: uuid.UUID) -> Documen
     return await session.get(Document, document_id)
 
 
+# Teto de segurança para o `list_documents` sem paginação — evita que uma
+# base muito grande vire uma resposta HTTP sem limite (e uma query sem teto).
+_LIST_HARD_CAP = 2000
+
+
 async def list_documents(
     session: AsyncSession, *, project_slug: str | None = None
 ) -> list[Document]:
-    """Sem `project_slug`, lista tudo. Com ele, documentos do projeto mais os
-    "globais" (sem projeto) — mesmo fallback de `hybrid_search`."""
-    stmt = select(Document).order_by(Document.uploaded_at.desc())
+    """Sem `project_slug`, lista tudo (até `_LIST_HARD_CAP`). Com ele,
+    documentos do projeto mais os "globais" (sem projeto) — mesmo fallback de
+    `hybrid_search`."""
+    stmt = select(Document).order_by(Document.uploaded_at.desc()).limit(_LIST_HARD_CAP)
     if project_slug:
         stmt = stmt.where(
             (Document.project_slug == project_slug) | (Document.project_slug.is_(None))

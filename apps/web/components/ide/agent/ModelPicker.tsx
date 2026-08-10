@@ -14,23 +14,6 @@ interface ProvidersResponse {
   models: CatalogModel[];
 }
 
-let cache: Promise<ProvidersResponse> | null = null;
-
-function loadProvidersData(): Promise<ProvidersResponse> {
-  if (!cache) {
-    cache = getCatalog()
-      .then((r) => ({
-        profiles: (r.profiles || []).filter((p) => p.name !== "embedding"),
-        models: (r.models || []).filter((m) => m.available),
-      }))
-      .catch((err) => {
-        cache = null;
-        throw err;
-      });
-  }
-  return cache;
-}
-
 export function ModelPicker({
   value,
   onChange,
@@ -41,53 +24,82 @@ export function ModelPicker({
   disabled?: boolean;
 }) {
   const [data, setData] = useState<ProvidersResponse | null>(null);
-  const [erro, setErro] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    let cancelado = false;
-    loadProvidersData()
-      .then((res) => {
-        if (!cancelado) setData(res);
+    let isMounted = true;
+    getCatalog()
+      .then((r) => {
+        if (!isMounted) return;
+        const allModels = r.models || [];
+        const allProfiles = (r.profiles || []).filter((p) => p.name !== "embedding");
+        setData({
+          profiles: allProfiles,
+          models: allModels,
+        });
+        setLoading(false);
       })
-      .catch(() => {
-        if (!cancelado) setErro(true);
+      .catch((err) => {
+        console.warn("Falha ao carregar catálogo de modelos:", err);
+        if (isMounted) {
+          setData({ profiles: [], models: [] });
+          setLoading(false);
+        }
       });
+
     return () => {
-      cancelado = true;
+      isMounted = false;
     };
   }, []);
 
-  if (erro) return null;
+  const hasSelectedInProfiles = data?.profiles.some((p) => p.name === value);
+  const hasSelectedInModels = data?.models.some((m) => m.id === value);
+  const isCustomSelection = value && !hasSelectedInProfiles && !hasSelectedInModels;
 
   return (
-    <div className="model-picker-container" title="Selecione o modelo ou perfil para a atividade">
+    <div className="model-picker-container" title="Selecione o modelo ou perfil ativo para a atividade">
       <span className="model-picker-icon">🤖</span>
       <select
         className="model-picker-select"
         value={value ?? ""}
-        disabled={disabled || !data}
+        disabled={disabled || loading}
         onChange={(e) => onChange(e.target.value || null)}
       >
-        <option value="">⚡ Auto (Roteamento por modo)</option>
+        {loading ? (
+          <>
+            <option value="">Gemini 3.6 Flash (High) ⚡</option>
+            <option value="gemini-1.5-pro">Gemini 1.5 Pro</option>
+          </>
+        ) : (
+          <>
+            <option value="">⚡ Gemini 3.6 Flash (High)</option>
 
-        {data?.profiles && data.profiles.length > 0 && (
-          <optgroup label="── Perfis de Roteamento ──">
-            {data.profiles.map((p) => (
-              <option key={`p-${p.name}`} value={p.name}>
-                Perfil: {p.name} {p.is_default ? "★ (padrão)" : ""}
+            {isCustomSelection && (
+              <option value={value}>
+                [Ativo] {value}
               </option>
-            ))}
-          </optgroup>
-        )}
+            )}
 
-        {data?.models && data.models.length > 0 && (
-          <optgroup label="── Modelos Específicos ──">
-            {data.models.map((m) => (
-              <option key={`m-${m.id}`} value={m.id}>
-                [{m.provider}] {m.id}
-              </option>
-            ))}
-          </optgroup>
+            {data?.profiles && data.profiles.length > 0 && (
+              <optgroup label="── Perfis de Roteamento ──">
+                {data.profiles.map((p) => (
+                  <option key={`p-${p.name}`} value={p.name}>
+                    Perfil: {p.name} {p.is_default ? "★ (padrão)" : ""}
+                  </option>
+                ))}
+              </optgroup>
+            )}
+
+            {data?.models && data.models.length > 0 && (
+              <optgroup label="── Modelos do Catálogo ──">
+                {data.models.map((m) => (
+                  <option key={`m-${m.id}`} value={m.id}>
+                    [{m.provider}] {m.id} {m.available !== false ? "✓" : "○"}
+                  </option>
+                ))}
+              </optgroup>
+            )}
+          </>
         )}
       </select>
     </div>

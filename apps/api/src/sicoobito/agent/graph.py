@@ -25,11 +25,19 @@ from typing import Any
 from langgraph.graph import END, StateGraph
 from langgraph.types import interrupt
 
+from sicoobito.agent.approval_policy import ApprovalPolicy, evaluate_policy
 from sicoobito.agent.prompts import APPROVAL_DENIED_TEMPLATE, SYSTEM_PROMPT
+from sicoobito.agent.review_common import request_review_verdict
 from sicoobito.agent.state import AgentState, PendingApproval
 from sicoobito.agent.tools import RiskClass, ToolContext, registry
+from sicoobito.agent.tools.diffing import compute_proposed_diff
 from sicoobito.logging_setup import get_logger
 from sicoobito.router.engine import RouterEngine
+
+# Só ferramentas com conceito de diff — EXEC (run_command) não tem o que um
+# revisor avalie antes de rodar, e revisar isso adicionaria custo sem cobrir
+# o modo de falha (arquivo/comando errado) que esta feature existe pra pegar.
+_REVIEWABLE_TOOLS = frozenset({"edit_file", "write_file"})
 
 log = get_logger(__name__)
 
@@ -71,6 +79,47 @@ def _next_repetition_state(
     return fingerprint, 1
 
 
+async def _attach_review_notes(
+    context: ToolContext, engine: RouterEngine, pendentes: list[PendingApproval]
+) -> None:
+    """Segunda opinião automática — só roda quando o projeto liga
+    `second_opinion` na política, e só sobre o que **vai mesmo** para o
+    humano (chamada depois do filtro de `evaluate_policy`, nunca antes).
+
+    Muta `pendentes` in place, anexando `review` a cada item elegível.
+    Puramente consultiva: uma falha (rede, modelo fora do ar) vira
+    `verdict: "unavailable"`, nunca `"approved"` — isto não pode virar
+    aprovação silenciosa. O veredito também nunca realimenta
+    `evaluate_policy()`: acoplar os dois deixaria um modelo barato
+    "carimbando" aprovações, o que anularia o desenho fail-closed de ambas
+    as features.
+    """
+    for pendente in pendentes:
+        if pendente["tool"] not in _REVIEWABLE_TOOLS:
+            continue
+
+        proposto = compute_proposed_diff(context, pendente["tool"], pendente["arguments"])
+        if proposto is None or not proposto.diff:
+            continue
+
+        try:
+            veredito = await request_review_verdict(
+                engine,
+                summary=pendente["summary"],
+                diff=proposto.diff,
+                source="agent:pre_approval_review",
+            )
+        except Exception as exc:
+            log.warning("agent.pre_approval_review.failed", error=str(exc)[:200])
+            pendente["review"] = {"verdict": "unavailable", "summary": ""}
+            continue
+
+        pendente["review"] = {
+            "verdict": "approved" if veredito.approved else "needs_revision",
+            "summary": veredito.text[:400],
+        }
+
+
 def _tool_schemas(mode: str, has_plan: bool) -> list[dict[str, Any]]:
     """Ferramentas oferecidas por modo.
 
@@ -103,12 +152,25 @@ def _tool_schemas(mode: str, has_plan: bool) -> list[dict[str, Any]]:
 # ferramenta chamada já quebra toda sessão: o Groq rejeita com 400 qualquer
 # propriedade fora do schema numa mensagem `role: tool`, e sem candidato que
 # aceite a mensagem "suja" a sessão trava (foi como o bug foi encontrado —
-# nenhum turno seguinte completava, então nenhum botão parecia fazer nada).
 _CHAVES_MENSAGEM_API = {"role", "content", "name", "tool_call_id", "tool_calls"}
 
 
 def _para_api(mensagens: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    return [{k: v for k, v in m.items() if k in _CHAVES_MENSAGEM_API} for m in mensagens]
+
+    limpas: list[dict[str, Any]] = []
+    for m in mensagens:
+        item = {k: v for k, v in m.items() if k in _CHAVES_MENSAGEM_API and v is not None}
+        role = item.get("role")
+        content = item.get("content")
+        tool_calls = item.get("tool_calls")
+
+        # Provedores como Databricks, OpenAI e Groq rejeitam mensagens `assistant` vazias
+        # que não contêm nem `content` preenchido nem `tool_calls`.
+        if role == "assistant" and not content and not tool_calls:
+            continue
+
+        limpas.append(item)
+    return limpas
 
 
 def build_graph(engine: RouterEngine, context: ToolContext):
@@ -190,27 +252,61 @@ def build_graph(engine: RouterEngine, context: ToolContext):
         if not pendentes:
             return {"approvals": {}}
 
-        # Devolve o controle a quem chamou. Ao retomar, o valor enviado volta
-        # como retorno de `interrupt`.
-        decisao = interrupt(
-            {
-                "type": "approval_required",
-                "session_id": state.get("session_id"),
-                "actions": pendentes,
-            }
-        )
-
+        # A política nunca é consultada pelo chamador — só aqui dentro do nó
+        # que já é dono da decisão de aprovação. `evaluate_policy` é fail
+        # closed: qualquer regra que não casar (ou que falhar ao avaliar)
+        # deixa a ação em `restantes`, pausando exatamente como hoje.
+        policy = context.approval_policy or ApprovalPolicy()
         aprovacoes: dict[str, bool] = {}
         motivos: dict[str, str] = {}
+        decidido_por: dict[str, str] = {}
+        restantes: list[PendingApproval] = []
+        auto_aprovados: list[dict[str, Any]] = []
+
         for pendente in pendentes:
-            item = (decisao or {}).get(pendente["tool_call_id"], {})
-            if isinstance(item, bool):
-                aprovacoes[pendente["tool_call_id"]] = item
+            descricao_regra = evaluate_policy(policy, context, pendente)
+            if descricao_regra is None:
+                restantes.append(pendente)
                 continue
-            # Ausência de decisão explícita é recusa: aprovar por omissão
-            # transformaria um erro de UI em escrita não autorizada.
-            aprovacoes[pendente["tool_call_id"]] = bool(item.get("approved", False))
-            motivos[pendente["tool_call_id"]] = item.get("reason", "")
+            aprovacoes[pendente["tool_call_id"]] = True
+            motivos[pendente["tool_call_id"]] = f"auto-aprovado por política: {descricao_regra}"
+            decidido_por[pendente["tool_call_id"]] = "policy"
+            auto_aprovados.append(
+                {
+                    "tool_call_id": pendente["tool_call_id"],
+                    "tool": pendente["tool"],
+                    "reason": motivos[pendente["tool_call_id"]],
+                }
+            )
+
+        if restantes:
+            if policy.second_opinion:
+                await _attach_review_notes(context, engine, restantes)
+
+            # Devolve o controle a quem chamou. Ao retomar, o valor enviado
+            # volta como retorno de `interrupt`. Quando a política já
+            # aprovou tudo, `restantes` fica vazio e este bloco nem roda —
+            # o grafo segue direto pro `act()` no mesmo turno.
+            decisao = interrupt(
+                {
+                    "type": "approval_required",
+                    "session_id": state.get("session_id"),
+                    "actions": restantes,
+                    "auto_approved": auto_aprovados,
+                }
+            )
+
+            for pendente in restantes:
+                item = (decisao or {}).get(pendente["tool_call_id"], {})
+                if isinstance(item, bool):
+                    aprovacoes[pendente["tool_call_id"]] = item
+                else:
+                    # Ausência de decisão explícita é recusa: aprovar por
+                    # omissão transformaria um erro de UI em escrita não
+                    # autorizada.
+                    aprovacoes[pendente["tool_call_id"]] = bool(item.get("approved", False))
+                    motivos[pendente["tool_call_id"]] = item.get("reason", "")
+                decidido_por[pendente["tool_call_id"]] = "human"
 
         if context.audit is not None:
             try:
@@ -219,6 +315,7 @@ def build_graph(engine: RouterEngine, context: ToolContext):
                     pending=pendentes,
                     approvals=aprovacoes,
                     reasons=motivos,
+                    decided_by=decidido_por,
                 )
             except Exception as exc:
                 # Auditoria não pode travar a execução do agente — um soluço
@@ -313,7 +410,9 @@ def build_graph(engine: RouterEngine, context: ToolContext):
                 )
 
             respostas.append(
-                _tool_message(call_id, nome, resultado.content, ok=resultado.ok, data=resultado.data)
+                _tool_message(
+                    call_id, nome, resultado.content, ok=resultado.ok, data=resultado.data
+                )
             )
             ultima_falha, contagem_falha = _next_repetition_state(
                 fingerprint, resultado.ok, ultima_falha, contagem_falha

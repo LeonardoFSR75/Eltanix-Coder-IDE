@@ -29,11 +29,16 @@ from sicoobito.workspace.projects import (
             "action": {
                 "type": "string",
                 "enum": ["summary", "list"],
-                "description": "'summary' para obter a métrica 360° de um projeto ou 'list' para listar todos os projetos.",
+                "description": (
+                    "'summary' para métrica 360° do projeto ou 'list' para listar os projetos."
+                ),
             },
             "project_slug": {
                 "type": "string",
-                "description": "Slug/nome do projeto (opcional se action='list'; usa o projeto da sessão por padrão)",
+                "description": (
+                    "Slug/nome do projeto (opcional se action='list'; usa o projeto da sessão"
+                    " por padrão)"
+                ),
             },
         },
         "required": ["action"],
@@ -46,7 +51,10 @@ async def manage_project(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
 
     if action == "list":
         projects = list_disk_projects(ctx.projects_root)
-        items = [{"slug": p.slug or p.name, "name": p.name, "is_git": p.is_git, "branch": p.branch} for p in projects]
+        items = [
+            {"slug": p.slug or p.name, "name": p.name, "is_git": p.is_git, "branch": p.branch}
+            for p in projects
+        ]
         return ToolResult(
             ok=True,
             content=f"Encontrados {len(items)} projetos disponíveis.",
@@ -64,7 +72,11 @@ async def manage_project(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
                 "name": summary.name,
                 "description": summary.description,
                 "local_path": summary.local_path,
-                "git": {"is_git": summary.is_git, "branch": summary.branch, "remote_url": summary.git_url},
+                "git": {
+                    "is_git": summary.is_git,
+                    "branch": summary.branch,
+                    "remote_url": summary.git_url,
+                },
                 "costs": {
                     "total_usd": summary.total_cost_usd,
                     "budget_limit_usd": summary.budget_limit_usd,
@@ -81,15 +93,17 @@ async def manage_project(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
                 "recent_commits": summary.recent_commits,
                 "settings": summary.settings,
             }
+            budget_str = summary.budget_limit_usd or "Sem limite"
+            graph_info = f"{summary.graph_nodes_count} nós | {summary.graph_edges_count} arestas"
             content_str = (
                 f"=== Resumo do Projeto {summary.name} ({summary.slug}) ===\n"
                 f"Caminho: {summary.local_path}\n"
                 f"Git: Branch={summary.branch or 'N/A'}\n"
-                f"Custos: ${summary.total_cost_usd:.4f} USD (Orçamento: {summary.budget_limit_usd or 'Sem limite'})\n"
+                f"Custos: ${summary.total_cost_usd:.4f} USD (Orçamento: {budget_str})\n"
                 f"Tokens Consumidos: {summary.total_tokens:,}\n"
                 f"Segundo Cérebro: {summary.notes_count} nota(s)\n"
                 f"Documentos: {summary.documents_count}\n"
-                f"Graphify: {summary.graph_nodes_count} nó(s) | {summary.graph_edges_count} aresta(s)\n"
+                f"Graphify: {graph_info}\n"
                 f"Eventos de Auditoria: {summary.audit_events_count}\n"
                 f"Sessões Ativas: {summary.active_sessions_count}\n"
                 f"Commits recentes: {len(summary.recent_commits)}\n"

@@ -82,8 +82,10 @@ def test_read_text_returns_none_for_binary(tmp_path):
     assert read_text(binario) is None
 
 
-def test_read_text_survives_invalid_utf8(tmp_path):
+def test_read_text_returns_none_for_invalid_utf8(tmp_path):
+    """Decodificar com errors="replace" corromperia o arquivo em silêncio no
+    próximo save (WorkspaceFS.write sempre grava UTF-8) — tratar como
+    ilegível, igual a um binário, evita perda de dado sem aviso."""
     arquivo = tmp_path / "latin.py"
     arquivo.write_bytes("comentário".encode("latin-1"))
-    conteudo = read_text(arquivo)
-    assert conteudo is not None and len(conteudo) > 0
+    assert read_text(arquivo) is None

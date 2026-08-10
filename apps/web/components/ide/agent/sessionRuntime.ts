@@ -170,9 +170,39 @@ export class AgentSessionRuntime {
     await this.run(approvals);
   }
 
+  async sendMessage(text: string) {
+
+    if (!this.session || this.running) return;
+    this.append({ kind: "user", text });
+    this.finished = false;
+    this.errored = false;
+    this.running = true;
+    this.pending = [];
+    this.onChange();
+    this.abortController = new AbortController();
+
+    try {
+      await streamEvents(
+        `/api/agent/sessions/${this.session.session_id}/run`,
+        { message: text },
+        this.consume,
+        this.abortController.signal,
+      );
+    } catch (err) {
+      if ((err as Error).name !== "AbortError") {
+        this.errored = true;
+        this.append({ kind: "error", text: err instanceof Error ? err.message : String(err) });
+      }
+    } finally {
+      this.running = false;
+      this.onChange();
+    }
+  }
+
   abort() {
     this.abortController?.abort();
   }
+
 
   /** Cria a sessão no backend e devolve o runtime já com `session` preenchido — sem esperar o turno terminar. */
   static async start(
@@ -185,6 +215,8 @@ export class AgentSessionRuntime {
   ): Promise<AgentSessionRuntime> {
     const runtime = new AgentSessionRuntime(opts);
     runtime.task = task;
+    // ── Exibe a mensagem do usuário imediatamente, antes de ir ao backend ──
+    runtime.append({ kind: "user", text: task });
     const created = await post<Session>("/api/agent/sessions", {
       task,
       mode,
@@ -248,6 +280,13 @@ export class AgentSessionRuntime {
 
 function messageToLogLines(message: Record<string, unknown>): LogLine[] {
   const role = message.role;
+  if (role === "user") {
+    const content = message.content;
+    if (typeof content === "string" && content.trim()) {
+      return [{ kind: "user", text: content }];
+    }
+    return [];
+  }
   if (role === "assistant") {
     const content = message.content;
     if (typeof content === "string" && content.trim()) {

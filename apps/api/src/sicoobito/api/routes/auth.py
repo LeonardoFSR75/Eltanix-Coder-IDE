@@ -34,9 +34,10 @@ class ChangePasswordRequest(BaseModel):
 
 
 def _client_ip(request: Request) -> str:
-    forwarded = request.headers.get("x-forwarded-for")
-    if forwarded:
-        return forwarded.split(",")[0].strip()
+    # Não há reverse proxy confiável na frente desta API (o gateway do Next
+    # não define X-Forwarded-For) — confiar nesse header permitiria a
+    # qualquer chamador local resetar o próprio rate limit a cada tentativa,
+    # só trocando o valor enviado.
     return request.client.host if request.client else "127.0.0.1"
 
 
@@ -50,7 +51,7 @@ async def login(
     redis = getattr(request.app.state, "redis", None)
     ip = _client_ip(request)
 
-    if not await service.check_rate_limit(ip, redis):
+    if not await service.check_and_register_attempt(ip, redis):
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail="Muitas tentativas de login. Tente novamente em 1 minuto.",
@@ -58,7 +59,6 @@ async def login(
 
     user = await service.authenticate(username=payload.username, password=payload.password)
     if user is None:
-        await service.record_failed_attempt(ip, redis)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Usuário ou senha inválidos."
         )
@@ -114,6 +114,7 @@ async def change_password(
         user_id=user.id,
         old_password=payload.old_password,
         new_password=payload.new_password,
+        keep_session_token=sicoobito_session,
     )
     if not success:
         raise HTTPException(
@@ -121,4 +122,3 @@ async def change_password(
             detail="Senha atual incorreta.",
         )
     return {"status": "ok", "message": "Senha alterada com sucesso."}
-

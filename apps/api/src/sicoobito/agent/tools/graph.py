@@ -32,8 +32,9 @@ from sicoobito.db.session import session_scope
         },
         "required": ["path"],
     },
-    summarize=lambda a: f"grafo de {a.get('path')}"
-    + (f"::{a['symbol']}" if a.get("symbol") else ""),
+    summarize=lambda a: (
+        f"grafo de {a.get('path')}" + (f"::{a['symbol']}" if a.get("symbol") else "")
+    ),
 )
 async def code_graph(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
     if ctx.indexer is None:

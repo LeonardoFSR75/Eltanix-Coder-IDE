@@ -45,11 +45,43 @@ ALWAYS_IGNORED = {
 }
 
 BINARY_EXTENSIONS = {
-    ".png", ".jpg", ".jpeg", ".gif", ".webp", ".ico", ".bmp", ".svg",
-    ".pdf", ".zip", ".gz", ".tar", ".7z", ".rar", ".jar", ".war",
-    ".exe", ".dll", ".so", ".dylib", ".bin", ".o", ".a", ".pyc", ".pyd",
-    ".woff", ".woff2", ".ttf", ".eot", ".mp3", ".mp4", ".mov", ".avi",
-    ".sqlite", ".sqlite3", ".db", ".lock",
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".gif",
+    ".webp",
+    ".ico",
+    ".bmp",
+    ".svg",
+    ".pdf",
+    ".zip",
+    ".gz",
+    ".tar",
+    ".7z",
+    ".rar",
+    ".jar",
+    ".war",
+    ".exe",
+    ".dll",
+    ".so",
+    ".dylib",
+    ".bin",
+    ".o",
+    ".a",
+    ".pyc",
+    ".pyd",
+    ".woff",
+    ".woff2",
+    ".ttf",
+    ".eot",
+    ".mp3",
+    ".mp4",
+    ".mov",
+    ".avi",
+    ".sqlite",
+    ".sqlite3",
+    ".db",
+    ".lock",
 }
 
 
@@ -88,7 +120,15 @@ def hash_bytes(data: bytes) -> str:
 
 
 def read_text(path: Path) -> str | None:
-    """Lê o arquivo como texto, devolvendo None se for binário ou ilegível."""
+    """Lê o arquivo como texto, devolvendo None se for binário ou ilegível.
+
+    Decodifica UTF-8 estrito — não `errors="replace"`: um arquivo salvo em
+    outro encoding (Latin-1, CP-1252, UTF-16...) decodificado com replace vira
+    `U+FFFD` silenciosamente, e como `WorkspaceFS.write()` sempre grava UTF-8,
+    um simples abrir-e-salvar sem editar nada corromperia os bytes originais
+    para sempre, sem aviso. Tratar como ilegível (mesmo caminho de "binário")
+    é mais seguro que perder dado silenciosamente.
+    """
     try:
         data = path.read_bytes()
     except OSError as exc:
@@ -96,7 +136,11 @@ def read_text(path: Path) -> str | None:
         return None
     if _looks_binary(data):
         return None
-    return data.decode("utf-8", errors="replace")
+    try:
+        return data.decode("utf-8")
+    except UnicodeDecodeError:
+        log.debug("scanner.read.not_utf8", path=str(path))
+        return None
 
 
 def iter_paths(root: Path) -> Iterator[tuple[str, Path, int]]:

@@ -82,3 +82,16 @@ async def test_recent_async_with_fake_redis():
     assert len(entries) == 1
     assert entries[0].name == "shell"
 
+
+async def test_record_degrades_when_postgres_engine_is_not_initialized():
+    # Sem `init_engine()` chamado (padrão nos testes unitários, ver
+    # apps/api/CLAUDE.md), `_persist_postgres` deve engolir o RuntimeError de
+    # "Engine não inicializada" — perder telemetria é aceitável, travar quem
+    # chamou `record()` não é.
+    recorder = TraceRecorder()
+    recorder.record(kind="tool", name="edit_file", latency_ms=3.0, status="ok")
+    for task in list(recorder._background_tasks):
+        await task  # não deve levantar
+
+    assert recorder.recent()[0].name == "edit_file"
+

@@ -71,7 +71,9 @@ class CreateSessionRequest(BaseModel):
     # implícita por modo — não é Literal porque os perfis são definidos em
     # YAML, e um Literal fixo aqui ficaria defasado sozinho.
     profile: str | None = None
-    focus_files: list[str] = Field(default_factory=list, description="Lista de arquivos para focar/editar")
+    focus_files: list[str] = Field(
+        default_factory=list, description="Lista de arquivos para focar/editar"
+    )
     focus_folder: str | None = Field(default=None, description="Pasta do projeto para focar")
 
 
@@ -87,7 +89,10 @@ async def create_session(
         )
     if payload.profile is not None:
         # `embedding` existe no catálogo mas não é perfil de chat/codificação.
-        if payload.profile == "embedding" or payload.profile not in engine.catalog.profiles:
+        if payload.profile == "embedding" or (
+            payload.profile not in engine.catalog.profiles
+            and payload.profile not in engine.catalog.models
+        ):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Perfil desconhecido: {payload.profile}",
@@ -159,6 +164,8 @@ class RunRequest(BaseModel):
     # Mapa de `tool_call_id` para a decisão. Presente apenas ao retomar uma
     # sessão parada em aprovação.
     approvals: dict[str, ApprovalDecision] | None = None
+    # Mensagem de acompanhamento enviada pelo usuário para continuar a mesma sessão
+    message: str | None = None
 
 
 @router.post("/sessions/{session_id}/run")
@@ -175,7 +182,7 @@ async def run_session(session_id: str, payload: RunRequest, request: Request):
 
     async def eventos() -> AsyncIterator[str]:
         try:
-            async for evento in runner.stream_run(sessao, resume=resume):
+            async for evento in runner.stream_run(sessao, resume=resume, message=payload.message):
                 yield f"data: {json.dumps(evento, default=str, ensure_ascii=False)}\n\n"
         except Exception as exc:
             log.error("agent.run.failed", session=session_id, error=str(exc))
@@ -266,9 +273,7 @@ class CloseRequest(BaseModel):
 
 
 @router.post("/sessions/{session_id}/close")
-async def close_session(
-    session_id: str, payload: CloseRequest, request: Request
-) -> dict[str, Any]:
+async def close_session(session_id: str, payload: CloseRequest, request: Request) -> dict[str, Any]:
     _session(request, session_id)
     await _runner(request).close_session(session_id, keep_branch=payload.keep_branch)
     return {"session_id": session_id, "closed": True, "branch_kept": payload.keep_branch}
@@ -279,6 +284,7 @@ def _session_view(sessao: AgentSession) -> dict[str, Any]:
         "session_id": sessao.session_id,
         "mode": sessao.mode,
         "profile": sessao.profile,
+        "model": sessao.profile or ("coding" if sessao.mode == "agent" else "auto"),
         "task": sessao.task,
         "workspace_root": str(sessao.workspace_root),
         "worktree_path": str(sessao.worktree_path),

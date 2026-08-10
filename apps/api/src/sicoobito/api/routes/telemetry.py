@@ -7,11 +7,14 @@ ver `telemetry/tracer.py::TraceRecorder`.
 
 from __future__ import annotations
 
-from typing import Any
+from datetime import datetime
+from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, Query, Request, status
 
 from sicoobito.api.deps import AuthDep
+from sicoobito.db.session import session_scope
+from sicoobito.telemetry import store as telemetry_store
 from sicoobito.telemetry.tracer import TraceRecorder
 
 router = APIRouter(prefix="/api/telemetry", tags=["telemetry"], dependencies=[AuthDep])
@@ -43,4 +46,35 @@ async def recent(request: Request, limit: int = Query(default=50, ge=1, le=500))
             }
             for entry in entries
         ]
+    }
+
+
+@router.get("/history")
+async def history(
+    before: datetime | None = None,
+    session_id: str | None = Query(default=None),
+    kind: Literal["tool", "rag"] | None = Query(default=None),
+    limit: int = Query(default=100, ge=1, le=500),
+) -> dict[str, Any]:
+    """Histórico durável (Postgres, `tool_span`) — complementa `/recent`
+    (memória/Redis, capado) para consultas além da janela recente."""
+    async with session_scope() as session:
+        spans = await telemetry_store.list_spans(
+            session, before=before, session_id=session_id, kind=kind, limit=limit
+        )
+    return {
+        "entries": [
+            {
+                "id": str(span.id),
+                "ts": span.created_at.timestamp(),
+                "kind": span.kind,
+                "name": span.name,
+                "latency_ms": span.latency_ms,
+                "status": span.status,
+                "session_id": span.session_id,
+                "error": span.error,
+            }
+            for span in spans
+        ],
+        "next_before": spans[-1].created_at.isoformat() if len(spans) == limit else None,
     }

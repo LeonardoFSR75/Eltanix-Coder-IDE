@@ -154,6 +154,18 @@ async function describeError(response: Response): Promise<string> {
   try {
     const body = await response.json();
     const detail = body?.detail ?? body?.error;
+
+    // FastAPI/Pydantic 422: detail é um array de { loc, msg, type }
+    if (Array.isArray(detail) && detail.length > 0) {
+      return detail
+        .map((e: { msg?: string; loc?: string[] }) => {
+          const field = e.loc?.filter((p) => p !== "body").join(".") ?? "";
+          const msg = e.msg?.replace(/^Value error,\s*/i, "") ?? "erro de validação";
+          return field ? `${field}: ${msg}` : msg;
+        })
+        .join(" | ");
+    }
+
     if (typeof detail === "string") return detail;
     if (detail?.error?.message) return detail.error.message;
     return `${response.status} ${response.statusText}`;

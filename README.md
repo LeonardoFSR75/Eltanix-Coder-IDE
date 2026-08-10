@@ -24,7 +24,8 @@ conhecimento completa em torno do mesmo agente:
 | Verificação por navegador | Ferramenta `browser_action` (Chromium headless isolado em rede própria) | validada |
 | RAG de documentos | Upload → MinIO + pgvector, busca híbrida, ferramenta do agente | validada |
 | Segundo Cérebro | Notas com `[[wikilinks]]`, busca híbrida, ferramenta do agente | validada |
-| Skills | Catálogo de habilidades reutilizáveis, CRUD real | validada |
+| Graph RAG (Graphify) | Base de Conhecimento em Grafo (nós/arestas L1-L3), expansão CTE/GQL, visualização 360° | validada |
+| Skills & Memória | Catálogo de habilidades reutilizáveis (`addyosmani/agent-skills`, `MadsLorentzen/ai-job-search` e hub de memória `TencentCloud/TencentDB-Agent-Memory`), CRUD real e auto-seed | validada |
 | Auditoria | Toda aprovação WRITE/EXEC do agente é registrada no Postgres | validada |
 | MCP | Cliente real (stdio/HTTP), catálogo de conectores prontos (GitHub, filesystem, Postgres, Slack) | validada |
 | Observabilidade | `TraceRecorder` (spans de tool/RAG), correlation ID ponta a ponta, avaliação hit@k/MRR de RAG | validada |
@@ -34,9 +35,9 @@ Exercitado de ponta a ponta: as migrações contra Postgres real (pgvector,
 índices HNSW/tsvector); indexação deste próprio repositório; sessão de agente
 com worktree Git e sandbox Docker (usuário não-root, escrita barrada fora do
 workspace, rede desabilitada); MCP conectado a um servidor real via `npx`;
-busca híbrida RRF das três fontes (código/documentos/notas) contra Postgres.
+busca híbrida e expansão em Grafo (Graphify) das fontes contra Postgres.
 
-306 testes de backend (+ 5 pulados sem `DATABASE_URL_TEST`) e 26 de frontend.
+346 testes de backend (+ 5 pulados sem `DATABASE_URL_TEST`) e 26 de frontend.
 Pytest, Vitest, `tsc` e `next build` limpos. CI no GitHub Actions roda tudo
 isso a cada push/PR na `main`, mais auditoria de dependências.
 

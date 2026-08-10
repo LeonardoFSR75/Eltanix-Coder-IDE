@@ -47,6 +47,7 @@ export function AgentDock({
     startSession,
     switchTo,
     openClosedSession,
+    removeSession,
     newSessionSlot,
   } = useAgentSessions({ project, onFileTouched, onNotify: handleAgentNotify });
 
@@ -59,6 +60,7 @@ export function AgentDock({
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [sessionsVersion, setSessionsVersion] = useState(0);
   const settingsRef = useRef<HTMLButtonElement>(null);
+  const submittingRef = useRef(false);
 
   // O terminal reaproveita o sandbox da sessão do agente — segue a sessão
   // ativa no Agent Manager, não só a primeira criada.
@@ -87,13 +89,22 @@ export function AgentDock({
 
   const submitWithPrompt = (promptToRun?: string) => {
     const promptValue = promptToRun ?? task;
-    if (!promptValue.trim() || running) return;
-    startSession(promptValue, mode, profile, focusFiles, focusFolder);
-    setSessionsVersion((v) => v + 1);
+    if (!promptValue.trim() || running || submittingRef.current) return;
+    submittingRef.current = true;
+    if (active && active.session && !active.readOnly) {
+      void active.sendMessage(promptValue);
+    } else {
+      startSession(promptValue, mode, profile, focusFiles, focusFolder);
+      setSessionsVersion((v) => v + 1);
+    }
+    setTask("");
+    setTimeout(() => {
+      submittingRef.current = false;
+    }, 1000);
   };
 
+
   const handlePresetSelect = (presetPrompt: string) => {
-    setTask(presetPrompt);
     submitWithPrompt(presetPrompt);
   };
 
@@ -147,16 +158,36 @@ export function AgentDock({
           {sessions.length > 1 && (
             <div className="agent-session-tabs">
               {sessions.map((s) => (
-                <button
+                <div
                   key={s.id}
-                  type="button"
                   className={`agent-session-tab ${s.status}${s.id === activeId ? " active" : ""}`}
                   onClick={() => switchTo(s.id)}
                   title={s.task}
+                  style={{ cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "6px" }}
                 >
                   <span className={`session-status-dot ${s.status}`} />
                   <span className="agent-session-tab-label">{s.task}</span>
-                </button>
+                  <button
+                    type="button"
+                    className="agent-session-tab-close"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      removeSession(s.id);
+                    }}
+                    title="Fechar esta sessão"
+                    style={{
+                      background: "none",
+                      border: "none",
+                      color: "var(--muted)",
+                      cursor: "pointer",
+                      fontSize: "13px",
+                      lineHeight: 1,
+                      padding: "0 2px",
+                    }}
+                  >
+                    ×
+                  </button>
+                </div>
               ))}
             </div>
           )}

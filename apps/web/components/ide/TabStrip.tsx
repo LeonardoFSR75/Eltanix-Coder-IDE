@@ -9,6 +9,7 @@
 
 import { useRef } from "react";
 import { useIde } from "@/lib/ide-store";
+import { FileIcon } from "@/components/ide/FileIcons";
 
 // Payload usado tanto para reordenar dentro do grupo quanto para o
 // drag-to-split entre grupos (EditorGroupView lê o mesmo formato).
@@ -31,39 +32,56 @@ export function TabStrip({ groupId }: { groupId: string }) {
         e.currentTarget.scrollLeft += e.deltaY;
       }}
     >
-      {group.tabs.map((tab) => (
-        <div
-          key={tab}
-          className={`tab${group.active === tab ? " active" : ""}${group.previewTab === tab ? " preview" : ""}`}
-          draggable
-          onDragStart={(e) => {
-            dragPath.current = tab;
-            e.dataTransfer.effectAllowed = "move";
-            e.dataTransfer.setData(TAB_DRAG_MIME, JSON.stringify({ path: tab, groupId }));
-          }}
-          onDragOver={(e) => e.preventDefault()}
-          onDrop={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            if (dragPath.current) reorderTabs(dragPath.current, tab, groupId);
-            dragPath.current = null;
-          }}
-        >
-          <button
-            type="button"
-            onClick={() => setActive(tab, groupId)}
-            onDoubleClick={() => pinTab(tab, groupId)}
-            title={tab}
+      {group.tabs.map((tab) => {
+        const filename = tab.split("/").pop() ?? tab;
+        return (
+          <div
+            key={tab}
+            className={`tab${group.active === tab ? " active" : ""}${group.previewTab === tab ? " preview" : ""}`}
+            draggable
+            onDragStart={(e) => {
+              dragPath.current = tab;
+              e.dataTransfer.effectAllowed = "move";
+              e.dataTransfer.setData(TAB_DRAG_MIME, JSON.stringify({ path: tab, groupId }));
+            }}
+            onDragOver={(e) => e.preventDefault()}
+            onDrop={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              if (dragPath.current) reorderTabs(dragPath.current, tab, groupId);
+              dragPath.current = null;
+            }}
           >
-            {tab.split("/").pop()}
-            {group.dirty.has(tab) && <span className="dot" />}
-          </button>
-          <button type="button" className="tab-close" onClick={() => closeTab(tab, groupId)}>
-            ×
-          </button>
+            <button
+              type="button"
+              onClick={() => setActive(tab, groupId)}
+              onDoubleClick={() => pinTab(tab, groupId)}
+              title={tab}
+            >
+              <FileIcon filename={filename} className="tab-file-icon" />
+              {filename}
+              {group.dirty.has(tab) && <span className="dot" />}
+            </button>
+            <button
+              type="button"
+              className="tab-close"
+              onClick={() => closeTab(tab, groupId)}
+              title="Fechar aba"
+              aria-label={`Fechar ${filename}`}
+            >
+              <svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                <line x1="2" y1="2" x2="10" y2="10" />
+                <line x1="10" y1="2" x2="2" y2="10" />
+              </svg>
+            </button>
+          </div>
+        );
+      })}
+      {group.tabs.length === 0 && (
+        <div className="tabs-empty">
+          Pressione <kbd className="editor-kbd">Ctrl+P</kbd> para abrir um arquivo
         </div>
-      ))}
-      {group.tabs.length === 0 && <div className="tabs-empty">Pressione Ctrl+P para abrir um arquivo</div>}
+      )}
     </div>
   );
 }

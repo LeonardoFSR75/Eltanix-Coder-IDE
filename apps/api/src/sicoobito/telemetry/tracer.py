@@ -87,9 +87,7 @@ class TraceRecorder:
             error=error[:300] if error else None,
         )
         self._entries.append(entry)
-        log.info(
-            "telemetry.span", kind=kind, name=name, latency_ms=entry.latency_ms, status=status
-        )
+        log.info("telemetry.span", kind=kind, name=name, latency_ms=entry.latency_ms, status=status)
 
         if self._redis is not None:
             try:
@@ -100,6 +98,14 @@ class TraceRecorder:
             except RuntimeError:
                 pass
 
+        try:
+            loop = asyncio.get_running_loop()
+            task = loop.create_task(self._persist_postgres(entry))
+            self._background_tasks.add(task)
+            task.add_done_callback(self._background_tasks.discard)
+        except RuntimeError:
+            pass
+
     async def _persist_redis(self, entry: TraceEntry) -> None:
         if self._redis is None:
             return
@@ -109,6 +115,30 @@ class TraceRecorder:
             await self._redis.ltrim(_REDIS_KEY, 0, self.maxlen - 1)
         except Exception as exc:
             log.warning("telemetry.redis_persist_failed", error=str(exc)[:200])
+
+    async def _persist_postgres(self, entry: TraceEntry) -> None:
+        # Import local: evita ciclo de import no módulo (tracer.py é usado por
+        # serviços que db/models.py também acaba puxando indiretamente) e
+        # mantém este módulo importável mesmo sem `db` configurado em testes.
+        from sicoobito.db.models import ToolSpan
+        from sicoobito.db.session import session_scope
+
+        try:
+            async with session_scope() as session:
+                session.add(
+                    ToolSpan(
+                        kind=entry.kind,
+                        name=entry.name[:255],
+                        latency_ms=entry.latency_ms,
+                        status=entry.status,
+                        session_id=entry.session_id or None,
+                        error=entry.error,
+                    )
+                )
+        except Exception as exc:
+            # "Perder telemetria é aceitável" (mesmo espírito de router/telemetry.py)
+            # — nunca propaga e derruba quem chamou record().
+            log.warning("telemetry.postgres_persist_failed", error=str(exc)[:200])
 
     async def recent_async(self, limit: int = 100) -> list[TraceEntry]:
         """Mais recente primeiro. Consulta Redis se disponível, caindo para memória."""
@@ -129,5 +159,3 @@ class TraceRecorder:
     def recent(self, limit: int = 100) -> list[TraceEntry]:
         """Mais recente primeiro (versão síncrona em memória)."""
         return list(self._entries)[::-1][:limit]
-
-

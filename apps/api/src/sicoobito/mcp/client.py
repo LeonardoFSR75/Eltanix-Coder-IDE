@@ -105,7 +105,7 @@ class MCPServerConnection:
                 await self._stop_event.wait()
         except Exception as exc:
             self.status = "error"
-            self.error = str(exc)[:500]
+            self.error = str(exc)[:300]
             log.warning("mcp.connect.failed", server=self.config.name, error=self.error)
             ready.set()
         finally:

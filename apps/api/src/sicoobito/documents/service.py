@@ -25,6 +25,13 @@ from sicoobito.storage.blob import BlobStore
 
 log = get_logger(__name__)
 
+# Um PDF pequeno mas adversarial (streams/objetos aninhados propositalmente)
+# pode fazer o parser gastar minutos numa única extração — o teto de upload
+# limita o tamanho do arquivo, não o tempo de parsing. `asyncio.wait_for` não
+# mata a thread por baixo (stdlib não tem timeout de thread multiplataforma),
+# mas garante que a ingestão marca `failed` em vez de travar para sempre.
+_PDF_EXTRACT_TIMEOUT_SECONDS = 120
+
 
 def _extract_pages(data: bytes) -> list[str]:
     """Leitura/parse do PDF — bloqueante, roda fora do event loop."""
@@ -98,13 +105,30 @@ class DocumentService:
 
         try:
             data = await self.blob.get_object(bucket_key)
-            pages = await asyncio.to_thread(_extract_pages, data)
+            pages = await asyncio.wait_for(
+                asyncio.to_thread(_extract_pages, data),
+                timeout=_PDF_EXTRACT_TIMEOUT_SECONDS,
+            )
+        except TimeoutError:
+            log.warning(
+                "documents.ingest.extract_timeout",
+                document=str(document_id),
+                timeout_s=_PDF_EXTRACT_TIMEOUT_SECONDS,
+            )
+            async with session_scope() as session:
+                await store.set_status(
+                    session,
+                    document_id,
+                    status="failed",
+                    error=f"Extração excedeu {_PDF_EXTRACT_TIMEOUT_SECONDS}s.",
+                )
+            return
         except Exception as exc:
             log.warning(
                 "documents.ingest.extract_failed", document=str(document_id), error=str(exc)[:200]
             )
             async with session_scope() as session:
-                await store.set_status(session, document_id, status="failed", error=str(exc)[:500])
+                await store.set_status(session, document_id, status="failed", error=str(exc)[:300])
             return
 
         all_chunks: list[TextChunk] = []

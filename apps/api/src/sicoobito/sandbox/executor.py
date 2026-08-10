@@ -26,8 +26,6 @@ _TIMEOUT_MARGEM = 30.0
 class ExecutorConfig:
     base_url: str
     token: str = ""
-    image: str | None = None
-    network: bool | None = None
     ttl_seconds: int = 3600
 
 
@@ -66,8 +64,9 @@ class RemoteSandbox:
             # O caminho vai como este processo o enxerga; o executor traduz para
             # o equivalente no host, que é o que o daemon do Docker entende.
             "workspace": self.workspace.as_posix(),
-            "image": self.config.image,
-            "network": self.config.network,
+            # Sem `image`/`network` de propósito: o executor recusa aceitá-los
+            # do chamador (ver services/executor/app.py) — imagem e rede do
+            # sandbox são fixadas só pela env var do próprio executor (ADR 0002).
         }
         client, is_owned = await self._get_client(timeout_seconds=120.0)
         try:

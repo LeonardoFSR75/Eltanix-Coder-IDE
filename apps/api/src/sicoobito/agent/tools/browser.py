@@ -55,10 +55,19 @@ def _summarize(args: dict[str, Any]) -> str:
         "type": "object",
         "properties": {
             "action": {"type": "string", "enum": sorted(_ACTIONS)},
-            "url": {"type": "string", "description": "Obrigatório para `navigate`; precisa ser http(s)"},
+            "url": {
+                "type": "string",
+                "description": "Obrigatório para `navigate`; precisa ser http(s)",
+            },
             "selector": {"type": "string", "description": "Seletor CSS, para `click`/`type`"},
-            "x": {"type": "number", "description": "Coordenada X, alternativa a `selector` em `click`"},
-            "y": {"type": "number", "description": "Coordenada Y, alternativa a `selector` em `click`"},
+            "x": {
+                "type": "number",
+                "description": "Coordenada X, alternativa a `selector` em `click`",
+            },
+            "y": {
+                "type": "number",
+                "description": "Coordenada Y, alternativa a `selector` em `click`",
+            },
             "text": {"type": "string", "description": "Texto a digitar, para `type`"},
         },
         "required": ["action"],
@@ -107,9 +116,12 @@ async def browser_action(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
             data={"image_base64": imagem, "url": resultado.get("url")},
         )
     if acao == "navigate":
+        url_str = resultado.get("url")
+        title_str = resultado.get("title")
+        status_code = resultado.get("status")
         return ToolResult(
             ok=True,
-            content=f"Aberto {resultado.get('url')} — título: {resultado.get('title')!r}, status {resultado.get('status')}.",
+            content=f"Aberto {url_str} — título: {title_str!r}, status {status_code}.",
             data=resultado,
         )
     if acao == "content":

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+import re
 from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, Request, status
@@ -10,11 +12,62 @@ from pydantic import BaseModel, Field, model_validator
 from sicoobito.agent.tools import registry
 from sicoobito.api.deps import AuthDep, SettingsDep
 from sicoobito.audit.service import AuditService
+from sicoobito.logging_setup import get_logger
 from sicoobito.mcp import config_editor
 from sicoobito.mcp.config import load_catalog
 from sicoobito.mcp.manager import MCPManager
+from sicoobito.router import env_editor
+
+log = get_logger(__name__)
 
 router = APIRouter(prefix="/api/mcp", tags=["mcp"], dependencies=[AuthDep])
+
+_ENV_VAR_UNSAFE_RE = re.compile(r"[^A-Z0-9_]")
+
+
+def _env_var_name(server_name: str, key: str) -> str:
+    def _sanitize(value: str) -> str:
+        sanitized = _ENV_VAR_UNSAFE_RE.sub("_", value.upper())
+        return f"_{sanitized}" if not sanitized or sanitized[0].isdigit() else sanitized
+
+    return f"MCP_{_sanitize(server_name)}_{_sanitize(key)}"
+
+
+def _externalize_secrets(entry: dict[str, Any], settings: SettingsDep) -> dict[str, Any]:
+    """`env`/`headers` de servidor MCP nunca ficam em texto puro em `mcp.yaml`
+    (arquivo versionado no git) — o valor real vai para `.env` (não
+    versionado) e o yaml guarda só a referência `${VAR}`, mesmo padrão que
+    `providers.yaml` já usa para credenciais de LLM (ver `mcp/config.py::_expand_env`)."""
+    entry = dict(entry)
+    name = entry.get("name", "")
+    env_updates: dict[str, str] = {}
+
+    def _placeholderize(mapping: dict[str, str] | None) -> dict[str, str]:
+        result: dict[str, str] = {}
+        for key, value in (mapping or {}).items():
+            if not value or (value.startswith("${") and value.endswith("}")):
+                result[key] = value
+                continue
+            var_name = _env_var_name(name, key)
+            env_updates[var_name] = value
+            result[key] = f"${{{var_name}}}"
+        return result
+
+    if entry.get("env"):
+        entry["env"] = _placeholderize(entry["env"])
+    if entry.get("headers"):
+        entry["headers"] = _placeholderize(entry["headers"])
+
+    if env_updates:
+        # Efeito imediato (o processo atual já enxerga a var) — persistência
+        # em disco é best-effort, igual ao resto da tela de configuração.
+        os.environ.update(env_updates)
+        try:
+            env_editor.write_values(settings.env_file_path, env_updates)
+        except Exception as exc:  # persistência é best-effort
+            log.warning("mcp.server.secret_persist_failed", server=name, error=str(exc)[:200])
+
+    return entry
 
 
 def _manager(request: Request) -> MCPManager:
@@ -71,8 +124,9 @@ async def create_server(
     payload: MCPServerIn, request: Request, settings: SettingsDep
 ) -> dict[str, Any]:
     data = config_editor.load(settings.mcp_config_file)
+    entry = _externalize_secrets(payload.model_dump(), settings)
     try:
-        config_editor.append_server(data, payload.model_dump())
+        config_editor.append_server(data, entry)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     config_editor.dump(settings.mcp_config_file, data)
@@ -93,8 +147,9 @@ async def update_server(
     name: str, payload: MCPServerIn, request: Request, settings: SettingsDep
 ) -> dict[str, Any]:
     data = config_editor.load(settings.mcp_config_file)
+    entry = _externalize_secrets(payload.model_dump(), settings)
     try:
-        config_editor.update_server(data, name, payload.model_dump())
+        config_editor.update_server(data, name, entry)
     except KeyError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     config_editor.dump(settings.mcp_config_file, data)
@@ -126,6 +181,36 @@ async def toggle_server(name: str, request: Request, settings: SettingsDep) -> d
             module="MCP",
             action="Servidor MCP habilitado/desabilitado",
             details=name,
+        )
+    return {"servers": servers}
+
+
+class ToolOverrideIn(BaseModel):
+    risk: Literal["read", "write"] | None = None
+
+
+@router.put("/servers/{name}/tools/{tool_name}/override")
+async def set_tool_override(
+    name: str,
+    tool_name: str,
+    payload: ToolOverrideIn,
+    request: Request,
+    settings: SettingsDep,
+) -> dict[str, Any]:
+    data = config_editor.load(settings.mcp_config_file)
+    try:
+        config_editor.set_tool_override(data, name, tool_name, payload.risk)
+    except KeyError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    config_editor.dump(settings.mcp_config_file, data)
+
+    servers = await _reload_and_list(request, settings)
+    if audit := _audit(request):
+        await audit.record(
+            actor="usuário",
+            module="MCP",
+            action="Override de risco de ferramenta MCP",
+            details=f"{name}/{tool_name} -> {payload.risk or 'padrão'}",
         )
     return {"servers": servers}
 

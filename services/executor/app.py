@@ -94,8 +94,11 @@ class CreateRequest(BaseModel):
     session_id: str = Field(min_length=1, max_length=64)
     # Caminho do workspace **como a API o enxerga**; traduzido aqui.
     workspace: str
-    image: str | None = None
-    network: bool | None = None
+    # `image`/`network` propositalmente NÃO existem aqui: a imagem e a rede
+    # do sandbox são fixadas só por env var deste processo (DEFAULT_IMAGE,
+    # NETWORK_ENABLED) — um payload não pode afrouxar o isolamento de rede
+    # nem trocar a imagem, mesmo de posse do EXECUTOR_TOKEN (ver docstring
+    # do módulo e ADR 0002).
 
 
 class ExecRequest(BaseModel):
@@ -148,7 +151,6 @@ async def create_sandbox(payload: CreateRequest) -> dict[str, Any]:
         _container_cache[payload.session_id] = container.id
         return {"id": container.id, "name": nome, "reused": True}
 
-    rede = NETWORK_ENABLED if payload.network is None else payload.network
     # As flags de segurança abaixo (user, cap_drop, security_opt, privileged,
     # mem/cpu/pids limit) espelham as mesmas restrições em
     # apps/api/src/sicoobito/sandbox/container.py — aquele é o caminho local/dev,
@@ -156,7 +158,7 @@ async def create_sandbox(payload: CreateRequest) -> dict[str, Any]:
     # mude a mesma lá.
     try:
         container = client().containers.run(
-            payload.image or DEFAULT_IMAGE,
+            DEFAULT_IMAGE,
             # Mantém o container vivo entre execuções da mesma sessão, em vez
             # de pagar o custo de subir um por comando.
             command=["sleep", "infinity"],
@@ -164,7 +166,7 @@ async def create_sandbox(payload: CreateRequest) -> dict[str, Any]:
             detach=True,
             working_dir=WORKDIR,
             volumes={host_path: {"bind": WORKDIR, "mode": "rw"}},
-            network_mode="bridge" if rede else "none",
+            network_mode="bridge" if NETWORK_ENABLED else "none",
             mem_limit=DEFAULT_MEMORY,
             cpu_quota=CPU_QUOTA,
             pids_limit=PIDS_LIMIT,

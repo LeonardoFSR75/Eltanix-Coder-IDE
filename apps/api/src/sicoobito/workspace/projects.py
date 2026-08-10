@@ -31,6 +31,7 @@ from sicoobito.db.models import (
     RequestLog,
 )
 from sicoobito.logging_setup import get_logger
+from sicoobito.workspace.path_guard import default_path_guard
 
 log = get_logger(__name__)
 
@@ -42,6 +43,15 @@ _IGNORADOS = {".git", "node_modules", ".venv", "__pycache__", ".sicoobito", "$RE
 
 class ProjectError(ValueError):
     pass
+
+
+def _is_within(path: Path, root: Path) -> bool:
+    try:
+        resolved = path.resolve()
+        resolved_root = root.resolve()
+    except OSError:
+        return False
+    return resolved == resolved_root or resolved_root in resolved.parents
 
 
 @dataclass(slots=True)
@@ -83,8 +93,7 @@ def validate_name(name: str) -> str:
     limpo = (name or "").strip()
     if not limpo or limpo in {".", ".."} or not _NOME_VALIDO.match(limpo):
         raise ProjectError(
-            f"Nome de projeto inválido: {name!r}. Use apenas o nome da pasta, "
-            "sem barras nem '..'."
+            f"Nome de projeto inválido: {name!r}. Use apenas o nome da pasta, sem barras nem '..'."
         )
     return limpo
 
@@ -145,6 +154,33 @@ def list_projects(projects_root: Path) -> list[Project]:
     return projetos
 
 
+def _allow_existing_dirs(paths: list[str]) -> int:
+    """Parte bloqueante (stat + registro em memória) de `rehydrate_path_guard`
+    — isolada para rodar em thread, já que `Path.is_dir()` é I/O síncrono."""
+    count = 0
+    for local_path in paths:
+        if not local_path:
+            continue
+        path = Path(local_path)
+        if path.is_dir():
+            try:
+                default_path_guard.allow(path)
+                count += 1
+            except ValueError:
+                continue
+    return count
+
+
+async def rehydrate_path_guard(session: AsyncSession) -> int:
+    """Re-registra no `PathGuard` os projetos abertos via `open-path` em
+    execuções anteriores da API — o allowlist em memória não sobrevive a um
+    restart; sem isto, um projeto legitimamente aberto fora de
+    `PROJECTS_ROOT` perderia acesso ao próprio metadado git até ser reaberto
+    manualmente pela UI."""
+    registros = (await session.execute(select(ProjectRecord.local_path))).scalars().all()
+    return await asyncio.to_thread(_allow_existing_dirs, list(registros))
+
+
 async def sync_projects_db(session: AsyncSession, projects_root: Path) -> list[ProjectRecord]:
     """Sincroniza as pastas no filesystem com a tabela `project_record` do Postgres."""
     disk_projects = list_projects(projects_root)
@@ -168,6 +204,13 @@ async def sync_projects_db(session: AsyncSession, projects_root: Path) -> list[P
     if novos:
         await session.flush()
         log.info("projects.sync_db.added", count=len(novos))
+
+    # O allowlist do PathGuard é em memória — não sobrevive a um restart do
+    # processo. Este é o ponto de sincronização natural (chamado sempre que a
+    # Central de Projetos lista os projetos) para re-hidratá-lo a partir do
+    # que já está persistido, sem exigir que o usuário reabra manualmente
+    # cada projeto que vive fora de PROJECTS_ROOT.
+    await rehydrate_path_guard(session)
 
     stmt = select(ProjectRecord).order_by(ProjectRecord.name)
     res = await session.execute(stmt)
@@ -202,7 +245,16 @@ async def get_project_summary(
 
     # 2. Informações de Git local
     local_path = Path(rec.local_path) if rec.local_path else (projects_root / rec.slug)
-    is_git = (local_path / ".git").exists()
+    # `local_path` pode ter sido registrado fora de PROJECTS_ROOT via
+    # `/api/projects/open-path` — nesse caso, só ler metadado git dele se o
+    # PathGuard confirma que essa pasta foi explicitamente autorizada (o
+    # controle existia mas nunca era consultado; sem isto, qualquer
+    # ProjectRecord com `local_path` fora da raiz teria seu branch/commits
+    # lidos sem nenhuma checagem).
+    caminho_autorizado = _is_within(local_path, projects_root) or default_path_guard.is_allowed(
+        local_path
+    )
+    is_git = caminho_autorizado and (local_path / ".git").exists()
     branch = _branch_of(local_path) if is_git else None
 
     # 3. Telemetria de Custos
@@ -217,36 +269,46 @@ async def get_project_summary(
     tokens_total = (await session.execute(stmt_tokens)).scalar() or 0
 
     # 4. Notas (Segundo Cérebro)
-    notes_count = (await session.execute(
-        select(func.count(Note.id)).where(Note.project_slug == rec.slug)
-    )).scalar() or 0
+    notes_count = (
+        await session.execute(select(func.count(Note.id)).where(Note.project_slug == rec.slug))
+    ).scalar() or 0
 
     # 4b. Documentos (RAG)
-    documents_count = (await session.execute(
-        select(func.count(Document.id)).where(Document.project_slug == rec.slug)
-    )).scalar() or 0
+    documents_count = (
+        await session.execute(
+            select(func.count(Document.id)).where(Document.project_slug == rec.slug)
+        )
+    ).scalar() or 0
 
     # 5. Graphify (Grafo de Conhecimento)
-    graph_nodes = (await session.execute(
-        select(func.count(GraphNode.id)).where(GraphNode.workspace == rec.slug)
-    )).scalar() or 0
+    graph_nodes = (
+        await session.execute(
+            select(func.count(GraphNode.id)).where(GraphNode.workspace == rec.slug)
+        )
+    ).scalar() or 0
 
-    graph_edges = (await session.execute(
-        select(func.count(GraphEdge.id)).where(GraphEdge.workspace == rec.slug)
-    )).scalar() or 0
+    graph_edges = (
+        await session.execute(
+            select(func.count(GraphEdge.id)).where(GraphEdge.workspace == rec.slug)
+        )
+    ).scalar() or 0
 
     # 6. Auditoria
-    audit_count = (await session.execute(
-        select(func.count(AuditLogEntry.id)).where(AuditLogEntry.project_slug == rec.slug)
-    )).scalar() or 0
+    audit_count = (
+        await session.execute(
+            select(func.count(AuditLogEntry.id)).where(AuditLogEntry.project_slug == rec.slug)
+        )
+    ).scalar() or 0
 
     # 7. Sessões Ativas do Agente
-    sessions_active = (await session.execute(
-        select(func.count(AgentSessionRecord.session_id)).where(
-            AgentSessionRecord.project == rec.slug,
-            AgentSessionRecord.status == "open",
+    sessions_active = (
+        await session.execute(
+            select(func.count(AgentSessionRecord.session_id)).where(
+                AgentSessionRecord.project == rec.slug,
+                AgentSessionRecord.status == "open",
+            )
         )
-    )).scalar() or 0
+    ).scalar() or 0
 
     # 8. Git Intelligence — poucos commits recentes, best-effort: sem Git ou
     # repositório inválido não pode derrubar o resumo do projeto.

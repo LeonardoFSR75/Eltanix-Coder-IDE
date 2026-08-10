@@ -65,10 +65,9 @@ def build_task_prompt(
     partes: list[str] = []
     if repo_map:
         partes.append(
-            "Estrutura do repositório (esqueleto, para orientar a busca):\n"
-            f"```\n{repo_map}\n```"
+            f"Estrutura do repositório (esqueleto, para orientar a busca):\n```\n{repo_map}\n```"
         )
-    
+
     if focus_files or focus_folder:
         foco_parts: list[str] = ["PASTA E ARQUIVOS EM FOCO (ATENÇÃO PRINCIPAL):"]
         if focus_folder:
@@ -153,4 +152,3 @@ def wrap_untrusted_content(content: str, source_label: str = "dados_externos") -
         f"{clean_content}\n"
         f"</{source_label}_untrusted_content>"
     )
-

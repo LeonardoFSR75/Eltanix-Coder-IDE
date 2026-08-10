@@ -55,45 +55,36 @@ class AuthService:
     def __init__(self) -> None:
         self._memory_attempts: dict[str, list[datetime]] = {}
 
-    async def check_rate_limit(self, ip: str, redis: Any | None = None) -> bool:
-        """Verifica se o IP excedeu o limite de 5 tentativas por minuto.
+    async def check_and_register_attempt(self, ip: str, redis: Any | None = None) -> bool:
+        """Registra a tentativa de login atual e devolve `True` se ainda está
+        dentro do limite de 5 por minuto.
 
-        Usa Redis se disponível; caso contrário, usa contador em memória local.
+        Increment-then-check num único passo atômico (Redis `INCR`, ou lista
+        em memória sem nenhum `await` entre leitura e escrita) — antes disto,
+        `check_rate_limit` e `record_failed_attempt` eram duas chamadas
+        separadas: sob concorrência, várias tentativas paralelas liam a
+        mesma contagem antes de qualquer incremento ser persistido e todas
+        passavam pelo limite. Contar a tentativa atual (não só as que já
+        falharam) fecha essa corrida.
         """
         now = datetime.now(UTC)
-        window_start = now - timedelta(seconds=60)
 
-        if redis is not None:
-            try:
-                key = f"auth:ratelimit:{ip}"
-                count = await redis.get(key)
-                if count and int(count) >= 5:
-                    return False
-                return True
-            except Exception as exc:
-                log.warning("auth.ratelimit.redis_failed", error=str(exc)[:200])
-
-        attempts = [t for t in self._memory_attempts.get(ip, []) if t > window_start]
-        self._memory_attempts[ip] = attempts
-        return len(attempts) < 5
-
-    async def record_failed_attempt(self, ip: str, redis: Any | None = None) -> None:
-        """Registra uma tentativa malsucedida de login para o IP fornecido."""
-        now = datetime.now(UTC)
         if redis is not None:
             try:
                 key = f"auth:ratelimit:{ip}"
                 pipe = redis.pipeline()
-                await pipe.incr(key)
-                await pipe.expire(key, 60)
-                await pipe.execute()
-                return
+                pipe.incr(key)
+                pipe.expire(key, 60)
+                count, _ = await pipe.execute()
+                return int(count) <= 5
             except Exception as exc:
-                log.warning("auth.ratelimit.redis_record_failed", error=str(exc)[:200])
+                log.warning("auth.ratelimit.redis_failed", error=str(exc)[:200])
 
-        attempts = [t for t in self._memory_attempts.get(ip, []) if t > now - timedelta(seconds=60)]
+        window_start = now - timedelta(seconds=60)
+        attempts = [t for t in self._memory_attempts.get(ip, []) if t > window_start]
         attempts.append(now)
         self._memory_attempts[ip] = attempts
+        return len(attempts) <= 5
 
     async def reset_failed_attempts(self, ip: str, redis: Any | None = None) -> None:
         """Limpa o registro de falhas para o IP após login bem-sucedido."""
@@ -131,16 +122,30 @@ class AuthService:
         return user
 
     async def change_password(
-        self, *, user_id: uuid.UUID, old_password: str, new_password: str
+        self,
+        *,
+        user_id: uuid.UUID,
+        old_password: str,
+        new_password: str,
+        keep_session_token: str | None = None,
     ) -> bool:
-        """Troca a senha do usuário caso a senha antiga seja válida."""
+        """Troca a senha do usuário caso a senha antiga seja válida.
+
+        Revoga toda outra sessão ativa do usuário — sem isso, um token de
+        sessão vazado continuaria válido mesmo depois da troca de senha, que é
+        justamente a reação esperada quando o usuário legítimo suspeita de
+        acesso indevido."""
         async with session_scope() as session:
             user = await store.get_user(session, user_id)
             if user is None or not _verify_password(old_password, user.password_hash):
                 return False
             new_hash = _hash_password(new_password)
             await store.update_user_password(session, user, password_hash=new_hash)
-        log.info("auth.change_password.success", user_id=str(user_id))
+            keep_hash = _hash_token(keep_session_token) if keep_session_token else None
+            revogadas = await store.revoke_other_sessions(
+                session, user_id=user_id, keep_token_hash=keep_hash, now=datetime.now(UTC)
+            )
+        log.info("auth.change_password.success", user_id=str(user_id), sessions_revoked=revogadas)
         return True
 
     async def create_session(
@@ -191,4 +196,3 @@ class AuthService:
         except Exception as exc:
             log.warning("auth.sessions.purge_failed", error=str(exc)[:200])
             return 0
-

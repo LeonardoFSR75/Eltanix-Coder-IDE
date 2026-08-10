@@ -9,14 +9,23 @@ remontado.
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from sicoobito.audit.service import AuditService
+    from sicoobito.documents.service import DocumentService
+    from sicoobito.notes.service import NoteService
+    from sicoobito.skills.service import SkillService
+    from sicoobito.telemetry.tracer import TraceRecorder
 
 import httpx
 import structlog
 
 from sicoobito.agent import session_store
+from sicoobito.agent.approval_policy_config import load_approval_policy
 from sicoobito.agent.graph import DEFAULT_MAX_ITERATIONS, build_graph
 from sicoobito.agent.prompts import build_task_prompt
 from sicoobito.agent.state import AgentMode
@@ -82,11 +91,11 @@ class AgentRunner:
         indexer: ContextIndexer,
         sandboxes: SandboxManager,
         browser_config: BrowserConfig | None = None,
-        documents: Any | None = None,  # DocumentService
-        notes: Any | None = None,  # NoteService
-        skills: Any | None = None,  # SkillService
-        audit: Any | None = None,  # AuditService
-        trace_recorder: Any | None = None,  # TraceRecorder
+        documents: DocumentService | None = None,
+        notes: NoteService | None = None,
+        skills: SkillService | None = None,
+        audit: AuditService | None = None,
+        trace_recorder: TraceRecorder | None = None,
     ) -> None:
         self.settings = settings
         self.engine = engine
@@ -100,6 +109,11 @@ class AgentRunner:
         self.trace_recorder = trace_recorder
         self._browser_http: httpx.AsyncClient | None = None
         self._sessions: dict[str, AgentSession] = {}
+        # Um lock por sessão evita que duas chamadas concorrentes a
+        # `stream_run` (retry de rede, duplo clique, aba duplicada) retomem o
+        # mesmo checkpoint em paralelo e executem a mesma ferramenta
+        # WRITE/EXEC já aprovada duas vezes.
+        self._session_locks: dict[str, asyncio.Lock] = {}
         self._checkpointer: Any | None = None
         # `AsyncPostgresSaver.from_conn_string` é um @asynccontextmanager: a
         # conexão só existe dentro do `async with` que ele abre internamente.
@@ -221,6 +235,7 @@ class AgentRunner:
             trace_recorder=self.trace_recorder,
             engine=self.engine,
             custom_instructions=_load_custom_instructions(workspace_root),
+            approval_policy=load_approval_policy(workspace_root),
         )
 
         sessao = AgentSession(
@@ -290,7 +305,9 @@ class AgentRunner:
             async with session_scope() as db:
                 await session_store.mark_closed(db, session_id=session_id)
         except Exception as exc:
-            log.warning("agent.session.persist_close_failed", session=session_id, error=str(exc)[:200])
+            log.warning(
+                "agent.session.persist_close_failed", session=session_id, error=str(exc)[:200]
+            )
         log.info("agent.session.closed", session=session_id)
 
     # ── Execução ────────────────────────────────────────────────────────────
@@ -312,8 +329,9 @@ class AgentRunner:
 
         prompt_text = build_task_prompt(
             session.task,
-            mapa,
-            session.mode,
+            # pyrefly: ignore [bad-argument-type]
+            repo_map=mapa,
+            mode=session.mode,
             focus_files=session.focus_files,
             focus_folder=session.focus_folder,
         )
@@ -339,41 +357,63 @@ class AgentRunner:
         if self._browser_http is not None and not self._browser_http.is_closed:
             await self._browser_http.aclose()
 
-    async def stream_run(self, session: AgentSession, *, resume: Any = None):
+    async def stream_run(
+        self, session: AgentSession, *, resume: Any = None, message: str | None = None
+    ):
         """Executa o grafo emitindo eventos. Cede o controle na aprovação."""
-        # Amarra `session_id` a todo log emitido durante o streaming — uma
-        # sessão pode gerar dezenas de spans de ferramentas, e sem isto não
-        # há como filtrar só os logs dela sem grep por timestamp aproximado.
-        # unbind no finally evita que o valor vaze para outra requisição caso
-        # a task ASGI seja reaproveitada ou o generator seja abandonado
-        # (cliente desconectou) antes do stream terminar. unbind em vez de
-        # clear_contextvars(): esta função roda dentro do contexto já aberto
-        # pelo CorrelationIdMiddleware (request_id), que não deve ser apagado
-        # daqui.
-        structlog.contextvars.bind_contextvars(session_id=session.session_id)
-        try:
-            compilado = await self._compiled_graph(session)
-            config = {"configurable": {"thread_id": session.session_id}}
+        lock = self._session_locks.setdefault(session.session_id, asyncio.Lock())
+        if lock.locked():
+            raise RuntimeError(
+                f"Sessão {session.session_id} já está em execução — aguarde terminar "
+                "antes de reenviar (evita executar a mesma aprovação duas vezes)."
+            )
+        async with lock:
+            # Amarra `session_id` a todo log emitido durante o streaming — uma
+            # sessão pode gerar dezenas de spans de ferramentas, e sem isto não
+            # há como filtrar só os logs dela sem grep por timestamp aproximado.
+            # unbind no finally evita que o valor vaze para outra requisição caso
+            # a task ASGI seja reaproveitada ou o generator seja abandonado
+            # (cliente desconectou) antes do stream terminar. unbind em vez de
+            # clear_contextvars(): esta função roda dentro do contexto já aberto
+            # pelo CorrelationIdMiddleware (request_id), que não deve ser apagado
+            # daqui.
+            structlog.contextvars.bind_contextvars(session_id=session.session_id)
+            try:
+                compilado = await self._compiled_graph(session)
+                config = {"configurable": {"thread_id": session.session_id}}
 
-            if resume is not None:
-                from langgraph.types import Command
+                if resume is not None:
+                    from langgraph.types import Command
 
-                entrada: Any = Command(resume=resume)
-            else:
-                entrada = await self._initial_state(session)
+                    entrada: Any = Command(resume=resume)
+                elif message:
+                    entrada = {
+                        "messages": [{"role": "user", "content": message}],
+                        "finished": False,
+                    }
+                else:
+                    estado_existente = (
+                        await compilado.aget_state(config) if compilado.checkpointer else None
+                    )
+                    if estado_existente and estado_existente.values:
+                        entrada = None
+                    else:
+                        entrada = await self._initial_state(session)
 
-            async for evento in compilado.astream(entrada, config=config, stream_mode="updates"):
-                for no, atualizacao in evento.items():
-                    yield {"node": no, "update": _serializable(atualizacao)}
+                async for evento in compilado.astream(
+                    entrada, config=config, stream_mode="updates"
+                ):
+                    for no, atualizacao in evento.items():
+                        yield {"node": no, "update": _serializable(atualizacao)}
 
-            estado = await compilado.aget_state(config) if compilado.checkpointer else None
-            if estado is not None and estado.tasks:
-                # Grafo parado numa interrupção: há aprovação pendente.
-                for tarefa in estado.tasks:
-                    for interrupcao in getattr(tarefa, "interrupts", []) or []:
-                        yield {"node": "interrupt", "update": _serializable(interrupcao.value)}
-        finally:
-            structlog.contextvars.unbind_contextvars("session_id")
+                estado = await compilado.aget_state(config) if compilado.checkpointer else None
+                if estado is not None and estado.tasks:
+                    # Grafo parado numa interrupção: há aprovação pendente.
+                    for tarefa in estado.tasks:
+                        for interrupcao in getattr(tarefa, "interrupts", []) or []:
+                            yield {"node": "interrupt", "update": _serializable(interrupcao.value)}
+            finally:
+                structlog.contextvars.unbind_contextvars("session_id")
 
     async def get_messages(self, session: AgentSession) -> list[dict[str, Any]]:
         """Mensagens acumuladas no checkpoint — reabre o transcript real de uma

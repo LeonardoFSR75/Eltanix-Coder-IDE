@@ -429,6 +429,41 @@ export function Explorer() {
         {renderar(".", 0)}
       </div>
 
+      <div className="explorer-subsections">
+        <details className="explorer-collapsible" open>
+          <summary className="explorer-collapsible-header">
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="chevron-icon">
+              <polyline points="9 18 15 12 9 6" />
+            </svg>
+            <span>Estrutura do Código</span>
+          </summary>
+          <div className="explorer-collapsible-content">
+            {active ? (
+              <div className="outline-item">
+                <span className="outline-symbol">ƒ</span> {active.split("/").pop()}
+              </div>
+            ) : (
+              <div className="outline-empty">Nenhum arquivo ativo para outline</div>
+            )}
+          </div>
+        </details>
+
+        <details className="explorer-collapsible">
+          <summary className="explorer-collapsible-header">
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="chevron-icon">
+              <polyline points="9 18 15 12 9 6" />
+            </svg>
+            <span>Linha do Tempo</span>
+          </summary>
+          <div className="explorer-collapsible-content">
+            <div className="timeline-item">
+              <span className="timeline-dot" />
+              <span className="timeline-label">Histórico Local / Git</span>
+            </div>
+          </div>
+        </details>
+      </div>
+
       {menu && (
         <>
           <div className="menu-backdrop" onClick={() => setMenu(null)} onContextMenu={(e) => { e.preventDefault(); setMenu(null); }} />

@@ -88,42 +88,57 @@ class GraphStore:
         return result.scalar_one_or_none()
 
     async def get_ego_subgraph(
-        self, node_id: UUID, max_hops: int = 2
+        self, node_id: UUID, *, workspace: str, max_hops: int = 2
     ) -> tuple[list[GraphNode], list[GraphEdge]]:
-        """Retorna o subgrafo ego estendido a até max_hops a partir do nó central."""
+        """Retorna o subgrafo ego estendido a até max_hops a partir do nó central.
+
+        `workspace` é obrigatório e filtra toda etapa da travessia — sem isso a
+        CTE recursiva atravessa `graph_edge` sem checar workspace nenhum, e um
+        `node_id` de outro projeto vazaria pro resultado (canonical_id já é
+        único por `(workspace, canonical_id)`, mas edges referenciam UUID de
+        nó direto, não canonical_id, então essa unicidade sozinha não protegia
+        a travessia).
+        """
         query = text(
             """
             WITH RECURSIVE graph_cte AS (
                 SELECT id AS node_id, 0 AS hop
                 FROM graph_node
-                WHERE id = :node_id
+                WHERE id = :node_id AND workspace = :workspace
 
                 UNION
 
                 SELECT
-                    CASE WHEN e.source_id = gc.node_id THEN e.target_id ELSE e.source_id END AS node_id,
+                    CASE WHEN e.source_id = gc.node_id
+                        THEN e.target_id ELSE e.source_id
+                    END AS node_id,
                     gc.hop + 1 AS hop
                 FROM graph_cte gc
-                JOIN graph_edge e ON e.source_id = gc.node_id OR e.target_id = gc.node_id
+                JOIN graph_edge e ON (e.source_id = gc.node_id OR e.target_id = gc.node_id)
+                    AND e.workspace = :workspace
                 WHERE gc.hop < :max_hops
             )
             SELECT DISTINCT node_id FROM graph_cte;
             """
         )
-        result = await self.session.execute(query, {"node_id": str(node_id), "max_hops": max_hops})
+        result = await self.session.execute(
+            query, {"node_id": str(node_id), "workspace": workspace, "max_hops": max_hops}
+        )
         node_ids = [row[0] for row in result.fetchall()]
 
         if not node_ids:
             return [], []
 
         nodes_result = await self.session.execute(
-            select(GraphNode).where(GraphNode.id.in_(node_ids))
+            select(GraphNode).where(GraphNode.id.in_(node_ids), GraphNode.workspace == workspace)
         )
         nodes = list(nodes_result.scalars().all())
 
         edges_result = await self.session.execute(
             select(GraphEdge).where(
-                GraphEdge.source_id.in_(node_ids), GraphEdge.target_id.in_(node_ids)
+                GraphEdge.source_id.in_(node_ids),
+                GraphEdge.target_id.in_(node_ids),
+                GraphEdge.workspace == workspace,
             )
         )
         edges = list(edges_result.scalars().all())

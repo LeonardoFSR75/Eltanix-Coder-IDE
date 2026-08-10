@@ -12,6 +12,8 @@ export default function ProjectsPage() {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [gitUrl, setGitUrl] = useState("");
+  const [initGit, setInitGit] = useState(true);
+  const [createGitHubRepo, setCreateGitHubRepo] = useState(false);
   const [budgetLimit, setBudgetLimit] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const { addToast } = useToast();
@@ -43,6 +45,8 @@ export default function ProjectsPage() {
         name: name.trim(),
         description: description.trim(),
         git_url: gitUrl.trim() || undefined,
+        init_git: initGit,
+        create_github_repo: createGitHubRepo,
         budget_limit_usd: budgetLimit ? parseFloat(budgetLimit) : undefined,
       });
       addToast(`Projeto '${created.name}' cadastrado com sucesso!`, "success");
@@ -50,6 +54,8 @@ export default function ProjectsPage() {
       setName("");
       setDescription("");
       setGitUrl("");
+      setInitGit(true);
+      setCreateGitHubRepo(false);
       setBudgetLimit("");
       loadData();
     } catch (err: unknown) {
@@ -364,6 +370,48 @@ export default function ProjectsPage() {
                       color: "var(--text)",
                     }}
                   />
+                </div>
+
+                <div style={{ marginBottom: "0.75rem" }}>
+                  <label
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "0.6rem",
+                      color: "var(--text)",
+                      fontSize: "0.9rem",
+                      cursor: "pointer",
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={initGit}
+                      onChange={(e) => setInitGit(e.target.checked)}
+                      style={{ cursor: "pointer", width: "16px", height: "16px", accentColor: "var(--accent)" }}
+                    />
+                    <span>🌱 Inicializar repositório Git local automaticamente (`git init`)</span>
+                  </label>
+                </div>
+
+                <div style={{ marginBottom: "1rem" }}>
+                  <label
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "0.6rem",
+                      color: "var(--text)",
+                      fontSize: "0.9rem",
+                      cursor: "pointer",
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={createGitHubRepo}
+                      onChange={(e) => setCreateGitHubRepo(e.target.checked)}
+                      style={{ cursor: "pointer", width: "16px", height: "16px", accentColor: "var(--accent)" }}
+                    />
+                    <span>🔒 Criar repositório remoto **PRIVADO** no GitHub automaticamente</span>
+                  </label>
                 </div>
 
                 <div style={{ marginBottom: "1.5rem" }}>

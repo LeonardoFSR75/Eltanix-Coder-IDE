@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import asyncio
+import ipaddress
 import re
+import socket
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field, field_validator
@@ -38,6 +41,80 @@ _CREDENTIAL_FIELDS: list[tuple[str, str, str, bool]] = [
     ("groq_api_key", "groq_api_key", "GROQ_API_KEY", True),
     ("github_token", "github_token", "GITHUB_TOKEN", True),
 ]
+
+# `azure_api_base`/`databricks_host` viajam JUNTO com uma api_key/token real em
+# toda chamada ao provedor (ver adapters/azure_foundry.py, adapters/databricks.py)
+# — sem essa validação, trocar o host bastaria para fazer o segredo real ser
+# enviado para um host arbitrário controlado por quem tiver sessão válida.
+_METADATA_HOSTS = {
+    "169.254.169.254",
+    "metadata.google.internal",
+    "metadata.azure.com",
+    "instance-data",
+    "instance-data.ec2.internal",
+}
+# Nomes de serviço internos do docker-compose que não devem ser alcançáveis
+# através de um campo de host de provedor (mesmo o Ollama, que não carrega
+# segredo, não deve poder ser usado para sondar os outros serviços).
+_INTERNAL_SERVICE_HOSTS = {"postgres", "redis", "minio", "executor", "browser", "api", "web"}
+
+
+def _resolve_host_ips(hostname: str) -> list[ipaddress.IPv4Address | ipaddress.IPv6Address]:
+    try:
+        infos = socket.getaddrinfo(hostname, None)
+    except OSError:
+        return []
+    resolved: list[ipaddress.IPv4Address | ipaddress.IPv6Address] = []
+    for info in infos:
+        try:
+            resolved.append(ipaddress.ip_address(info[4][0]))
+        except ValueError:
+            continue
+    return resolved
+
+
+def _is_private_or_reserved(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
+    return (
+        ip.is_private
+        or ip.is_loopback
+        or ip.is_link_local
+        or ip.is_reserved
+        or ip.is_multicast
+        or ip.is_unspecified
+    )
+
+
+def _validate_provider_host_url(
+    field_name: str, value: str, *, require_https: bool, allow_private: bool
+) -> None:
+    """Bloqueia SSRF/exfiltração via host de provedor configurável pela UI.
+
+    Validação em tempo de escrita (best-effort contra DNS rebinding — não há
+    pinning de IP nas chamadas subsequentes do litellm, mas isso já barra o
+    ataque direto de apontar o host para um servidor do atacante ou para um
+    serviço interno do compose)."""
+    parsed = urlparse(value)
+    esquemas_ok = ("https",) if require_https else ("http", "https")
+    if parsed.scheme not in esquemas_ok:
+        raise ValueError(f"{field_name}: esquema deve ser {'/'.join(esquemas_ok)}")
+    hostname = parsed.hostname
+    if not hostname:
+        raise ValueError(f"{field_name}: host inválido")
+    lowered = hostname.lower()
+    if lowered in _METADATA_HOSTS:
+        raise ValueError(f"{field_name}: host bloqueado")
+    if lowered in _INTERNAL_SERVICE_HOSTS:
+        raise ValueError(f"{field_name}: host bloqueado")
+    ips = _resolve_host_ips(hostname)
+    if not ips and not allow_private:
+        raise ValueError(f"{field_name}: não foi possível resolver o host")
+    for ip in ips:
+        if str(ip) in _METADATA_HOSTS:
+            raise ValueError(f"{field_name}: host bloqueado")
+        if not allow_private and _is_private_or_reserved(ip):
+            raise ValueError(
+                f"{field_name}: aponta para endereço privado/reservado — não permitido"
+            )
 
 
 @router.get("/health")
@@ -332,6 +409,28 @@ class UpdateCredentialsRequest(BaseModel):
     def _sem_quebra_de_linha(cls, value: str | None) -> str | None:
         if value is not None and ("\n" in value or "\r" in value):
             raise ValueError("credencial não pode conter quebra de linha")
+        return value
+
+    @field_validator("azure_api_base", "databricks_host")
+    @classmethod
+    def _validar_host_com_segredo_pareado(cls, value: str | None) -> str | None:
+        # Estes dois campos viajam junto com uma api_key/token real — exige
+        # https e recusa host privado/reservado/interno do compose.
+        if value:
+            _validate_provider_host_url(
+                "azure_api_base/databricks_host", value, require_https=True, allow_private=False
+            )
+        return value
+
+    @field_validator("ollama_base_url")
+    @classmethod
+    def _validar_ollama_base_url(cls, value: str | None) -> str | None:
+        # Sem segredo pareado, mas ainda assim não pode virar uma rota para
+        # sondar outros serviços internos do compose ou o metadata endpoint.
+        if value:
+            _validate_provider_host_url(
+                "ollama_base_url", value, require_https=False, allow_private=True
+            )
         return value
 
 

@@ -29,7 +29,9 @@ class AuditService:
         session_id: str | None = None,
         project_slug: str | None = None,
         metadata: dict | None = None,
+        event_metadata: dict | None = None,
     ) -> AuditLogEntry:
+        meta = metadata if metadata is not None else event_metadata
         async with session_scope() as session:
             return await store.record(
                 session,
@@ -41,7 +43,7 @@ class AuditService:
                 status=status,
                 session_id=session_id,
                 project_slug=project_slug,
-                metadata=metadata,
+                metadata=meta,
             )
 
     async def record_approvals(
@@ -51,24 +53,35 @@ class AuditService:
         pending: list[dict[str, Any]],
         approvals: dict[str, bool],
         reasons: dict[str, str],
+        decided_by: dict[str, str] | None = None,
     ) -> None:
         """Um registro por ação pendente — chamado pelo nó `approve` do grafo,
-        depois de o usuário decidir. Cobre exatamente o momento em que uma
-        ação de risco (WRITE/EXEC) passa a valer ou é recusada."""
+        depois de a decisão (humana ou por política de auto-aprovação) ser
+        tomada. Cobre exatamente o momento em que uma ação de risco
+        (WRITE/EXEC) passa a valer ou é recusada.
+
+        `decided_by` distingue uma auto-aprovação (`"policy"`) de uma decisão
+        humana de verdade — sem isso, as duas ficariam indistinguíveis no
+        log de auditoria, e uma auto-aprovação passaria por "foi revisada"."""
+        decisores = decided_by or {}
         async with session_scope() as session:
             for item in pending:
                 call_id = item.get("tool_call_id", "")
                 approved = approvals.get(call_id, False)
+                auto_aprovado = decisores.get(call_id) == "policy"
                 await store.record(
                     session,
-                    actor="agente",
+                    actor="política" if auto_aprovado else "agente",
                     module="Agent",
                     action=f"Aprovação de ferramenta: {item.get('tool', '?')}",
                     details=item.get("summary", ""),
                     risk_level="critical" if item.get("risk") == "exec" else "medium",
                     status="success" if approved else "denied",
                     session_id=session_id,
-                    metadata={"reason": reasons.get(call_id, "")} if not approved else None,
+                    metadata={
+                        "reason": reasons.get(call_id, ""),
+                        "auto_approved": auto_aprovado,
+                    },
                 )
 
     async def list_all(

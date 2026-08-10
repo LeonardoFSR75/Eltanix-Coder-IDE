@@ -14,6 +14,7 @@ import subprocess
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 from git import GitCommandError, Repo
 
@@ -79,26 +80,51 @@ def status(root: Path) -> RepoStatus:
     repo = open_repo(root)
 
     files: list[FileStatus] = []
-    for item in repo.index.diff(None):  # working tree vs index
-        files.append(FileStatus(path=item.a_path, status=_change_label(item.change_type)))
+    try:
+        for item in repo.index.diff(None):  # working tree vs index
+            files.append(FileStatus(path=item.a_path, status=_change_label(item.change_type)))
+    except Exception:
+        pass
+
     try:
         for item in repo.index.diff("HEAD"):  # index vs HEAD
             files.append(FileStatus(path=item.a_path, status="staged"))
-    except GitCommandError:
+    except Exception:
         # Repositório sem commit ainda: não há HEAD para comparar.
         pass
-    files.extend(FileStatus(path=p, status="untracked") for p in repo.untracked_files)
 
     try:
-        branch = repo.active_branch.name
-    except TypeError:  # HEAD destacado
-        branch = f"(detached {repo.head.commit.hexsha[:8]})"
+        files.extend(FileStatus(path=p, status="untracked") for p in repo.untracked_files)
+    except Exception:
+        pass
 
-    head = repo.head.commit.hexsha if repo.head.is_valid() else ""
+    branch = "main"
+    try:
+        branch = repo.active_branch.name
+    except Exception:
+        try:
+            head_sha = repo.head.commit.hexsha[:8]
+            branch = f"(detached {head_sha})"
+        except Exception:
+            branch = "main"
+
+    head = ""
+    try:
+        if repo.head.is_valid():
+            head = repo.head.commit.hexsha
+    except Exception:
+        head = ""
+
+    dirty = False
+    try:
+        dirty = repo.is_dirty(untracked_files=True)
+    except Exception:
+        dirty = len(files) > 0
+
     return RepoStatus(
         branch=branch,
         head=head,
-        dirty=repo.is_dirty(untracked_files=True),
+        dirty=dirty,
         files=files,
     )
 
@@ -158,10 +184,21 @@ def create_worktree(
     _ensure_excluded(repo)
 
     if not repo.head.is_valid():
-        raise GitError(
-            "O repositório não tem nenhum commit ainda. Faça o commit inicial "
-            "antes de rodar o agente."
-        )
+        try:
+            gitignore_path = root / ".gitignore"
+            if not gitignore_path.exists():
+                gitignore_path.write_text(
+                    ".sicoobito/\nnode_modules/\n__pycache__/\n", encoding="utf-8"
+                )
+            repo.index.add([str(gitignore_path.relative_to(root))])
+            repo.index.commit("Initial commit")
+            log.info("git.auto_initial_commit.created", root=str(root))
+        except Exception as exc:
+            log.warning("git.auto_initial_commit.failed", root=str(root), error=str(exc))
+            raise GitError(
+                "O repositório não tem nenhum commit ainda. Faça o commit inicial "
+                "antes de rodar o agente."
+            ) from exc
 
     try:
         base = base_branch or repo.active_branch.name
@@ -335,8 +372,6 @@ def _get_git_config_val(key: str, scope: str = "global", root: Path | None = Non
         cmd.append("--global")
     elif scope == "local" and root:
         cmd.extend(["--file", str(root / ".git" / "config")])
-    else:
-        cmd.append("--get")
     cmd.extend(["--get", key])
 
     try:
@@ -414,6 +449,14 @@ def update_git_user_config(
         updates["user.signingkey"] = signing_key.strip()
 
     cwd = str(root) if root and root.exists() else None
+    if scope == "local" and root and root.exists() and not (root / ".git").exists():
+        try:
+            from git import Repo
+
+            Repo.init(root)
+        except Exception as exc:
+            log.warning("git.init.auto_failed", path=str(root), error=str(exc))
+
     flag = "--global" if scope == "global" else "--local"
 
     for key, val in updates.items():
@@ -426,4 +469,3 @@ def update_git_user_config(
             raise GitError(f"Erro ao atualizar git config: {exc}") from exc
 
     return get_git_user_config(root=root)
-

@@ -127,6 +127,45 @@ def test_cache_key_is_stable_across_dict_ordering():
     assert cache.key("m", a) == cache.key("m", b)
 
 
+# ── ResponseCache.get_by_key — usado pelo cache semântico ──────────────────
+
+
+class _FakeRedisKV:
+    def __init__(self) -> None:
+        self.store: dict[str, str] = {}
+
+    async def get(self, key):
+        return self.store.get(key)
+
+
+async def test_get_by_key_returns_none_when_disabled():
+    cache = ResponseCache(_FakeRedisKV(), enabled=False)
+    assert await cache.get_by_key("qualquer-chave") is None
+
+
+async def test_get_by_key_returns_none_for_missing_key():
+    cache = ResponseCache(_FakeRedisKV(), enabled=True)
+    assert await cache.get_by_key("nao-existe") is None
+
+
+async def test_get_by_key_returns_cached_response_without_recomputing_hash():
+    import json
+
+    redis = _FakeRedisKV()
+    payload = {"choices": [{"message": {"content": "oi"}}]}
+    redis.store["chave-conhecida"] = json.dumps(
+        {"payload": payload, "prompt_tokens": 7, "completion_tokens": 3, "model_id": "modelo-x"}
+    )
+    cache = ResponseCache(redis, enabled=True)
+
+    resultado = await cache.get_by_key("chave-conhecida")
+    assert resultado is not None
+    assert resultado.payload == payload
+    assert resultado.prompt_tokens == 7
+    assert resultado.completion_tokens == 3
+    assert resultado.model_id == "modelo-x"
+
+
 def test_token_estimate_grows_with_input():
     short = estimate_prompt_tokens([{"role": "user", "content": "oi"}])
     long = estimate_prompt_tokens([{"role": "user", "content": "oi " * 500}])

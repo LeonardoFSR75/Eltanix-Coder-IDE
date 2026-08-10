@@ -9,6 +9,7 @@ agendada como tarefa de fundo.
 
 from __future__ import annotations
 
+import re
 import uuid
 from typing import Any
 
@@ -28,6 +29,16 @@ router = APIRouter(prefix="/api/documents", tags=["documents"], dependencies=[Au
 log = get_logger(__name__)
 
 _ALLOWED_CONTENT_TYPES = {"application/pdf"}
+_UNSAFE_OBJECT_KEY_CHARS = re.compile(r"[^A-Za-z0-9._-]")
+
+
+def _safe_object_name(filename: str) -> str:
+    """`filename` vira parte literal da chave do objeto no MinIO — sem
+    sanitizar, `/`, `..` ou caracteres de controle no nome viram estrutura
+    dentro do bucket em vez de um nome de arquivo comum."""
+    nome = filename.rsplit("/", 1)[-1].rsplit("\\", 1)[-1]
+    nome = _UNSAFE_OBJECT_KEY_CHARS.sub("_", nome).strip("._") or "documento"
+    return nome[:255]
 
 
 def _service(request: Request) -> DocumentService:
@@ -77,7 +88,7 @@ async def request_upload_url(
         )
 
     blob = _blob(request)
-    object_key = f"{uuid.uuid4()}/{payload.filename}"
+    object_key = f"{uuid.uuid4()}/{_safe_object_name(payload.filename)}"
 
     async with session_scope() as session:
         document = await store.create_document(
@@ -97,7 +108,10 @@ async def request_upload_url(
 
 @router.post("/{document_id}/confirm")
 async def confirm_upload(
-    document_id: uuid.UUID, request: Request, background_tasks: BackgroundTasks
+    document_id: uuid.UUID,
+    request: Request,
+    background_tasks: BackgroundTasks,
+    settings: SettingsDep,
 ) -> dict[str, Any]:
     blob = _blob(request)
     service = _service(request)
@@ -114,6 +128,32 @@ async def confirm_upload(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Upload ainda não chegou ao armazenamento. Tente novamente em instantes.",
+        )
+
+    # `size_bytes` foi só o valor declarado pelo cliente ao pedir a URL — o
+    # upload em si vai direto para o MinIO, sem passar pela API, então nada
+    # até aqui impediu um arquivo maior que o limite configurado. Checa o
+    # tamanho real do objeto antes de agendar a extração/embedding.
+    max_bytes = settings.documents_max_upload_mb * 1024 * 1024
+    tamanho_real = await blob.stat_size(object_key)
+    if tamanho_real is not None and tamanho_real > max_bytes:
+        try:
+            await blob.remove_object(object_key)
+        except Exception as exc:
+            log.warning(
+                "documents.oversized_cleanup_failed", object_key=object_key, error=str(exc)[:200]
+            )
+        async with session_scope() as session:
+            await store.set_status(
+                session,
+                document_id,
+                status="failed",
+                error=f"Arquivo enviado ({tamanho_real} bytes) excede o limite de "
+                f"{settings.documents_max_upload_mb}MB.",
+            )
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=f"Arquivo maior que o limite de {settings.documents_max_upload_mb}MB.",
         )
 
     async with session_scope() as session:

@@ -91,8 +91,7 @@ class WorkspaceFS:
         size = target.stat().st_size
         if size > max_bytes:
             raise FileTooLargeError(
-                f"{relative} tem {size} bytes (limite {max_bytes}). "
-                "Leia um trecho com read_lines."
+                f"{relative} tem {size} bytes (limite {max_bytes}). Leia um trecho com read_lines."
             )
 
         content = read_text(target)

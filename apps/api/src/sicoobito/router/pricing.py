@@ -40,9 +40,7 @@ class Usage:
 
         def _get(obj: object, *names: str) -> int:
             for name in names:
-                value = (
-                    obj.get(name) if isinstance(obj, dict) else getattr(obj, name, None)
-                )
+                value = obj.get(name) if isinstance(obj, dict) else getattr(obj, name, None)
                 if value is not None:
                     try:
                         return int(value)

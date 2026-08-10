@@ -179,7 +179,18 @@ class GraphIndexer:
 
         for scanned in scanned_files:
             ext = scanned.absolute.suffix.lower()
-            if ext in (".png", ".jpg", ".jpeg", ".gif", ".ico", ".pdf", ".zip", ".exe", ".dll", ".map"):
+            if ext in (
+                ".png",
+                ".jpg",
+                ".jpeg",
+                ".gif",
+                ".ico",
+                ".pdf",
+                ".zip",
+                ".exe",
+                ".dll",
+                ".map",
+            ):
                 continue
 
             try:

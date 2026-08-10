@@ -27,7 +27,7 @@
 │  workspace: WorkspaceFS · git · github · projects              │
 │  mcp:       MCPManager · conexões stdio/HTTP                   │
 │  lsp:       ponte WebSocket ↔ language server                  │
-│  rag:       documents + notes + context (3x hybrid_search RRF) │
+│  rag:       documents + notes + context + graphify (4x RAG / GQL CTE expansion) │
 │  audit:     registro de aprovações WRITE/EXEC                  │
 │  telemetry: TraceRecorder (Redis/memória) + request_log (Postgres)│
 │                                                                 │
@@ -84,6 +84,7 @@
 | `lsp/` | Ponte de integração entre Monaco Editor no browser e Language Server Protocol por stdio. |
 | `documents/` | Ingestão e busca vetorial/híbrida de documentos (PDFs/MDs) via MinIO + pgvector. |
 | `notes/` | Segundo Cérebro: gerenciamento de notas interconectadas com `[[wikilinks]]`. |
+| `graphify/` | Grafo de Conhecimento e Graph RAG: extração L1 (Wikilinks, Tags, AST/TS Imports), arestas L2/L3, expansão via CTE/GQL e métricas. |
 | `skills/` | Serviço de armazenamento e execução de habilidades customizadas (Skills). |
 | `audit/` | Registro de auditoria durável de ações `WRITE` e `EXEC` aprovadas pelo usuário. |
 | `telemetry/` | Buffer `TraceRecorder` com suporte a persistência no Redis para spans de ferramentas e RAG. |

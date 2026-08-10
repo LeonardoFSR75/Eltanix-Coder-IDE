@@ -43,6 +43,8 @@ export interface ProjectCreateIn {
   name: string;
   description?: string;
   git_url?: string;
+  init_git?: boolean;
+  create_github_repo?: boolean;
   budget_limit_usd?: number;
   settings?: Record<string, any>;
 }

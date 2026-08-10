@@ -213,9 +213,7 @@ def _collect_symbols(
         node_type = child.type
 
         if node_type in rules.container_nodes and depth < 6:
-            found.extend(
-                _collect_symbols(child, source, rules, path, language, parent, depth + 1)
-            )
+            found.extend(_collect_symbols(child, source, rules, path, language, parent, depth + 1))
             continue
 
         if node_type not in rules.symbol_nodes:

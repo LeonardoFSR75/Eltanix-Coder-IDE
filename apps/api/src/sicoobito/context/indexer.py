@@ -101,8 +101,7 @@ class ContextIndexer:
 
             data = result.payload.get("data") or []
             by_index = {
-                int(item.get("index", i)): item.get("embedding")
-                for i, item in enumerate(data)
+                int(item.get("index", i)): item.get("embedding") for i, item in enumerate(data)
             }
             for position in range(len(batch)):
                 vector = by_index.get(position)
@@ -199,9 +198,7 @@ class ContextIndexer:
             # com letras fora de a-f, então o marcador jamais casa com um hash
             # de verdade — que é a única propriedade de que este valor precisa.
             hash_registrado = (
-                scanned.content_hash
-                if failures == 0
-                else f"pendente:{scanned.content_hash}"[:64]
+                scanned.content_hash if failures == 0 else f"pendente:{scanned.content_hash}"[:64]
             )
 
             try:

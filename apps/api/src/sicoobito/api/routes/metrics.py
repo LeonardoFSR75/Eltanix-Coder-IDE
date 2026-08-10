@@ -41,12 +41,8 @@ async def summary(engine: EngineDep, days: int = Query(default=30, ge=1, le=365)
                     func.coalesce(func.sum(_COST), 0),
                     func.coalesce(func.sum(_SAVED), 0),
                     func.coalesce(func.sum(RequestLog.tokens_saved), 0),
-                    func.coalesce(
-                        func.sum(case((RequestLog.cache_hit.is_(True), 1), else_=0)), 0
-                    ),
-                    func.coalesce(
-                        func.sum(case((RequestLog.status == "error", 1), else_=0)), 0
-                    ),
+                    func.coalesce(func.sum(case((RequestLog.cache_hit.is_(True), 1), else_=0)), 0),
+                    func.coalesce(func.sum(case((RequestLog.status == "error", 1), else_=0)), 0),
                     func.coalesce(
                         func.sum(case((RequestLog.cost_known.is_(False), 1), else_=0)), 0
                     ),
@@ -152,9 +148,7 @@ async def by_model(days: int = Query(default=30, ge=1, le=365)) -> dict[str, Any
                     func.coalesce(func.sum(RequestLog.completion_tokens), 0),
                     func.coalesce(func.sum(_COST), 0),
                     func.avg(RequestLog.latency_ms),
-                    func.coalesce(
-                        func.sum(case((RequestLog.status == "error", 1), else_=0)), 0
-                    ),
+                    func.coalesce(func.sum(case((RequestLog.status == "error", 1), else_=0)), 0),
                 )
                 .where(RequestLog.created_at >= since, RequestLog.resolved_model.is_not(None))
                 .group_by(RequestLog.resolved_model, RequestLog.provider)

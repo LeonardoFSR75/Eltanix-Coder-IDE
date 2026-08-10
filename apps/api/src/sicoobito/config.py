@@ -72,6 +72,25 @@ class Settings(BaseSettings):
     # transforma criatividade pedida em repetição silenciosa.
     cache_only_deterministic: bool = Field(default=True, alias="CACHE_ONLY_DETERMINISTIC")
 
+    # ── Cache semântico (complementa o cache exato acima) ───────────────────
+    # Desligado por padrão: um falso positivo aqui devolve um tool_call ou uma
+    # resposta ERRADA (não uma "falta de cache"), então a ativação é opt-in.
+    semantic_cache_enabled: bool = Field(default=False, alias="SEMANTIC_CACHE_ENABLED")
+    semantic_cache_ttl_seconds: int = Field(default=3600, alias="SEMANTIC_CACHE_TTL_SECONDS")
+    # Bem mais estrito que os ~0.7-0.8 típicos de recuperação em RAG: aqui um
+    # falso positivo é uma resposta executada/exibida, não um trecho que um
+    # humano ainda vai revisar antes de agir.
+    semantic_cache_max_cosine_distance: float = Field(
+        default=0.05, alias="SEMANTIC_CACHE_MAX_COSINE_DISTANCE"
+    )
+    # Fontes cujo veredito funciona como sinal de autorização (ex.: a revisão
+    # de código do modo orchestra) — um veredito velho pra um diff diferente
+    # é o mesmo risco de um tool_call trocado, então ficam de fora por padrão.
+    semantic_cache_excluded_sources: list[str] = Field(
+        default_factory=lambda: ["agent:code_review", "agent:pre_approval_review"],
+        alias="SEMANTIC_CACHE_EXCLUDED_SOURCES",
+    )
+
     # ── Compressão de contexto ──────────────────────────────────────────────
     compression_enabled: bool = Field(default=True, alias="COMPRESSION_ENABLED")
     # Desligue para medir: comparar o custo com e sem roteamento por

@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import secrets
 from contextlib import asynccontextmanager, suppress
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -47,6 +48,7 @@ from sicoobito.logging_setup import get_logger, setup_logging
 from sicoobito.mcp.manager import MCPManager
 from sicoobito.notes.service import NoteService
 from sicoobito.optimizer.cache import ResponseCache
+from sicoobito.optimizer.semantic_cache import SemanticCache
 from sicoobito.router.budget import BudgetGuard
 from sicoobito.router.catalog import load_catalog
 from sicoobito.router.engine import RouterEngine
@@ -54,6 +56,7 @@ from sicoobito.router.health import HealthTracker
 from sicoobito.router.pricing import PriceTable
 from sicoobito.sandbox.container import SandboxConfig, SandboxManager
 from sicoobito.sandbox.executor import ExecutorConfig, ExecutorSandboxManager
+from sicoobito.skills.seed import seed_agent_skills
 from sicoobito.skills.service import SkillService
 from sicoobito.storage.blob import BlobStore
 from sicoobito.telemetry.tracer import TraceRecorder
@@ -96,6 +99,18 @@ async def lifespan(app: FastAPI):
         ttl_seconds=settings.cache_ttl_seconds,
         only_deterministic=settings.cache_only_deterministic,
     )
+    # Construção em duas fases: `SemanticCache` precisa chamar
+    # `RouterEngine.embed()`, mas é uma dependência do próprio `RouterEngine`
+    # (usado dentro de `complete()`) — monta sem a função de embed, injeta
+    # depois que `engine` existe.
+    semantic_cache = SemanticCache(
+        redis_cache=cache,
+        enabled=settings.semantic_cache_enabled,
+        embedding_profile=settings.embedding_profile,
+        max_cosine_distance=settings.semantic_cache_max_cosine_distance,
+        ttl_seconds=settings.semantic_cache_ttl_seconds,
+        excluded_sources=settings.semantic_cache_excluded_sources,
+    )
 
     engine = RouterEngine(
         settings=settings,
@@ -104,8 +119,10 @@ async def lifespan(app: FastAPI):
         health=health,
         cache=cache,
         budget=BudgetGuard(settings),
+        semantic_cache=semantic_cache,
     )
     engine.build()
+    semantic_cache.set_embed_fn(engine.embed)
 
     # Buffer de spans de tools/RAG, com persistência opcional em Redis se conectado.
     trace_recorder = TraceRecorder(redis=redis)
@@ -126,6 +143,12 @@ async def lifespan(app: FastAPI):
     )
     notes = NoteService(settings=settings, engine=engine, trace_recorder=trace_recorder)
     skills = SkillService()
+    try:
+        imported_skills = await seed_agent_skills(Path(".agents"))
+        if imported_skills > 0:
+            log.info("skills.agent_skills.seeded", count=imported_skills)
+    except Exception as exc:
+        log.warning("skills.agent_skills.seed_failed", error=str(exc))
     audit = AuditService()
 
     auth = AuthService()
@@ -160,8 +183,6 @@ async def lifespan(app: FastAPI):
             ExecutorConfig(
                 base_url=settings.executor_url.rstrip("/"),
                 token=settings.executor_token,
-                image=settings.sandbox_image,
-                network=settings.sandbox_network,
             )
         )
         log.info("sandbox.mode", mode="executor", url=settings.executor_url)

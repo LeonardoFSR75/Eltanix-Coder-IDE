@@ -13,6 +13,7 @@ antes de o usuário ler a primeira.
 from __future__ import annotations
 
 import re
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -25,6 +26,15 @@ log = get_logger(__name__)
 MAX_MATCHES = 500
 MAX_MATCHES_PER_FILE = 50
 CONTEXT_CHARS = 160
+
+# `re` da stdlib não tem timeout embutido e o Windows não tem `signal.alarm`
+# — a defesa possível sem dependência nova é bounding: uma regex do usuário
+# com backtracking catastrófico (ex. `(a+)+$`) só vira DoS se tiver bastante
+# texto para explodir contra. Uma linha longa demais é pulada (o arquivo
+# ainda é considerado buscado); o teto de tempo total corta a soma de muitas
+# linhas moderadamente lentas antes que a busca vire perceptível como travada.
+_MAX_REGEX_LINE_CHARS = 5_000
+_SEARCH_DEADLINE_SECONDS = 10.0
 
 
 @dataclass(slots=True)
@@ -82,12 +92,16 @@ def search(
     if not query:
         return SearchResult()
 
-    padrao = build_pattern(
-        query, regex=regex, case_sensitive=case_sensitive, whole_word=whole_word
-    )
+    padrao = build_pattern(query, regex=regex, case_sensitive=case_sensitive, whole_word=whole_word)
     resultado = SearchResult()
+    prazo_final = time.monotonic() + _SEARCH_DEADLINE_SECONDS
 
     for caminho, absoluto, _tamanho in iter_paths(root):
+        if time.monotonic() > prazo_final:
+            log.warning("search.deadline_exceeded", root=str(root), query_len=len(query))
+            resultado.truncated = True
+            break
+
         if path_glob and not Path(caminho).match(path_glob):
             continue
 
@@ -99,6 +113,8 @@ def search(
         achou_no_arquivo = 0
 
         for numero, linha in enumerate(conteudo.splitlines(), start=1):
+            if regex and len(linha) > _MAX_REGEX_LINE_CHARS:
+                continue
             for casamento in padrao.finditer(linha):
                 resultado.matches.append(
                     Match(
@@ -151,13 +167,16 @@ def replace_all(
     numa base grande é o tipo de operação que se descobre errada depois do
     commit.
     """
-    padrao = build_pattern(
-        query, regex=regex, case_sensitive=case_sensitive, whole_word=whole_word
-    )
+    padrao = build_pattern(query, regex=regex, case_sensitive=case_sensitive, whole_word=whole_word)
     permitidos = set(only_paths) if only_paths else None
     resultado = ReplaceResult()
+    prazo_final = time.monotonic() + _SEARCH_DEADLINE_SECONDS
 
     for caminho, absoluto, _tamanho in iter_paths(root):
+        if time.monotonic() > prazo_final:
+            log.warning("search.replace.deadline_exceeded", root=str(root), query_len=len(query))
+            break
+
         if permitidos is not None and caminho not in permitidos:
             continue
         if path_glob and not Path(caminho).match(path_glob):

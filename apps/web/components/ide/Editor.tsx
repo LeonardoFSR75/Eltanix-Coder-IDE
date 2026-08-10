@@ -15,6 +15,8 @@ import {
   getFileVersions,
 } from "@/lib/api/git";
 
+import { Breadcrumbs } from "@/components/ide/Breadcrumbs";
+
 // O nome da linguagem no nosso catálogo nem sempre é o id do Monaco.
 const MONACO_LANGUAGE: Record<string, string> = {
   python: "python",
@@ -43,7 +45,7 @@ const MONACO_LANGUAGE: Record<string, string> = {
 export const EDITOR_OPTIONS = {
   fontSize: 13,
   fontFamily: 'JetBrains Mono, ui-monospace, "SF Mono", Menlo, Consolas, monospace',
-  minimap: { enabled: false },
+  minimap: { enabled: true, renderCharacters: true, maxColumn: 120 },
   scrollBeyondLastLine: false,
   renderWhitespace: "selection" as const,
   tabSize: 2,
@@ -317,6 +319,7 @@ export function Editor({
 
   return (
     <div className="editor-wrap">
+      <Breadcrumbs activePath={path} />
       <div className="editor-bar">
         <LspBadge status={lsp.status} />
 
@@ -392,7 +395,10 @@ export function Editor({
           <button
             type="button"
             className="primary"
-            onClick={() => {
+            onClick={async () => {
+              if (dirty) {
+                await save();
+              }
               setTerminalOpen(true);
               const cmd =
                 language === "python"

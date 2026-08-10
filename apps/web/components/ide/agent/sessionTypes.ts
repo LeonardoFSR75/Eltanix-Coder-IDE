@@ -21,6 +21,8 @@ export interface Session {
   sandbox_error: string | null;
   github_available: boolean;
   warnings: string[];
+  profile?: string | null;
+  model?: string | null;
 }
 
 export interface TodoItem {
@@ -29,7 +31,7 @@ export interface TodoItem {
 }
 
 export interface LogLine {
-  kind: "info" | "assistant" | "tool" | "error" | "cost";
+  kind: "info" | "assistant" | "tool" | "error" | "cost" | "user";
   text: string;
   tool?: string;
   toolCallId?: string;

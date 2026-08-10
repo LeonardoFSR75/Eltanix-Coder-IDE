@@ -96,9 +96,7 @@ _RULES: dict[str, LanguageRules] = {
         container_nodes=frozenset({"export_statement", "ambient_declaration"}),
     ),
     "go": LanguageRules(
-        symbol_nodes=frozenset(
-            {"function_declaration", "method_declaration", "type_declaration"}
-        ),
+        symbol_nodes=frozenset({"function_declaration", "method_declaration", "type_declaration"}),
     ),
     "rust": LanguageRules(
         symbol_nodes=frozenset(

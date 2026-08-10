@@ -27,7 +27,7 @@ class PathGuard:
             raise ValueError(f"Caminho não existe no sistema de arquivos: {target}")
         if not resolved.is_dir():
             raise ValueError(f"O caminho especificado não é um diretório: {target}")
-        
+
         self._allowed_roots.add(resolved)
         log.info("path_guard.allowed", path=str(resolved))
         return resolved
@@ -39,10 +39,7 @@ class PathGuard:
         except Exception:
             return False
 
-        return any(
-            resolved == root or root in resolved.parents 
-            for root in self._allowed_roots
-        )
+        return any(resolved == root or root in resolved.parents for root in self._allowed_roots)
 
     def validate(self, target: Path | str) -> Path:
         """Valida e retorna o caminho resolvido ou levanta exceção se não autorizado."""

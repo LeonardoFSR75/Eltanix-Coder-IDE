@@ -220,7 +220,13 @@ export function AgentPanel({ session, log, pending, running, onDecide, onPresetS
           <span className={`agent-meta-chip ${session.sandbox_available ? "ok" : ""}`}>
             {session.sandbox_available ? "◉" : "○"} sandbox
           </span>
+          {(session.profile || session.model) && (
+            <span className="agent-meta-chip model" title="Modelo de IA / Perfil ativo nesta sessão">
+              🤖 {session.profile || session.model}
+            </span>
+          )}
         </div>
+
       )}
 
       {/* Área de mensagens */}
@@ -244,7 +250,7 @@ export function AgentPanel({ session, log, pending, running, onDecide, onPresetS
             </div>
             <h2 className="agent-hero-title">Sicoobito Agente</h2>
             <p className="agent-hero-subtitle">
-              Seu assistente de IA para código. Pergunte, gere, refatore ou corrija bugs.
+              Pergunte, gere, refatore ou corrija bugs.
             </p>
 
             <div className="agent-preset-grid">
@@ -268,6 +274,17 @@ export function AgentPanel({ session, log, pending, running, onDecide, onPresetS
           /* ── Stream de Mensagens — estilo Copilot Chat ── */
           <div className="agent-message-stream">
             {log.map((line, index) => {
+              // ── Mensagem do usuário (bolha à direita) ──
+              if (line.kind === "user") {
+                return (
+                  <div key={index} className="stream-message user">
+                    <div className="message-body user-body">
+                      <p className="user-text">{line.text}</p>
+                    </div>
+                  </div>
+                );
+              }
+
               if (line.kind === "info") {
                 return (
                   <div key={index} className="stream-badge info">

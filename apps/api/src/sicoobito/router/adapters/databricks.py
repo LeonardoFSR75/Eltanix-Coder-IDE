@@ -41,6 +41,19 @@ class DatabricksAdapter(ProviderAdapter):
                 response = await client.get(url, headers=headers)
                 response.raise_for_status()
                 data = response.json()
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code == 403:
+                raise DiscoveryError(
+                    "Databricks: Permissão negada (403 Forbidden). O token não possui permissão "
+                    "de leitura em '/api/2.0/serving-endpoints'. Verifique as permissões do PAT "
+                    "ou cadastre o modelo manualmente."
+                ) from exc
+            if exc.response.status_code == 401:
+                raise DiscoveryError(
+                    "Databricks: Token inválido ou expirado (401 Unauthorized). Verifique o "
+                    "DATABRICKS_TOKEN em Configurações."
+                ) from exc
+            raise DiscoveryError(f"Databricks: {exc}") from exc
         except Exception as exc:
             raise DiscoveryError(f"Databricks: {exc}") from exc
 

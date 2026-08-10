@@ -36,11 +36,11 @@ nunca chega ao bundle do browser, ver `route.ts`). Um `lib/api/<domínio>.ts` no
 
 | Pasta | O quê |
 |---|---|
-| `app/` | Rotas do App Router — uma pasta por página (`/mcp`, `/settings`, `/rag`...), mais `app/api/gateway/[...path]/route.ts` (o proxy) |
-| `components/ide/` | Monaco, terminal (xterm), agent dock, painéis do IDE |
+| `app/` | Rotas do App Router — uma pasta por página (`/mcp`, `/settings`, `/rag`, `/graphify`...), mais `app/api/gateway/[...path]/route.ts` (o proxy) |
+| `components/ide/` | Monaco, terminal (xterm), agent dock, painéis do IDE, visualizador 360° do Graphify |
 | `components/providers/` | Contextos globais — `AuthContext.tsx` (chave de API), `Toast.tsx` |
 | `lib/client.ts` | Único cliente HTTP — ver regra acima |
-| `lib/api/*.ts` | Um arquivo por domínio de backend (`documents.ts`, `notes.ts`, `mcp.ts`, `telemetry.ts`...), tipos + funções finas sobre `lib/client.ts` |
+| `lib/api/*.ts` | Um arquivo por domínio de backend (`documents.ts`, `notes.ts`, `graphify.ts`, `mcp.ts`, `telemetry.ts`...), tipos + funções finas sobre `lib/client.ts` |
 
 ## Padrões a seguir em página/feature nova
 

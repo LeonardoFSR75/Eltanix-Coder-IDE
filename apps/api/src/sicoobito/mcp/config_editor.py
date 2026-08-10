@@ -18,8 +18,25 @@ _yaml.preserve_quotes = True
 _yaml.indent(mapping=2, sequence=4, offset=2)
 _yaml.width = 4096
 
-_STDIO_FIELDS = ("name", "transport", "command", "args", "env", "enabled", "trust_annotations")
-_HTTP_FIELDS = ("name", "transport", "url", "headers", "enabled", "trust_annotations")
+_STDIO_FIELDS = (
+    "name",
+    "transport",
+    "command",
+    "args",
+    "env",
+    "enabled",
+    "trust_annotations",
+    "tool_overrides",
+)
+_HTTP_FIELDS = (
+    "name",
+    "transport",
+    "url",
+    "headers",
+    "enabled",
+    "trust_annotations",
+    "tool_overrides",
+)
 
 
 def load(mcp_file: Path) -> CommentedMap:
@@ -83,3 +100,21 @@ def set_enabled(data: CommentedMap, name: str, enabled: bool) -> None:
     if idx is None:
         raise KeyError(f"servidor não encontrado: {name}")
     servers[idx]["enabled"] = enabled
+
+
+def set_tool_override(
+    data: CommentedMap, server_name: str, tool_name: str, risk: str | None
+) -> None:
+    """`risk=None` remove o override — a tool volta a seguir `trust_annotations`/
+    o padrão WRITE. Edita só a chave `tool_overrides` do servidor, sem reenviar
+    o resto do payload (diferente de `update_server`)."""
+    servers: CommentedSeq = data["servers"]
+    idx = _find_index(servers, server_name)
+    if idx is None:
+        raise KeyError(f"servidor não encontrado: {server_name}")
+    overrides = servers[idx].get("tool_overrides") or CommentedMap()
+    if risk is None:
+        overrides.pop(tool_name, None)
+    else:
+        overrides[tool_name] = risk
+    servers[idx]["tool_overrides"] = overrides

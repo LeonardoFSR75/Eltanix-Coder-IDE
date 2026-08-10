@@ -19,9 +19,7 @@ def _truncate(text: str, limit: int = MAX_TOOL_OUTPUT_CHARS) -> str:
         return text
     metade = limit // 2
     omitido = len(text) - limit
-    return (
-        f"{text[:metade]}\n\n... [{omitido} caracteres omitidos no meio] ...\n\n{text[-metade:]}"
-    )
+    return f"{text[:metade]}\n\n... [{omitido} caracteres omitidos no meio] ...\n\n{text[-metade:]}"
 
 
 @tool(
@@ -123,7 +121,7 @@ async def write_file(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
         # `POST /sessions/{id}/files/revert`).
         data={
             "path": path,
-            "diff": _unified_diff(path, anterior, content),
+            "diff": unified_diff(path, anterior, content),
             "before": anterior,
             "after": content,
             "existed": existia,
@@ -189,13 +187,19 @@ async def edit_file(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
         return ToolResult.failure(str(exc))
 
     # O diff sai normalizado: mostrar ^M em toda linha esconderia a mudança real.
-    diff = _unified_diff(path, atual_norm, novo_norm)
+    diff = unified_diff(path, atual_norm, novo_norm)
     return ToolResult(
         ok=True,
         content=f"{path} editado.\n\n{diff}",
         # `edit_file` exige o arquivo já existir (lido no início da função),
         # então `existed` é sempre True aqui — ver write_file para o outro caso.
-        data={"path": path, "diff": diff, "before": atual_norm, "after": novo_norm, "existed": True},
+        data={
+            "path": path,
+            "diff": diff,
+            "before": atual_norm,
+            "after": novo_norm,
+            "existed": True,
+        },
     )
 
 
@@ -238,7 +242,7 @@ async def search_code(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
     )
 
 
-def _unified_diff(path: str, antes: str, depois: str) -> str:
+def unified_diff(path: str, antes: str, depois: str) -> str:
     linhas = difflib.unified_diff(
         antes.splitlines(keepends=True),
         depois.splitlines(keepends=True),

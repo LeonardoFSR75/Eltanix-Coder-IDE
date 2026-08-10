@@ -69,3 +69,39 @@ async def test_sync_projects_db_with_postgres(pg_session, tmp_path: Path):
     (tmp_path / "proj_db").mkdir()
     records = await sync_projects_db(pg_session, tmp_path)
     assert any(r.slug == "proj_db" for r in records)
+
+
+@pytest.mark.asyncio
+async def test_audit_service_record_accepts_event_metadata_alias(pg_session):
+    from sicoobito.audit.service import AuditService
+    service = AuditService()
+    entry = await service.record(
+        actor="test",
+        module="test",
+        action="test_action",
+        event_metadata={"key": "val"},
+    )
+    assert entry.event_metadata == {"key": "val"}
+
+
+@pytest.mark.asyncio
+async def test_create_project_endpoint(tmp_path: Path):
+    from httpx import ASGITransport, AsyncClient
+    from sicoobito.api.deps import require_session
+    from sicoobito.main import create_app
+
+    app = create_app()
+    app.state.projects_root = tmp_path
+    app.dependency_overrides[require_session] = lambda: None
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        res = await ac.post(
+            "/api/projects",
+            json={"name": "Sorteador", "description": "Criar um sorteador para utilizar em aulas"},
+        )
+        assert res.status_code == 200, res.text
+        data = res.json()
+        assert data["name"] == "Sorteador"
+        assert data["slug"] == "Sorteador"
+        assert (tmp_path / "Sorteador").is_dir()
+

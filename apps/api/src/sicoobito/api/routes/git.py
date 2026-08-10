@@ -35,12 +35,24 @@ _BLAME_CACHE_PREFIX = "git:blame"
 _BLAME_CACHE_TTL_SECONDS = 3600
 
 _BRANCH_PATTERN = re.compile(r"^[a-zA-Z0-9._/-]+$")
+_REV_PATTERN = re.compile(r"^[a-zA-Z0-9._/^~@:{}-]+$")
 
 
 def validate_branch_name(branch: str) -> str:
     limpo = branch.strip()
     if not limpo or limpo.startswith("-") or not _BRANCH_PATTERN.match(limpo):
         raise GitError(f"Nome de branch inválido: {branch!r}")
+    return limpo
+
+
+def validate_rev(rev: str) -> str:
+    """Recusa qualquer coisa que comece com `-` — GitPython só bloqueia
+    `--output`/`-o` da lista de opções perigosas de `git blame`, não
+    `--contents=<arquivo>`, que permite ler um caminho arbitrário do host
+    passado como se fosse uma revisão."""
+    limpo = (rev or "").strip()
+    if not limpo or limpo.startswith("-") or not _REV_PATTERN.match(limpo):
+        raise GitError(f"Revisão git inválida: {rev!r}")
     return limpo
 
 
@@ -171,13 +183,9 @@ class CommitRequest(BaseModel):
 @router.post("/commit")
 async def commit(payload: CommitRequest, settings: SettingsDep) -> dict[str, Any]:
     fs = _fs_from_body(settings, payload.project)
-    valid_paths = (
-        [fs.relative(fs.resolve(p)) for p in payload.paths] if payload.paths else None
-    )
+    valid_paths = [fs.relative(fs.resolve(p)) for p in payload.paths] if payload.paths else None
     try:
-        sha = await asyncio.to_thread(
-            git_ops.commit, fs.root, payload.message, paths=valid_paths
-        )
+        sha = await asyncio.to_thread(git_ops.commit, fs.root, payload.message, paths=valid_paths)
     except GitError as exc:
         raise _erro(exc) from exc
     return {"sha": sha[:8]}
@@ -189,13 +197,29 @@ async def branches(settings: SettingsDep, project: str = Query(min_length=1)) ->
 
     def _listar() -> dict[str, Any]:
         repo = open_repo(fs.root)
+        atual = "main"
         try:
             atual = repo.active_branch.name
-        except TypeError:
-            atual = ""
+        except Exception:
+            atual = "main"
+
+        lista_branches: list[str] = []
+        try:
+            # Filtra branches internas de worktrees do agente (sicoobito/*) da listagem da interface
+            lista_branches = sorted(
+                b.name
+                for b in repo.branches
+                if not b.name.startswith("sicoobito/") or b.name == atual
+            )
+        except Exception:
+            lista_branches = []
+
+        if not lista_branches and atual:
+            lista_branches = [atual]
+
         return {
             "current": atual,
-            "branches": sorted(b.name for b in repo.branches),
+            "branches": lista_branches,
         }
 
     try:
@@ -226,10 +250,21 @@ async def checkout(payload: CheckoutRequest, settings: SettingsDep) -> dict[str,
             raise GitError(
                 "Há alterações não commitadas. Faça commit ou descarte antes de trocar de branch."
             )
-        if payload.create:
-            repo.git.checkout("-b", branch, "--")
-        else:
-            repo.git.checkout(branch, "--")
+        try:
+            if payload.create:
+                repo.git.checkout("-b", branch, "--")
+            else:
+                repo.git.checkout(branch, "--")
+        except GitCommandError as exc:
+            msg = str(exc)
+            if "already used by worktree" in msg:
+                raise GitError(
+                    f"A branch '{branch}' está em uso ativo pelo agente. "
+                    "Encerre a sessão do agente para alternar para esta branch."
+                ) from exc
+            err_detail = exc.stderr.strip() if hasattr(exc, "stderr") and exc.stderr else str(exc)
+            raise GitError(f"Falha ao alternar para a branch '{branch}': {err_detail}") from exc
+
         return repo.active_branch.name
 
     try:
@@ -262,6 +297,7 @@ async def blame(
     fs = project_fs(settings, project)
     try:
         rel_path = fs.relative(fs.resolve(path))
+        rev = validate_rev(rev)
     except Exception as exc:
         raise _erro(exc) from exc
 
@@ -396,7 +432,7 @@ async def get_git_config(
 async def update_git_config(
     payload: GitConfigUpdateRequest, settings: SettingsDep
 ) -> dict[str, Any]:
-    """Atualiza configurações de usuário do Git (`user.name`, `user.email`, `init.defaultBranch`, etc.)."""
+    """Atualiza configurações de usuário do Git (`user.name`, `user.email`, etc.)."""
     root = project_fs(settings, payload.project).root if payload.project else None
     try:
         cfg = await asyncio.to_thread(
@@ -429,11 +465,7 @@ async def get_github_config(settings: SettingsDep) -> dict[str, Any]:
     raw_token = settings.github_token
     token = resolve_token(raw_token)
 
-    token_source = (
-        "settings"
-        if raw_token
-        else ("gh_cli" if _token_from_cli() else "none")
-    )
+    token_source = "settings" if raw_token else ("gh_cli" if _token_from_cli() else "none")
 
     if not token:
         return {
@@ -511,4 +543,3 @@ async def update_github_config(
         log.warning("git.github.persist_failed", error=str(exc))
 
     return await get_github_config(settings)
-

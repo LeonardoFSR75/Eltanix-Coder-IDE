@@ -36,6 +36,12 @@ def _tool_name(server: str, tool: str) -> str:
 
 
 def _classify_risk(server_cfg: MCPServerConfig, tool: Any) -> RiskClass:
+    # Precedência: override explícito da tool > trust_annotations+read_only_hint > WRITE.
+    override = server_cfg.tool_overrides.get(tool.name)
+    if override == "read":
+        return RiskClass.READ
+    if override == "write":
+        return RiskClass.WRITE
     if server_cfg.trust_annotations and tool.annotations and tool.annotations.read_only_hint:
         return RiskClass.READ
     return RiskClass.WRITE
@@ -119,6 +125,17 @@ class MCPManager:
                     "status": connection.status if connection else "disabled",
                     "error": connection.error if connection else None,
                     "tools_count": len(connection.tools) if connection else 0,
+                    "tools": [
+                        {
+                            "name": remote_tool.name,
+                            "local_name": _tool_name(cfg.name, remote_tool.name),
+                            "risk": str(_classify_risk(cfg, remote_tool)),
+                            "override": cfg.tool_overrides.get(remote_tool.name),
+                        }
+                        for remote_tool in connection.tools
+                    ]
+                    if connection
+                    else [],
                 }
             )
         return out

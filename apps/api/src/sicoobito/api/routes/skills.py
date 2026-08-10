@@ -58,8 +58,7 @@ class SkillIn(BaseModel):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=(
-                    f"Categoria inválida: {self.category}. "
-                    f"Use uma de {sorted(_VALID_CATEGORIES)}."
+                    f"Categoria inválida: {self.category}. Use uma de {sorted(_VALID_CATEGORIES)}."
                 ),
             )
         return self.category

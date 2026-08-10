@@ -58,6 +58,11 @@ class ToolContext:
     # sessão) — texto livre que o usuário escreveu na aba "Instruções" do
     # popover, concatenado ao SYSTEM_PROMPT em `agent/graph.py::think()`.
     custom_instructions: str | None = None
+    # Política de auto-aprovação (`agent/approval_policy.py::ApprovalPolicy`)
+    # carregada de `.sicoobito/approval_policy.yaml` no projeto — consultada
+    # pelo nó `approve` em `agent/graph.py` antes do `interrupt()`. `None`
+    # equivale a uma política vazia (nenhuma regra, tudo pausa como sempre).
+    approval_policy: Any | None = None
 
 
 @dataclass(slots=True)

@@ -20,9 +20,7 @@ def _truncate(text: str, limit: int = MAX_OUTPUT_CHARS) -> str:
         return text
     metade = limit // 2
     omitido = len(text) - limit
-    return (
-        f"{text[:metade]}\n\n... [{omitido} caracteres omitidos no meio] ...\n\n{text[-metade:]}"
-    )
+    return f"{text[:metade]}\n\n... [{omitido} caracteres omitidos no meio] ...\n\n{text[-metade:]}"
 
 
 @tool(

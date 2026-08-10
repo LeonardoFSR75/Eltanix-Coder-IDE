@@ -78,8 +78,9 @@ async def git_diff(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
         },
         "required": ["path"],
     },
-    summarize=lambda a: f"histórico de {a.get('path')}"
-    + (f":{a['line']}" if a.get("line") else ""),
+    summarize=lambda a: (
+        f"histórico de {a.get('path')}" + (f":{a['line']}" if a.get("line") else "")
+    ),
 )
 async def code_history(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
     path = args["path"]

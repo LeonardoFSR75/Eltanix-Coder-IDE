@@ -21,12 +21,18 @@ from sicoobito.mcp.config import MCPServerConfig
 from sicoobito.mcp.manager import MCPManager, _classify_risk
 
 
-def _cfg(*, trust_annotations: bool = False, name: str = "srv") -> MCPServerConfig:
+def _cfg(
+    *,
+    trust_annotations: bool = False,
+    name: str = "srv",
+    tool_overrides: dict[str, str] | None = None,
+) -> MCPServerConfig:
     return MCPServerConfig(
         name=name,
         transport="stdio",
         command="qualquer-coisa",
         trust_annotations=trust_annotations,
+        tool_overrides=tool_overrides or {},
     )
 
 
@@ -67,6 +73,32 @@ def test_trusted_server_with_read_only_hint_true_is_read():
     cfg = _cfg(trust_annotations=True)
     tool = _tool(read_only_hint=True)
     assert _classify_risk(cfg, tool) is RiskClass.READ
+
+
+# ── _classify_risk: override por ferramenta ─────────────────────────────────
+
+
+def test_tool_override_read_wins_over_untrusted_server():
+    # Servidor não confiado, mas usuário revisou UMA tool específica e decidiu
+    # confiar nela — override tem precedência sobre trust_annotations.
+    cfg = _cfg(trust_annotations=False, tool_overrides={"do_thing": "read"})
+    tool = _tool(read_only_hint=None, annotations_present=False)
+    assert _classify_risk(cfg, tool) is RiskClass.READ
+
+
+def test_tool_override_write_wins_over_trusted_server_with_read_only_hint():
+    # Servidor confiado com hint read-only, mas o usuário forçou essa tool
+    # específica a continuar WRITE — override vence o caminho normal.
+    cfg = _cfg(trust_annotations=True, tool_overrides={"do_thing": "write"})
+    tool = _tool(read_only_hint=True)
+    assert _classify_risk(cfg, tool) is RiskClass.WRITE
+
+
+def test_tool_override_only_affects_the_named_tool():
+    # Override de uma tool não deve vazar para outra tool do mesmo servidor.
+    cfg = _cfg(trust_annotations=False, tool_overrides={"outra_tool": "read"})
+    tool = _tool(read_only_hint=True)
+    assert _classify_risk(cfg, tool) is RiskClass.WRITE
 
 
 # ── MCPServerConnection: status e degradação ────────────────────────────────

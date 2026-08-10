@@ -10,7 +10,9 @@ from pydantic import BaseModel, ConfigDict, Field
 
 class GraphNodeBase(BaseModel):
     workspace: str = "default"
-    entity_type: str = Field(..., description="Tipo de entidade (Note, Concept, Module, Class, ADR, etc.)")
+    entity_type: str = Field(
+        ..., description="Tipo de entidade (Note, Concept, Module, Class, ADR, etc.)"
+    )
     name: str = Field(..., description="Nome de exibição do nó")
     canonical_id: str = Field(..., description="ID determinístico único por workspace")
     properties: dict = Field(default_factory=dict)
@@ -37,7 +39,9 @@ class GraphEdgeBase(BaseModel):
     workspace: str = "default"
     source_id: UUID
     target_id: UUID
-    relation_type: str = Field(..., description="Tipo de relacionamento (REFERENCIA, DEPENDE, AFETA, etc.)")
+    relation_type: str = Field(
+        ..., description="Tipo de relacionamento (REFERENCIA, DEPENDE, AFETA, etc.)"
+    )
     layer: int = Field(1, description="Camada da aresta: 1=Explicit, 2=Vector, 3=LLM")
     weight: float = Field(1.0, ge=0.0, le=1.0)
     evidence: str | None = None
@@ -63,6 +67,15 @@ class SubgraphResponse(BaseModel):
 class GraphRAGQueryRequest(BaseModel):
     query: str
     workspace: str = "default"
+    top_k: int = 10
+    max_hops: int = 2
+
+
+class MultiWorkspaceQueryRequest(BaseModel):
+    query: str
+    # Limitado — cada workspace é uma busca GraphRAG inteira; sem teto o
+    # fan-out vira um jeito barato de sobrecarregar o banco.
+    workspaces: list[str] = Field(min_length=1, max_length=10)
     top_k: int = 10
     max_hops: int = 2
 

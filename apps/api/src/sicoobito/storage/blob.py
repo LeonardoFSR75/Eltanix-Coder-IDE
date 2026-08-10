@@ -92,6 +92,23 @@ class BlobStore:
 
         return await asyncio.to_thread(_stat)
 
+    async def stat_size(self, key: str) -> int | None:
+        """Tamanho real do objeto já enviado. O upload vai direto do cliente
+        para o MinIO via URL pré-assinada — `size_bytes` declarado antes do
+        upload não é garantia de nada, então quem confirma a ingestão precisa
+        checar o tamanho de verdade contra o objeto já gravado."""
+
+        def _stat() -> int | None:
+            try:
+                info = self._client.stat_object(self.bucket, key)
+                return info.size
+            except S3Error as exc:
+                if exc.code in {"NoSuchKey", "NoSuchObject"}:
+                    return None
+                raise
+
+        return await asyncio.to_thread(_stat)
+
     async def remove_object(self, key: str) -> None:
         await asyncio.to_thread(self._client.remove_object, self.bucket, key)
 

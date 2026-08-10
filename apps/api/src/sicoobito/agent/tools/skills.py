@@ -33,9 +33,7 @@ async def list_skills(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
         ok=True,
         content="\n".join(linhas),
         data={
-            "skills": [
-                {"id": str(s.id), "name": s.name, "category": s.category} for s in skills
-            ]
+            "skills": [{"id": str(s.id), "name": s.name, "category": s.category} for s in skills]
         },
     )
 

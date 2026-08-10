@@ -57,10 +57,16 @@ async def get_note_by_title(session: AsyncSession, title: str) -> Note | None:
     return await session.scalar(select(Note).where(func.lower(Note.title) == title.lower()))
 
 
+# Teto de segurança para o `list_notes` sem paginação — evita que uma base
+# muito grande vire uma resposta HTTP sem limite (e uma query sem teto).
+_LIST_HARD_CAP = 2000
+
+
 async def list_notes(session: AsyncSession, *, project_slug: str | None = None) -> list[Note]:
-    """Sem `project_slug`, lista tudo. Com ele, notas do projeto mais as
-    "globais" (sem projeto) — mesmo fallback de `hybrid_search`."""
-    stmt = select(Note).order_by(Note.updated_at.desc())
+    """Sem `project_slug`, lista tudo (até `_LIST_HARD_CAP`). Com ele, notas
+    do projeto mais as "globais" (sem projeto) — mesmo fallback de
+    `hybrid_search`."""
+    stmt = select(Note).order_by(Note.updated_at.desc()).limit(_LIST_HARD_CAP)
     if project_slug:
         stmt = stmt.where((Note.project_slug == project_slug) | (Note.project_slug.is_(None)))
     rows = (await session.execute(stmt)).scalars().all()

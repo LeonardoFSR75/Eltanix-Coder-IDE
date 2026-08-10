@@ -67,9 +67,7 @@ class RoutingPolicy:
             return profile, None
         return None, None
 
-    async def _build_candidate(
-        self, spec: ModelSpec, estimated_prompt_tokens: int
-    ) -> Candidate:
+    async def _build_candidate(self, spec: ModelSpec, estimated_prompt_tokens: int) -> Candidate:
         candidate = Candidate(spec=spec)
 
         if not spec.enabled:
@@ -163,7 +161,7 @@ class RoutingPolicy:
             # ser presumido rápido — evita eleger um provedor nunca testado.
             return sorted(
                 candidates,
-                key=lambda c: (c.latency_p95_ms if c.latency_p95_ms is not None else 10**9),
+                key=lambda c: c.latency_p95_ms if c.latency_p95_ms is not None else 10**9,
             )
 
         if strategy == "score":
@@ -184,9 +182,7 @@ class RoutingPolicy:
         }
 
         costs = [float(c.estimated_cost_usd) for c in candidates]
-        latencies = [
-            float(c.latency_p95_ms) for c in candidates if c.latency_p95_ms is not None
-        ]
+        latencies = [float(c.latency_p95_ms) for c in candidates if c.latency_p95_ms is not None]
         max_cost = max(costs) if costs else 0.0
         max_latency = max(latencies) if latencies else 0.0
         max_window = max(c.spec.context_window for c in candidates)

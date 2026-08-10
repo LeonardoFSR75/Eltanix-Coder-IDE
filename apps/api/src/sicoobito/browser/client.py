@@ -62,7 +62,9 @@ class BrowserClient:
                 f"serviço de navegador inacessível em {self.config.base_url}: {exc}"
             ) from exc
         if resposta.status_code >= 400:
-            raise BrowserError(f"serviço de navegador recusou criar a sessão: {resposta.text[:300]}")
+            raise BrowserError(
+                f"serviço de navegador recusou criar a sessão: {resposta.text[:300]}"
+            )
         self._started = True
 
     async def action(self, payload: dict[str, Any], *, timeout_ms: int = 15_000) -> dict[str, Any]:

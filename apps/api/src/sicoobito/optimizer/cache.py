@@ -109,6 +109,32 @@ class ResponseCache:
             model_id=stored.get("model_id", model_id),
         )
 
+    async def get_by_key(self, key: str) -> CachedResponse | None:
+        """Busca direta por uma chave já conhecida — usada pelo cache
+        semântico (`optimizer/semantic_cache.py`), que descobre a chave via
+        similaridade de embedding em vez de recomputar o hash exato. Não
+        passa por `is_cacheable`: se a linha existe em `cached_response_embedding`,
+        já foi gravada como cacheável no momento original."""
+        if not self._enabled:
+            return None
+        try:
+            raw = await self._redis.get(key)  # type: ignore[union-attr]
+        except Exception as exc:
+            log.warning("cache.redis.unavailable", error=str(exc))
+            return None
+        if not raw:
+            return None
+        try:
+            stored = json.loads(raw)
+        except json.JSONDecodeError:
+            return None
+        return CachedResponse(
+            payload=stored["payload"],
+            prompt_tokens=stored.get("prompt_tokens", 0),
+            completion_tokens=stored.get("completion_tokens", 0),
+            model_id=stored.get("model_id", ""),
+        )
+
     async def set(
         self,
         model_id: str,

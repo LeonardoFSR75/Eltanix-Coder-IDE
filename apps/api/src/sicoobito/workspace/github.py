@@ -13,8 +13,8 @@ from __future__ import annotations
 import re
 import shutil
 import subprocess
+import time
 from dataclasses import dataclass
-from functools import lru_cache
 from typing import Any
 
 import httpx
@@ -51,11 +51,23 @@ def parse_remote(url: str) -> RepoRef | None:
     return RepoRef(owner=match.group("owner"), repo=match.group("repo"))
 
 
-@lru_cache(maxsize=1)
+# TTL em vez de `lru_cache` para sempre: sem expiração, um `gh auth
+# logout`/`login` no terminal do usuário nunca seria percebido pelo processo
+# da API, que continuaria usando o token antigo até reiniciar.
+_TOKEN_CACHE_TTL_SECONDS = 300.0
+_token_cache: tuple[float, str | None] | None = None
+
+
 def _token_from_cli() -> str | None:
     """Token do `gh`, se a CLI estiver instalada e autenticada."""
+    global _token_cache
+    now = time.monotonic()
+    if _token_cache is not None and now - _token_cache[0] < _TOKEN_CACHE_TTL_SECONDS:
+        return _token_cache[1]
+
     executable = shutil.which("gh")
     if executable is None:
+        _token_cache = (now, None)
         return None
     try:
         result = subprocess.run(
@@ -67,9 +79,11 @@ def _token_from_cli() -> str | None:
         )
     except (OSError, subprocess.SubprocessError) as exc:
         log.debug("github.gh_cli.failed", error=str(exc))
+        _token_cache = (now, None)
         return None
-    token = result.stdout.strip()
-    return token or None
+    token = result.stdout.strip() or None
+    _token_cache = (now, token)
+    return token
 
 
 def resolve_token(configured: str = "") -> str | None:
@@ -79,9 +93,7 @@ def resolve_token(configured: str = "") -> str | None:
 class GitHubClient:
     def __init__(self, token: str | None) -> None:
         if not token:
-            raise GitHubError(
-                "Sem token do GitHub. Defina GITHUB_TOKEN ou rode `gh auth login`."
-            )
+            raise GitHubError("Sem token do GitHub. Defina GITHUB_TOKEN ou rode `gh auth login`.")
         self._headers = {
             "Authorization": f"Bearer {token}",
             "Accept": "application/vnd.github+json",
@@ -96,7 +108,7 @@ class GitHubClient:
         if response.status_code >= 400:
             # A mensagem do GitHub é específica ("branch not found", "already
             # exists") e vale mais que o código HTTP sozinho.
-            detail = response.text[:500]
+            detail = response.text[:300]
             raise GitHubError(f"GitHub {response.status_code} em {path}: {detail}")
         return response.json() if response.content else None
 
@@ -121,9 +133,7 @@ class GitHubClient:
             "body": body,
             "draft": draft,
         }
-        result = await self._request(
-            "POST", f"/repos/{ref.owner}/{ref.repo}/pulls", json=payload
-        )
+        result = await self._request("POST", f"/repos/{ref.owner}/{ref.repo}/pulls", json=payload)
         log.info("github.pr.opened", repo=ref.slug, number=result.get("number"), head=head)
         return result
 
@@ -145,6 +155,22 @@ class GitHubClient:
         )
 
     async def check_runs(self, ref: RepoRef, sha: str) -> dict[str, Any]:
-        return await self._request(
-            "GET", f"/repos/{ref.owner}/{ref.repo}/commits/{sha}/check-runs"
-        )
+        return await self._request("GET", f"/repos/{ref.owner}/{ref.repo}/commits/{sha}/check-runs")
+
+    async def create_repository(
+        self,
+        name: str,
+        *,
+        description: str = "",
+        private: bool = True,
+    ) -> dict[str, Any]:
+        """Cria um repositório no GitHub. `private=True` por padrão para garantir privacidade."""
+        payload = {
+            "name": name,
+            "description": description,
+            "private": private,
+            "auto_init": False,
+        }
+        result = await self._request("POST", "/user/repos", json=payload)
+        log.info("github.repo.created", name=name, private=private)
+        return result

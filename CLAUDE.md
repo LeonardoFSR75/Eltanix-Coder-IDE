@@ -22,9 +22,9 @@ Guias específicos: [apps/api/CLAUDE.md](apps/api/CLAUDE.md), [apps/web/CLAUDE.m
   pelo chamador. Ferramentas MCP (servidores externos conectados em `/mcp`) nascem `WRITE`
   por padrão; só viram `READ` se o servidor for marcado `trust_annotations: true` e a tool
   anunciar `read_only_hint: true` — a spec do MCP é explícita que esse hint não é garantia.
-- **RAG tem três fontes independentes com o mesmo padrão RRF** (`context/store.py`,
-  `documents/store.py`, `notes/store.py`) — a duplicação entre os três `hybrid_search` é
-  **deliberada**, documentada nos próprios arquivos. Não abstrair num helper compartilhado.
+- **RAG tem fontes independentes** (`context/store.py`, `documents/store.py`, `notes/store.py`,
+  `graphify/store.py`) — a duplicação entre as rotinas de busca é **deliberada**, documentada
+  nos próprios arquivos. Não abstrair num helper compartilhado.
 - **Config declarativa em YAML + editor de round-trip** (`providers.yaml`/`routes.yaml`/
   `mcp.yaml`/`mcp_catalog.yaml`): leitura simples via `yaml.safe_load` num módulo `config.py`
   do domínio, escrita via `ruamel.yaml` num `*_editor.py` separado, para preservar

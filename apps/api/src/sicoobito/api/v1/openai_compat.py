@@ -28,7 +28,16 @@ router = APIRouter(prefix="/v1", tags=["openai"], dependencies=[AuthDep])
 
 def _error_body(message: str, err_type: str, code: str | None = None) -> dict[str, Any]:
     """Formato de erro da OpenAI — clientes fazem parsing disto."""
-    return {"error": {"message": message, "type": err_type, "param": None, "code": code}}
+    return {"error": {"message": _truncate(message), "type": err_type, "param": None, "code": code}}
+
+
+def _truncate(text: str, limit: int = 300) -> str:
+    """Mesmo limite de `router/engine.py` para exceções logadas — mensagens de
+    erro de SDK/provedor não truncadas podem incluir `api_base`, corpo de
+    resposta ou outros detalhes de infraestrutura interna que não devem
+    vazar para fora da API."""
+    texto = str(text)
+    return texto if len(texto) <= limit else f"{texto[:limit]}…"
 
 
 @router.get("/models", response_model=ModelList)
@@ -100,9 +109,7 @@ async def chat_completions(
     except AllCandidatesFailedError as exc:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=_error_body(
-                f"{exc}. Último erro: {exc.last_error}", "upstream_error"
-            ),
+            detail=_error_body(f"{exc}. Último erro: {exc.last_error}", "upstream_error"),
         ) from exc
     except Exception as exc:
         log.error("chat.failed", error=str(exc), error_type=type(exc).__name__)

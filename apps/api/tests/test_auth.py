@@ -277,11 +277,10 @@ async def test_rate_limiting_in_memory():
     service = AuthService()
     ip = "192.168.1.100"
 
-    assert await service.check_rate_limit(ip)
     for _ in range(5):
-        await service.record_failed_attempt(ip)
+        assert await service.check_and_register_attempt(ip)
 
-    assert not await service.check_rate_limit(ip)
+    assert not await service.check_and_register_attempt(ip)
     await service.reset_failed_attempts(ip)
-    assert await service.check_rate_limit(ip)
+    assert await service.check_and_register_attempt(ip)
 

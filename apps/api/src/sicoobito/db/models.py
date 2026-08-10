@@ -119,6 +119,65 @@ class RequestLog(Base):
         )
 
 
+class ToolSpan(Base):
+    """Uma linha por execução de ferramenta do agente ou busca de RAG.
+
+    Espelha `RequestLog` (linha 48), mas para `telemetry/tracer.py::TraceRecorder`
+    em vez de custo de LLM — o buffer em memória/Redis daquele módulo é capado e
+    não sobrevive a um restart do Redis; esta tabela é o caminho durável.
+    """
+
+    __tablename__ = "tool_span"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    kind: Mapped[str] = mapped_column(String(16), nullable=False)  # "tool" | "rag"
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    latency_ms: Mapped[float] = mapped_column(Float, nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)  # ok | error
+    session_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    __table_args__ = (
+        Index("ix_tool_span_created_at", "created_at"),
+        Index("ix_tool_span_name_created", "name", "created_at"),
+        Index("ix_tool_span_session_created", "session_id", "created_at"),
+    )
+
+    def __repr__(self) -> str:  # pragma: no cover - conveniência de debug
+        return f"<ToolSpan {self.kind}:{self.name} {self.status} {self.latency_ms}ms>"
+
+
+class CachedResponseEmbedding(Base):
+    """Índice semântico do cache de respostas — só aponta pra uma chave já
+    existente do cache exato (`optimizer/cache.py::ResponseCache`, Redis), não
+    duplica o payload: o Redis já é dono do TTL/expiração de verdade, e manter
+    duas cópias criaria duas fontes de expiração que podem desincronizar."""
+
+    __tablename__ = "cached_response_embedding"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    model_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    # Chave da entrada correspondente em `ResponseCache` (Redis) — nunca lida
+    # sem checar se ainda existe: pode ter expirado no Redis antes desta linha.
+    redis_cache_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    embedding: Mapped[list[float]] = mapped_column(VECTOR_TYPE, nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+    __table_args__ = (
+        Index("ix_cached_response_embedding_model_expires", "model_id", "expires_at"),
+    )
+
+    def __repr__(self) -> str:  # pragma: no cover - conveniência de debug
+        return f"<CachedResponseEmbedding {self.model_id} {self.redis_cache_key}>"
+
+
 class IndexedFile(Base):
     """Um arquivo do workspace presente no índice.
 
@@ -147,9 +206,7 @@ class IndexedFile(Base):
         back_populates="file", cascade="all, delete-orphan", passive_deletes=True
     )
 
-    __table_args__ = (
-        Index("uq_indexed_file_workspace_path", "workspace", "path", unique=True),
-    )
+    __table_args__ = (Index("uq_indexed_file_workspace_path", "workspace", "path", unique=True),)
 
 
 class CodeChunk(Base):
@@ -465,7 +522,9 @@ class GraphNode(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     workspace: Mapped[str] = mapped_column(String(255), default="default", nullable=False)
-    entity_type: Mapped[str] = mapped_column(String(64), nullable=False)  # Note, Concept, Module, Class, ADR, etc.
+    entity_type: Mapped[str] = mapped_column(
+        String(64), nullable=False
+    )  # Note, Concept, Module, Class, ADR, etc.
     name: Mapped[str] = mapped_column(String(512), nullable=False)
     canonical_id: Mapped[str] = mapped_column(String(1024), nullable=False)
     properties: Mapped[dict] = mapped_column(JSON_TYPE, default=dict, nullable=False)
@@ -504,9 +563,7 @@ class GraphNode(Base):
         "GraphMetrics", back_populates="node", uselist=False, cascade="all, delete-orphan"
     )
 
-    __table_args__ = (
-        Index("ix_graph_node_workspace_type", "workspace", "entity_type"),
-    )
+    __table_args__ = (Index("ix_graph_node_workspace_type", "workspace", "entity_type"),)
 
     def __repr__(self) -> str:  # pragma: no cover
         return f"<GraphNode {self.entity_type}:{self.name!r}>"
@@ -525,7 +582,9 @@ class GraphEdge(Base):
     target_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("graph_node.id", ondelete="CASCADE"), nullable=False
     )
-    relation_type: Mapped[str] = mapped_column(String(64), nullable=False)  # REFERENCIA, DEPENDE, AFETA, etc.
+    relation_type: Mapped[str] = mapped_column(
+        String(64), nullable=False
+    )  # REFERENCIA, DEPENDE, AFETA, etc.
     layer: Mapped[int] = mapped_column(Integer, nullable=False)  # 1=Explicit, 2=Vector, 3=LLM
     weight: Mapped[float] = mapped_column(Numeric(5, 4), default=1.0, nullable=False)
     evidence: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -534,8 +593,12 @@ class GraphEdge(Base):
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
-    source_node: Mapped[GraphNode] = relationship("GraphNode", foreign_keys=[source_id], back_populates="outgoing_edges")
-    target_node: Mapped[GraphNode] = relationship("GraphNode", foreign_keys=[target_id], back_populates="incoming_edges")
+    source_node: Mapped[GraphNode] = relationship(
+        "GraphNode", foreign_keys=[source_id], back_populates="outgoing_edges"
+    )
+    target_node: Mapped[GraphNode] = relationship(
+        "GraphNode", foreign_keys=[target_id], back_populates="incoming_edges"
+    )
 
     __table_args__ = (
         Index("ix_graph_edge_source", "source_id", "relation_type"),
@@ -556,7 +619,9 @@ class GraphChunkMapping(Base):
     node_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("graph_node.id", ondelete="CASCADE"), nullable=False
     )
-    chunk_type: Mapped[str] = mapped_column(String(32), nullable=False)  # 'code', 'note', 'document'
+    chunk_type: Mapped[str] = mapped_column(
+        String(32), nullable=False
+    )  # 'code', 'note', 'document'
     chunk_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
     relevance_score: Mapped[float] = mapped_column(Numeric(5, 4), default=1.0, nullable=False)
 
@@ -589,9 +654,7 @@ class GraphMetrics(Base):
 
     node: Mapped[GraphNode] = relationship("GraphNode", back_populates="metrics")
 
-    __table_args__ = (
-        Index("ix_graph_metrics_workspace_pagerank", "workspace", "pagerank"),
-    )
+    __table_args__ = (Index("ix_graph_metrics_workspace_pagerank", "workspace", "pagerank"),)
 
 
 class ProjectRecord(Base):
@@ -668,5 +731,3 @@ class AuthSession(Base):
 
     def __repr__(self) -> str:  # pragma: no cover
         return f"<AuthSession user={self.user_id}>"
-
-

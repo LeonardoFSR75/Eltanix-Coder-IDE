@@ -30,9 +30,7 @@ async def create_user(
     return user
 
 
-async def update_user_password(
-    session: AsyncSession, user: AppUser, *, password_hash: str
-) -> None:
+async def update_user_password(session: AsyncSession, user: AppUser, *, password_hash: str) -> None:
     user.password_hash = password_hash
     await session.flush()
 
@@ -70,9 +68,7 @@ async def get_session_by_token_hash(session: AsyncSession, token_hash: str) -> A
     return await session.scalar(select(AuthSession).where(AuthSession.token_hash == token_hash))
 
 
-async def touch_session(
-    session: AsyncSession, auth_session: AuthSession, *, now: datetime
-) -> None:
+async def touch_session(session: AsyncSession, auth_session: AuthSession, *, now: datetime) -> None:
     auth_session.last_seen_at = now
 
 
@@ -80,6 +76,23 @@ async def revoke_session(
     session: AsyncSession, auth_session: AuthSession, *, now: datetime
 ) -> None:
     auth_session.revoked_at = now
+
+
+async def revoke_other_sessions(
+    session: AsyncSession, *, user_id: uuid.UUID, keep_token_hash: str | None, now: datetime
+) -> int:
+    """Revoga toda sessão ativa do usuário, exceto (opcionalmente) a que fez a
+    própria chamada — usado na troca de senha, para que um token roubado não
+    continue valendo depois que o usuário legítimo trocou a senha."""
+    stmt = select(AuthSession).where(
+        AuthSession.user_id == user_id, AuthSession.revoked_at.is_(None)
+    )
+    if keep_token_hash is not None:
+        stmt = stmt.where(AuthSession.token_hash != keep_token_hash)
+    sessions = (await session.execute(stmt)).scalars().all()
+    for auth_session in sessions:
+        auth_session.revoked_at = now
+    return len(sessions)
 
 
 async def purge_expired_sessions(session: AsyncSession, *, now: datetime) -> int:
@@ -93,4 +106,3 @@ async def purge_expired_sessions(session: AsyncSession, *, now: datetime) -> int
     )
     result = await session.execute(stmt)
     return result.rowcount or 0
-

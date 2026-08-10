@@ -63,7 +63,9 @@ class GraphRAGQueryEngine:
                     UNION
 
                     SELECT
-                        CASE WHEN e.source_id = ge.node_id THEN e.target_id ELSE e.source_id END AS node_id,
+                        CASE WHEN e.source_id = ge.node_id
+                            THEN e.target_id ELSE e.source_id
+                        END AS node_id,
                         ge.hop + 1 AS hop
                     FROM graph_expansion ge
                     JOIN graph_edge e ON e.source_id = ge.node_id OR e.target_id = ge.node_id

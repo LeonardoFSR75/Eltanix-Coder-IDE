@@ -9,6 +9,7 @@ from sicoobito.agent.tools import (  # noqa: F401
     documents,
     files,
     graph,
+    graphify,
     notes,
     plan,
     project_manager,

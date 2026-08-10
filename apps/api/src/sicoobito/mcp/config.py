@@ -41,6 +41,11 @@ class MCPServerConfig(BaseModel):
     # Só um servidor marcado aqui explicitamente tem suas tools rebaixadas de
     # WRITE para READ quando anunciam `read_only_hint: true`.
     trust_annotations: bool = False
+    # Override manual por ferramenta (nome remoto, não o `mcp__servidor__tool`
+    # composto) — tem precedência sobre `trust_annotations`. Permite confiar
+    # (ou desconfiar) de UMA tool específica sem promover/rebaixar as outras
+    # do mesmo servidor.
+    tool_overrides: dict[str, Literal["read", "write"]] = Field(default_factory=dict)
 
     # stdio
     command: str | None = None
