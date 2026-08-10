@@ -105,7 +105,10 @@ dos dois substitui `interrupt()` no grafo — só decidem se ele dispara ou não
 
 **Sincronização de Worktree da Sessão com o Editor Monaco.** As alterações do agente são gravadas isoladamente no seu worktree de sessão (`.sicoobito/worktrees/<session_id>`). O endpoint `GET /api/workspace/file` resolve arquivos cientes do `session_id` ativo com fallback para o workspace principal, permitindo a leitura no editor sem erros de "arquivo não encontrado". O clique em "Aceitar" no `DiffCard` dispara `POST /api/agent/sessions/{session_id}/files/accept`, copiando a alteração para a raiz do workspace do projeto.
 
-**Validação em Malha Fechada (Closed-Loop Execution).** A ferramenta `write_file` executa checagens automáticas de sintaxe AST/JSON no conteúdo gravado, retornando alertas de erro no `ToolResult`. O `SYSTEM_PROMPT` proíbe o encerramento prévio de tarefas de teste ou implementação sem validação e execução bem-sucedida no sandbox.
+**Validação em Malha Fechada (Closed-Loop Execution).** A ferramenta `write_file` executa checagens automáticas de sintaxe AST/JSON e auto-formatação de código HTML no conteúdo gravado, retornando alertas de erro no `ToolResult`. O `SYSTEM_PROMPT` proíbe a emissão de código solto no chat sem a chamada de ferramenta correspondente e veda a marcação prévia de tarefas como concluídas sem verificação real no sandbox.
+
+**Intercepção Inteligente no Sandbox e Contexto do Editor.** O handler `run_command` previne erros de permissão de sistema operacional interceptando tentativas de executar arquivos de dados estáticos (como `.html`, `.css`, `.json`) como binários bash, retornando orientação em tempo de execução ao agente. As abas ativas do Monaco Editor são automaticamente sincronizadas no contexto inicial da sessão (`focus_files`).
+
 
 
 ## Módulos da Aplicação (`apps/api`)
