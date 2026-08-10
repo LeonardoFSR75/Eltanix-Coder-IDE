@@ -152,10 +152,32 @@ async def all_files(fs: FsDep, request: Request, refresh: bool = False) -> dict[
 
 
 @router.get("/file")
-async def read_file(fs: FsDep, filepath: str = Query(alias="path")) -> dict[str, Any]:
+async def read_file(
+    fs: FsDep,
+    request: Request,
+    filepath: str = Query(alias="path"),
+    session_id: str | None = Query(default=None),
+) -> dict[str, Any]:
+    target_fs = fs
+    if session_id:
+        runner = getattr(request.app.state, "agent_runner", None)
+        if runner:
+            sessao = runner.get_session(session_id)
+            if sessao and sessao.worktree_path.exists():
+                target_fs = WorkspaceFS(sessao.worktree_path)
+
     try:
-        content = await asyncio.to_thread(fs.read, filepath)
-    except (PathEscapeError, FileNotFoundError, FileTooLargeError, ValueError) as exc:
+        content = await asyncio.to_thread(target_fs.read, filepath)
+    except FileNotFoundError:
+        # Fallback para o workspace principal se o arquivo não estiver no worktree
+        if target_fs is not fs:
+            try:
+                content = await asyncio.to_thread(fs.read, filepath)
+            except (PathEscapeError, FileNotFoundError, FileTooLargeError, ValueError) as exc:
+                raise _erro_de_caminho(exc) from exc
+        else:
+            raise _erro_de_caminho(FileNotFoundError(filepath))
+    except (PathEscapeError, FileTooLargeError, ValueError) as exc:
         raise _erro_de_caminho(exc) from exc
 
     return {
@@ -164,6 +186,7 @@ async def read_file(fs: FsDep, filepath: str = Query(alias="path")) -> dict[str,
         "language": detect_language(filepath),
         "lines": content.count("\n") + 1,
     }
+
 
 
 class WriteFileRequest(BaseModel):

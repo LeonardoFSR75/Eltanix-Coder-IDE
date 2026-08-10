@@ -110,9 +110,23 @@ async def write_file(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
     except (PathEscapeError, ValueError, OSError) as exc:
         return ToolResult.failure(str(exc))
 
+    syntax_warning = ""
+    if path.endswith(".py"):
+        import ast
+        try:
+            ast.parse(content, filename=path)
+        except SyntaxError as syn_err:
+            syntax_warning = f" AVISO DE SINTAXE: O código Python possui um erro de sintaxe na linha {syn_err.lineno}: {syn_err.msg}."
+    elif path.endswith(".json"):
+        import json
+        try:
+            json.loads(content)
+        except json.JSONDecodeError as json_err:
+            syntax_warning = f" AVISO DE SINTAXE: O JSON é inválido: {json_err.msg}."
+
     return ToolResult(
         ok=True,
-        content=f"{path} gravado ({len(content)} caracteres).",
+        content=f"{path} gravado ({len(content)} caracteres).{syntax_warning}",
         # `before`/`after` completos poupam o frontend de parsear diff
         # unificado: a Fase 3 (revisão de diff) alimenta o DiffEditor do
         # Monaco direto com estas duas strings. `existed` diz se rejeitar a
@@ -127,6 +141,7 @@ async def write_file(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
             "existed": existia,
         },
     )
+
 
 
 @tool(

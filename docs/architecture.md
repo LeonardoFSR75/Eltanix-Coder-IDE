@@ -103,6 +103,11 @@ review_common.py` roda uma segunda opinião automática antes da aprovação hum
 — puramente consultiva, uma falha vira "unavailable", nunca "approved". Nenhum
 dos dois substitui `interrupt()` no grafo — só decidem se ele dispara ou não.
 
+**Sincronização de Worktree da Sessão com o Editor Monaco.** As alterações do agente são gravadas isoladamente no seu worktree de sessão (`.sicoobito/worktrees/<session_id>`). O endpoint `GET /api/workspace/file` resolve arquivos cientes do `session_id` ativo com fallback para o workspace principal, permitindo a leitura no editor sem erros de "arquivo não encontrado". O clique em "Aceitar" no `DiffCard` dispara `POST /api/agent/sessions/{session_id}/files/accept`, copiando a alteração para a raiz do workspace do projeto.
+
+**Validação em Malha Fechada (Closed-Loop Execution).** A ferramenta `write_file` executa checagens automáticas de sintaxe AST/JSON no conteúdo gravado, retornando alertas de erro no `ToolResult`. O `SYSTEM_PROMPT` proíbe o encerramento prévio de tarefas de teste ou implementação sem validação e execução bem-sucedida no sandbox.
+
+
 ## Módulos da Aplicação (`apps/api`)
 
 | Módulo | Responsabilidade |

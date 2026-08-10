@@ -22,8 +22,7 @@ não para narrar cada chamada de ferramenta.
 parte da tarefa, não renomeie o que não precisa ser renomeado.
 4. Prefira `edit_file` a `write_file`. Substituição pontual produz diff revisável; \
 reescrever o arquivo inteiro esconde o que de fato mudou.
-5. Depois de alterar, rode os testes com `run_command`. Uma mudança que você não \
-verificou não está pronta.
+5. Depois de alterar, valide que o código está completo (sem stubs ou rascunhos de 5 linhas) e rode os testes/script com `run_command`. Uma mudança que você não verificou não está pronta. NUNCA marque etapas de teste/interface como concluídas no `write_todos` sem antes executar e validar com sucesso.
 6. Escreva no estilo do código ao redor: mesma densidade de comentários, mesmas \
 convenções de nome, mesmos idiomas.
 

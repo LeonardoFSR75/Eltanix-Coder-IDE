@@ -302,6 +302,37 @@ async def revert_file(
     return {"path": payload.path, "reverted": True}
 
 
+class AcceptFileRequest(BaseModel):
+    path: str = Field(min_length=1)
+
+
+@router.post("/sessions/{session_id}/files/accept")
+async def accept_file(
+    session_id: str, payload: AcceptFileRequest, request: Request
+) -> dict[str, Any]:
+    """Aceita uma edição do agente: copia o arquivo do worktree da sessão para o workspace principal do usuário."""
+    sessao = _session(request, session_id)
+    try:
+        sessao.context.fs.resolve(payload.path)
+    except PathEscapeError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    try:
+        content = sessao.context.fs.read(payload.path)
+    except (PathEscapeError, FileNotFoundError, ValueError, OSError) as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Arquivo não encontrado no worktree: {payload.path}") from exc
+
+    try:
+        from sicoobito.workspace.fs import WorkspaceFS
+        main_fs = WorkspaceFS(sessao.workspace_root)
+        written = main_fs.write(payload.path, content)
+    except (PathEscapeError, ValueError, OSError) as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    return {"path": payload.path, "accepted": True, "bytes": written}
+
+
+
 class CloseRequest(BaseModel):
     # Por padrão o branch fica: descartar o trabalho do agente deve ser uma
     # escolha explícita, não o efeito de fechar uma aba.

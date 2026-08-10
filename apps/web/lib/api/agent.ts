@@ -77,3 +77,8 @@ export async function revertFile(
 ): Promise<void> {
   await post(`/api/agent/sessions/${sessionId}/files/revert`, { path, before, existed });
 }
+
+export async function acceptFile(sessionId: string, path: string): Promise<void> {
+  await post(`/api/agent/sessions/${sessionId}/files/accept`, { path });
+}
+

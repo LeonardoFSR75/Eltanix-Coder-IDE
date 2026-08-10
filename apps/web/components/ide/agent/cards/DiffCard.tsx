@@ -2,19 +2,17 @@
 
 import { useState } from "react";
 import { autoDetectLanguage, DiffView } from "@/components/ide/Editor";
-import { revertFile } from "@/lib/api/agent";
+import { acceptFile, revertFile } from "@/lib/api/agent";
 import { useIde } from "@/lib/ide-store";
 import { riskLevelForTool, ToolCardShell } from "./ToolCardShell";
 import type { ToolCardProps } from "./types";
 
 type Decision = "pending" | "accepted" | "rejected";
 
-// Toda chamada de write_file/edit_file já grava no worktree isolado da
-// sessão antes de chegar aqui (fluxo escreve-então-revisa). "Aceitar" não
-// precisa de ação nenhuma — a mudança já está lá. "Rejeitar" chama o
-// endpoint de revert, mandando de volta o `before` que a própria ferramenta
-// devolveu — não depende de git existir no projeto (muitos não são
-// repositório Git, e a sessão funciona normalmente mesmo assim).
+// Toda chamada de write_file/edit_file grava no worktree isolado da sessão.
+// "Aceitar" chama o endpoint accept para copiar o arquivo do worktree para o
+// workspace principal do usuário e notifica a IDE. "Rejeitar" chama o
+// endpoint de revert.
 export function DiffCard({
   tool,
   content,
@@ -44,6 +42,21 @@ export function DiffCard({
       </ToolCardShell>
     );
   }
+
+  const accept = async () => {
+    if (!sessionId || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await acceptFile(sessionId, path);
+      setDecision("accepted");
+      notifyFileChanged(path);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const reject = async () => {
     if (!sessionId || busy) return;
@@ -82,9 +95,11 @@ export function DiffCard({
             <button
               type="button"
               className="diff-card-btn accept"
-              onClick={() => setDecision("accepted")}
+              disabled={busy || !sessionId}
+              onClick={() => void accept()}
+              title={sessionId ? "Aplicar esta edição no workspace" : "Sessão indisponível"}
             >
-              ✓ Aceitar
+              {busy ? "aplicando…" : "✓ Aceitar"}
             </button>
             <button
               type="button"
@@ -97,6 +112,7 @@ export function DiffCard({
             </button>
           </>
         )}
+
         {decision === "accepted" && <span className="diff-card-status accepted">✓ mantido</span>}
         {decision === "rejected" && <span className="diff-card-status rejected">✕ revertido</span>}
       </div>

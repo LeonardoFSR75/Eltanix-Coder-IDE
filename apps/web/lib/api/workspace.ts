@@ -46,23 +46,33 @@ export async function listTree(project: string, subpath: string): Promise<Worksp
   return entries;
 }
 
-export async function readFile(project: string, path: string): Promise<FileContent> {
+export async function readFile(
+  project: string,
+  path: string,
+  sessionId?: string | null,
+): Promise<FileContent> {
+  const sessionQuery = sessionId ? `&session_id=${encodeURIComponent(sessionId)}` : "";
   return get<FileContent>(
-    `/api/workspace/file?project=${encodeURIComponent(project)}&path=${encodeURIComponent(path)}`,
+    `/api/workspace/file?project=${encodeURIComponent(project)}&path=${encodeURIComponent(path)}${sessionQuery}`,
   );
 }
 
 /** Como readFile, mas devolve `null` em vez de lançar quando o arquivo ainda
  * não existe (404) — para configuração opcional por projeto que só passa a
  * existir quando o usuário salva pela primeira vez (ex.: instruções custom). */
-export async function readFileOrNull(project: string, path: string): Promise<FileContent | null> {
+export async function readFileOrNull(
+  project: string,
+  path: string,
+  sessionId?: string | null,
+): Promise<FileContent | null> {
   try {
-    return await readFile(project, path);
+    return await readFile(project, path, sessionId);
   } catch (err) {
     if (err instanceof HttpError && err.status === 404) return null;
     throw err;
   }
 }
+
 
 export async function writeFile(project: string, path: string, content: string): Promise<void> {
   await put("/api/workspace/file", { project, path, content });

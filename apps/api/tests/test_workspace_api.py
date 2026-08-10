@@ -289,3 +289,14 @@ def test_agent_tools_endpoint_exposes_risk_classes(client):
     assert por_nome["read_file"]["requires_approval"] is False
     assert por_nome["run_command"]["requires_approval"] is True
     assert por_nome["run_command"]["risk"] == "exec"
+
+
+def test_read_file_with_session_id_fallback(client):
+    resposta = client.get(
+        "/api/workspace/file",
+        params={"project": "demo", "path": "src/app.py", "session_id": "sessao_inexistente"},
+        headers=AUTH,
+    )
+    assert resposta.status_code == 200
+    assert resposta.json()["content"] == "x = 1\n"
+
