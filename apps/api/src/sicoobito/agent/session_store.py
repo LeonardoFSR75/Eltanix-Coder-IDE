@@ -24,6 +24,7 @@ async def create(
     profile: str | None,
     branch: str | None,
     base_branch: str | None,
+    parent_session_id: str | None = None,
 ) -> None:
     session.add(
         AgentSessionRecord(
@@ -34,6 +35,7 @@ async def create(
             profile=profile,
             branch=branch or None,
             base_branch=base_branch,
+            parent_session_id=parent_session_id,
         )
     )
     await session.flush()
@@ -55,6 +57,7 @@ async def list_sessions(
     *,
     project: str | None = None,
     status: str | None = None,
+    parent_session_id: str | None = None,
     limit: int = 50,
 ) -> Sequence[AgentSessionRecord]:
     query = select(AgentSessionRecord).order_by(AgentSessionRecord.updated_at.desc()).limit(limit)
@@ -62,4 +65,6 @@ async def list_sessions(
         query = query.where(AgentSessionRecord.project == project)
     if status is not None and status != "all":
         query = query.where(AgentSessionRecord.status == status)
+    if parent_session_id is not None:
+        query = query.where(AgentSessionRecord.parent_session_id == parent_session_id)
     return (await session.execute(query)).scalars().all()

@@ -5,6 +5,7 @@ registra cada ferramenta em `registry`.
 """
 
 from sicoobito.agent.tools import (  # noqa: F401
+    agents_graph,
     browser,
     documents,
     files,

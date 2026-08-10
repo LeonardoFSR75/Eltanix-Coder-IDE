@@ -26,7 +26,9 @@ import structlog
 
 from sicoobito.agent import session_store
 from sicoobito.agent.approval_policy_config import load_approval_policy
+from sicoobito.agent.coordinator import AgentCoordinator
 from sicoobito.agent.graph import DEFAULT_MAX_ITERATIONS, build_graph
+from sicoobito.agent.headless import run_headless_burst
 from sicoobito.agent.prompts import build_task_prompt
 from sicoobito.agent.state import AgentMode
 from sicoobito.agent.tools import ToolContext
@@ -96,6 +98,7 @@ class AgentRunner:
         skills: SkillService | None = None,
         audit: AuditService | None = None,
         trace_recorder: TraceRecorder | None = None,
+        coordinator: AgentCoordinator | None = None,
     ) -> None:
         self.settings = settings
         self.engine = engine
@@ -107,13 +110,24 @@ class AgentRunner:
         self.skills = skills
         self.audit = audit
         self.trace_recorder = trace_recorder
+        # None quando o Redis não está configurado — orquestração multiagente
+        # fica indisponível (`spawn_agent` falha fechado), mas sessões normais
+        # seguem intactas (ver ADR 0004).
+        self.coordinator = coordinator
         self._browser_http: httpx.AsyncClient | None = None
         self._sessions: dict[str, AgentSession] = {}
         # Um lock por sessão evita que duas chamadas concorrentes a
         # `stream_run` (retry de rede, duplo clique, aba duplicada) retomem o
         # mesmo checkpoint em paralelo e executem a mesma ferramenta
-        # WRITE/EXEC já aprovada duas vezes.
+        # WRITE/EXEC já aprovada duas vezes. `is_being_driven()` reaproveita
+        # esse mesmo lock como sinal de "alguém já está avançando esta sessão"
+        # — ver `send_message_to_agent` em `agent/tools/agents_graph.py`.
         self._session_locks: dict[str, asyncio.Lock] = {}
+        # Bursts headless disparados por `spawn_agent`/mensagens que acordam
+        # um filho parado — precisam de referência viva (senão o GC cancela a
+        # task no meio) e de rastreamento pra `aclose()` conseguir esperar/
+        # cancelar no shutdown. Mesmo idioma de `telemetry/tracer.py::TraceRecorder`.
+        self._background_tasks: set[asyncio.Task[None]] = set()
         self._checkpointer: Any | None = None
         # `AsyncPostgresSaver.from_conn_string` é um @asynccontextmanager: a
         # conexão só existe dentro do `async with` que ele abre internamente.
@@ -123,6 +137,14 @@ class AgentRunner:
         # fecha a conexão por baixo, tipicamente no primeiro uso real do
         # checkpointer, com o sintoma "the connection is closed".
         self._checkpointer_cm: Any | None = None
+
+    def is_being_driven(self, session_id: str) -> bool:
+        """True se algum `stream_run()` (humano via SSE, ou um burst headless)
+        já está avançando esta sessão agora. `send_message_to_agent` usa isto
+        pra decidir se precisa disparar um burst novo pra acordar o alvo, ou
+        se quem já está dirigindo a sessão vai naturalmente drenar a inbox."""
+        lock = self._session_locks.get(session_id)
+        return lock is not None and lock.locked()
 
     # ── Checkpointer ────────────────────────────────────────────────────────
 
@@ -169,6 +191,7 @@ class AgentRunner:
         profile: str | None = None,
         focus_files: list[str] | None = None,
         focus_folder: str | None = None,
+        parent_session_id: str | None = None,
     ) -> AgentSession:
         session_id = session_id or self.sandboxes.new_session_id()
         # Syscall única na criação da sessão; o trabalho pesado de disco desta
@@ -215,6 +238,49 @@ class AgentRunner:
         if self.browser_config is not None:
             browser = BrowserClient(session_id, self.browser_config, self._get_browser_http())
 
+        # 5. Orquestração multiagente: profundidade herdada do pai (0 pra
+        # sessão raiz), e o fechamento que `spawn_agent` chama pra criar um
+        # filho — capturando `self` (este AgentRunner) e `session_id` (o
+        # futuro pai) em vez de expor o AgentRunner inteiro pra ferramenta.
+        depth = 0
+        if parent_session_id is not None and self.coordinator is not None:
+            depth = await self.coordinator.depth_of(parent_session_id) + 1
+
+        async def _spawn_child_agent(*, task: str, display_name: str) -> str:
+            filho = await self.create_session(
+                task=task,
+                workspace_root=workspace_root,
+                mode="agent",
+                parent_session_id=session_id,
+            )
+            burst = asyncio.get_running_loop().create_task(
+                run_headless_burst(self, self.coordinator, filho)
+            )
+            self._background_tasks.add(burst)
+            burst.add_done_callback(self._background_tasks.discard)
+            return filho.session_id
+
+        async def _wake_agent(target_session_id: str) -> bool:
+            if self.is_being_driven(target_session_id):
+                # Já tem alguém (humano via SSE, ou outro burst) avançando
+                # essa sessão — ela vai drenar a própria caixa de mensagens
+                # sozinha no próximo `wait_for_agents`/turno, sem precisar de
+                # um burst concorrente que ia esbarrar no mesmo lock.
+                return False
+            alvo = self._sessions.get(target_session_id)
+            if alvo is None:
+                return False
+            if self.coordinator is not None and await self.coordinator.is_stopped(
+                target_session_id
+            ):
+                return False
+            burst = asyncio.get_running_loop().create_task(
+                run_headless_burst(self, self.coordinator, alvo)
+            )
+            self._background_tasks.add(burst)
+            burst.add_done_callback(self._background_tasks.discard)
+            return True
+
         contexto = ToolContext(
             session_id=session_id,
             workspace_root=worktree_path,
@@ -236,6 +302,13 @@ class AgentRunner:
             engine=self.engine,
             custom_instructions=_load_custom_instructions(workspace_root),
             approval_policy=load_approval_policy(workspace_root),
+            coordinator=self.coordinator,
+            spawn_child_agent=_spawn_child_agent if self.coordinator is not None else None,
+            wake_agent=_wake_agent if self.coordinator is not None else None,
+            parent_session_id=parent_session_id,
+            max_wait_seconds=self.settings.agent_wait_max_seconds,
+            max_spawn_depth=self.settings.agent_max_spawn_depth,
+            max_children_per_agent=self.settings.agent_max_children_per_agent,
         )
 
         sessao = AgentSession(
@@ -256,6 +329,17 @@ class AgentRunner:
         )
         self._sessions[session_id] = sessao
 
+        if self.coordinator is not None:
+            # Registrada mesmo sendo raiz (parent_id=None, depth=0) — assim
+            # `view_agent_graph`/tetos de profundidade funcionam uniformemente
+            # desde a primeira sessão, não só a partir do primeiro spawn.
+            await self.coordinator.register(
+                session_id=session_id,
+                display_name=task[:80],
+                parent_id=parent_session_id,
+                depth=depth,
+            )
+
         # Não-fatal de propósito, mesmo espírito do checkpointer e do sandbox
         # acima: um soluço no banco não pode impedir a criação da sessão, só
         # faz o histórico ficar incompleto para ela.
@@ -270,6 +354,7 @@ class AgentRunner:
                     profile=profile,
                     branch=branch or None,
                     base_branch=base,
+                    parent_session_id=parent_session_id,
                 )
         except Exception as exc:
             log.warning("agent.session.persist_failed", session=session_id, error=str(exc)[:200])
@@ -353,7 +438,12 @@ class AgentRunner:
         }
 
     async def aclose(self) -> None:
-        """Fecha o cliente HTTP compartilhado do navegador, no desligamento do processo."""
+        """Fecha o cliente HTTP compartilhado do navegador e espera/cancela
+        bursts headless pendentes, no desligamento do processo."""
+        if self._background_tasks:
+            for task in list(self._background_tasks):
+                task.cancel()
+            await asyncio.gather(*self._background_tasks, return_exceptions=True)
         if self._browser_http is not None and not self._browser_http.is_closed:
             await self._browser_http.aclose()
 

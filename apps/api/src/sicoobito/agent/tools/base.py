@@ -63,6 +63,27 @@ class ToolContext:
     # pelo nó `approve` em `agent/graph.py` antes do `interrupt()`. `None`
     # equivale a uma política vazia (nenhuma regra, tudo pausa como sempre).
     approval_policy: Any | None = None
+    # Orquestração multiagente (ver ADR 0004) — usados por
+    # `agent/tools/agents_graph.py`. `coordinator` é `None` sem Redis
+    # configurado (orquestração indisponível, `spawn_agent` falha fechado).
+    coordinator: Any | None = None  # AgentCoordinator
+    # Fechamento `async (*, task: str, display_name: str) -> str` (devolve o
+    # session_id do filho) montado em `AgentRunner.create_session()` — mesmo
+    # padrão de callback injetado que o próprio Strix usa pro seu
+    # `create_agent`, pra `ToolContext` não precisar segurar uma referência
+    # circular ao `AgentRunner` inteiro. `None` quando não há coordenador.
+    spawn_child_agent: Any | None = None
+    # Fechamento `async (target_session_id: str) -> bool` — dispara um burst
+    # headless novo pra um agente já existente que não está sendo dirigido
+    # por ninguém no momento (usado por `send_message_to_agent` pra acordar o
+    # alvo depois de enfileirar a mensagem). Devolve `False` sem fazer nada
+    # se o alvo já está sendo dirigido, foi parado, ou é desconhecido — quem
+    # chama não precisa (nem deve) tratar isso como erro.
+    wake_agent: Any | None = None
+    parent_session_id: str | None = None
+    max_wait_seconds: float = 300.0
+    max_spawn_depth: int = 3
+    max_children_per_agent: int = 4
 
 
 @dataclass(slots=True)

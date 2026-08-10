@@ -137,6 +137,23 @@ class Settings(BaseSettings):
     executor_url: str = Field(default="", alias="EXECUTOR_URL")
     executor_token: str = Field(default="", alias="EXECUTOR_TOKEN")
 
+    # ── Orquestração multiagente (ver ADR 0004) ────────────────────────────
+    # Tetos contra fork-bomb — cada `spawn_agent` cria worktree+sandbox+
+    # checkpoint de verdade, então o limite fica aqui, não só na cota de USD
+    # do BudgetGuard (que não sabe nada sobre quantidade de sessões paralelas).
+    agent_max_children_per_agent: int = Field(default=4, alias="AGENT_MAX_CHILDREN_PER_AGENT")
+    agent_max_spawn_depth: int = Field(default=3, alias="AGENT_MAX_SPAWN_DEPTH")
+    # Teto pro `timeout_seconds` que o modelo pedir em `wait_for_agents` — sem
+    # isto uma chamada de ferramenta poderia travar o turno (e a conexão SSE,
+    # se for humano dirigindo) por tempo arbitrário.
+    agent_wait_max_seconds: float = Field(default=300.0, alias="AGENT_WAIT_MAX_SECONDS")
+    # TTL deslizante do estado de coordenação no Redis (status, inbox, árvore
+    # pai/filho) — renovado a cada operação. Não é a fonte de verdade de "esse
+    # agente existiu" (isso é o Postgres/checkpoint), só da coordenação ativa.
+    agent_coordination_ttl_seconds: int = Field(
+        default=21_600, alias="AGENT_COORDINATION_TTL_SECONDS"
+    )
+
     # ── Navegador para verificação visual (Fase 7) ──────────────────────────
     # Serviço à parte, numa rede restrita própria (ver docker-compose.yml,
     # `browser_net`) — o sandbox de execução acima continua sem rede nenhuma.

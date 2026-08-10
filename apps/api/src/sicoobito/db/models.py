@@ -499,6 +499,11 @@ class AgentSessionRecord(Base):
     # consome esta tabela precisa combinar com o dict em memória do runner
     # (campo `live` na view da API) para saber o que está realmente ativo.
     status: Mapped[str] = mapped_column(String(16), default="open", nullable=False)
+    # Sessão-pai que gerou esta via `spawn_agent` (orquestração multiagente) —
+    # NULL para toda sessão raiz. Sem FK de propósito: mesma convenção do
+    # resto desta tabela (`project`/`branch` também não têm FK), e um valor
+    # órfão aqui é só informativo, não deve travar nada.
+    parent_session_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -509,6 +514,7 @@ class AgentSessionRecord(Base):
     __table_args__ = (
         Index("ix_agent_session_project_updated", "project", "updated_at"),
         Index("ix_agent_session_status", "status"),
+        Index("ix_agent_session_parent", "parent_session_id"),
     )
 
     def __repr__(self) -> str:  # pragma: no cover - conveniência de debug

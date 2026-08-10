@@ -12,6 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from redis.asyncio import Redis
 
 from sicoobito import __version__
+from sicoobito.agent.coordinator import AgentCoordinator
 from sicoobito.agent.runner import AgentRunner
 from sicoobito.agent.tools import registry as tool_registry
 from sicoobito.api.middleware import CorrelationIdMiddleware
@@ -127,6 +128,14 @@ async def lifespan(app: FastAPI):
     # Buffer de spans de tools/RAG, com persistência opcional em Redis se conectado.
     trace_recorder = TraceRecorder(redis=redis)
 
+    # Coordenação de orquestração multiagente (ver ADR 0004) — `None` sem
+    # Redis conectado, o que faz `spawn_agent` falhar fechado (diferente do
+    # resto da plataforma, que degrada pra "mais lento": aqui não há fonte de
+    # verdade alternativa pra quem é filho de quem).
+    agent_coordinator = AgentCoordinator(
+        redis, ttl_seconds=settings.agent_coordination_ttl_seconds
+    )
+
     indexer = ContextIndexer(settings=settings, engine=engine, trace_recorder=trace_recorder)
 
     blob = BlobStore(settings)
@@ -218,6 +227,7 @@ async def lifespan(app: FastAPI):
     app.state.auth = auth
     app.state.mcp_manager = mcp_manager
     app.state.trace_recorder = trace_recorder
+    app.state.agent_coordinator = agent_coordinator
     app.state.projects_root = settings.projects_root
     app.state.agent_runner = AgentRunner(
         settings=settings,
@@ -230,6 +240,7 @@ async def lifespan(app: FastAPI):
         skills=skills,
         audit=audit,
         trace_recorder=trace_recorder,
+        coordinator=agent_coordinator,
     )
     # O desligamento ordenado abaixo cobre o caso normal; este laço cobre o
     # anormal (kill -9, queda), varrendo containers de execuções anteriores que

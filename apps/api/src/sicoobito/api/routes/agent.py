@@ -121,12 +121,17 @@ async def list_sessions(
     db: DbSessionDep,
     project: str | None = None,
     status_filtro: Literal["open", "closed", "all"] = "all",
+    parent_session_id: str | None = None,
     limit: int = 50,
 ) -> dict[str, Any]:
     """Histórico persistido, para a lista de sessões do painel sobreviver a um restart."""
     runner = _runner(request)
     registros = await session_store.list_sessions(
-        db, project=project, status=None if status_filtro == "all" else status_filtro, limit=limit
+        db,
+        project=project,
+        status=None if status_filtro == "all" else status_filtro,
+        parent_session_id=parent_session_id,
+        limit=limit,
     )
     return {
         "sessions": [
@@ -138,6 +143,10 @@ async def list_sessions(
                 "profile": r.profile,
                 "branch": r.branch,
                 "status": r.status,
+                # Preenchido só pra sessões criadas via `spawn_agent`
+                # (orquestração multiagente, ver ADR 0004) — `None` pra
+                # qualquer sessão raiz.
+                "parent_session_id": r.parent_session_id,
                 "created_at": r.created_at,
                 "updated_at": r.updated_at,
                 # Único jeito confiável de saber se ainda está rodando neste

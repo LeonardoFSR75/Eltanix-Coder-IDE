@@ -318,7 +318,11 @@ async def test_second_opinion_note_attached_when_enabled(ctx, tmp_path):
     engine = FakeRouterEngine(
         [
             _tool_call_response("call1", "write_file", {"path": "bar.py", "content": "x = 1\n"}),
-            {"choices": [{"message": {"content": "VEREDITO: APROVADO\nMudança pequena e segura."}}]},
+            {
+                "choices": [
+                    {"message": {"content": "VEREDITO: APROVADO\nMudança pequena e segura."}}
+                ]
+            },
         ]
     )
     compilado = build_graph(engine, ctx).compile(checkpointer=MemorySaver())
@@ -406,3 +410,92 @@ async def test_second_opinion_skipped_for_exec_tools(ctx):
     pendente = payload["actions"][0]
     assert "review" not in pendente
     assert engine.chamadas == 1
+
+
+# ── run_headless_burst sobre o grafo real (Fase E) ──────────────────────────
+#
+# Prova a promessa central do ADR 0004: um burst headless (sem SSE, sem
+# humano observando) não é um caminho novo de aprovação — bate no MESMO
+# `interrupt()` que uma sessão dirigida por humano bateria.
+
+
+@dataclass
+class _FakeHeadlessSession:
+    session_id: str
+
+
+class _FakeRunnerForHeadless:
+    """`stream_run()` mínimo o bastante pra `run_headless_burst` dirigir —
+    mesma mecânica de `build_graph` + `MemorySaver` que os testes acima já
+    usam direto, só empacotada atrás da assinatura real de
+    `AgentRunner.stream_run(session, *, resume=None, message=None)`."""
+
+    def __init__(self, engine, ctx: ToolContext) -> None:
+        self._engine = engine
+        self._ctx = ctx
+        self._compilado = build_graph(engine, ctx).compile(checkpointer=MemorySaver())
+
+    async def stream_run(self, session, *, resume=None, message=None):
+        config = {"configurable": {"thread_id": session.session_id}}
+        if resume is not None:
+            entrada = Command(resume=resume)
+        elif message:
+            entrada = {"messages": [{"role": "user", "content": message}], "finished": False}
+        else:
+            entrada = _initial_state(session.session_id)
+
+        async for evento in self._compilado.astream(entrada, config=config, stream_mode="updates"):
+            yield {"node": next(iter(evento)), "update": evento}
+
+        estado = await self._compilado.aget_state(config)
+        if estado.tasks:
+            for tarefa in estado.tasks:
+                for interrupcao in getattr(tarefa, "interrupts", []) or []:
+                    yield {"node": "interrupt", "update": interrupcao.value}
+
+
+async def test_headless_burst_pauses_at_interrupt_for_uncovered_write(ctx, tmp_path):
+    from sicoobito.agent.coordinator import AgentCoordinator
+    from sicoobito.agent.headless import run_headless_burst
+
+    # Sem regra de política — o WRITE do filho não tem cobertura nenhuma,
+    # exatamente o caso que precisa continuar pausando mesmo sem humano
+    # observando o burst em tempo real.
+    ctx.approval_policy = ApprovalPolicy()
+    engine = FakeRouterEngine(
+        [_tool_call_response("call1", "write_file", {"path": "bar.py", "content": "x = 1\n"})]
+    )
+    runner = _FakeRunnerForHeadless(engine, ctx)
+    coordinator = AgentCoordinator(None)  # sem Redis — só queremos observar o burst em si
+    sessao = _FakeHeadlessSession(session_id="filho-headless")
+
+    await run_headless_burst(runner, coordinator, sessao)
+
+    estado = await runner._compilado.aget_state({"configurable": {"thread_id": "filho-headless"}})
+    assert estado.tasks, "burst headless deveria ter pausado em interrupt() igual sessão normal"
+    assert not (tmp_path / "bar.py").exists(), "act() não pode ter rodado antes da aprovação"
+
+
+async def test_headless_burst_completes_when_policy_covers_the_write(ctx, tmp_path):
+    from sicoobito.agent.approval_policy import EditPathRule
+    from sicoobito.agent.coordinator import AgentCoordinator
+    from sicoobito.agent.headless import run_headless_burst
+
+    ctx.approval_policy = ApprovalPolicy(
+        rules=[EditPathRule(tools=["write_file"], path_glob="*.py", max_changed_lines=50)]
+    )
+    engine = FakeRouterEngine(
+        [
+            _tool_call_response("call1", "write_file", {"path": "bar.py", "content": "x = 1\n"}),
+            _FINISHED_RESPONSE,
+        ]
+    )
+    runner = _FakeRunnerForHeadless(engine, ctx)
+    coordinator = AgentCoordinator(None)
+    sessao = _FakeHeadlessSession(session_id="filho-auto")
+
+    await run_headless_burst(runner, coordinator, sessao)
+
+    estado = await runner._compilado.aget_state({"configurable": {"thread_id": "filho-auto"}})
+    assert not estado.tasks, "política cobria a ação — burst deveria ter concluído sem pausar"
+    assert (tmp_path / "bar.py").exists(), "act() deveria ter rodado sem esperar aprovação humana"
