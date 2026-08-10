@@ -48,8 +48,10 @@ def summarize_output(text: str, *, head: int = HEAD_LINES, tail: int = TAIL_LINE
     name="run_command",
     description=(
         "Executa um comando de shell no sandbox, na raiz do workspace. "
-        "O sandbox não tem acesso à rede por padrão e é descartado ao fim da "
-        "sessão. Use para rodar testes, linters e build."
+        "O sandbox NÃO tem acesso à rede: pip install/npm install/curl/download "
+        "sempre falham por resolução de DNS — não tente instalar pacotes novos, "
+        "use só a biblioteca padrão ou o que já está instalado. É descartado ao "
+        "fim da sessão. Use para rodar testes, linters e build."
     ),
     risk=RiskClass.EXEC,
     parameters={
@@ -94,14 +96,22 @@ async def run_command(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
         corpo += f"\n\n--- stderr ---\n{summarize_output(resultado.stderr)}"
 
     estado = "sucesso" if resultado.ok else f"saída {resultado.exit_code}"
+    dica_timeout = ""
     if resultado.timed_out:
         estado = "tempo esgotado"
+        dica_timeout = (
+            "\n\nDICA: o comando não retornou sozinho dentro do tempo limite — "
+            "provavelmente é um servidor ou processo de longa duração. Rode em "
+            "background (ex.: `comando &` ou `nohup comando > saida.log 2>&1 &`) e "
+            "depois verifique com outro `run_command` (ex.: `curl` no endpoint ou "
+            "`cat saida.log`) em vez de rodar em primeiro plano de novo."
+        )
 
     return ToolResult(
         # Comando que falha não é falha da ferramenta: o modelo precisa do
         # resultado para decidir o próximo passo, então `ok=True`.
         ok=True,
-        content=f"[{estado} em {resultado.duration_ms}ms]\n{corpo}",
+        content=f"[{estado} em {resultado.duration_ms}ms]\n{corpo}{dica_timeout}",
         data={
             "command": comando,
             "exit_code": resultado.exit_code,

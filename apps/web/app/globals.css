@@ -2999,6 +2999,21 @@ textarea:focus-visible,
   background: var(--surface-3);
 }
 
+/* Sessão já criada: trocar o modelo aqui não tem efeito (ver ModelPicker.tsx) */
+.model-picker-container.locked {
+  opacity: 0.6;
+}
+
+.model-picker-container.locked:hover {
+  border-color: var(--border);
+  box-shadow: none;
+  background: var(--surface-2);
+}
+
+.model-picker-container.locked .model-picker-select {
+  cursor: not-allowed;
+}
+
 .model-picker-icon {
   font-size: 12px;
   flex-shrink: 0;

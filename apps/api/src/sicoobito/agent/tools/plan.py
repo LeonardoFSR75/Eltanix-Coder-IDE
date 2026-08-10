@@ -49,9 +49,10 @@ _VALID_STATUS = {"pending", "in_progress", "completed"}
     },
     summarize=lambda a: f"atualizar plano ({len(a.get('items') or [])} itens)",
 )
-async def write_todos(_ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
+async def write_todos(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
     brutos = args.get("items") or []
     todos: list[dict[str, Any]] = []
+    rebaixados: list[str] = []
     for item in brutos:
         if not isinstance(item, dict):
             continue
@@ -61,7 +62,25 @@ async def write_todos(_ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
         status = item.get("status")
         if status not in _VALID_STATUS:
             status = "pending"
+        # A ferramenta WRITE/EXEC mais recente falhou e ainda não foi seguida
+        # de um sucesso — não deixa o modelo marcar "completed" nessa hora
+        # (instrução em prompts.py::SYSTEM_PROMPT já pedia isso em texto; aqui
+        # é aplicado, não só sugerido). Ver `ToolContext.has_unresolved_failure`.
+        if status == "completed" and ctx.has_unresolved_failure:
+            status = "in_progress"
+            rebaixados.append(conteudo)
         todos.append({"content": conteudo, "status": status})
 
     resumo = "\n".join(f"[{t['status']}] {t['content']}" for t in todos) or "(lista vazia)"
-    return ToolResult(ok=True, content=f"Plano atualizado:\n{resumo}", data={"todos": todos})
+    aviso = ""
+    if rebaixados:
+        itens = "; ".join(rebaixados)
+        aviso = (
+            f"\n\nAVISO: {len(rebaixados)} item(ns) mantido(s) em `in_progress` em vez de "
+            f"`completed` porque a última ferramenta WRITE/EXEC falhou e ainda não foi "
+            f"seguida de um sucesso ({itens}). Corrija o problema (ou confirme com um "
+            "comando que passe) antes de marcar como concluído."
+        )
+    return ToolResult(
+        ok=True, content=f"Plano atualizado:\n{resumo}{aviso}", data={"todos": todos}
+    )

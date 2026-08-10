@@ -84,6 +84,12 @@ class ToolContext:
     max_wait_seconds: float = 300.0
     max_spawn_depth: int = 3
     max_children_per_agent: int = 4
+    # Atualizado por `agent/graph.py::act()` a cada ferramenta WRITE/EXEC:
+    # True se a mais recente falhou (exit code != 0, timeout, ou `ok=False`),
+    # False se a mais recente teve sucesso. `write_todos` consulta isto para
+    # recusar marcar item como `completed` logo depois de uma falha não
+    # resolvida — ver `agent/tools/plan.py`.
+    has_unresolved_failure: bool = False
 
 
 @dataclass(slots=True)

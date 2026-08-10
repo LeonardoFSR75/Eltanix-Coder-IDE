@@ -79,6 +79,22 @@ def _next_repetition_state(
     return fingerprint, 1
 
 
+def _telemetry_status(nome: str, resultado: Any) -> str:
+    """Status para telemetria/observabilidade — não é o `ok` devolvido ao modelo.
+
+    `run_command` sempre devolve `ToolResult.ok=True` de propósito (comando que
+    falha é informação para o modelo decidir o próximo passo, não uma falha da
+    ferramenta em si) — mas isso fazia todo `pip install` sem rede aparecer como
+    `status="ok"` em `/api/telemetry/recent`, escondendo a falha de quem lê o log.
+    Aqui a telemetria olha o `exit_code`/`timed_out` reais do processo.
+    """
+    if nome == "run_command":
+        dados = resultado.data or {}
+        if dados.get("timed_out") or dados.get("exit_code") not in (0, None):
+            return "error"
+    return "ok" if resultado.ok else "error"
+
+
 async def _attach_review_notes(
     context: ToolContext, engine: RouterEngine, pendentes: list[PendingApproval]
 ) -> None:
@@ -385,6 +401,8 @@ def build_graph(engine: RouterEngine, context: ToolContext):
                 resultado = await ferramenta.handler(context, argumentos)
             except Exception as exc:
                 log.warning("agent.tool.failed", tool=nome, error=str(exc)[:200])
+                if ferramenta.risk is not RiskClass.READ:
+                    context.has_unresolved_failure = True
                 if context.trace_recorder is not None:
                     context.trace_recorder.record(
                         kind="tool",
@@ -400,12 +418,16 @@ def build_graph(engine: RouterEngine, context: ToolContext):
                 )
                 continue
 
+            status_da_ferramenta = _telemetry_status(nome, resultado)
+            if ferramenta.risk is not RiskClass.READ:
+                context.has_unresolved_failure = status_da_ferramenta == "error"
+
             if context.trace_recorder is not None:
                 context.trace_recorder.record(
                     kind="tool",
                     name=nome,
                     latency_ms=(time.perf_counter() - inicio) * 1000.0,
-                    status="ok" if resultado.ok else "error",
+                    status=status_da_ferramenta,
                     session_id=state.get("session_id", ""),
                 )
 

@@ -18,10 +18,17 @@ export function ModelPicker({
   value,
   onChange,
   disabled,
+  locked,
 }: {
   value: string | null;
   onChange: (profile: string | null) => void;
   disabled?: boolean;
+  // A sessão já foi criada com um modelo fixo (`AgentSession.profile`, ver
+  // `runner.py::create_session`) — o backend nunca relê este campo depois da
+  // primeira mensagem, então trocar aqui mudaria a seleção visualmente sem
+  // nenhum efeito real na próxima chamada. Trava o `<select>` e explica o
+  // porquê em vez de deixar o usuário achar que trocou de modelo em silêncio.
+  locked?: boolean;
 }) {
   const [data, setData] = useState<ProvidersResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -57,12 +64,19 @@ export function ModelPicker({
   const isCustomSelection = value && !hasSelectedInProfiles && !hasSelectedInModels;
 
   return (
-    <div className="model-picker-container" title="Selecione o modelo ou perfil ativo para a atividade">
-      <span className="model-picker-icon">🤖</span>
+    <div
+      className={`model-picker-container${locked ? " locked" : ""}`}
+      title={
+        locked
+          ? "Modelo fixado nesta sessão — trocar aqui não tem efeito nas próximas mensagens. Abra uma sessão nova para usar outro modelo."
+          : "Selecione o modelo ou perfil ativo para a atividade"
+      }
+    >
+      <span className="model-picker-icon">{locked ? "🔒" : "🤖"}</span>
       <select
         className="model-picker-select"
         value={value ?? ""}
-        disabled={disabled || loading}
+        disabled={disabled || loading || locked}
         onChange={(e) => onChange(e.target.value || null)}
       >
         {loading ? (

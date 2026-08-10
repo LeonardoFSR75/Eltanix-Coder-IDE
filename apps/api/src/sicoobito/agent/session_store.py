@@ -41,6 +41,10 @@ async def create(
     await session.flush()
 
 
+async def get(session: AsyncSession, *, session_id: str) -> AgentSessionRecord | None:
+    return await session.get(AgentSessionRecord, session_id)
+
+
 async def mark_closed(session: AsyncSession, *, session_id: str) -> None:
     registro = await session.get(AgentSessionRecord, session_id)
     if registro is None:

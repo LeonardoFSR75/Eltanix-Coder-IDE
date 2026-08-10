@@ -12,7 +12,7 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 if TYPE_CHECKING:
     from sicoobito.audit.service import AuditService
@@ -41,9 +41,11 @@ from sicoobito.logging_setup import get_logger
 from sicoobito.router.engine import RouterEngine
 from sicoobito.sandbox.container import SandboxManager, SandboxUnavailableError
 from sicoobito.workspace import git as git_ops
+from sicoobito.workspace import projects as project_ops
 from sicoobito.workspace.fs import WorkspaceFS
 from sicoobito.workspace.git import GitError
 from sicoobito.workspace.github import GitHubClient, GitHubError, parse_remote, resolve_token
+from sicoobito.workspace.projects import ProjectError
 
 log = get_logger(__name__)
 
@@ -209,6 +211,30 @@ class AgentRunner:
             avisos.append(f"sem worktree Git: {exc}")
             worktree_path, branch, base = workspace_root, "", "main"
 
+        # 1b. Aviso de arquivos não commitados: o worktree acima só materializa
+        # o que está commitado na branch — um arquivo untracked no checkout do
+        # usuário fica invisível pro agente, sem nenhum sinal na UI (achado real
+        # de teste: import quebrado em silêncio porque o módulo nunca tinha sido
+        # commitado). Melhor esforço — falha aqui não impede a sessão.
+        if branch:
+            try:
+                repo_status = git_ops.status(workspace_root)
+                nao_rastreados = sorted(
+                    f.path for f in repo_status.files if f.status == "untracked"
+                )
+                if nao_rastreados:
+                    listagem = ", ".join(nao_rastreados[:8])
+                    if len(nao_rastreados) > 8:
+                        listagem += f" e mais {len(nao_rastreados) - 8}"
+                    avisos.append(
+                        f"{len(nao_rastreados)} arquivo(s) não commitado(s) no projeto "
+                        "não estarão visíveis para o agente (o worktree isolado só vê o "
+                        f"que está na branch): {listagem}. Se a tarefa depende deles, "
+                        "faça `git add`/commit antes de começar."
+                    )
+            except GitError:
+                pass
+
         # 2. Sandbox: sem ele, ferramentas de execução se recusam a rodar.
         sandbox = None
         sandbox_error: str | None = None
@@ -342,20 +368,24 @@ class AgentRunner:
 
         # Não-fatal de propósito, mesmo espírito do checkpointer e do sandbox
         # acima: um soluço no banco não pode impedir a criação da sessão, só
-        # faz o histórico ficar incompleto para ela.
+        # faz o histórico ficar incompleto para ela. `get` antes de `create`
+        # porque `reconnect_session` chama este mesmo método passando um
+        # `session_id` que já tem linha em `agent_session` (chave primária) —
+        # sem a checagem, a segunda inserção quebraria com violação de PK.
         try:
             async with session_scope() as db:
-                await session_store.create(
-                    db,
-                    session_id=session_id,
-                    project=workspace_root.name,
-                    task=task,
-                    mode=mode,
-                    profile=profile,
-                    branch=branch or None,
-                    base_branch=base,
-                    parent_session_id=parent_session_id,
-                )
+                if await session_store.get(db, session_id=session_id) is None:
+                    await session_store.create(
+                        db,
+                        session_id=session_id,
+                        project=workspace_root.name,
+                        task=task,
+                        mode=mode,
+                        profile=profile,
+                        branch=branch or None,
+                        base_branch=base,
+                        parent_session_id=parent_session_id,
+                    )
         except Exception as exc:
             log.warning("agent.session.persist_failed", session=session_id, error=str(exc)[:200])
 
@@ -371,6 +401,64 @@ class AgentRunner:
 
     def get_session(self, session_id: str) -> AgentSession | None:
         return self._sessions.get(session_id)
+
+    async def reconnect_session(self, session_id: str) -> AgentSession | None:
+        """Reidrata uma sessão cujo runtime (sandbox, `ToolContext`) morreu —
+        por exemplo depois de um restart do Docker — mas cujo registro em
+        `agent_session` (Postgres) ainda mostra `status="open"`.
+
+        Antes disto, uma sessão sobrevivente a um restart ficava presa: a
+        listagem (`GET /api/agent/sessions`) continuava mostrando ela como
+        `open`/`live=False`, mas qualquer rota que dependesse do runtime em
+        memória devolvia 404 — a única saída era começar sessão nova, jogando
+        fora o vínculo com a conversa/branch anteriores. Reaproveita o mesmo
+        `session_id`: o worktree Git e o sandbox já sabem recriar/reaproveitar
+        por conta própria a partir dele (`create_worktree`/
+        `SandboxManager.acquire`), então basta chamar `create_session` de
+        novo — não cria branch nova nem duplica a linha em `agent_session`.
+        """
+        existente = self._sessions.get(session_id)
+        if existente is not None:
+            return existente
+
+        try:
+            async with session_scope() as db:
+                registro = await session_store.get(db, session_id=session_id)
+        except Exception as exc:
+            log.warning(
+                "agent.session.reconnect.lookup_failed",
+                session=session_id,
+                error=str(exc)[:200],
+            )
+            return None
+
+        if registro is None or registro.status != "open":
+            return None
+
+        raiz = self.settings.effective_projects_root
+        if raiz is None:
+            return None
+        try:
+            workspace_root = project_ops.resolve(Path(raiz), registro.project)
+        except ProjectError as exc:
+            log.warning(
+                "agent.session.reconnect.project_missing",
+                session=session_id,
+                project=registro.project,
+                error=str(exc),
+            )
+            return None
+
+        sessao = await self.create_session(
+            task=registro.task,
+            workspace_root=workspace_root,
+            mode=cast("AgentMode", registro.mode),
+            session_id=session_id,
+            profile=registro.profile,
+            parent_session_id=registro.parent_session_id,
+        )
+        log.info("agent.session.reconnected", session=session_id)
+        return sessao
 
     async def close_session(self, session_id: str, *, keep_branch: bool = True) -> None:
         sessao = self._sessions.pop(session_id, None)

@@ -411,29 +411,44 @@ export function AgentPanel({ session, log, pending, running, onDecide, onPresetS
                 </ul>
 
                 <div className="approval-actions-row">
+                  {/* Um clique só: caso comum é aprovar (ou recusar) tudo de
+                      uma vez, então estes dois já disparam `onDecide` na hora
+                      em vez de só marcar rascunho local — antes exigia um
+                      segundo clique em "Confirmar" mesmo para o caso simples.
+                      Decidir item a item continua disponível: os botões ✓/✕
+                      de cada linha só ficam em `decisions` (rascunho) até
+                      "Confirmar" — para isso, sim, faz sentido separar. */}
                   <button
                     type="button"
                     className="btn-approve"
-                    onClick={() => setDecisions(Object.fromEntries(pending.map((a) => [a.tool_call_id, true])))}
+                    onClick={() =>
+                      onDecide(Object.fromEntries(pending.map((a) => [a.tool_call_id, true])))
+                    }
                   >
-                    ✓ Aceitar Tudo
+                    ✓ Aprovar Tudo
                   </button>
                   <button
                     type="button"
                     className="btn-reject"
-                    onClick={() => setDecisions(Object.fromEntries(pending.map((a) => [a.tool_call_id, false])))}
+                    onClick={() =>
+                      onDecide(Object.fromEntries(pending.map((a) => [a.tool_call_id, false])))
+                    }
                   >
-                    ✕ Recusar
+                    ✕ Recusar Tudo
                   </button>
-                  <button
-                    type="button"
-                    className="btn-confirm-decisions"
-                    disabled={!allDecided}
-                    onClick={() => onDecide(decisions)}
-                    title={allDecided ? "Confirmar decisões" : "Decida cada ação antes de confirmar"}
-                  >
-                    Confirmar
-                  </button>
+                  {Object.keys(decisions).length > 0 && (
+                    <button
+                      type="button"
+                      className="btn-confirm-decisions"
+                      disabled={!allDecided}
+                      onClick={() => onDecide(decisions)}
+                      title={
+                        allDecided ? "Confirmar decisões item a item" : "Decida cada ação antes de confirmar"
+                      }
+                    >
+                      Confirmar seleção
+                    </button>
+                  )}
                 </div>
               </div>
             )}

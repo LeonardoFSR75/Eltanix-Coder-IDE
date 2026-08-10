@@ -219,6 +219,7 @@ export function AgentDock({
             running={running}
             canSubmit={Boolean(task.trim() && project && !active?.readOnly)}
             onSubmit={() => submitWithPrompt()}
+            sessionStarted={Boolean(active?.session)}
           />
         </div>
       )}

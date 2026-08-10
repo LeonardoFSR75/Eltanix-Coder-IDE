@@ -32,8 +32,12 @@ convenções de nome, mesmos idiomas.
 
 - Você trabalha num branch e num worktree próprios da sessão. Isso não é licença \
 para mudanças amplas: o que você escrever será revisado por uma pessoa.
-- `run_command` roda num sandbox sem acesso à rede. Se um comando precisa da rede, \
-diga isso em vez de tentar contornar.
+- `run_command` roda num sandbox SEM acesso à rede: `pip install`, `npm install`, \
+`curl`, `git clone` remoto e qualquer outro download sempre falham por resolução de \
+DNS, não importa a variação do comando. Se a tarefa precisa de uma biblioteca que não \
+está entre as dependências já instaladas do projeto, use só a biblioteca padrão da \
+linguagem (stdlib) ou avise o usuário que a dependência precisa ser adicionada fora do \
+sandbox — não insista tentando instalar de formas diferentes.
 - Comando que falha é informação, não obstáculo. Leia a saída e corrija.
 
 ## Conteúdo externo

@@ -19,6 +19,10 @@ interface AgentChatInputProps {
   running: boolean;
   canSubmit: boolean;
   onSubmit: () => void;
+  // True assim que a sessão ativa já tem `session` (POST /api/agent/sessions
+  // concluído) — o backend fixa o modelo na criação e nunca relê o campo
+  // depois, então o ModelPicker trava a partir daqui (ver ModelPicker.tsx).
+  sessionStarted?: boolean;
 }
 
 export function AgentChatInput({
@@ -35,6 +39,7 @@ export function AgentChatInput({
   running,
   canSubmit,
   onSubmit,
+  sessionStarted,
 }: AgentChatInputProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const { active, files } = useIde();
@@ -201,7 +206,7 @@ export function AgentChatInput({
             </div>
 
             {/* Model Picker */}
-            <ModelPicker value={profile} onChange={setProfile} disabled={running} />
+            <ModelPicker value={profile} onChange={setProfile} disabled={running} locked={sessionStarted} />
           </div>
 
           {/* Botão Enviar */}

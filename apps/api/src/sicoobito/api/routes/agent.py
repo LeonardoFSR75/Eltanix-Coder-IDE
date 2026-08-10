@@ -37,8 +37,14 @@ def _runner(request: Request) -> AgentRunner:
     return runner
 
 
-def _session(request: Request, session_id: str) -> AgentSession:
-    sessao = _runner(request).get_session(session_id)
+async def _session(request: Request, session_id: str) -> AgentSession:
+    runner = _runner(request)
+    sessao = runner.get_session(session_id)
+    if sessao is None:
+        # Tenta reidratar antes de desistir — cobre o caso comum de sessão
+        # que sobreviveu no Postgres a um restart do Docker mas perdeu o
+        # runtime em memória (ver `AgentRunner.reconnect_session`).
+        sessao = await runner.reconnect_session(session_id)
     if sessao is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -161,7 +167,7 @@ async def list_sessions(
 
 @router.get("/sessions/{session_id}")
 async def get_session(session_id: str, request: Request) -> dict[str, Any]:
-    return _session_view(_session(request, session_id))
+    return _session_view(await _session(request, session_id))
 
 
 @router.get("/sessions/{session_id}/graph")
@@ -207,7 +213,7 @@ class RunRequest(BaseModel):
 @router.post("/sessions/{session_id}/run")
 async def run_session(session_id: str, payload: RunRequest, request: Request):
     """Executa (ou retoma) a sessão, transmitindo eventos por SSE."""
-    sessao = _session(request, session_id)
+    sessao = await _session(request, session_id)
     runner = _runner(request)
 
     resume = (
@@ -238,7 +244,7 @@ async def run_session(session_id: str, payload: RunRequest, request: Request):
 async def session_messages(session_id: str, request: Request) -> dict[str, Any]:
     """Transcript persistido no checkpoint — permite ao Agent Manager reabrir
     uma sessão e mostrar a conversa real, não só repreencher o campo de tarefa."""
-    sessao = _session(request, session_id)
+    sessao = await _session(request, session_id)
     mensagens = await _runner(request).get_messages(sessao)
     return {"session_id": session_id, "branch": sessao.branch, "messages": mensagens}
 
@@ -246,7 +252,7 @@ async def session_messages(session_id: str, request: Request) -> dict[str, Any]:
 @router.get("/sessions/{session_id}/diff")
 async def session_diff(session_id: str, request: Request) -> dict[str, Any]:
     """Diff acumulado no worktree da sessão — o que o humano vai revisar."""
-    sessao = _session(request, session_id)
+    sessao = await _session(request, session_id)
     try:
         estado = git_ops.status(sessao.worktree_path)
         diff = git_ops.diff(sessao.worktree_path)
@@ -282,7 +288,7 @@ async def revert_file(
     worktree da sessão (ou remove, se a ferramenta o criou). É o lado
     'Rejeitar' do card de diff — aceitar não precisa de rota nenhuma, a
     mudança já está gravada."""
-    sessao = _session(request, session_id)
+    sessao = await _session(request, session_id)
     try:
         # Mesma fronteira de path-escape usada pelas ferramentas do agente:
         # o path vem de um card do frontend, mas confiar cegamente nele
@@ -311,7 +317,7 @@ async def accept_file(
     session_id: str, payload: AcceptFileRequest, request: Request
 ) -> dict[str, Any]:
     """Aceita uma edição do agente: copia o arquivo do worktree da sessão para o workspace principal do usuário."""
-    sessao = _session(request, session_id)
+    sessao = await _session(request, session_id)
     try:
         sessao.context.fs.resolve(payload.path)
     except PathEscapeError as exc:
@@ -341,7 +347,7 @@ class CloseRequest(BaseModel):
 
 @router.post("/sessions/{session_id}/close")
 async def close_session(session_id: str, payload: CloseRequest, request: Request) -> dict[str, Any]:
-    _session(request, session_id)
+    await _session(request, session_id)
     await _runner(request).close_session(session_id, keep_branch=payload.keep_branch)
     return {"session_id": session_id, "closed": True, "branch_kept": payload.keep_branch}
 
