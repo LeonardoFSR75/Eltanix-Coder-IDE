@@ -37,7 +37,7 @@ com worktree Git e sandbox Docker (usuário não-root, escrita barrada fora do
 workspace, rede desabilitada); MCP conectado a um servidor real via `npx`;
 busca híbrida e expansão em Grafo (Graphify) das fontes contra Postgres.
 
-483 testes de backend (+ 27 pulados sem `DATABASE_URL_TEST`) e 26 de frontend.
+487 testes de backend (+ 27 pulados sem `DATABASE_URL_TEST`) e 26 de frontend.
 Pytest, Vitest, `tsc` e `next build` limpos. CI no GitHub Actions roda tudo
 isso a cada push/PR na `main`, mais auditoria de dependências.
 
