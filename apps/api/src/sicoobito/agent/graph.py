@@ -343,6 +343,7 @@ def build_graph(engine: RouterEngine, context: ToolContext):
         return {"approvals": aprovacoes, "approval_reasons": motivos, "pending": []}
 
     async def act(state: AgentState) -> dict[str, Any]:
+        context.current_todos = state.get("todos") or []
         ultima = state["messages"][-1] if state["messages"] else {}
         tool_calls = ultima.get("tool_calls") or []
         aprovacoes = state.get("approvals") or {}
@@ -450,6 +451,7 @@ def build_graph(engine: RouterEngine, context: ToolContext):
                 alterados.append(str(caminho))
             if "todos" in resultado.data:
                 todos_atualizados = resultado.data["todos"]
+                context.current_todos = todos_atualizados
 
         atualizacao: dict[str, Any] = {
             "messages": respostas,

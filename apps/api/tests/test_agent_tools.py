@@ -400,3 +400,82 @@ async def test_manage_project_list_does_not_raise_attribute_error(tmp_path):
     resultado = await manage_project.handler(ctx, {"action": "list"})
     assert resultado.ok
     assert "projects" in resultado.data
+
+
+async def test_edit_file_matches_with_trailing_whitespace_differences(ctx, tmp_path):
+    (tmp_path / "trailing.py").write_text("def test():   \n    return 42   \n", encoding="utf-8")
+
+    resultado = await registry.get("edit_file").handler(
+        ctx,
+        {
+            "path": "trailing.py",
+            "old_text": "def test():\n    return 42",
+            "new_text": "def test():\n    return 100",
+        },
+    )
+
+    assert resultado.ok, resultado.content
+    assert "return 100" in ctx.fs.read("trailing.py")
+
+
+async def test_write_todos_preserves_previously_completed_items_on_failure(ctx):
+    ctx.current_todos = [
+        {"content": "Investigar melhorias", "status": "completed"},
+        {"content": "Implementar código", "status": "in_progress"},
+    ]
+    ctx.has_unresolved_failure = True
+
+    resultado = await registry.get("write_todos").handler(
+        ctx,
+        {
+            "items": [
+                {"content": "Investigar melhorias", "status": "completed"},
+                {"content": "Implementar código", "status": "completed"},
+            ]
+        },
+    )
+
+    assert resultado.ok
+    todos = resultado.data["todos"]
+    # Item previamente concluído deve continuar completed
+    assert todos[0] == {"content": "Investigar melhorias", "status": "completed"}
+    # Novo item tentando ser concluído após falha deve ser rebaixado
+    assert todos[1] == {"content": "Implementar código", "status": "in_progress"}
+    assert "AVISO:" in resultado.content
+    assert "Implementar código" in resultado.content
+
+
+async def test_run_command_appends_stdlib_hint_on_module_not_found(ctx):
+    class FakeSandboxResult:
+        stdout = ""
+        stderr = "ModuleNotFoundError: No module named 'pandas'"
+        exit_code = 1
+        duration_ms = 10
+        timed_out = False
+        ok = False
+
+    class FakeSandbox:
+        async def exec(self, command, timeout=None):
+            return FakeSandboxResult()
+
+    ctx.sandbox = FakeSandbox()
+    resultado = await registry.get("run_command").handler(ctx, {"command": "python main.py"})
+    assert resultado.ok is True
+    assert "manage_packages" in resultado.content
+    assert "ModuleNotFoundError" in resultado.content
+
+
+async def test_manage_packages_is_write_risk_and_registered():
+    ferramenta = registry.get("manage_packages")
+    assert ferramenta is not None
+    assert ferramenta.risk is RiskClass.WRITE
+    assert ferramenta.risk.requires_approval is True
+
+
+async def test_manage_packages_list(ctx):
+    resultado = await registry.get("manage_packages").handler(ctx, {"action": "list"})
+    assert resultado.ok
+    assert "Pacotes do Projeto" in resultado.content
+    assert "installed_count" in resultado.data
+
+

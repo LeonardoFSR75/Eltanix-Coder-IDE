@@ -12,6 +12,7 @@ from sicoobito.agent.tools import (  # noqa: F401
     graph,
     graphify,
     notes,
+    packages,
     plan,
     project_manager,
     review,

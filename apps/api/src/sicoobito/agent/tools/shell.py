@@ -104,7 +104,9 @@ async def run_command(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
                 "[saída 1 em 0ms]\n"
                 "ERRO DE AMBIENTE: O sandbox do SicoobitoCode está isolado da rede por segurança.\n"
                 "Comandos de 'pip install' falham pois não há conexão com o PyPI/internet no container.\n"
-                "Utilize apenas bibliotecas já instaladas ou a biblioteca padrão (stdlib) do Python."
+                "Para instalar pacotes e dependências no ambiente (.venv) do projeto de forma persistente, utilize a "
+                "ferramenta 'manage_packages' (ex.: manage_packages(action='install', package='pandas')) "
+                "ou a aba 'Pacotes' da IDE."
             ),
             data={"command": comando, "exit_code": 1, "duration_ms": 0, "timed_out": False},
         )
@@ -120,8 +122,14 @@ async def run_command(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
 
     if "Temporary failure in name resolution" in corpo or "No matching distribution found" in corpo:
         corpo += (
-            "\n\n💡 DICA DE AMBIENTE: O sandbox está isolado da rede. "
-            "Tentativas de conectar ao PyPI ou internet falham por DNS. Não tente re-executar 'pip install'."
+            "\n\n💡 DICA DE PACOTES: O sandbox de comando não tem acesso à rede. "
+            "Para instalar pacotes no projeto, utilize a ferramenta 'manage_packages' (action='install', package='...')."
+        )
+    elif "ModuleNotFoundError" in corpo:
+        corpo += (
+            "\n\n💡 DICA DE PACOTES: O pacote importado não está instalado no projeto. "
+            "Utilize a ferramenta 'manage_packages' (ex.: manage_packages(action='install', package='nome_do_pacote')) "
+            "para instalá-lo no ambiente (.venv) do projeto, ou utilize os módulos da biblioteca padrão do Python (stdlib)."
         )
 
     estado = "sucesso" if resultado.ok else f"saída {resultado.exit_code}"

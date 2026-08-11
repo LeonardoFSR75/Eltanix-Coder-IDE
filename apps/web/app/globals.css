@@ -3,7 +3,11 @@
    ========================================================================== */
 
 /* --------------------------------------------------------------------------
-   SECTION 1: Tokens, Themes & Base Reset
+   SEÇÃO 1: Tokens de Design, Temas (Escuro/Claro) & Reset Base
+   - Variáveis CSS (--bg, --surface, --accent, --border, --font-sans, etc.)
+   - Tema Escuro ([data-theme="dark"]) & Tema Claro ([data-theme="light"])
+   - Z-Index tokens, Zebra Striping (Linhas alternadas no editor)
+   - Reset global de box-sizing, tipografia, barras de rolagem e focus ring
    -------------------------------------------------------------------------- */
 
 :root,
@@ -177,7 +181,12 @@ textarea:focus-visible,
 
 
 /* --------------------------------------------------------------------------
-   SECTION 2: Shell & Navigation Topbar
+   SEÇÃO 2: Shell & Barra de Navegação Superior (Topbar)
+   - Layout global do Shell (.shell)
+   - Barra Superior da IDE (.topbar, .topbar-ide) com efeito de desfoque (Glassmorphism)
+   - Logo, Título da Marca (.brand-logo, .brand-name)
+   - Links de Navegação Principal (.nav, .nav-link) e Seletores Dropdown
+   - Status da aplicação e indicadores de pulso (.pulse-dot)
    -------------------------------------------------------------------------- */
 
 .shell {
@@ -444,7 +453,12 @@ textarea:focus-visible,
 
 
 /* --------------------------------------------------------------------------
-   SECTION 3: IDE Core Layout, Activity Bars & Dock Framework
+   SEÇÃO 3: Layout Core da IDE, Activity Bar & Framework de Painéis / Docks
+   - Estrutura Flex/Grid da IDE (.ide-layout, .ide-container)
+   - Barra Lateral de Atividades (.activity-bar) com botões e badges de notificação
+   - Divisores redimensionáveis (.splitter, .resizer-handle) com grips
+   - Tooltips em CSS puro ([data-tooltip])
+   - Otimizações de performance e aceleração de GPU (will-change)
    -------------------------------------------------------------------------- */
 
 .ide-shell {
@@ -968,7 +982,14 @@ textarea:focus-visible,
 
 
 /* --------------------------------------------------------------------------
-   SECTION 4: Sidebar Panels & Components (Explorer, Git, Search, MCP, RAG, Skills)
+   SEÇÃO 4: Painéis da Barra Lateral (Explorer, Git, Search, MCP, RAG, Skills)
+   - Estilos genéricos para cabeçalhos e ações de painel (.panel-header, .panel-title)
+   - Árvore de Arquivos / Explorer (.file-tree, .tree-item, ícones, indentação)
+   - Painel de Controle de Versão Git (.git-panel, alteração de arquivos, staging, commits)
+   - Busca Global & Substituição (.search-panel, inputs, correspondências)
+   - Painel MCP / Model Context Protocol (Cards de servidores e ferramentas)
+   - RAG / Base de Conhecimento (Busca vetorial e status de indexação)
+   - Gerenciador de Skills do Agente (Cards e seletores de habilidade)
    -------------------------------------------------------------------------- */
 
 .project-picker {
@@ -1852,7 +1873,11 @@ textarea:focus-visible,
 
 
 /* --------------------------------------------------------------------------
-   SECTION 5: Editor Workspace, Tabs & Split View
+   SEÇÃO 5: Área de Trabalho do Editor, Abas de Arquivo & Visão Dividida (Split View)
+   - Contêiner do Editor Monaco / Workspace (.editor-container, .editor-workspace)
+   - Barra de Abas de Arquivos (.tabs-bar, .tab-item, botão fechar, indicador de modificado)
+   - Visualização lado a lado (.split-pane, .split-view-container)
+   - Tela de Boas-Vindas / Splash Screen do Editor (.editor-splash)
    -------------------------------------------------------------------------- */
 
 .table-wrap {
@@ -2235,7 +2260,11 @@ textarea:focus-visible,
 
 
 /* --------------------------------------------------------------------------
-   SECTION 6: Terminal Panel & Controls
+   SEÇÃO 6: Painel de Terminal Integrado & Controles de Shell
+   - Painel inferior do Terminal (.terminal-panel, .terminal-header)
+   - Abas de múltiplas instâncias de terminal (.terminal-tabs)
+   - Botões de controle de shell (limpar, dividir, fechar, nova sessão)
+   - Estilização de prompts e saídas de comandos/logs
    -------------------------------------------------------------------------- */
 
 .terminal-panel {
@@ -2431,7 +2460,12 @@ textarea:focus-visible,
 
 
 /* --------------------------------------------------------------------------
-   SECTION 7: Agent Dock & AI Chat Components
+   SEÇÃO 7: Dock do Agente de IA & Componentes de Chat de IA
+   - Painel Dock do Agente de IA (.agent-dock, .chat-panel)
+   - Layout de mensagens de chat estilo balão (.message-user, .message-assistant)
+   - Seletor de modelos de linguagem (.model-picker), área de entrada e contador de tokens
+   - Cards de execução de ferramentas do Agente (.tool-call-card, execução de comandos, leitura de arquivos)
+   - Cartões de Presets e ações rápidas (.preset-card, .agent-preset-grid)
    -------------------------------------------------------------------------- */
 
 .agent-controls {
@@ -3533,7 +3567,11 @@ textarea:focus-visible,
 
 
 /* --------------------------------------------------------------------------
-   SECTION 8: Cards, Visualizations, Pages, Keyframes & Media Queries
+   SEÇÃO 8: Páginas Inteiras, Modais, Visualizações, Keyframes & Responsividade
+   - Páginas completas (/login, /profile, /settings, /audit, /trello, /graphify)
+   - Modais e sobreposições (.modal-overlay, .modal-content)
+   - Animações Keyframes (@keyframes pulseGlow, fadeIn, slideIn, shimmer)
+   - Regras de responsividade (@media queries para telas menores)
    -------------------------------------------------------------------------- */
 
 button:focus-visible,
@@ -7066,12 +7104,14 @@ button.primary:hover:not(:disabled) {
 
 
 /* --------------------------------------------------------------------------
-   SECTION 9: Utility Classes
-   Várias páginas (settings/git, settings, profile, mcp, rag, skills, audit...)
-   usam classes de utilidade no estilo Tailwind, mas o projeto não usa Tailwind
-   — sem essas definições os elementos caem no layout padrão do navegador
-   (sem flex, sem espaçamento, sem cor de texto atenuada). Escala de espaçamento
-   segue o padrão Tailwind (1 = 4px) para bater com o que já está escrito no JSX.
+   SEÇÃO 9: Classes Utilitárias, Diff Inline, Extensões & Contêineres Docker
+   - Classes utilitárias estilo Tailwind (.flex, .gap-2, .text-muted, .badge-tag)
+   - Barra Flutuante de Aprovação de Diff Inline (.inline-approval-bar)
+   - Efeito Zebra Striping no Editor (.editor-line-even-bg, .editor-gutter-even-bg)
+   - Barra de Status Worktree do Agente (.agent-worktree-approval)
+   - Seletor de Projetos e Gerenciador de Pacotes (.project-picker, .packages-panel)
+   - Painel de Extensões e Servidores de Linguagem LSP (.extension-item, .lsp-switcher)
+   - Painel de Gerenciamento de Contêineres Docker (.containers-panel)
    -------------------------------------------------------------------------- */
 
 .flex { display: flex; }

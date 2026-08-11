@@ -53,6 +53,11 @@ async def write_todos(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
     brutos = args.get("items") or []
     todos: list[dict[str, Any]] = []
     rebaixados: list[str] = []
+    concluidos_anteriores = {
+        str(t.get("content", "")).strip()
+        for t in (getattr(ctx, "current_todos", None) or [])
+        if isinstance(t, dict) and t.get("status") == "completed"
+    }
     for item in brutos:
         if not isinstance(item, dict):
             continue
@@ -63,10 +68,11 @@ async def write_todos(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
         if status not in _VALID_STATUS:
             status = "pending"
         # A ferramenta WRITE/EXEC mais recente falhou e ainda não foi seguida
-        # de um sucesso — não deixa o modelo marcar "completed" nessa hora
+        # de um sucesso — não deixa o modelo marcar NOVO item como "completed" nessa hora
         # (instrução em prompts.py::SYSTEM_PROMPT já pedia isso em texto; aqui
         # é aplicado, não só sugerido). Ver `ToolContext.has_unresolved_failure`.
-        if status == "completed" and ctx.has_unresolved_failure:
+        # Itens já concluídos antes da falha permanecem concluídos.
+        if status == "completed" and ctx.has_unresolved_failure and conteudo not in concluidos_anteriores:
             status = "in_progress"
             rebaixados.append(conteudo)
         todos.append({"content": conteudo, "status": status})

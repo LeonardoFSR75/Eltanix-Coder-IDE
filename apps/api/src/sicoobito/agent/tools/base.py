@@ -84,6 +84,8 @@ class ToolContext:
     max_wait_seconds: float = 300.0
     max_spawn_depth: int = 3
     max_children_per_agent: int = 4
+    # Lista de tarefas atuais no plano da sessão — atualizada por `graph.py::act()`
+    current_todos: list[dict[str, Any]] = field(default_factory=list)
     # Atualizado por `agent/graph.py::act()` a cada ferramenta WRITE/EXEC:
     # True se a mais recente falhou (exit code != 0, timeout, ou `ok=False`),
     # False se a mais recente teve sucesso. `write_todos` consulta isto para

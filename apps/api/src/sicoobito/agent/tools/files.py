@@ -196,9 +196,31 @@ async def edit_file(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
 
     ocorrencias = atual_norm.count(old_norm)
     if ocorrencias == 0:
+        # Fallback: tentar casar ignorando espaços no final de cada linha (rstrip)
+        def _strip_lines(text: str) -> str:
+            return "\n".join(line.rstrip() for line in text.splitlines())
+
+        old_stripped = _strip_lines(old_norm)
+        if old_stripped:
+            linhas_atual = atual_norm.splitlines(keepends=True)
+            linhas_old = old_norm.splitlines()
+            qtd_linhas = len(linhas_old)
+
+            matches_encontrados: list[str] = []
+            for i in range(len(linhas_atual) - qtd_linhas + 1):
+                trecho = "".join(linhas_atual[i : i + qtd_linhas])
+                if _strip_lines(trecho) == old_stripped:
+                    matches_encontrados.append(trecho)
+
+            if len(matches_encontrados) == 1:
+                old_norm = matches_encontrados[0]
+                ocorrencias = 1
+
+    if ocorrencias == 0:
         return ToolResult.failure(
             f"O trecho não foi encontrado em {path}. "
-            "Leia o arquivo novamente: ele pode ter mudado, ou a indentação difere."
+            "Leia o arquivo novamente: ele pode ter mudado, ou a indentação/espaços diferem. "
+            "DICA: Verifique se o código possui espaços extras no fim da linha ou indentação diferente."
         )
     if ocorrencias > 1:
         # Substituir a primeira ocorrência silenciosamente editaria o lugar
