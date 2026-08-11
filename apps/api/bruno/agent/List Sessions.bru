@@ -1,0 +1,26 @@
+meta {
+  name: List Sessions
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{baseUrl}}/api/agent/sessions?project={{project}}
+  auth: none
+}
+
+params:query {
+  project: {{project}}
+}
+
+headers {
+  Authorization: Bearer {{apiKey}}
+}
+
+docs {
+  Histórico persistido no Postgres — sobrevive a um restart do
+  container. `live` reflete só se o runtime (sandbox, ToolContext) está
+  de pé neste processo agora; `status` (open/closed) só muda em "Close
+  Session" explícito. Uma sessão `open`+`live=false` reconecta sozinha
+  na próxima chamada a "Run Session" (ver AgentRunner.reconnect_session).
+}

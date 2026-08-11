@@ -1,0 +1,27 @@
+meta {
+  name: Accept File
+  type: http
+  seq: 9
+}
+
+post {
+  url: {{baseUrl}}/api/agent/sessions/{{sessionId}}/files/accept
+  body: json
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{apiKey}}
+}
+
+body:json {
+  {
+    "path": "sorteador.py"
+  }
+}
+
+docs {
+  Copia o arquivo do worktree isolado da sessão para o workspace
+  principal do usuário — o lado "Aceitar" do card de diff na IDE.
+  `path` é relativo à raiz do projeto.
+}

@@ -1,0 +1,20 @@
+meta {
+  name: List Tools
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/api/agent/tools
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{apiKey}}
+}
+
+docs {
+  Catálogo de ferramentas do agente e a RiskClass (read/write/exec) de
+  cada uma. WRITE/EXEC sempre param no interrupt() do LangGraph esperando
+  aprovação humana — ver "Run Session (approve)".
+}

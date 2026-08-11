@@ -1,0 +1,31 @@
+meta {
+  name: Revert File
+  type: http
+  seq: 10
+}
+
+post {
+  url: {{baseUrl}}/api/agent/sessions/{{sessionId}}/files/revert
+  body: json
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{apiKey}}
+}
+
+body:json {
+  {
+    "path": "sorteador.py",
+    "before": "",
+    "existed": true
+  }
+}
+
+docs {
+  Devolve o arquivo, no worktree da sessão, ao conteúdo anterior — o
+  lado "Rejeitar" do card de diff. `before` é o conteúdo pré-edição (o
+  card na IDE já carrega isso de `ToolResult.data`); `existed: false`
+  remove o arquivo em vez de reescrever, para edições que criaram algo
+  novo.
+}

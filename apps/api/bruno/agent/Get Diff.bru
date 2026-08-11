@@ -1,0 +1,20 @@
+meta {
+  name: Get Diff
+  type: http
+  seq: 8
+}
+
+get {
+  url: {{baseUrl}}/api/agent/sessions/{{sessionId}}/diff
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{apiKey}}
+}
+
+docs {
+  Diff acumulado no worktree da sessão (nunca no checkout principal) —
+  é o que um humano revisaria antes de aceitar. Devolve 400 se o
+  worktree não é (ou deixou de ser) um repositório Git válido.
+}

@@ -1,0 +1,14 @@
+meta {
+  name: Get Session
+  type: http
+  seq: 4
+}
+
+get {
+  url: {{baseUrl}}/api/agent/sessions/{{sessionId}}
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{apiKey}}
+}

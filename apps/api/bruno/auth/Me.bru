@@ -1,0 +1,20 @@
+meta {
+  name: Me
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{baseUrl}}/api/auth/me
+  auth: none
+}
+
+headers {
+  Cookie: sicoobito_session={{sessionToken}}
+}
+
+docs {
+  Exige sessão de usuário via cookie mesmo passando por AuthDep — chamar
+  só com API key (sem cookie) devolve 401 de propósito (ver
+  auth.py::me). Rode "Login" antes para preencher `sessionToken`.
+}

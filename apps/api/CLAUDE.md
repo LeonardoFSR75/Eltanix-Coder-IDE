@@ -32,6 +32,12 @@ DATABASE_URL_TEST="postgresql+asyncpg://sicoobito:sicoobito@localhost:5403/sicoo
 `pg_session` isola cada teste por transação com rollback no teardown — não precisa recriar
 o banco nem rodar migração de novo entre execuções.
 
+## Explorar a API na mão
+
+`bruno/` tem uma coleção [Bruno](https://www.usebruno.com/) (auth + agent) para bater na
+API sem escrever `curl` — abra a pasta como coleção, selecione o ambiente `local`, ver
+`bruno/README.md`.
+
 ## Estrutura
 
 | Pacote | O quê |

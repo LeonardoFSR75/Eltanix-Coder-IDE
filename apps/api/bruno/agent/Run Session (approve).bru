@@ -1,0 +1,34 @@
+meta {
+  name: Run Session (approve)
+  type: http
+  seq: 6
+}
+
+post {
+  url: {{baseUrl}}/api/agent/sessions/{{sessionId}}/run
+  body: json
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{apiKey}}
+}
+
+body:json {
+  {
+    "approvals": {
+      "<tool_call_id do evento approve>": {
+        "approved": true,
+        "reason": ""
+      }
+    }
+  }
+}
+
+docs {
+  `tool_call_id` vem do evento SSE de interrupção do "Run Session
+  (message)" anterior — não dá pra preencher sem ter rodado a sessão até
+  parar num WRITE/EXEC primeiro. Troque `"approved": true` por `false` +
+  um `reason` para recusar a ação (o agente recebe o motivo e tenta
+  outro caminho, ver prompts.py::APPROVAL_DENIED_TEMPLATE).
+}

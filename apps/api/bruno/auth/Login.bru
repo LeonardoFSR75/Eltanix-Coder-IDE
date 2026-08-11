@@ -1,0 +1,31 @@
+meta {
+  name: Login
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{baseUrl}}/api/auth/login
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "username": "admin",
+    "password": "troque-me"
+  }
+}
+
+vars:post-response {
+  sessionToken: res.body.token
+}
+
+docs {
+  Fora de AuthDep de propósito — é o único jeito de entrar (ver
+  auth.py). Devolve `{token, expires_at}`: esse token é o valor cru que
+  vai no cookie `sicoobito_session`, não é a `SICOOBITO_API_KEY` de
+  serviço (são duas credenciais com dois propósitos, ver ADR 0005).
+  Guarda em `sessionToken` para as próximas requests desta pasta, que
+  mandam `Cookie: sicoobito_session={{sessionToken}}`.
+}

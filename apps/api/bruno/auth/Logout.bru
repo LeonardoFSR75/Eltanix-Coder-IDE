@@ -1,0 +1,14 @@
+meta {
+  name: Logout
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{baseUrl}}/api/auth/logout
+  auth: none
+}
+
+headers {
+  Cookie: sicoobito_session={{sessionToken}}
+}

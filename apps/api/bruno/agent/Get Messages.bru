@@ -1,0 +1,19 @@
+meta {
+  name: Get Messages
+  type: http
+  seq: 7
+}
+
+get {
+  url: {{baseUrl}}/api/agent/sessions/{{sessionId}}/messages
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{apiKey}}
+}
+
+docs {
+  Transcript persistido no checkpoint do LangGraph — a mesma conversa
+  que o Agent Manager da IDE reabre, não só o campo de tarefa original.
+}

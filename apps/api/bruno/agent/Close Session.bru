@@ -1,0 +1,27 @@
+meta {
+  name: Close Session
+  type: http
+  seq: 11
+}
+
+post {
+  url: {{baseUrl}}/api/agent/sessions/{{sessionId}}/close
+  body: json
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{apiKey}}
+}
+
+body:json {
+  {
+    "keep_branch": true
+  }
+}
+
+docs {
+  `keep_branch: true` (padrão) preserva o branch/worktree Git da sessão
+  — descartar o trabalho do agente é uma escolha explícita (`false`),
+  não o efeito colateral de fechar a sessão.
+}

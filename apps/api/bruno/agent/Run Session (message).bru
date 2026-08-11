@@ -1,0 +1,31 @@
+meta {
+  name: Run Session (message)
+  type: http
+  seq: 5
+}
+
+post {
+  url: {{baseUrl}}/api/agent/sessions/{{sessionId}}/run
+  body: json
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{apiKey}}
+}
+
+body:json {
+  {
+    "message": "Continue"
+  }
+}
+
+docs {
+  Resposta é SSE (`text/event-stream`) — o Bruno mostra o corpo bruto em
+  vez de separar os eventos `data: {...}` um a um; para acompanhar
+  evento a evento use a IDE web ou `curl -N`.
+
+  Se a sessão parar esperando aprovação (evento com `node: "approve"`),
+  rodar de novo só com `message` não avança — use "Run Session
+  (approve)" com o `tool_call_id` que veio nesse evento.
+}

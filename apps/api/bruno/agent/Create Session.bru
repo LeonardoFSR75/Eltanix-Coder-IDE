@@ -1,0 +1,38 @@
+meta {
+  name: Create Session
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/api/agent/sessions
+  body: json
+  auth: none
+}
+
+headers {
+  Authorization: Bearer {{apiKey}}
+}
+
+body:json {
+  {
+    "task": "Explique a arquitetura deste projeto em poucas frases",
+    "project": "{{project}}",
+    "mode": "agent"
+  }
+}
+
+vars:post-response {
+  sessionId: res.body.session_id
+}
+
+docs {
+  `mode`: ask | edit | agent | plan | auto | orchestra | explore.
+  `profile` é opcional (perfil de config/routes.yaml ou id de modelo do
+  catálogo) — omitido aqui para usar o padrão. O modelo fica fixado
+  nesta sessão: trocar de perfil depois de criada não tem efeito (ver
+  runner.py::create_session, campo `AgentSession.profile`).
+
+  Cria worktree Git isolado + sandbox antes de qualquer chamada de LLM —
+  se `project` não existir em PROJECTS_ROOT, devolve 400.
+}
