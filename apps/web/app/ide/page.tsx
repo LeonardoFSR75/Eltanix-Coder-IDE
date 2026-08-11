@@ -408,11 +408,12 @@ function Shell() {
               }
             }}
           >
-            {/* Ícone de extensão (blocos de encaixe) */}
+            {/* Ícone de extensão de 4 blocos estilo VSCode (Blocks / Grid) */}
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
-              <polyline points="3.27 6.96 12 12.01 20.73 6.96" />
-              <line x1="12" y1="22.08" x2="12" y2="12" />
+              <rect x="3" y="3" width="7" height="7" rx="1.5" />
+              <rect x="14" y="3" width="7" height="7" rx="1.5" />
+              <rect x="14" y="14" width="7" height="7" rx="1.5" />
+              <rect x="3" y="14" width="7" height="7" rx="1.5" />
             </svg>
           </button>
 
@@ -428,9 +429,18 @@ function Shell() {
               }
             }}
           >
-            {/* Ícone de baleia / container Docker */}
-            <span style={{ fontSize: "16px", lineHeight: "1" }}>🐳</span>
+            {/* Ícone vetorial de Docker / Containers estilo VSCode */}
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="3" y="10" width="3" height="3" rx="0.5" />
+              <rect x="7" y="10" width="3" height="3" rx="0.5" />
+              <rect x="11" y="10" width="3" height="3" rx="0.5" />
+              <rect x="7" y="6" width="3" height="3" rx="0.5" />
+              <rect x="11" y="6" width="3" height="3" rx="0.5" />
+              <rect x="15" y="10" width="3" height="3" rx="0.5" />
+              <path d="M2 14c0 3.5 3 6 7 6h6c3.5 0 6.5-2 7-4.5.2-.8-.2-1.5-1-1.5h-1c-.5 0-1-.2-1.3-.6l-1.2-1.4" />
+            </svg>
           </button>
+
 
 
           <button
