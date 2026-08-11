@@ -8426,6 +8426,62 @@ button.primary:hover:not(:disabled) {
   color: #38bdf8;
 }
 
+.publisher-mtxr {
+  background: rgba(59, 130, 246, 0.15);
+  color: #60a5fa;
+}
+
+.publisher-prisma {
+  background: rgba(139, 92, 246, 0.15);
+  color: #a78bfa;
+}
+
+.publisher-usernamehw {
+  background: rgba(239, 68, 68, 0.15);
+  color: #f87171;
+}
+
+.publisher-eamodio {
+  background: rgba(245, 158, 11, 0.15);
+  color: #fbbf24;
+}
+
+.publisher-pkief {
+  background: rgba(236, 72, 153, 0.15);
+  color: #f472b6;
+}
+
+.publisher-rangav {
+  background: rgba(16, 185, 129, 0.15);
+  color: #34d399;
+}
+
+.publisher-vitest {
+  background: rgba(234, 179, 8, 0.15);
+  color: #facc15;
+}
+
+.publisher-ms-kubernetes-tools {
+  background: rgba(14, 165, 233, 0.15);
+  color: #38bdf8;
+}
+
+.publisher-hashicorp {
+  background: rgba(139, 92, 246, 0.15);
+  color: #c084fc;
+}
+
+.publisher-vscjava {
+  background: rgba(6, 182, 212, 0.15);
+  color: #22d3ee;
+}
+
+.publisher-esbenp {
+  background: rgba(236, 72, 153, 0.15);
+  color: #f472b6;
+}
+
+
 /* ── Containers Panel Styles ────────────────────────── */
 
 .containers-panel {

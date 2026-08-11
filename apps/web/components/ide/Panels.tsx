@@ -1544,7 +1544,7 @@ export interface ExtensionItem {
   publisher: string;
   version: string;
   description: string;
-  category: "LSP & Python" | "Node & Next.js" | "Frontend & Frameworks" | "C/C++ & Go" | "Containers & DevOps" | "IA & Agente" | "Outros";
+  category: "LSP & Python" | "Node & Next.js" | "Frontend & Frameworks" | "Bancos & SQL" | "APIs & Testes" | "DevOps & Cloud" | "Produtividade" | "C/C++ & Go" | "Containers & DevOps" | "IA & Agente" | "Outros";
   installed: boolean;
   active: boolean;
   latency_ms?: number;
@@ -1700,6 +1700,138 @@ const EXTENSIONS_CATALOG: ExtensionItem[] = [
     icon: "✨",
   },
   {
+    id: "mtxr.sqltools",
+    name: "SQLTools - Database Client",
+    publisher: "mtxr",
+    version: "0.28.3",
+    description: "Conexão e navegação nativa em bancos PostgreSQL (pgvector), Redis, MySQL e SQLite.",
+    category: "Bancos & SQL",
+    installed: true,
+    active: true,
+    latency_ms: 150,
+    icon: "🗄️",
+  },
+  {
+    id: "prisma.prisma",
+    name: "Prisma ORM",
+    publisher: "prisma",
+    version: "5.19.0",
+    description: "Autocompletar, realce de sintaxe e migrações para esquemas Prisma.",
+    category: "Bancos & SQL",
+    installed: true,
+    active: true,
+    latency_ms: 130,
+    icon: "💎",
+  },
+  {
+    id: "usernamehw.errorlens",
+    name: "Error Lens",
+    publisher: "usernamehw",
+    version: "3.20.0",
+    description: "Exibe mensagens de erro, warnings e diagnósticos do LSP diretamente inline nas linhas de código.",
+    category: "Produtividade",
+    installed: true,
+    active: true,
+    latency_ms: 90,
+    icon: "👁️",
+  },
+  {
+    id: "eamodio.gitlens",
+    name: "GitLens — Git supercharged",
+    publisher: "eamodio",
+    version: "2026.1.0",
+    description: "Autoria de código linha por linha (blame), histórico de commits e comparação visual de branches.",
+    category: "Produtividade",
+    installed: true,
+    active: true,
+    latency_ms: 110,
+    icon: "📜",
+  },
+  {
+    id: "pkief.material-icon-theme",
+    name: "Material Icon Theme",
+    publisher: "pkief",
+    version: "5.7.0",
+    description: "Ícones dinâmicos e modernos para todos os tipos de arquivo e pasta no Explorer.",
+    category: "Produtividade",
+    installed: true,
+    active: true,
+    latency_ms: 60,
+    icon: "🎨",
+  },
+  {
+    id: "rangav.vscode-thunder-client",
+    name: "Thunder Client",
+    publisher: "rangav",
+    version: "2.26.0",
+    description: "Executor leve de requisições HTTP/REST e GraphQL integrado na IDE agêntica.",
+    category: "APIs & Testes",
+    installed: true,
+    active: true,
+    latency_ms: 140,
+    icon: "⚡",
+  },
+  {
+    id: "vitest.explorer",
+    name: "Vitest & Jest Runner",
+    publisher: "vitest",
+    version: "1.0.8",
+    description: "Execução e debug de testes unitários com 1 clique direto no código.",
+    category: "APIs & Testes",
+    installed: true,
+    active: true,
+    latency_ms: 120,
+    icon: "🧪",
+  },
+  {
+    id: "ms-kubernetes-tools.vscode-kubernetes-tools",
+    name: "Kubernetes",
+    publisher: "ms-kubernetes-tools",
+    version: "1.3.15",
+    description: "Inspeção de pods, navegação de namespaces, deployments e logs de clusters K8s.",
+    category: "DevOps & Cloud",
+    installed: true,
+    active: true,
+    latency_ms: 220,
+    icon: "☸️",
+  },
+  {
+    id: "hashicorp.terraform",
+    name: "HashiCorp Terraform",
+    publisher: "hashicorp",
+    version: "2.32.0",
+    description: "Autocompletar, validação HCL e linting para infraestrutura como código.",
+    category: "DevOps & Cloud",
+    installed: true,
+    active: true,
+    latency_ms: 200,
+    icon: "🏗️",
+  },
+  {
+    id: "vscjava.vscode-mermaid-editor",
+    name: "Mermaid Preview",
+    publisher: "vscjava",
+    version: "1.8.0",
+    description: "Renderização e preview em tempo real de diagramas Mermaid em Markdown.",
+    category: "Produtividade",
+    installed: true,
+    active: true,
+    latency_ms: 110,
+    icon: "📊",
+  },
+  {
+    id: "esbenp.prettier-vscode",
+    name: "Prettier - Code Formatter",
+    publisher: "esbenp",
+    version: "10.4.0",
+    description: "Formatação universal ao salvar arquivos TypeScript, JavaScript, CSS e HTML.",
+    category: "Produtividade",
+    installed: true,
+    active: true,
+    latency_ms: 100,
+    icon: "✨",
+  },
+  {
     id: "Shopify.ruby-lsp",
     name: "Ruby LSP",
     publisher: "Shopify",
@@ -1790,7 +1922,7 @@ const EXTENSIONS_CATALOG: ExtensionItem[] = [
 export function ExtensionsPanel() {
   const { bumpRevision } = useIde();
   const [filterText, setFilterText] = useState("");
-  const [category, setCategory] = useState<"Todas" | "LSP & Python" | "Node & Next.js" | "Frontend & Frameworks" | "C/C++ & Go" | "Containers & DevOps" | "Recomendados">("Todas");
+  const [category, setCategory] = useState<"Todas" | "LSP & Python" | "Node & Next.js" | "Frontend & Frameworks" | "Bancos & SQL" | "APIs & Testes" | "DevOps & Cloud" | "Produtividade" | "C/C++ & Go" | "Containers & DevOps" | "Recomendados">("Todas");
   const [activeEngine, setActiveEngine] = useState<"pyrefly" | "pyright">("pyrefly");
   const [enabledMap, setEnabledMap] = useState<Record<string, boolean>>({
     "meta.pyrefly": true,
@@ -1805,6 +1937,17 @@ export function ExtensionsPanel() {
     "svelte.svelte-vscode": true,
     "tailwindcss.vscode-tailwindcss": true,
     "dbaeumer.vscode-eslint": true,
+    "mtxr.sqltools": true,
+    "prisma.prisma": true,
+    "usernamehw.errorlens": true,
+    "eamodio.gitlens": true,
+    "pkief.material-icon-theme": true,
+    "rangav.vscode-thunder-client": true,
+    "vitest.explorer": true,
+    "ms-kubernetes-tools.vscode-kubernetes-tools": true,
+    "hashicorp.terraform": true,
+    "vscjava.vscode-mermaid-editor": true,
+    "esbenp.prettier-vscode": true,
     "Shopify.ruby-lsp": true,
     "llvm-vs-code-extensions.clangd": true,
     "golang.go": true,
@@ -1813,6 +1956,7 @@ export function ExtensionsPanel() {
     "DavidAnson.markdownlint": false,
     "sicoobito.agentic-engine": true,
   });
+
   const [selectedExt, setSelectedExt] = useState<ExtensionItem | null>(null);
 
   const toggleExt = (id: string) => {
@@ -1898,7 +2042,7 @@ export function ExtensionsPanel() {
       </div>
 
       <div className="extensions-categories">
-        {(["Todas", "LSP & Python", "Node & Next.js", "Frontend & Frameworks", "C/C++ & Go", "Containers & DevOps", "Recomendados"] as const).map((cat) => (
+        {(["Todas", "LSP & Python", "Node & Next.js", "Frontend & Frameworks", "Bancos & SQL", "APIs & Testes", "DevOps & Cloud", "Produtividade", "C/C++ & Go", "Containers & DevOps", "Recomendados"] as const).map((cat) => (
           <button
             key={cat}
             type="button"
@@ -1909,6 +2053,7 @@ export function ExtensionsPanel() {
           </button>
         ))}
       </div>
+
 
 
 
