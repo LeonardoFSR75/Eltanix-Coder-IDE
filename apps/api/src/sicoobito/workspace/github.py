@@ -10,6 +10,7 @@ um token que o `gh` já guarda no keyring do sistema.
 
 from __future__ import annotations
 
+import asyncio
 import re
 import shutil
 import subprocess
@@ -58,17 +59,9 @@ _TOKEN_CACHE_TTL_SECONDS = 300.0
 _token_cache: tuple[float, str | None] | None = None
 
 
-def _token_from_cli() -> str | None:
-    """Token do `gh`, se a CLI estiver instalada e autenticada."""
-    global _token_cache
-    now = time.monotonic()
-    if _token_cache is not None and now - _token_cache[0] < _TOKEN_CACHE_TTL_SECONDS:
-        return _token_cache[1]
-
-    executable = shutil.which("gh")
-    if executable is None:
-        _token_cache = (now, None)
-        return None
+def _run_gh_auth_token(executable: str) -> str | None:
+    """Parte síncrona e bloqueante — só deve rodar fora do event loop (ver
+    `_token_from_cli`, que despacha isto via `asyncio.to_thread`)."""
     try:
         result = subprocess.run(
             [executable, "auth", "token"],
@@ -79,15 +72,36 @@ def _token_from_cli() -> str | None:
         )
     except (OSError, subprocess.SubprocessError) as exc:
         log.debug("github.gh_cli.failed", error=str(exc))
+        return None
+    return result.stdout.strip() or None
+
+
+async def _token_from_cli() -> str | None:
+    """Token do `gh`, se a CLI estiver instalada e autenticada.
+
+    `subprocess.run` é síncrono e bloqueante — chamado direto (sem
+    `asyncio.to_thread`) travaria o único event loop da API por até 10s
+    (o timeout do subprocess) toda vez que o cache expira, congelando
+    simultaneamente todas as outras requisições, streams de chat e
+    WebSockets de todos os usuários. Mesmo cuidado que `workspace/git.py`
+    já tem para suas próprias chamadas de `subprocess.run`.
+    """
+    global _token_cache
+    now = time.monotonic()
+    if _token_cache is not None and now - _token_cache[0] < _TOKEN_CACHE_TTL_SECONDS:
+        return _token_cache[1]
+
+    executable = shutil.which("gh")
+    if executable is None:
         _token_cache = (now, None)
         return None
-    token = result.stdout.strip() or None
+    token = await asyncio.to_thread(_run_gh_auth_token, executable)
     _token_cache = (now, token)
     return token
 
 
-def resolve_token(configured: str = "") -> str | None:
-    return configured or _token_from_cli()
+async def resolve_token(configured: str = "") -> str | None:
+    return configured or await _token_from_cli()
 
 
 class GitHubClient:

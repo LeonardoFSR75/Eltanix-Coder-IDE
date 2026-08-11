@@ -14,7 +14,11 @@ from pathlib import Path
 from typing import Any, Literal
 
 import yaml
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, ValidationError, model_validator
+
+from sicoobito.logging_setup import get_logger
+
+log = get_logger(__name__)
 
 _ENV_RE = re.compile(r"\$\{([A-Z0-9_]+)\}")
 
@@ -66,12 +70,29 @@ class MCPServerConfig(BaseModel):
 
 
 def load_mcp_servers(path: Path) -> list[MCPServerConfig]:
+    """Uma entrada malformada em `mcp.yaml` não pode derrubar os outros
+    servidores nem a API inteira: `main.py` chama `connect_all()` (que passa
+    por aqui) no startup sem try/except, e `MCPManager.reload()` já desconectou
+    tudo antes de reconectar — uma exceção aqui deixaria o subsistema MCP
+    inteiro fora do ar até o YAML ser corrigido manualmente. Mesmo espírito de
+    "MCP com comando inválido marca aquele servidor como erro, os outros
+    continuam" documentado no `CLAUDE.md`, só que na etapa de parsing."""
     if not path.exists():
         return []
     with path.open("r", encoding="utf-8") as fh:
         raw = yaml.safe_load(fh) or {}
     entries = raw.get("servers") or []
-    return [MCPServerConfig(**_expand_env(entry)) for entry in entries]
+    servers: list[MCPServerConfig] = []
+    for entry in entries:
+        try:
+            servers.append(MCPServerConfig(**_expand_env(entry)))
+        except (ValidationError, TypeError) as exc:
+            log.warning(
+                "mcp.config.invalid_entry",
+                name=entry.get("name") if isinstance(entry, dict) else None,
+                error=str(exc)[:200],
+            )
+    return servers
 
 
 class MCPCatalogTemplate(BaseModel):

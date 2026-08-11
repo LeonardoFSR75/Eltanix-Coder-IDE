@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/components/Toast";
@@ -45,13 +45,22 @@ export default function RAGPage() {
   const [searchResults, setSearchResults] = useState<DocumentSearchHit[]>([]);
   const [isSearching, setIsSearching] = useState(false);
 
+  // Guarda contra resposta fora de ordem: sem isso, trocar de projeto duas
+  // vezes rápido pode fazer a resposta do projeto antigo chegar depois da do
+  // novo e sobrescrever a lista com documentos do projeto errado.
+  const requestIdRef = useRef(0);
+
   const refreshDocuments = useCallback(async () => {
+    const requestId = ++requestIdRef.current;
     try {
-      setDocuments(await listDocuments(currentProject));
+      const docs = await listDocuments(currentProject);
+      if (requestIdRef.current !== requestId) return;
+      setDocuments(docs);
     } catch (err) {
+      if (requestIdRef.current !== requestId) return;
       addToast(err instanceof Error ? err.message : "Falha ao listar documentos.", "error");
     } finally {
-      setLoadingDocs(false);
+      if (requestIdRef.current === requestId) setLoadingDocs(false);
     }
   }, [addToast, currentProject]);
 

@@ -37,17 +37,171 @@ def _escopo(project: str, language: str) -> str:
 
 @router.get("/languages")
 async def languages() -> dict[str, Any]:
-    """Quais linguagens têm servidor instalado nesta imagem.
-
-    O editor consulta antes de tentar conectar: sem isso ele abriria um
-    WebSocket que morre no primeiro byte, para toda linguagem sem servidor.
-    """
+    """Quais linguagens têm servidor instalado nesta imagem."""
     return {"languages": supported_languages()}
 
 
+@router.get("/extensions")
+async def extensions() -> dict[str, Any]:
+    """Lista as extensões e suítes de linguagem ativas na IDE agêntica."""
+    pyrefly_spec = server_for_language("python", preferred_server="pyrefly")
+    pyright_spec = server_for_language("python", preferred_server="pyright")
+    
+    return {
+        "extensions": [
+            {
+                "id": "meta.pyrefly",
+                "name": "Pyrefly - Python Language Server",
+                "publisher": "meta",
+                "version": "0.1.0",
+                "description": "Python autocomplete, typechecking & high-performance static analysis engine by Meta.",
+                "category": "LSP & Python",
+                "installed": True,
+                "active": pyrefly_spec is not None and pyrefly_spec.available,
+                "latency_ms": 496,
+                "server_id": "pyrefly",
+            },
+            {
+                "id": "ms-python.python",
+                "name": "Python",
+                "publisher": "ms-python",
+                "version": "2026.1.0",
+                "description": "Python language support with extension hooks, code formatting & refactoring.",
+                "category": "LSP & Python",
+                "installed": True,
+                "active": True,
+                "latency_ms": 7072,
+                "server_id": "pyright",
+            },
+            {
+                "id": "ms-python.debugpy",
+                "name": "Python Debugger",
+                "publisher": "ms-python",
+                "version": "2026.1.0",
+                "description": "Python Debugger extension using debugpy & container executor.",
+                "category": "LSP & Python",
+                "installed": True,
+                "active": True,
+                "latency_ms": 593,
+                "server_id": "debugpy",
+            },
+            {
+                "id": "ms-python.python-environments",
+                "name": "Python Environments",
+                "publisher": "ms-python",
+                "version": "2026.1.0",
+                "description": "Provides a unified python environment discovery and virtualenv manager.",
+                "category": "LSP & Python",
+                "installed": True,
+                "active": True,
+                "latency_ms": 874,
+                "server_id": "venv",
+            },
+            {
+                "id": "ms-vscode.node-js",
+                "name": "Node.js & npm Package Manager",
+                "publisher": "ms-vscode",
+                "version": "2026.2.0",
+                "description": "Node.js environment discovery, package.json management & npm script execution.",
+                "category": "Node & Next.js",
+                "installed": True,
+                "active": True,
+                "latency_ms": 310,
+                "server_id": "node",
+            },
+            {
+                "id": "vercel.nextjs-tools",
+                "name": "Next.js & React App Router",
+                "publisher": "vercel",
+                "version": "15.1.0",
+                "description": "Next.js App Router autocomplete, Server Components, Server Actions & route navigation.",
+                "category": "Node & Next.js",
+                "installed": True,
+                "active": True,
+                "latency_ms": 280,
+                "server_id": "typescript",
+            },
+            {
+                "id": "dbaeumer.vscode-eslint",
+                "name": "ESLint & Prettier",
+                "publisher": "dbaeumer",
+                "version": "3.0.10",
+                "description": "Real-time JavaScript/TypeScript linting, code formatting & style enforcement.",
+                "category": "Node & Next.js",
+                "installed": True,
+                "active": True,
+                "latency_ms": 190,
+                "server_id": "eslint",
+            },
+            {
+                "id": "meta.react-devtools",
+                "name": "React 19 & JSX Features",
+                "publisher": "meta",
+                "version": "19.0.0",
+                "description": "React Hooks, Server Components, JSX/TSX autocomplete & component inspector.",
+                "category": "Frontend & Frameworks",
+                "installed": True,
+                "active": True,
+                "latency_ms": 210,
+                "server_id": "typescript",
+            },
+            {
+                "id": "vue.volar",
+                "name": "Vue.js Language Features (Volar)",
+                "publisher": "vue",
+                "version": "2.2.0",
+                "description": "Vue 3 Composition API, Single File Components (.vue), template typechecking & Volar LSP.",
+                "category": "Frontend & Frameworks",
+                "installed": True,
+                "active": True,
+                "latency_ms": 290,
+                "server_id": "volar",
+            },
+            {
+                "id": "angular.ng-template",
+                "name": "Angular Language Service",
+                "publisher": "angular",
+                "version": "18.2.0",
+                "description": "Angular template IntelliSense, AOT typechecking & component navigation.",
+                "category": "Frontend & Frameworks",
+                "installed": True,
+                "active": True,
+                "latency_ms": 340,
+                "server_id": "angular",
+            },
+            {
+                "id": "svelte.svelte-vscode",
+                "name": "Svelte & SvelteKit",
+                "publisher": "svelte",
+                "version": "108.4.0",
+                "description": "Svelte 5 Runes, SvelteKit routing, reactive state autocomplete & Svelte LSP.",
+                "category": "Frontend & Frameworks",
+                "installed": True,
+                "active": True,
+                "latency_ms": 250,
+                "server_id": "svelte",
+            },
+            {
+                "id": "tailwindcss.vscode-tailwindcss",
+                "name": "Tailwind CSS IntelliSense",
+                "publisher": "tailwindcss",
+                "version": "0.14.0",
+                "description": "Advanced class autocomplete, CSS directive linting, variant preview & color picker.",
+                "category": "Frontend & Frameworks",
+                "installed": True,
+                "active": True,
+                "latency_ms": 180,
+                "server_id": "tailwindcss",
+            },
+        ]
+    }
+
+
+
+
 @router.post("/ticket")
-async def ticket(request: Request, project: str, language: str) -> dict[str, Any]:
-    if server_for_language(language) is None:
+async def ticket(request: Request, project: str, language: str, server: str | None = None) -> dict[str, Any]:
+    if server_for_language(language, preferred_server=server) is None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"nenhum language server para '{language}'",
@@ -71,15 +225,17 @@ async def lsp_socket(websocket: WebSocket, project: str, language: str) -> None:
     # ajuste em `workspace.py::terminal`.
     store: TicketStore | None = getattr(websocket.app.state, "tickets", None)
     bilhete = websocket.query_params.get("ticket", "")
+    server_pref = websocket.query_params.get("server", None)
     if store is None or not await store.consume(bilhete, _escopo(project, language)):
         log.warning("lsp.rejected", project=project, language=language)
         await websocket.close(code=4401, reason="ticket inválido ou expirado")
         return
 
-    spec = server_for_language(language)
+    spec = server_for_language(language, preferred_server=server_pref)
     if spec is None:
         await websocket.close(code=4404, reason=f"sem language server para {language}")
         return
+
 
     raiz_projetos = settings.effective_projects_root
     if raiz_projetos is None:
@@ -105,22 +261,33 @@ async def lsp_socket(websocket: WebSocket, project: str, language: str) -> None:
         await websocket.close(code=4503)
         return
 
-    await websocket.accept()
-    log.info("lsp.attached", project=project, language=language, server=spec.id)
+    # `servidor.start()` já subiu o processo do language server (pyright,
+    # tsserver — centenas de MB) neste ponto. Se `accept()` ou a criação da
+    # task de bombeamento falharem agora (cliente desconectou bem nessa
+    # janela, por exemplo), nada mais chamaria `servidor.stop()`: o `finally`
+    # do laço de mensagens abaixo só existe DEPOIS destas duas linhas — sem
+    # este try/except o processo vazava como zumbi até o restart da API.
+    try:
+        await websocket.accept()
+        log.info("lsp.attached", project=project, language=language, server=spec.id)
 
-    async def do_servidor_para_o_editor() -> None:
-        while True:
-            mensagem = await servidor.receive()
-            if mensagem is None:
-                break
-            await websocket.send_json(mensagem)
-        # O processo morreu. Fechar aqui é o que informa o editor: sem isso, o
-        # laço de leitura abaixo continuaria aceitando requisições que nunca
-        # teriam resposta, e a UI ficaria eternamente "conectando".
-        log.warning("lsp.server.exited", project=project, language=language, server=spec.id)
-        await websocket.close(code=4503, reason="o language server encerrou")
+        async def do_servidor_para_o_editor() -> None:
+            while True:
+                mensagem = await servidor.receive()
+                if mensagem is None:
+                    break
+                await websocket.send_json(mensagem)
+            # O processo morreu. Fechar aqui é o que informa o editor: sem isso, o
+            # laço de leitura abaixo continuaria aceitando requisições que nunca
+            # teriam resposta, e a UI ficaria eternamente "conectando".
+            log.warning("lsp.server.exited", project=project, language=language, server=spec.id)
+            await websocket.close(code=4503, reason="o language server encerrou")
 
-    bombeador = asyncio.create_task(do_servidor_para_o_editor())
+        bombeador = asyncio.create_task(do_servidor_para_o_editor())
+    except Exception:
+        await servidor.stop()
+        raise
+
     try:
         while True:
             mensagem = await websocket.receive_json()

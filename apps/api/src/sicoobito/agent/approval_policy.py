@@ -28,7 +28,11 @@ log = get_logger(__name__)
 # `ExecCommandRule`, mesmo que os tokens iniciais batam com um prefixo
 # permitido — "npm test" como prefixo não pode aprovar "npm test && rm -rf /".
 # Esta é a propriedade de segurança central da regra, não o prefixo em si.
-_DANGEROUS_COMMAND_CHARS = (";", "&", "|", "`", "$(", ">", "<")
+# "\n" precisa estar aqui: `shlex.split` trata quebra de linha como espaço
+# comum (então "npm test\nrm -rf /" tokeniza igual a "npm test rm -rf /" e
+# bateria no prefixo "npm test"), mas `sh -c` — que é quem de fato roda o
+# comando no sandbox — trata "\n" como separador de comando, igual a ";".
+_DANGEROUS_COMMAND_CHARS = (";", "&", "|", "`", "$(", ">", "<", "\n")
 
 
 class EditPathRule(BaseModel):

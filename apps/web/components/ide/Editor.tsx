@@ -10,13 +10,15 @@ import { useIde } from "@/lib/ide-store";
 
 import { acceptFile, revertFile } from "@/lib/api/agent";
 import { logAuditEvent } from "@/lib/api/audit";
-import { readFile, writeFile } from "@/lib/api/workspace";
+import { readFile, readFileOrNull, writeFile } from "@/lib/api/workspace";
 import {
   discardChanges as discardGitChanges,
   getFileVersions,
 } from "@/lib/api/git";
 
 import { Breadcrumbs } from "@/components/ide/Breadcrumbs";
+import { InlineDiffApprovalBar } from "@/components/ide/InlineDiffApprovalBar";
+
 
 // O nome da linguagem no nosso catálogo nem sempre é o id do Monaco.
 const MONACO_LANGUAGE: Record<string, string> = {
@@ -122,6 +124,7 @@ export function Editor({
   const [dirty, setDirty] = useState(false);
   const [showDiff, setShowDiff] = useState(false);
   const [showMinimap, setShowMinimap] = useState(false);
+  const [showZebra, setShowZebra] = useState(true);
   const [headContent, setHeadContent] = useState<string | null>(null);
   const originalRef = useRef("");
   const editorInstanceRef = useRef<any>(null);
@@ -137,14 +140,18 @@ export function Editor({
   }, [path, activeSessionId, notifyFileChanged]);
 
   const rejectAgentCode = useCallback(async () => {
-    if (!path || !activeSessionId) return;
+    if (!path || !project || !activeSessionId) return;
     try {
-      await revertFile(activeSessionId, path, "", false);
+      // O "antes" real é o arquivo no workspace principal (sem session_id,
+      // fora do worktree isolado do agente) — mandar "" aqui apagaria/
+      // esvaziaria um arquivo que já tinha conteúdo real antes da edição.
+      const principal = await readFileOrNull(project, path);
+      await revertFile(activeSessionId, path, principal?.content ?? "", principal !== null);
       notifyFileChanged(path);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
-  }, [path, activeSessionId, notifyFileChanged]);
+  }, [path, project, activeSessionId, notifyFileChanged]);
 
   const dirtyRef = useRef(false);
   useEffect(() => {
@@ -195,7 +202,7 @@ export function Editor({
     // este componente remonta por um motivo alheio ao arquivo — fechar um
     // painel vizinho reorganiza `ide.layout`, e a posição do painel
     // sobrevivente na árvore de componentes muda.
-    const cached = getBuffer(path);
+    const cached = getBuffer(project, path);
     if (cached) {
       setContent(cached.content);
       originalRef.current = cached.original;
@@ -229,7 +236,7 @@ export function Editor({
         setLoadedPath(path);
         loadedPathRef.current = path;
         markDirty(path, false, groupId);
-        setBuffer(path, { content: data.content, original: data.content, language: data.language });
+        setBuffer(project, path, { content: data.content, original: data.content, language: data.language });
       })
       .catch((err) => {
         if (!cancelled) setError(err instanceof Error ? err.message : String(err));
@@ -245,14 +252,14 @@ export function Editor({
 
 
   const save = useCallback(async () => {
-    if (!path || !project || !dirty) return;
+    if (!path || !project || saving) return;
     setSaving(true);
     try {
       await writeFile(project, path, content);
       originalRef.current = content;
       setDirty(false);
       markDirty(path, false, groupId);
-      setBuffer(path, { content, original: content, language: rawLanguage });
+      setBuffer(project, path, { content, original: content, language: rawLanguage });
       setError(null);
       lsp.onSave();
 
@@ -269,14 +276,17 @@ export function Editor({
     } finally {
       setSaving(false);
     }
-  }, [project, path, content, dirty, lsp, groupId, markDirty, rawLanguage]);
+  }, [project, path, content, saving, lsp, groupId, markDirty, rawLanguage]);
 
   const discardChanges = useCallback(async () => {
     if (!path || !project) return;
+    if (!window.confirm(`Descartar as alterações não salvas de "${path}"? Essa ação não pode ser desfeita.`)) {
+      return;
+    }
     setContent(originalRef.current);
     setDirty(false);
     markDirty(path, false, groupId);
-    setBuffer(path, { content: originalRef.current, original: originalRef.current, language: rawLanguage });
+    setBuffer(project, path, { content: originalRef.current, original: originalRef.current, language: rawLanguage });
 
     try {
       await discardGitChanges(project, [path]);
@@ -300,11 +310,19 @@ export function Editor({
       return;
     }
     if (!path || !project) return;
+    // Guarda contra troca de arquivo antes da resposta chegar: sem isso, um
+    // clique em "Ver Diff" seguido de troca rápida de arquivo aplicava o HEAD
+    // do arquivo antigo contra o `content` do arquivo novo — um diff sem
+    // sentido. `loadedPathRef` é atualizado pelo efeito de carregamento
+    // sempre que o arquivo ativo muda de verdade.
+    const requestedPath = path;
     try {
       const res = await getFileVersions(project, path);
+      if (loadedPathRef.current !== requestedPath) return;
       setHeadContent(res.original);
       setShowDiff(true);
     } catch {
+      if (loadedPathRef.current !== requestedPath) return;
       setHeadContent(originalRef.current);
       setShowDiff(true);
     }
@@ -321,11 +339,22 @@ export function Editor({
       if ((event.ctrlKey || event.metaKey) && event.key === "s") {
         event.preventDefault();
         void save();
+      } else if (event.altKey && !event.shiftKey && (event.key === "Enter" || event.code === "Enter")) {
+        if (activeSessionId) {
+          event.preventDefault();
+          void acceptAgentCode();
+        }
+      } else if (event.altKey && event.shiftKey && (event.key === "Backspace" || event.code === "Backspace")) {
+        if (activeSessionId) {
+          event.preventDefault();
+          void rejectAgentCode();
+        }
       }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [save]);
+  }, [save, activeSessionId, acceptAgentCode, rejectAgentCode]);
+
 
   if (!path) {
     return <div className="editor-empty">Selecione um arquivo na árvore à esquerda para editar.</div>;
@@ -342,35 +371,36 @@ export function Editor({
   };
 
   return (
-    <div className="editor-wrap">
+    <div className={`editor-wrap ${showZebra ? "zebra-stripes" : ""}`}>
       <Breadcrumbs activePath={path} />
       <div className="editor-bar">
         <LspBadge status={lsp.status} />
 
         <div className="editor-bar-actions" style={{ marginLeft: "auto", display: "flex", gap: 6, alignItems: "center" }}>
           {activeSessionId && (
-            <div style={{ display: "flex", gap: 4, alignItems: "center", background: "rgba(99, 102, 241, 0.15)", padding: "2px 8px", borderRadius: 4, border: "1px solid var(--accent, #6366f1)", marginRight: 8 }}>
-              <span style={{ fontSize: "11px", fontWeight: 600, color: "var(--accent, #6366f1)" }}>
+            <div className="agent-worktree-pill">
+              <span className="agent-worktree-label">
+                <span className="agent-worktree-dot" />
                 🤖 Agente (Worktree)
               </span>
-              <button
-                type="button"
-                className="primary"
-                onClick={() => void acceptAgentCode()}
-                style={{ padding: "2px 8px", fontSize: "11px", backgroundColor: "#10b981", borderColor: "#10b981" }}
-                title="Aceitar alterações do agente e gravar no projeto principal"
-              >
-                ✓ Aceitar na IDE
-              </button>
-              <button
-                type="button"
-                className="theme-btn"
-                onClick={() => void rejectAgentCode()}
-                style={{ padding: "2px 6px", fontSize: "11px", color: "#ef4444" }}
-                title="Reverter alterações do agente"
-              >
-                ✕ Rejeitar
-              </button>
+              <div className="agent-worktree-actions">
+                <button
+                  type="button"
+                  className="agent-worktree-btn-accept"
+                  onClick={() => void acceptAgentCode()}
+                  title="Aceitar alterações do agente e gravar no projeto principal (Alt+Enter)"
+                >
+                  ✓ Aceitar na IDE
+                </button>
+                <button
+                  type="button"
+                  className="agent-worktree-btn-reject"
+                  onClick={() => void rejectAgentCode()}
+                  title="Reverter alterações do agente (Shift+Alt+Backspace)"
+                >
+                  ✕ Rejeitar
+                </button>
+              </div>
             </div>
           )}
 
@@ -383,53 +413,88 @@ export function Editor({
 
           <button
             type="button"
+            className={`theme-btn ${showZebra ? "active" : ""}`}
+            onClick={() => setShowZebra(!showZebra)}
+            title="Alternar Linhas Alternadas (Zebrado)"
+            style={{ padding: "4px 6px", display: "inline-flex", alignItems: "center", justifyContent: "center" }}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="3" y1="6" x2="21" y2="6" />
+              <line x1="3" y1="12" x2="21" y2="12" />
+              <line x1="3" y1="18" x2="21" y2="18" />
+              <rect x="3" y="9" width="18" height="6" fill="currentColor" fillOpacity="0.25" stroke="none" />
+            </svg>
+          </button>
+
+          <button
+            type="button"
             className={`theme-btn ${showMinimap ? "active" : ""}`}
             onClick={() => setShowMinimap(!showMinimap)}
             title="Alternar Minimapa"
-            style={{ padding: "2px 6px", fontSize: "11px" }}
+            style={{ padding: "4px 6px", display: "inline-flex", alignItems: "center", justifyContent: "center" }}
           >
-            🗺️ Minimap
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="3" y="3" width="18" height="18" rx="2" />
+              <line x1="15" y1="3" x2="15" y2="21" />
+              <line x1="17" y1="7" x2="19" y2="7" />
+              <line x1="17" y1="11" x2="19" y2="11" />
+              <line x1="17" y1="15" x2="19" y2="15" />
+            </svg>
           </button>
 
           <button
             type="button"
             className="theme-btn"
             onClick={() => path && splitGroup(groupId, path, "row")}
-            title="Dividir este painel na horizontal (novo grupo à direita)"
-            style={{ padding: "2px 6px", fontSize: "11px" }}
+            title="Dividir painel na horizontal (novo grupo à direita)"
+            style={{ padding: "4px 6px", display: "inline-flex", alignItems: "center", justifyContent: "center" }}
           >
-            ⬌ Dividir
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="3" y="3" width="18" height="18" rx="2" />
+              <line x1="12" y1="3" x2="12" y2="21" />
+            </svg>
           </button>
 
           <button
             type="button"
             className="theme-btn"
             onClick={() => path && splitGroup(groupId, path, "column")}
-            title="Dividir este painel na vertical (novo grupo abaixo)"
-            style={{ padding: "2px 6px", fontSize: "11px" }}
+            title="Dividir painel na vertical (novo grupo abaixo)"
+            style={{ padding: "4px 6px", display: "inline-flex", alignItems: "center", justifyContent: "center" }}
           >
-            ⬍ Dividir
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="3" y="3" width="18" height="18" rx="2" />
+              <line x1="3" y1="12" x2="21" y2="12" />
+            </svg>
           </button>
 
           <button
             type="button"
-            className="theme-btn"
+            className={`theme-btn ${showDiff ? "active" : ""}`}
             onClick={() => void toggleDiffView()}
-            title="Revisar alterações lado a lado"
-            style={{ padding: "2px 6px", fontSize: "11px" }}
+            title={showDiff ? "Voltar ao Editor" : "Ver Comparação de Alterações (Diff)"}
+            style={{ padding: "4px 6px", display: "inline-flex", alignItems: "center", justifyContent: "center" }}
           >
-            {showDiff ? "Editor" : "Ver Diff"}
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="18" cy="18" r="3" />
+              <circle cx="6" cy="6" r="3" />
+              <path d="M13 6h3a2 2 0 0 1 2 2v7" />
+              <line x1="6" y1="9" x2="6" y2="21" />
+            </svg>
           </button>
 
           {dirty && (
             <button
               type="button"
               className="theme-btn"
-              style={{ color: "var(--danger)", padding: "2px 6px", fontSize: "11px" }}
+              style={{ color: "var(--danger)", padding: "4px 6px", display: "inline-flex", alignItems: "center", justifyContent: "center" }}
               onClick={() => void discardChanges()}
               title="Descartar alterações locais e reverter"
             >
-              Descartar
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M3 6h18" />
+                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+              </svg>
             </button>
           )}
 
@@ -437,10 +502,36 @@ export function Editor({
             type="button"
             className="primary"
             onClick={() => void save()}
-            disabled={!dirty || saving}
-            style={{ padding: "2px 8px", fontSize: "11px" }}
+            disabled={saving}
+            style={{
+              padding: "4px 7px",
+              fontSize: "11px",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 4,
+              cursor: saving ? "not-allowed" : "pointer",
+              opacity: saving ? 0.7 : 1,
+            }}
+            title={dirty ? "Salvar alterações não salvas no disco (Ctrl+S)" : "Forçar salvamento do arquivo no disco (Ctrl+S)"}
           >
-            {saving ? "salvando…" : "Salvar (Ctrl+S)"}
+            {dirty && (
+              <span
+                style={{
+                  width: 6,
+                  height: 6,
+                  borderRadius: "50%",
+                  backgroundColor: "#fbbf24",
+                  boxShadow: "0 0 6px #fbbf24",
+                  display: "inline-block",
+                }}
+                title="Alterações não salvas"
+              />
+            )}
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
+              <polyline points="17 21 17 13 7 13 7 21" />
+              <polyline points="7 3 7 8 15 8" />
+            </svg>
           </button>
 
           <button
@@ -460,10 +551,23 @@ export function Editor({
               const evt = new CustomEvent("sicoobito:terminal:exec", { detail: { command: cmd } });
               window.dispatchEvent(evt);
             }}
-            style={{ padding: "2px 10px", fontSize: "11px", background: "#16a34a", color: "#fff", border: "none", cursor: "pointer" }}
+            style={{
+              padding: "4px 8px",
+              fontSize: "11px",
+              background: "#16a34a",
+              color: "#fff",
+              border: "none",
+              cursor: "pointer",
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              borderRadius: 6,
+            }}
             title={`Executar ${path} no terminal do sandbox`}
           >
-            ▶ Rodar
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" stroke="none">
+              <polygon points="5 3 19 12 5 21 5 3" />
+            </svg>
           </button>
         </div>
       </div>
@@ -477,6 +581,9 @@ export function Editor({
           original={headContent ?? originalRef.current}
           modified={content}
           language={rawLanguage}
+          onAccept={activeSessionId ? () => void acceptAgentCode() : undefined}
+          onReject={activeSessionId ? () => void rejectAgentCode() : undefined}
+          zebra={showZebra}
         />
       ) : (
         <div className="editor-container-grid">
@@ -502,9 +609,9 @@ export function Editor({
                 setContent(next);
                 const isDirty = next !== originalRef.current;
                 setDirty(isDirty);
-                if (path) {
+                if (path && project) {
                   markDirty(path, isDirty, groupId);
-                  updateBufferContent(path, next);
+                  updateBufferContent(project, path, next);
                 }
                 lsp.onChange(evento);
               }}
@@ -537,25 +644,53 @@ function LspBadge({ status }: { status: LspStatus }) {
   );
 }
 
-/** Visualização lado a lado usada para revisar o que o agente propôs. */
+/** Visualização inline / lado a lado usada para revisar o que o agente propôs. */
 export function DiffView({
   original,
   modified,
   language,
+  onAccept,
+  onReject,
+  busy = false,
+  zebra = true,
 }: {
   original: string;
   modified: string;
   language?: string | null;
+  onAccept?: () => void;
+  onReject?: () => void;
+  busy?: boolean;
+  zebra?: boolean;
 }) {
   const { theme } = useTheme();
+  const [sideBySide, setSideBySide] = useState(false);
+
   return (
-    <DiffEditor
-      height="100%"
-      theme={theme === "dark" ? "vs-dark" : "vs"}
-      language={MONACO_LANGUAGE[language ?? ""] ?? "plaintext"}
-      original={original}
-      modified={modified}
-      options={{ ...EDITOR_OPTIONS, readOnly: true, renderSideBySide: true }}
-    />
+    <div className={`editor-diff-wrapper ${zebra ? "zebra-stripes" : ""}`}>
+      {(onAccept || onReject) && (
+        <div className="inline-approval-floating-overlay">
+          <InlineDiffApprovalBar
+            onAccept={() => onAccept?.()}
+            onReject={() => onReject?.()}
+            onToggleSideBySide={() => setSideBySide((prev) => !prev)}
+            isSideBySide={sideBySide}
+            busy={busy}
+          />
+        </div>
+      )}
+      <DiffEditor
+        height="100%"
+        theme={theme === "dark" ? "vs-dark" : "vs"}
+        language={MONACO_LANGUAGE[language ?? ""] ?? "plaintext"}
+        original={original}
+        modified={modified}
+        options={{
+          ...EDITOR_OPTIONS,
+          readOnly: true,
+          renderSideBySide: sideBySide,
+        }}
+      />
+    </div>
   );
 }
+

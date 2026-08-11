@@ -3,7 +3,7 @@
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { BrowserPanel, DebugPanel, Explorer, GitPanel, SearchPanel } from "@/components/ide/Panels";
+import { BrowserPanel, DebugPanel, Explorer, ExtensionsPanel, GitPanel, PackagesPanel, SearchPanel } from "@/components/ide/Panels";
 import { StatusBar } from "@/components/ide/StatusBar";
 import { TopMenuBar } from "@/components/ide/TopMenuBar";
 import { IdeProvider, useIde, type PanelId } from "@/lib/ide-store";
@@ -153,6 +153,8 @@ function Shell() {
       { id: "explorer", title: "Mostrar Explorer", run: () => ide.setPanel("explorer") },
       { id: "search", title: "Buscar no projeto", shortcut: "Ctrl+Shift+F", run: () => ide.setPanel("search") },
       { id: "git", title: "Mostrar controle de versão", run: () => ide.setPanel("git") },
+      { id: "packages", title: "Mostrar pacotes e dependências (requirements.txt)", run: () => ide.setPanel("packages") },
+      { id: "extensions", title: "Mostrar extensões e linguagens (Pyrefly, Python...)", shortcut: "Ctrl+Shift+X", run: () => ide.setPanel("extensions") },
       { id: "browser", title: "Mostrar navegador", run: () => ide.setPanel("browser") },
       { id: "agent", title: "Mostrar agente", run: () => ide.setAgentDockOpen(true) },
       { id: "toggle-sidebar", title: "Alternar barra lateral", shortcut: "Ctrl+B", run: () => ide.toggleSidebar() },
@@ -193,6 +195,9 @@ function Shell() {
       } else if (event.shiftKey && event.key.toLowerCase() === "p") {
         event.preventDefault();
         setOverlay("palette");
+      } else if (event.shiftKey && event.key.toLowerCase() === "x") {
+        event.preventDefault();
+        ide.setPanel("extensions");
       } else if (event.shiftKey && event.key.toLowerCase() === "f") {
         event.preventDefault();
         ide.setPanel("search");
@@ -370,6 +375,46 @@ function Shell() {
 
           <button
             type="button"
+            className={`activity${ide.panel === "packages" && ide.sidebarOpen ? " active" : ""}`}
+            title="Pacotes & Dependências (requirements.txt)"
+            onClick={() => {
+              if (ide.panel === "packages" && ide.sidebarOpen) ide.toggleSidebar();
+              else {
+                ide.setPanel("packages");
+                ide.setSidebarOpen(true);
+              }
+            }}
+          >
+            {/* Ícone de caixa/pacote */}
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
+              <polyline points="3.27 6.96 12 12.01 20.73 6.96" />
+              <line x1="12" y1="22.08" x2="12" y2="12" />
+            </svg>
+          </button>
+
+          <button
+            type="button"
+            className={`activity${ide.panel === "extensions" && ide.sidebarOpen ? " active" : ""}`}
+            title="Extensões & Linguagens (Pyrefly, Python...)"
+            onClick={() => {
+              if (ide.panel === "extensions" && ide.sidebarOpen) ide.toggleSidebar();
+              else {
+                ide.setPanel("extensions");
+                ide.setSidebarOpen(true);
+              }
+            }}
+          >
+            {/* Ícone de extensão (blocos de encaixe) */}
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
+              <polyline points="3.27 6.96 12 12.01 20.73 6.96" />
+              <line x1="12" y1="22.08" x2="12" y2="12" />
+            </svg>
+          </button>
+
+          <button
+            type="button"
             className="activity"
             title="Graphify Engine (Grafo de Conhecimento)"
             onClick={() => router.push("/graphify")}
@@ -452,7 +497,7 @@ function Shell() {
                     <line x1="12" y1="11" x2="12" y2="17" />
                     <line x1="9" y1="14" x2="15" y2="14" />
                   </svg>
-                  Abrir Pasta
+                  <span>Abrir</span>
                 </button>
                 <button
                   type="button"
@@ -464,7 +509,7 @@ function Shell() {
                     <line x1="12" y1="5" x2="12" y2="19" />
                     <line x1="5" y1="12" x2="19" y2="12" />
                   </svg>
-                  Novo Projeto
+                  <span>Novo</span>
                 </button>
               </div>
             </div>
@@ -475,6 +520,8 @@ function Shell() {
             {ide.panel === "git" && <GitPanel />}
             {ide.panel === "debug" && <DebugPanel />}
             {ide.panel === "browser" && <BrowserPanel />}
+            {ide.panel === "packages" && <PackagesPanel />}
+            {ide.panel === "extensions" && <ExtensionsPanel />}
           </aside>
         )}
 

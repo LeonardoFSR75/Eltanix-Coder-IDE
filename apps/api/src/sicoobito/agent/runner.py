@@ -247,7 +247,7 @@ class AgentRunner:
         # 3. GitHub: opcional, só necessário para abrir PR e ler issue.
         github = None
         repo_ref = None
-        token = resolve_token(self.settings.github_token)
+        token = await resolve_token(self.settings.github_token)
         if token:
             url = git_ops.remote_url(workspace_root) if branch else None
             repo_ref = parse_remote(url) if url else None

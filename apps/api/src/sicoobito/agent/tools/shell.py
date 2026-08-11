@@ -85,15 +85,44 @@ async def run_command(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
             data={"command": comando, "exit_code": 126, "duration_ms": 0, "timed_out": False},
         )
 
+    # Interceptação de instalações via pip em sandbox sem rede:
+    cmd_lower = comando.lower()
+    partes_lower = [p.lower() for p in partes]
+    eh_pip_install = (
+        "pip install" in cmd_lower
+        or "pip3 install" in cmd_lower
+        or ("pip" in partes_lower and "install" in partes_lower)
+    )
+    network_enabled = getattr(getattr(ctx, "sandbox", None), "config", None) and getattr(
+        ctx.sandbox.config, "network_enabled", False
+    )
+
+    if eh_pip_install and not network_enabled:
+        return ToolResult(
+            ok=True,
+            content=(
+                "[saída 1 em 0ms]\n"
+                "ERRO DE AMBIENTE: O sandbox do SicoobitoCode está isolado da rede por segurança.\n"
+                "Comandos de 'pip install' falham pois não há conexão com o PyPI/internet no container.\n"
+                "Utilize apenas bibliotecas já instaladas ou a biblioteca padrão (stdlib) do Python."
+            ),
+            data={"command": comando, "exit_code": 1, "duration_ms": 0, "timed_out": False},
+        )
+
     try:
         resultado = await ctx.sandbox.exec(comando, timeout=args.get("timeout"))
     except SandboxError as exc:
         return ToolResult.failure(str(exc))
 
-
     corpo = summarize_output(resultado.stdout)
     if resultado.stderr.strip():
         corpo += f"\n\n--- stderr ---\n{summarize_output(resultado.stderr)}"
+
+    if "Temporary failure in name resolution" in corpo or "No matching distribution found" in corpo:
+        corpo += (
+            "\n\n💡 DICA DE AMBIENTE: O sandbox está isolado da rede. "
+            "Tentativas de conectar ao PyPI ou internet falham por DNS. Não tente re-executar 'pip install'."
+        )
 
     estado = "sucesso" if resultado.ok else f"saída {resultado.exit_code}"
     dica_timeout = ""

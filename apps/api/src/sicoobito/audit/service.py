@@ -54,6 +54,7 @@ class AuditService:
         approvals: dict[str, bool],
         reasons: dict[str, str],
         decided_by: dict[str, str] | None = None,
+        project_slug: str | None = None,
     ) -> None:
         """Um registro por ação pendente — chamado pelo nó `approve` do grafo,
         depois de a decisão (humana ou por política de auto-aprovação) ser
@@ -78,6 +79,7 @@ class AuditService:
                     risk_level="critical" if item.get("risk") == "exec" else "medium",
                     status="success" if approved else "denied",
                     session_id=session_id,
+                    project_slug=project_slug,
                     metadata={
                         "reason": reasons.get(call_id, ""),
                         "auto_approved": auto_aprovado,
@@ -90,12 +92,19 @@ class AuditService:
         module: str | None = None,
         risk_level: str | None = None,
         q: str | None = None,
+        project_slug: str | None = None,
         limit: int = 100,
         offset: int = 0,
     ) -> list[AuditLogEntry]:
         async with session_scope() as session:
             return await store.list_entries(
-                session, module=module, risk_level=risk_level, q=q, limit=limit, offset=offset
+                session,
+                module=module,
+                risk_level=risk_level,
+                q=q,
+                project_slug=project_slug,
+                limit=limit,
+                offset=offset,
             )
 
     async def get(self, entry_id: uuid.UUID) -> AuditLogEntry | None:

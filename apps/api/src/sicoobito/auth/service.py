@@ -9,6 +9,7 @@ para a chave de API de serviço via `hmac.compare_digest`.
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import hmac
 import secrets
@@ -51,6 +52,14 @@ def _hash_token(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
+# Hash de uma senha que ninguém tem — só para gastar o mesmo tempo de scrypt
+# quando o username não existe (ver `AuthService.authenticate`). Sem isso,
+# username desconhecido responde rápido (nunca roda scrypt) e username válido
+# com senha errada responde devagar (sempre roda), um canal de tempo que
+# permite enumerar o username do admin medindo a latência de `/api/auth/login`.
+_DUMMY_PASSWORD_HASH = _hash_password(secrets.token_urlsafe(32))
+
+
 class AuthService:
     def __init__(self) -> None:
         self._memory_attempts: dict[str, list[datetime]] = {}
@@ -81,6 +90,19 @@ class AuthService:
                 log.warning("auth.ratelimit.redis_failed", error=str(exc)[:200])
 
         window_start = now - timedelta(seconds=60)
+        # Sem isso, IPs cujas tentativas já expiraram ficam presos no dict
+        # para sempre — só `reset_failed_attempts` (chamada em login
+        # bem-sucedido) removia uma entrada. Com Redis fora do ar por um
+        # período longo e tentativas de muitos IPs que nunca têm sucesso, o
+        # dict cresce sem limite até o próximo restart do processo.
+        ips_expirados = [
+            outro_ip
+            for outro_ip, tentativas in self._memory_attempts.items()
+            if outro_ip != ip and all(t <= window_start for t in tentativas)
+        ]
+        for outro_ip in ips_expirados:
+            self._memory_attempts.pop(outro_ip, None)
+
         attempts = [t for t in self._memory_attempts.get(ip, []) if t > window_start]
         attempts.append(now)
         self._memory_attempts[ip] = attempts
@@ -117,7 +139,12 @@ class AuthService:
     async def authenticate(self, *, username: str, password: str) -> AppUser | None:
         async with session_scope() as session:
             user = await store.get_user_by_username(session, username)
-        if user is None or not _verify_password(password, user.password_hash):
+        # Sempre roda `_verify_password` (scrypt), mesmo com username
+        # desconhecido — contra um hash "dummy" fixo se não achar o usuário —
+        # para as duas respostas terem o mesmo custo e fechar o canal de tempo.
+        password_hash = user.password_hash if user is not None else _DUMMY_PASSWORD_HASH
+        valid = _verify_password(password, password_hash)
+        if user is None or not valid:
             return None
         return user
 
@@ -196,3 +223,21 @@ class AuthService:
         except Exception as exc:
             log.warning("auth.sessions.purge_failed", error=str(exc)[:200])
             return 0
+
+    async def run_session_purge_reaper(self, interval_seconds: int = 3600) -> None:
+        """Laço de limpeza periódica, mesmo padrão de `SandboxManager.run_reaper`.
+
+        `purge_expired_sessions` só era chamada uma vez, no `lifespan` de
+        startup — sem essa task de fundo, uma instância rodando por semanas
+        sem restart acumula indefinidamente linhas de `auth_session`
+        expiradas/revogadas no Postgres (não é falha de segurança, já que
+        `validate_session` sempre confere `expires_at`, mas é uma tabela sem
+        rotina de limpeza contínua, ao contrário do resto do projeto)."""
+        while True:
+            try:
+                await asyncio.sleep(interval_seconds)
+                await self.purge_expired_sessions()
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                log.warning("auth.sessions.purge_reaper_iteration_failed", error=str(exc)[:200])

@@ -66,10 +66,15 @@ class TicketStore:
         if self._redis is not None:
             try:
                 chave = f"{_PREFIX}:{ticket}"
-                scope = await self._redis.get(chave)
+                # `GETDEL` (não `GET` + `DELETE` separados) é obrigatório
+                # aqui: as duas operações juntas não são atômicas, então duas
+                # conexões WebSocket com o mesmo ticket chegando quase ao
+                # mesmo tempo podiam ambas ler antes de qualquer uma apagar —
+                # as duas passavam, quebrando a garantia de uso único que é a
+                # mitigação central do ticket viajar na query string do WS.
+                scope = await self._redis.getdel(chave)
                 if scope is None:
                     return False
-                await self._redis.delete(chave)
                 return scope == expected_scope
             except Exception as exc:
                 log.warning("tickets.redis.unavailable", error=str(exc))

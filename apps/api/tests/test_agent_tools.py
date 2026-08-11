@@ -214,6 +214,21 @@ async def test_run_command_intercepts_static_html_file_execution(ctx):
     assert resultado.data["exit_code"] == 126
 
 
+async def test_run_command_intercepts_pip_install_when_network_disabled(ctx):
+    class FakeConfig:
+        network_enabled = False
+
+    class FakeSandbox:
+        config = FakeConfig()
+
+    ctx.sandbox = FakeSandbox()
+    resultado = await registry.get("run_command").handler(ctx, {"command": "pip install pytest"})
+    assert resultado.ok is True
+    assert "ERRO DE AMBIENTE" in resultado.content
+    assert "isolado da rede" in resultado.content
+    assert resultado.data["exit_code"] == 1
+
+
 
 # ── browser_action ──────────────────────────────────────────────────────────
 

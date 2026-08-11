@@ -33,6 +33,7 @@ from sicoobito.api.routes import (
     mcp_router,
     metrics_router,
     notes_router,
+    packages_router,
     projects_router,
     skills_router,
     telemetry_router,
@@ -257,6 +258,7 @@ async def lifespan(app: FastAPI):
     # anormal (kill -9, queda), varrendo containers de execuções anteriores que
     # ninguém mais conhece.
     reaper = asyncio.create_task(sandboxes.run_reaper())
+    session_purge_reaper = asyncio.create_task(auth.run_session_purge_reaper())
 
     log.info(
         "app.started",
@@ -270,6 +272,9 @@ async def lifespan(app: FastAPI):
         reaper.cancel()
         with suppress(asyncio.CancelledError):
             await reaper
+        session_purge_reaper.cancel()
+        with suppress(asyncio.CancelledError):
+            await session_purge_reaper
         # Containers da sessão não podem sobreviver ao processo que os criou:
         # ficariam órfãos consumindo memória até alguém notar.
         await sandboxes.shutdown()
@@ -322,6 +327,7 @@ def create_app() -> FastAPI:
     app.include_router(workspace_router)
     app.include_router(workspace_ws_router)
     app.include_router(projects_router)
+    app.include_router(packages_router)
     app.include_router(git_router)
     app.include_router(lsp_router)
     app.include_router(lsp_ws_router)

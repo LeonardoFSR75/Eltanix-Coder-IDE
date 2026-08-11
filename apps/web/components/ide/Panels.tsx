@@ -28,6 +28,13 @@ import {
   unstageFiles,
   type GitFile,
 } from "@/lib/api/git";
+import {
+  getProjectPackages,
+  installProjectPackage,
+  uninstallProjectPackage,
+  syncProjectRequirements,
+  type PackageItem,
+} from "@/lib/api/packages";
 import { useIde } from "@/lib/ide-store";
 import { ConfirmDialog, PromptDialog } from "@/components/ide/Overlays";
 import { FileIcon } from "@/components/ide/FileIcons";
@@ -1273,10 +1280,793 @@ export function BrowserPanel() {
             >
               Ler texto da página
             </button>
-            {content !== null && <pre className="tool-card-pre">{content || "(página sem texto visível)"}</pre>}
           </div>
         </details>
       </div>
     </div>
   );
 }
+
+// ── PackagesPanel ───────────────────────────────────────────────────────────
+
+export function PackagesPanel() {
+  const { project, openFile } = useIde();
+  const [packages, setPackages] = useState<PackageItem[]>([]);
+  const [reqMap, setReqMap] = useState<Record<string, string>>({});
+  const [reqExists, setReqExists] = useState(false);
+  const [venvExists, setVenvExists] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [inputPkg, setInputPkg] = useState("");
+  const [filterText, setFilterText] = useState("");
+  const [erro, setErro] = useState<string | null>(null);
+  const [msgSuccess, setMsgSuccess] = useState<string | null>(null);
+
+  const carregar = useCallback(async () => {
+    if (!project) return;
+    setLoading(true);
+    setErro(null);
+    try {
+      const data = await getProjectPackages(project);
+      setPackages(data.packages);
+      setReqMap(data.requirements_map);
+      setReqExists(data.requirements_exists);
+      setVenvExists(data.venv_exists);
+    } catch (err) {
+      setErro(err instanceof Error ? err.message : String(err));
+    } finally {
+      setLoading(false);
+    }
+  }, [project]);
+
+  useEffect(() => {
+    void carregar();
+  }, [carregar]);
+
+  const handleInstall = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!project || !inputPkg.trim() || actionLoading) return;
+
+    const target = inputPkg.trim();
+    setActionLoading(`Instalando ${target}...`);
+    setErro(null);
+    setMsgSuccess(null);
+    try {
+      const res = await installProjectPackage(project, target, true);
+      setInputPkg("");
+      setMsgSuccess(`Pacote '${res.package}' (${res.version ?? "OK"}) instalado e gravado no requirements.txt!`);
+      await carregar();
+    } catch (err) {
+      setErro(err instanceof Error ? err.message : String(err));
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleUninstall = async (pkgName: string) => {
+    if (!project || actionLoading) return;
+    if (!window.confirm(`Desinstalar o pacote '${pkgName}' do ambiente do projeto?`)) return;
+
+    setActionLoading(`Desinstalando ${pkgName}...`);
+    setErro(null);
+    setMsgSuccess(null);
+    try {
+      await uninstallProjectPackage(project, pkgName, true);
+      setMsgSuccess(`Pacote '${pkgName}' removido e atualizado no requirements.txt!`);
+      await carregar();
+    } catch (err) {
+      setErro(err instanceof Error ? err.message : String(err));
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleSync = async () => {
+    if (!project || actionLoading) return;
+    setActionLoading("Sincronizando de requirements.txt...");
+    setErro(null);
+    setMsgSuccess(null);
+    try {
+      await syncProjectRequirements(project);
+      setMsgSuccess("Ambiente sincronizado com sucesso com o requirements.txt!");
+      await carregar();
+    } catch (err) {
+      setErro(err instanceof Error ? err.message : String(err));
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const filtrados = packages.filter(
+    (p) =>
+      p.name.toLowerCase().includes(filterText.toLowerCase()) ||
+      p.version.toLowerCase().includes(filterText.toLowerCase())
+  );
+
+  return (
+    <div className="panel-body packages-panel-body">
+      <div className="panel-header">
+        <div className="panel-header-title-group">
+          <span className="panel-header-title">📦 Pacotes do Projeto</span>
+          <span className="packages-count-badge">{packages.length}</span>
+        </div>
+        <div className="panel-actions-bar">
+          <button
+            type="button"
+            className="icon-action-btn"
+            title="Recarregar pacotes"
+            onClick={() => void carregar()}
+            disabled={loading}
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M21.5 2v6h-6M2.5 22v-6h6" />
+              <path d="M2 11.5a10 10 0 0 1 18.8-4.3L21.5 8M22 12.5a10 10 0 0 1-18.8 4.2L2.5 16" />
+            </svg>
+          </button>
+          <button
+            type="button"
+            className="icon-action-btn"
+            title="Abrir requirements.txt no editor"
+            onClick={() => openFile("requirements.txt")}
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+              <polyline points="14 2 14 8 20 8" />
+              <line x1="16" y1="13" x2="8" y2="13" />
+              <line x1="16" y1="17" x2="8" y2="17" />
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      <div className="packages-section-install">
+        <form onSubmit={handleInstall} className="packages-form-row">
+          <input
+            type="text"
+            className="packages-input"
+            placeholder="Nome do pacote (ex: pytest)..."
+            value={inputPkg}
+            onChange={(e) => setInputPkg(e.target.value)}
+            disabled={!!actionLoading}
+          />
+          <button
+            type="submit"
+            className="packages-btn-primary"
+            disabled={!inputPkg.trim() || !!actionLoading}
+          >
+            {actionLoading ? "…" : "Instalar"}
+          </button>
+        </form>
+
+        <div className="packages-sub-actions">
+          <div className="packages-sync-info">
+            <span>⚡ Auto-sync com <code>requirements.txt</code></span>
+          </div>
+          <button
+            type="button"
+            onClick={() => void handleSync()}
+            disabled={!!actionLoading || !reqExists}
+            className="packages-btn-sync"
+            title="Instalar dependências do requirements.txt"
+          >
+            🔄 Sincronizar Tudo
+          </button>
+        </div>
+      </div>
+
+      {actionLoading && (
+        <div className="packages-status-loading">
+          <span className="spin-icon">⏳</span>
+          <span>{actionLoading}</span>
+        </div>
+      )}
+
+      {erro && <div className="panel-error">{erro}</div>}
+      {msgSuccess && <div className="packages-status-success">{msgSuccess}</div>}
+
+      <div className="packages-filter-box">
+        <input
+          type="text"
+          className="packages-input-filter"
+          placeholder="Filtrar pacotes instalados..."
+          value={filterText}
+          onChange={(e) => setFilterText(e.target.value)}
+        />
+      </div>
+
+      <div className="packages-list-scroll">
+        {loading ? (
+          <div className="packages-empty-state">Carregando ambiente virtual do projeto...</div>
+        ) : filtrados.length === 0 ? (
+          <div className="packages-empty-state">
+            {packages.length === 0
+              ? "Nenhum pacote instalado no .venv do projeto ainda. Digite o nome do pacote acima para instalar!"
+              : "Nenhum pacote encontrado com este filtro."}
+          </div>
+        ) : (
+          <div className="packages-items-grid">
+            {filtrados.map((pkg) => {
+              const normName = pkg.name.toLowerCase().replace("_", "-");
+              const inReq = reqMap[normName] !== undefined;
+              return (
+                <div key={pkg.name} className="package-item-card">
+                  <div className="package-item-info">
+                    <div className="package-item-title-row">
+                      <span className="package-item-name">{pkg.name}</span>
+                      {inReq && <span className="package-req-tag">req.txt</span>}
+                    </div>
+                    <span className="package-item-version">v{pkg.version}</span>
+                  </div>
+                  <button
+                    type="button"
+                    className="icon-action-btn danger"
+                    title={`Desinstalar ${pkg.name}`}
+                    onClick={() => void handleUninstall(pkg.name)}
+                    disabled={!!actionLoading}
+                  >
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <polyline points="3 6 5 6 21 6" />
+                      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                    </svg>
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      <div className="packages-footer">
+        <span className={`status-dot ${venvExists ? "active" : ""}`} />
+        <span>
+          {venvExists
+            ? "Ambiente .venv ativado e persistente no projeto"
+            : "O .venv será criado automaticamente na 1ª instalação"}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+// ── Extensions (Extensões & Suporte a Linguagens) ──────────────────────────
+
+export interface ExtensionItem {
+  id: string;
+  name: string;
+  publisher: string;
+  version: string;
+  description: string;
+  category: "LSP & Python" | "Node & Next.js" | "Frontend & Frameworks" | "C/C++ & Go" | "Containers & DevOps" | "IA & Agente" | "Outros";
+  installed: boolean;
+  active: boolean;
+  latency_ms?: number;
+  icon: string;
+  downloads?: string;
+  rating?: number;
+  isRecommended?: boolean;
+}
+
+const EXTENSIONS_CATALOG: ExtensionItem[] = [
+  {
+    id: "meta.pyrefly",
+    name: "Pyrefly - Python Language Server",
+    publisher: "meta",
+    version: "0.1.0",
+    description: "Python autocomplete, typechecking & high-performance static analysis by Meta.",
+    category: "LSP & Python",
+    installed: true,
+    active: true,
+    latency_ms: 496,
+    icon: "🦟",
+  },
+  {
+    id: "ms-python.python",
+    name: "Python",
+    publisher: "ms-python",
+    version: "2026.1.0",
+    description: "Python language support with extension hooks, code formatting, linting & refactoring.",
+    category: "LSP & Python",
+    installed: true,
+    active: true,
+    latency_ms: 7072,
+    icon: "🐍",
+  },
+  {
+    id: "ms-python.debugpy",
+    name: "Python Debugger",
+    publisher: "ms-python",
+    version: "2026.1.0",
+    description: "Python Debugger extension using debugpy & Sicoobito container executor.",
+    category: "LSP & Python",
+    installed: true,
+    active: true,
+    latency_ms: 593,
+    icon: "🐞",
+  },
+  {
+    id: "ms-python.python-environments",
+    name: "Python Environments",
+    publisher: "ms-python",
+    version: "2026.1.0",
+    description: "Provides a unified python environment discovery and virtualenv manager.",
+    category: "LSP & Python",
+    installed: true,
+    active: true,
+    latency_ms: 874,
+    icon: "📦",
+  },
+  {
+    id: "ms-vscode.node-js",
+    name: "Node.js & npm Package Manager",
+    publisher: "ms-vscode",
+    version: "2026.2.0",
+    description: "Node.js environment discovery, package.json management & npm script execution.",
+    category: "Node & Next.js",
+    installed: true,
+    active: true,
+    latency_ms: 310,
+    icon: "🟢",
+  },
+  {
+    id: "vercel.nextjs-tools",
+    name: "Next.js & React App Router",
+    publisher: "vercel",
+    version: "15.1.0",
+    description: "Next.js App Router autocomplete, Server Components, Server Actions & route navigation.",
+    category: "Node & Next.js",
+    installed: true,
+    active: true,
+    latency_ms: 280,
+    icon: "▲",
+  },
+  {
+    id: "meta.react-devtools",
+    name: "React 19 & JSX Features",
+    publisher: "meta",
+    version: "19.0.0",
+    description: "React Hooks, Server Components, JSX/TSX autocomplete & component inspector.",
+    category: "Frontend & Frameworks",
+    installed: true,
+    active: true,
+    latency_ms: 210,
+    icon: "⚛️",
+  },
+  {
+    id: "vue.volar",
+    name: "Vue.js Language Features (Volar)",
+    publisher: "vue",
+    version: "2.2.0",
+    description: "Vue 3 Composition API, Single File Components (.vue), template typechecking & Volar LSP.",
+    category: "Frontend & Frameworks",
+    installed: true,
+    active: true,
+    latency_ms: 290,
+    icon: "💚",
+  },
+  {
+    id: "angular.ng-template",
+    name: "Angular Language Service",
+    publisher: "angular",
+    version: "18.2.0",
+    description: "Angular template IntelliSense, AOT typechecking & component navigation.",
+    category: "Frontend & Frameworks",
+    installed: true,
+    active: true,
+    latency_ms: 340,
+    icon: "🅰️",
+  },
+  {
+    id: "svelte.svelte-vscode",
+    name: "Svelte & SvelteKit",
+    publisher: "svelte",
+    version: "108.4.0",
+    description: "Svelte 5 Runes, SvelteKit routing, reactive state autocomplete & Svelte LSP.",
+    category: "Frontend & Frameworks",
+    installed: true,
+    active: true,
+    latency_ms: 250,
+    icon: "🟧",
+  },
+  {
+    id: "tailwindcss.vscode-tailwindcss",
+    name: "Tailwind CSS IntelliSense",
+    publisher: "tailwindcss",
+    version: "0.14.0",
+    description: "Advanced class autocomplete, CSS directive linting, variant preview & color picker.",
+    category: "Frontend & Frameworks",
+    installed: true,
+    active: true,
+    latency_ms: 180,
+    icon: "🎨",
+  },
+  {
+    id: "dbaeumer.vscode-eslint",
+    name: "ESLint & Prettier",
+    publisher: "dbaeumer",
+    version: "3.0.10",
+    description: "Real-time JavaScript/TypeScript linting, code formatting & style enforcement.",
+    category: "Node & Next.js",
+    installed: true,
+    active: true,
+    latency_ms: 190,
+    icon: "✨",
+  },
+  {
+    id: "Shopify.ruby-lsp",
+    name: "Ruby LSP",
+    publisher: "Shopify",
+    version: "0.8.1",
+    description: "VS Code plugin for connecting with Ruby LSP language server powered by Shopify.",
+    category: "Outros",
+    installed: true,
+    active: true,
+    latency_ms: 240,
+    icon: "💎",
+  },
+  {
+    id: "llvm-vs-code-extensions.clangd",
+    name: "clangd",
+    publisher: "llvm-vs-code-extensions",
+    version: "0.1.30",
+    description: "C/C++ completion, navigation, and static analysis powered by LLVM clangd engine.",
+    category: "C/C++ & Go",
+    installed: true,
+    active: true,
+    latency_ms: 380,
+    icon: "🅲",
+  },
+  {
+    id: "golang.go",
+    name: "Go",
+    publisher: "golang",
+    version: "0.41.0",
+    description: "Rich Go language support for Visual Studio Code using gopls LSP engine.",
+    category: "C/C++ & Go",
+    installed: true,
+    active: true,
+    latency_ms: 290,
+    icon: "🅶",
+  },
+  {
+    id: "ms-azuretools.container-tools",
+    name: "Container Tools",
+    publisher: "ms-azuretools",
+    version: "1.28.0",
+    description: "Makes it easy to create, manage, and debug containerized applications.",
+    category: "Containers & DevOps",
+    installed: true,
+    active: true,
+    latency_ms: 410,
+    icon: "🧊",
+  },
+  {
+    id: "ms-azuretools.docker",
+    name: "Docker",
+    publisher: "ms-azuretools",
+    version: "1.29.0",
+    description: "Makes it easy to create, manage, and debug Docker applications and Compose stacks.",
+    category: "Containers & DevOps",
+    installed: true,
+    active: true,
+    latency_ms: 360,
+    icon: "🐳",
+  },
+  {
+    id: "DavidAnson.markdownlint",
+    name: "markdownlint",
+    publisher: "DavidAnson",
+    version: "0.57.0",
+    description: "Markdown linting and style checking for repository documentation.",
+    category: "Outros",
+    installed: false,
+    active: false,
+    downloads: "1.5M",
+    rating: 5,
+    isRecommended: true,
+    icon: "📝",
+  },
+  {
+    id: "sicoobito.agentic-engine",
+    name: "Sicoobito Agentic AI Engine",
+    publisher: "sicoobito",
+    version: "1.0.0",
+    description: "Agente autônomo com suporte a múltiplos arquivos, RAG, terminal e auto-correção.",
+    category: "IA & Agente",
+    installed: true,
+    active: true,
+    latency_ms: 120,
+    icon: "🤖",
+  },
+];
+
+export function ExtensionsPanel() {
+  const { bumpRevision } = useIde();
+  const [filterText, setFilterText] = useState("");
+  const [category, setCategory] = useState<"Todas" | "LSP & Python" | "Node & Next.js" | "Frontend & Frameworks" | "C/C++ & Go" | "Containers & DevOps" | "Recomendados">("Todas");
+  const [activeEngine, setActiveEngine] = useState<"pyrefly" | "pyright">("pyrefly");
+  const [enabledMap, setEnabledMap] = useState<Record<string, boolean>>({
+    "meta.pyrefly": true,
+    "ms-python.python": true,
+    "ms-python.debugpy": true,
+    "ms-python.python-environments": true,
+    "ms-vscode.node-js": true,
+    "vercel.nextjs-tools": true,
+    "meta.react-devtools": true,
+    "vue.volar": true,
+    "angular.ng-template": true,
+    "svelte.svelte-vscode": true,
+    "tailwindcss.vscode-tailwindcss": true,
+    "dbaeumer.vscode-eslint": true,
+    "Shopify.ruby-lsp": true,
+    "llvm-vs-code-extensions.clangd": true,
+    "golang.go": true,
+    "ms-azuretools.container-tools": true,
+    "ms-azuretools.docker": true,
+    "DavidAnson.markdownlint": false,
+    "sicoobito.agentic-engine": true,
+  });
+  const [selectedExt, setSelectedExt] = useState<ExtensionItem | null>(null);
+
+  const toggleExt = (id: string) => {
+    setEnabledMap((prev) => ({ ...prev, [id]: !prev[id] }));
+  };
+
+  const instalados = EXTENSIONS_CATALOG.filter((ext) => {
+    if (category === "Recomendados") return false;
+    const matchCat = category === "Todas" || ext.category === category;
+    const matchText =
+      !filterText.trim() ||
+      ext.name.toLowerCase().includes(filterText.toLowerCase()) ||
+      ext.publisher.toLowerCase().includes(filterText.toLowerCase()) ||
+      ext.description.toLowerCase().includes(filterText.toLowerCase());
+    return matchCat && matchText && ext.installed !== false;
+  });
+
+  const recomendados = EXTENSIONS_CATALOG.filter((ext) => {
+    const matchText =
+      !filterText.trim() ||
+      ext.name.toLowerCase().includes(filterText.toLowerCase()) ||
+      ext.publisher.toLowerCase().includes(filterText.toLowerCase()) ||
+      ext.description.toLowerCase().includes(filterText.toLowerCase());
+    return ext.isRecommended && matchText;
+  });
+
+  return (
+    <div className="extensions-panel">
+      <div className="extensions-header">
+        <div className="extensions-title-group">
+          <div className="extensions-title-icon">🧩</div>
+          <div>
+            <h3 className="extensions-title">Extensões & Linguagens</h3>
+            <p className="extensions-subtitle">React, Vue, Angular, Svelte, Tailwind, Python & Node</p>
+          </div>
+        </div>
+        <button
+          type="button"
+          className="icon-action-btn"
+          title="Recarregar status de extensão"
+          onClick={() => bumpRevision()}
+        >
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M21.5 2v6h-6M2.5 22v-6h6" />
+            <path d="M2 11.5a10 10 0 0 1 18.8-4.3L21.5 8M22 12.5a10 10 0 0 1-18.8 4.2L2.5 16" />
+          </svg>
+        </button>
+      </div>
+
+      {/* Engine Selection Card for Python */}
+      <div className="extensions-lsp-selector">
+        <div className="lsp-selector-label">
+          <span>Engine LSP Python Principal:</span>
+          <span className="lsp-active-badge">{activeEngine === "pyrefly" ? "Meta Pyrefly" : "Pyright"}</span>
+        </div>
+        <div className="lsp-selector-buttons">
+          <button
+            type="button"
+            className={`lsp-engine-btn ${activeEngine === "pyrefly" ? "active" : ""}`}
+            onClick={() => setActiveEngine("pyrefly")}
+          >
+            🦟 Pyrefly (Meta)
+          </button>
+          <button
+            type="button"
+            className={`lsp-engine-btn ${activeEngine === "pyright" ? "active" : ""}`}
+            onClick={() => setActiveEngine("pyright")}
+          >
+            🐍 Pyright (MS)
+          </button>
+        </div>
+      </div>
+
+      {/* Categories & Search */}
+      <div className="extensions-search-box">
+        <input
+          type="text"
+          className="extensions-input-search"
+          placeholder="Buscar extensão, LSP, autor..."
+          value={filterText}
+          onChange={(e) => setFilterText(e.target.value)}
+        />
+      </div>
+
+      <div className="extensions-categories">
+        {(["Todas", "LSP & Python", "Node & Next.js", "Frontend & Frameworks", "C/C++ & Go", "Containers & DevOps", "Recomendados"] as const).map((cat) => (
+          <button
+            key={cat}
+            type="button"
+            className={`ext-cat-chip ${category === cat ? "active" : ""}`}
+            onClick={() => setCategory(cat)}
+          >
+            {cat}
+          </button>
+        ))}
+      </div>
+
+
+
+
+      {/* Extension Items Grid */}
+      <div className="extensions-scroll-list">
+        {category !== "Recomendados" && (
+          <>
+            <div className="ext-section-header">
+              <span>INSTALADOS</span>
+              <span className="ext-section-count">{instalados.length}</span>
+            </div>
+            {instalados.map((ext) => {
+              const isEnabled = enabledMap[ext.id] ?? true;
+              return (
+                <div key={ext.id} className={`ext-card ${!isEnabled ? "disabled" : ""}`}>
+                  <div className="ext-card-header">
+                    <span className="ext-card-icon">{ext.icon}</span>
+                    <div className="ext-card-titles">
+                      <div className="ext-card-name-row">
+                        <span className="ext-card-name">{ext.name}</span>
+                        {ext.latency_ms && (
+                          <span className="ext-card-latency" title="Tempo de inicialização / latência LSP">
+                            ⏱️ {ext.latency_ms}ms
+                          </span>
+                        )}
+                      </div>
+                      <div className="ext-card-publisher-row">
+                        <span className={`ext-publisher-tag publisher-${ext.publisher.toLowerCase().replace(/[^a-z0-9]/g, "-")}`}>
+                          {ext.publisher}
+                        </span>
+                        <span className="ext-version-badge">v{ext.version}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <p className="ext-card-desc">{ext.description}</p>
+
+                  <div className="ext-card-footer">
+                    <span className={`ext-status-pill ${isEnabled ? "active" : "inactive"}`}>
+                      {isEnabled ? "Ativo" : "Desativado"}
+                    </span>
+                    <div className="ext-card-actions">
+                      <button
+                        type="button"
+                        className="ext-btn-secondary"
+                        onClick={() => setSelectedExt(ext)}
+                        title="Ver detalhes da extensão"
+                      >
+                        ⚙️ Config
+                      </button>
+                      <button
+                        type="button"
+                        className={`ext-btn-toggle ${isEnabled ? "disable" : "enable"}`}
+                        onClick={() => toggleExt(ext.id)}
+                      >
+                        {isEnabled ? "Desabilitar" : "Habilitar"}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </>
+        )}
+
+        {recomendados.length > 0 && (
+          <>
+            <div className="ext-section-header recommended">
+              <span>▼ Recomendados</span>
+              <span className="ext-section-badge-blue">7</span>
+            </div>
+            {recomendados.map((ext) => {
+              const isInstalled = enabledMap[ext.id] ?? false;
+              return (
+                <div key={ext.id} className="ext-card recommended-card">
+                  <div className="ext-card-header">
+                    <span className="ext-card-icon">{ext.icon}</span>
+                    <div className="ext-card-titles">
+                      <div className="ext-card-name-row">
+                        <span className="ext-card-name">{ext.name}</span>
+                        {ext.downloads && (
+                          <span className="ext-card-downloads" title="Downloads no marketplace">
+                            ⬇️ {ext.downloads} ★ {ext.rating}
+                          </span>
+                        )}
+                      </div>
+                      <div className="ext-card-publisher-row">
+                        <span className={`ext-publisher-tag publisher-${ext.publisher.toLowerCase().replace(/[^a-z0-9]/g, "-")}`}>
+                          {ext.publisher}
+                        </span>
+                        <span className="ext-version-badge">v{ext.version}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <p className="ext-card-desc">{ext.description}</p>
+
+                  <div className="ext-card-footer">
+                    <span className="ext-status-pill inactive">Recomendado</span>
+                    <div className="ext-card-actions">
+                      <button
+                        type="button"
+                        className="ext-btn-primary-install"
+                        onClick={() => toggleExt(ext.id)}
+                      >
+                        {isInstalled ? "✓ Instalado" : "Instalar"}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </>
+        )}
+      </div>
+
+      {/* Modal / Detail Popup */}
+      {selectedExt && (
+        <div className="ext-details-overlay" onClick={() => setSelectedExt(null)}>
+          <div className="ext-details-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="ext-details-modal-header">
+              <span className="ext-card-icon">{selectedExt.icon}</span>
+              <div>
+                <h4>{selectedExt.name}</h4>
+                <span className={`ext-publisher-tag publisher-${selectedExt.publisher}`}>
+                  {selectedExt.publisher}
+                </span>
+              </div>
+              <button type="button" className="close-btn" onClick={() => setSelectedExt(null)}>
+                ✕
+              </button>
+            </div>
+            <div className="ext-details-modal-body">
+              <p><strong>Descrição:</strong> {selectedExt.description}</p>
+              <p><strong>Versão:</strong> {selectedExt.version}</p>
+              <p><strong>Categoria:</strong> {selectedExt.category}</p>
+              <p><strong>ID do Pacote:</strong> <code>{selectedExt.id}</code></p>
+              {selectedExt.latency_ms && (
+                <p><strong>Latência Registrada:</strong> <code>{selectedExt.latency_ms}ms</code></p>
+              )}
+              <div className="ext-config-section">
+                <h5>Configurações de Execução</h5>
+                <label className="ext-checkbox-label">
+                  <input type="checkbox" defaultChecked /> Autostart junto com a IDE
+                </label>
+                <label className="ext-checkbox-label">
+                  <input type="checkbox" defaultChecked /> Modo de verificação estrita de tipos
+                </label>
+              </div>
+            </div>
+            <div className="ext-details-modal-footer">
+              <button type="button" className="packages-btn-primary" onClick={() => setSelectedExt(null)}>
+                Concluído
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="packages-footer">
+        <span className="status-dot active" />
+        <span>Suporte Pyrefly (Meta) & Python ativado na IDE agêntica</span>
+      </div>
+    </div>
+  );
+}
+
+

@@ -151,7 +151,16 @@ def wrap_untrusted_content(content: str, source_label: str = "dados_externos") -
     """Envolve conteúdos lidos de arquivos, saídas de comandos e terceiros em delimitadores
     seguros que previnem Indirect Prompt Injection e Tool Poisoning.
     """
-    clean_content = content.replace("</untrusted_content>", "&lt;/untrusted_content&gt;")
+    # A tag de fechamento real usa `source_label` interpolado — escapar a
+    # string fixa "</untrusted_content>" (o rótulo default) não neutraliza a
+    # tag de fechamento de verdade quando o chamador passa outro `source_label`
+    # (ex. "issue" em `agent/tools/vcs.py`), deixando conteúdo malicioso que
+    # contenha essa tag "fechar" a seção não confiável mais cedo e escapar do
+    # sandbox de contexto — exatamente o ataque que este wrapper existe para
+    # impedir.
+    closing_tag = f"</{source_label}_untrusted_content>"
+    escaped_closing_tag = closing_tag.replace("<", "&lt;").replace(">", "&gt;")
+    clean_content = content.replace(closing_tag, escaped_closing_tag)
     return (
         f'<{source_label}_untrusted_content trust_level="zero">\n'
         f"{clean_content}\n"

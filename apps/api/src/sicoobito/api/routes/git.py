@@ -22,7 +22,7 @@ from sicoobito.logging_setup import get_logger
 from sicoobito.router import env_editor
 from sicoobito.workspace import git as git_ops
 from sicoobito.workspace.git import GitError, get_git_user_config, open_repo, update_git_user_config
-from sicoobito.workspace.github import GitHubClient, GitHubError, _token_from_cli, resolve_token
+from sicoobito.workspace.github import GitHubClient, GitHubError, resolve_token
 
 log = get_logger(__name__)
 
@@ -463,9 +463,9 @@ class GitHubTokenTestRequest(BaseModel):
 async def get_github_config(settings: SettingsDep) -> dict[str, Any]:
     """Status e dados do perfil GitHub associado ao token atual."""
     raw_token = settings.github_token
-    token = resolve_token(raw_token)
+    token = await resolve_token(raw_token)
 
-    token_source = "settings" if raw_token else ("gh_cli" if _token_from_cli() else "none")
+    token_source = "settings" if raw_token else ("gh_cli" if token else "none")
 
     if not token:
         return {

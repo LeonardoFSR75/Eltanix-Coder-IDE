@@ -18,18 +18,9 @@ export class HttpError extends Error {
   }
 }
 
-function getAuthHeaders(): Record<string, string> {
-  if (typeof window !== "undefined") {
-    const token = localStorage.getItem("sicoobito_api_key");
-    if (token) return { Authorization: `Bearer ${token}` };
-  }
-  return {};
-}
-
 export async function get<T>(path: string): Promise<T> {
   const response = await fetch(`${GATEWAY}${path}`, {
     cache: "no-store",
-    headers: { ...getAuthHeaders() },
   });
   if (!response.ok) throw new HttpError(await describeError(response), response.status);
   return (await response.json()) as T;
@@ -38,7 +29,7 @@ export async function get<T>(path: string): Promise<T> {
 export async function post<T>(path: string, body?: unknown): Promise<T> {
   const response = await fetch(`${GATEWAY}${path}`, {
     method: "POST",
-    headers: { "content-type": "application/json", ...getAuthHeaders() },
+    headers: { "content-type": "application/json" },
     body: JSON.stringify(body ?? {}),
   });
   if (!response.ok) throw new HttpError(await describeError(response), response.status);
@@ -48,7 +39,7 @@ export async function post<T>(path: string, body?: unknown): Promise<T> {
 export async function put<T>(path: string, body: unknown): Promise<T> {
   const response = await fetch(`${GATEWAY}${path}`, {
     method: "PUT",
-    headers: { "content-type": "application/json", ...getAuthHeaders() },
+    headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
   });
   if (!response.ok) throw new HttpError(await describeError(response), response.status);
@@ -58,7 +49,7 @@ export async function put<T>(path: string, body: unknown): Promise<T> {
 export async function patch<T>(path: string, body: unknown): Promise<T> {
   const response = await fetch(`${GATEWAY}${path}`, {
     method: "PATCH",
-    headers: { "content-type": "application/json", ...getAuthHeaders() },
+    headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
   });
   if (!response.ok) throw new HttpError(await describeError(response), response.status);
@@ -68,7 +59,6 @@ export async function patch<T>(path: string, body: unknown): Promise<T> {
 export async function del<T>(path: string): Promise<T> {
   const response = await fetch(`${GATEWAY}${path}`, {
     method: "DELETE",
-    headers: { ...getAuthHeaders() },
   });
   if (!response.ok) throw new HttpError(await describeError(response), response.status);
   return (await response.json()) as T;
@@ -89,7 +79,7 @@ export async function streamEvents(
 ): Promise<void> {
   const response = await fetch(`${GATEWAY}${path}`, {
     method: "POST",
-    headers: { "content-type": "application/json", ...getAuthHeaders() },
+    headers: { "content-type": "application/json" },
     body: JSON.stringify(body ?? {}),
     signal,
   });

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 from typing import Any
 
@@ -21,7 +22,7 @@ from sicoobito.workspace.github import GitHubError
 )
 async def git_status(ctx: ToolContext, _args: dict[str, Any]) -> ToolResult:
     try:
-        estado = git_ops.status(Path(ctx.workspace_root))
+        estado = await asyncio.to_thread(git_ops.status, Path(ctx.workspace_root))
     except GitError as exc:
         return ToolResult.failure(str(exc))
 
@@ -52,8 +53,11 @@ async def git_status(ctx: ToolContext, _args: dict[str, Any]) -> ToolResult:
 )
 async def git_diff(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
     try:
-        saida = git_ops.diff(
-            Path(ctx.workspace_root), staged=args.get("staged", False), path=args.get("path")
+        saida = await asyncio.to_thread(
+            git_ops.diff,
+            Path(ctx.workspace_root),
+            staged=args.get("staged", False),
+            path=args.get("path"),
         )
     except GitError as exc:
         return ToolResult.failure(str(exc))
@@ -88,7 +92,7 @@ async def code_history(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
     root = Path(ctx.workspace_root)
 
     try:
-        hunks = git_ops.blame(root, path)
+        hunks = await asyncio.to_thread(git_ops.blame, root, path)
     except GitError as exc:
         return ToolResult.failure(str(exc))
 
@@ -96,7 +100,7 @@ async def code_history(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
         hunks = [h for h in hunks if h.start_line <= linha_alvo <= h.end_line]
 
     try:
-        co_mudancas = git_ops.co_change(root, path)
+        co_mudancas = await asyncio.to_thread(git_ops.co_change, root, path)
     except GitError:
         # Co-change é um extra sobre o blame; não falha a ferramenta inteira.
         co_mudancas = []
@@ -152,8 +156,11 @@ async def code_history(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
 )
 async def git_commit(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
     try:
-        sha = git_ops.commit(
-            Path(ctx.workspace_root), args["message"], paths=args.get("paths") or None
+        sha = await asyncio.to_thread(
+            git_ops.commit,
+            Path(ctx.workspace_root),
+            args["message"],
+            paths=args.get("paths") or None,
         )
     except GitError as exc:
         return ToolResult.failure(str(exc))
@@ -192,7 +199,7 @@ async def open_pull_request(ctx: ToolContext, args: dict[str, Any]) -> ToolResul
 
     root = Path(ctx.workspace_root)
     try:
-        git_ops.push(root, ctx.branch)
+        await asyncio.to_thread(git_ops.push, root, ctx.branch)
     except GitError as exc:
         return ToolResult.failure(f"push falhou: {exc}")
 

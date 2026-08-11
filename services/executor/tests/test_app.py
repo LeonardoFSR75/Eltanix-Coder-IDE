@@ -248,6 +248,9 @@ def test_create_sandbox_runs_new_container_when_none_exists(monkeypatch):
     assert body["reused"] is False
     assert body["host_path"] == "/host/projetos/minha-sessao"
     mock_client.containers.run.assert_called_once()
+    kwargs = mock_client.containers.run.call_args.kwargs
+    assert kwargs["environment"]["PIP_RETRIES"] == "0"
+    assert kwargs["environment"]["PIP_DISABLE_PIP_VERSION_CHECK"] == "1"
 
 
 def test_create_sandbox_reuses_existing_container(monkeypatch):

@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useToast } from "@/components/Toast";
 import { useIde } from "@/lib/ide-store";
-import { ToolCallCard } from "./agent/cards";
+import { hasDedicatedCard, ToolCallCard } from "./agent/cards";
 import type { LogLine, PendingAction, Session } from "./agent/sessionTypes";
 
 interface AgentPanelProps {
@@ -304,17 +304,18 @@ export function AgentPanel({ session, log, pending, running, onDecide, onPresetS
               }
 
               if (line.kind === "tool") {
-                if (line.tool && line.toolData) {
-                  const card = (
-                    <ToolCallCard
-                      tool={line.tool}
-                      content={line.toolContent ?? ""}
-                      data={line.toolData}
-                      ok={line.toolOk ?? true}
-                      sessionId={session?.session_id ?? null}
-                    />
+                if (line.tool && line.toolData && hasDedicatedCard(line.tool)) {
+                  return (
+                    <div key={index}>
+                      <ToolCallCard
+                        tool={line.tool}
+                        content={line.toolContent ?? ""}
+                        data={line.toolData}
+                        ok={line.toolOk ?? true}
+                        sessionId={session?.session_id ?? null}
+                      />
+                    </div>
                   );
-                  if (card) return <div key={index}>{card}</div>;
                 }
                 return (
                   <div key={index} className="stream-badge tool">
@@ -421,6 +422,7 @@ export function AgentPanel({ session, log, pending, running, onDecide, onPresetS
                   <button
                     type="button"
                     className="btn-approve"
+                    disabled={running}
                     onClick={() =>
                       onDecide(Object.fromEntries(pending.map((a) => [a.tool_call_id, true])))
                     }
@@ -430,6 +432,7 @@ export function AgentPanel({ session, log, pending, running, onDecide, onPresetS
                   <button
                     type="button"
                     className="btn-reject"
+                    disabled={running}
                     onClick={() =>
                       onDecide(Object.fromEntries(pending.map((a) => [a.tool_call_id, false])))
                     }
@@ -440,7 +443,7 @@ export function AgentPanel({ session, log, pending, running, onDecide, onPresetS
                     <button
                       type="button"
                       className="btn-confirm-decisions"
-                      disabled={!allDecided}
+                      disabled={!allDecided || running}
                       onClick={() => onDecide(decisions)}
                       title={
                         allDecided ? "Confirmar decisões item a item" : "Decida cada ação antes de confirmar"

@@ -12,6 +12,7 @@ from sicoobito.api.routes.lsp import ws_router as lsp_ws_router
 from sicoobito.api.routes.mcp import router as mcp_router
 from sicoobito.api.routes.metrics import router as metrics_router
 from sicoobito.api.routes.notes import router as notes_router
+from sicoobito.api.routes.packages import router as packages_router
 from sicoobito.api.routes.projects import router as projects_router
 from sicoobito.api.routes.skills import router as skills_router
 from sicoobito.api.routes.telemetry import router as telemetry_router
@@ -35,6 +36,7 @@ __all__ = [
     "mcp_router",
     "metrics_router",
     "notes_router",
+    "packages_router",
     "projects_router",
     "skills_router",
     "telemetry_router",

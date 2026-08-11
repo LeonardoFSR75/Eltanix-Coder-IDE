@@ -8,6 +8,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { usePathname } from "next/navigation";
 import { get } from "@/lib/client";
 import { useAuth } from "@/components/providers/AuthContext";
 
@@ -45,6 +46,7 @@ const STORAGE_KEY = "sicoobito_current_project";
 
 export function ProjectProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
+  const pathname = usePathname();
   const [projects, setProjects] = useState<ProjectRecordView[]>([]);
   const [currentProject, setCurrentProjectState] = useState<string | null>(null);
 
@@ -71,6 +73,14 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
   // sem query param. `window.location.search` em vez de `useSearchParams()`
   // — mesmo padrão já usado por `AgentDock.tsx` para não exigir um limite
   // de Suspense em volta do provider (que fica na raiz do app).
+  //
+  // Depende de `pathname`: como este provider vive na raiz do layout e nunca
+  // desmonta, um efeito com `deps=[]` só rodaria uma vez por sessão da SPA —
+  // navegar via `<Link href="/ide?project=B">` a partir de outra página (ex.
+  // Central de Projetos) trocaria a URL sem nunca reler o query param, e o
+  // IDE abriria silenciosamente o projeto antigo. `usePathname()` muda a cada
+  // navegação entre rotas (sem precisar de `useSearchParams()`/Suspense) e
+  // por essa hora `window.location.search` já reflete a URL nova.
   useEffect(() => {
     if (typeof window === "undefined") return;
     const fromQuery = new URLSearchParams(window.location.search).get("project");
@@ -81,7 +91,7 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
       const stored = window.localStorage.getItem(STORAGE_KEY);
       if (stored) setCurrentProjectState(stored);
     }
-  }, []);
+  }, [pathname]);
 
   const setCurrentProject = useCallback((slug: string | null) => {
     setCurrentProjectState(slug);

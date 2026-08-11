@@ -332,6 +332,7 @@ def build_graph(engine: RouterEngine, context: ToolContext):
                     approvals=aprovacoes,
                     reasons=motivos,
                     decided_by=decidido_por,
+                    project_slug=context.project_slug or None,
                 )
             except Exception as exc:
                 # Auditoria não pode travar a execução do agente — um soluço

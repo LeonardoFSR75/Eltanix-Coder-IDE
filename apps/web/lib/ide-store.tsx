@@ -49,7 +49,7 @@ export interface FileEntry {
   size_bytes: number;
 }
 
-export type PanelId = "explorer" | "search" | "git" | "debug" | "browser";
+export type PanelId = "explorer" | "search" | "git" | "debug" | "browser" | "packages" | "extensions";
 
 /** Onde posicionar o cursor ao abrir — usado por "ir para definição" e busca. */
 export interface Reveal {
@@ -595,8 +595,8 @@ export function IdeProvider({ children }: { children: ReactNode }) {
     // Limpa o cache fora do React (editor-buffer-cache.ts) também: sem isso
     // o Editor acharia que já tem o conteúdo certo em memória e nunca
     // buscaria a versão nova do disco.
-    clearBuffer(path);
-  }, []);
+    if (project) clearBuffer(project, path);
+  }, [project]);
 
   const value = useMemo<IdeState>(
     () => ({

@@ -49,7 +49,26 @@ class GraphStore:
         return node
 
     async def add_edge(self, edge_in: GraphEdgeCreate) -> GraphEdge:
-        """Adiciona ou atualiza uma aresta no grafo."""
+        """Adiciona ou atualiza uma aresta no grafo.
+
+        Valida que os dois nós pertencem ao mesmo workspace da aresta antes de
+        gravar — sem isso, `GraphRAGQueryEngine.search`/`get_ego_subgraph`
+        confiariam numa invariante nunca verificada na escrita, e um bug
+        upstream (ou uma futura feature de merge entre projetos) vazaria nó de
+        um workspace pra busca de outro sem RBAC nenhum pra conter.
+        """
+        endpoints = await self.session.execute(
+            select(GraphNode.id, GraphNode.workspace).where(
+                GraphNode.id.in_([edge_in.source_id, edge_in.target_id])
+            )
+        )
+        workspaces = {row.workspace for row in endpoints}
+        if workspaces - {edge_in.workspace}:
+            raise ValueError(
+                f"add_edge: source_id/target_id pertencem a workspace diferente de "
+                f"{edge_in.workspace!r} ({workspaces!r})"
+            )
+
         stmt = select(GraphEdge).where(
             GraphEdge.source_id == edge_in.source_id,
             GraphEdge.target_id == edge_in.target_id,
@@ -249,7 +268,9 @@ class GraphStore:
         await self.session.flush()
 
         E = len(edges)
-        density = (2.0 * E / (N * (N - 1))) if N > 1 else 0.0
+        # GraphEdge é direcionado (ver db/models.py) — a fórmula de grafo
+        # não-direcionado (2E/(N(N-1))) superestimava a densidade em até 2x.
+        density = (E / (N * (N - 1))) if N > 1 else 0.0
 
         return {
             "total_nodes": N,

@@ -53,12 +53,21 @@ export default function AuditPage() {
     addToast("Relatório de Auditoria exportado em formato JSON!", "success");
   };
 
+  // `actor`/`action`/`details` etc. podem conter texto vindo de nomes de
+  // projeto/arquivo/skill ou de conteúdo influenciado pelo agente/MCP — sem
+  // neutralizar um valor começando com =, +, -, @, um Excel/Sheets que abrir
+  // o CSV pode interpretar a célula como fórmula (CSV/formula injection).
+  const csvCell = (value: string) => {
+    const escaped = value.replace(/"/g, '""');
+    return /^[=+\-@]/.test(escaped) ? `'${escaped}` : escaped;
+  };
+
   const handleExportCSV = () => {
     const headers = "ID,CreatedAt,Actor,Module,Action,RiskLevel,Status,Details\n";
     const rows = filteredLogs
       .map(
         (l) =>
-          `"${l.id}","${l.created_at}","${l.actor}","${l.module}","${l.action}","${l.risk_level}","${l.status}","${l.details.replace(/"/g, '""')}"`,
+          `"${csvCell(l.id)}","${csvCell(l.created_at)}","${csvCell(l.actor)}","${csvCell(l.module)}","${csvCell(l.action)}","${csvCell(l.risk_level)}","${csvCell(l.status)}","${csvCell(l.details)}"`,
       )
       .join("\n");
 

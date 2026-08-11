@@ -158,6 +158,12 @@ class Sandbox:
                     environment={
                         "HOME": "/tmp",
                         "PYTHONDONTWRITEBYTECODE": "1",
+                        "PIP_DISABLE_PIP_VERSION_CHECK": "1",
+                        "PIP_NO_INPUT": "1",
+                        "PIP_RETRIES": "0",
+                        "PIP_DEFAULT_TIMEOUT": "2",
+                        "VIRTUAL_ENV": "/workspace/.venv",
+                        "PATH": "/workspace/.venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
                         **self.config.env,
                     },
                     labels={LABEL: self.session_id},

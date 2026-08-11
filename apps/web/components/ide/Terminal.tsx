@@ -115,7 +115,7 @@ export function TerminalPanel({
       setEstado("erro");
       setDetalhe("falha na conexão do WebSocket");
     };
-  }, [sessionId]);
+  }, [sessionId, project, onSessionCreated]);
 
   useEffect(() => {
     let disposed = false;
@@ -186,6 +186,14 @@ export function TerminalPanel({
   }, []);
 
   useEffect(() => {
+    // A guarda no topo de `conectar` (`if (socketRef.current) return`) existe
+    // para não abrir duas conexões em paralelo, mas isso também bloqueava
+    // reconectar quando `sessionId`/`project` mudam com uma conexão antiga
+    // ainda aberta: comandos digitados continuavam indo para o sandbox da
+    // sessão/projeto anterior, sem aviso nenhum. Fechar aqui antes de chamar
+    // `conectar()` de novo garante que a troca sempre reconecta no alvo certo.
+    socketRef.current?.close();
+    socketRef.current = null;
     void conectar();
   }, [sessionId, project, conectar]);
 

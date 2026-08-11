@@ -19,24 +19,27 @@ class GraphRAGQueryEngine:
     ) -> GraphRAGResult:
         """Executa busca GraphRAG combinando Full-Text + Expansão Multi-Hop."""
         # 1. Encontra Seed Nodes via Fulltext / Trigram no Postgres
+        # `websearch_to_tsquery` (não `to_tsquery`) tolera aspas e operadores
+        # digitados pelo usuário sem estourar erro de sintaxe — mesmo motivo
+        # documentado em context/documents/notes `store.py`; `to_tsquery` cru
+        # lança erro do Postgres em input comum (ex. "auth:", parêntese solto).
         sql = text(
             """
             SELECT id, name, entity_type, canonical_id, summary, workspace
             FROM graph_node
             WHERE workspace = :workspace
-              AND (tsv @@ to_tsquery('simple', :query_ts) OR name ILIKE :query_like)
+              AND (tsv @@ websearch_to_tsquery('simple', :query) OR name ILIKE :query_like)
             ORDER BY created_at DESC
             LIMIT :top_k;
             """
         )
-        query_ts = " | ".join(query.strip().split()) if query.strip() else "a"
         query_like = f"%{query.strip()}%"
 
         result = await self.session.execute(
             sql,
             {
                 "workspace": workspace,
-                "query_ts": query_ts,
+                "query": query.strip() or "a",
                 "query_like": query_like,
                 "top_k": top_k,
             },
@@ -50,6 +53,12 @@ class GraphRAGQueryEngine:
             seed_node_ids = [n.id for n in recent]
 
         # 2. Travessia Multi-Hop de Grafo (CTE Recursiva)
+        # `workspace` filtra toda etapa da travessia — mesma correção e mesmo
+        # motivo documentados em `GraphStore.get_ego_subgraph`: sem isso a CTE
+        # atravessa `graph_edge` sem checar workspace nenhum, e um seed node
+        # de um workspace vazaria nó/aresta de outro (edges referenciam UUID
+        # de nó direto, não canonical_id, então unicidade de canonical_id não
+        # protege a travessia).
         all_node_ids: set = set(seed_node_ids)
 
         if seed_node_ids:
@@ -58,7 +67,7 @@ class GraphRAGQueryEngine:
                 WITH RECURSIVE graph_expansion AS (
                     SELECT id AS node_id, 0 AS hop
                     FROM graph_node
-                    WHERE id = ANY(:seed_ids)
+                    WHERE id = ANY(:seed_ids) AND workspace = :workspace
 
                     UNION
 
@@ -68,7 +77,8 @@ class GraphRAGQueryEngine:
                         END AS node_id,
                         ge.hop + 1 AS hop
                     FROM graph_expansion ge
-                    JOIN graph_edge e ON e.source_id = ge.node_id OR e.target_id = ge.node_id
+                    JOIN graph_edge e ON (e.source_id = ge.node_id OR e.target_id = ge.node_id)
+                        AND e.workspace = :workspace
                     WHERE ge.hop < :max_hops AND e.weight >= 0.5
                 )
                 SELECT DISTINCT node_id FROM graph_expansion;
@@ -76,13 +86,19 @@ class GraphRAGQueryEngine:
             )
             cte_res = await self.session.execute(
                 cte_sql,
-                {"seed_ids": [str(nid) for nid in seed_node_ids], "max_hops": max_hops},
+                {
+                    "seed_ids": [str(nid) for nid in seed_node_ids],
+                    "max_hops": max_hops,
+                    "workspace": workspace,
+                },
             )
             for r in cte_res.fetchall():
                 all_node_ids.add(r[0])
 
         nodes_result = await self.session.execute(
-            select(GraphNode).where(GraphNode.id.in_(list(all_node_ids)))
+            select(GraphNode).where(
+                GraphNode.id.in_(list(all_node_ids)), GraphNode.workspace == workspace
+            )
         )
         nodes = list(nodes_result.scalars().all())
 
@@ -90,6 +106,7 @@ class GraphRAGQueryEngine:
             select(GraphEdge).where(
                 GraphEdge.source_id.in_(list(all_node_ids)),
                 GraphEdge.target_id.in_(list(all_node_ids)),
+                GraphEdge.workspace == workspace,
             )
         )
         edges = list(edges_result.scalars().all())

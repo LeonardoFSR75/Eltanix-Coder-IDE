@@ -73,9 +73,18 @@ async def list_notes(session: AsyncSession, *, project_slug: str | None = None) 
     return list(rows)
 
 
-async def list_titles(session: AsyncSession) -> dict[str, str]:
-    """Mapa `título em minúsculas -> id (str)`, usado para resolver `[[wikilinks]]`."""
-    rows = (await session.execute(select(Note.id, Note.title))).all()
+async def list_titles(session: AsyncSession, *, project_slug: str | None = None) -> dict[str, str]:
+    """Mapa `título em minúsculas -> id (str)`, usado para resolver `[[wikilinks]]`.
+
+    Mesmo filtro de projeto de `list_notes`/`hybrid_search` (projeto + notas
+    globais) — sem isso, um `[[Título Compartilhado]]` em qualquer nota
+    resolvia para a primeira nota de mesmo título encontrada em QUALQUER
+    projeto do banco, gravando um link cross-projeto sem o usuário pedir.
+    """
+    stmt = select(Note.id, Note.title)
+    if project_slug:
+        stmt = stmt.where((Note.project_slug == project_slug) | (Note.project_slug.is_(None)))
+    rows = (await session.execute(stmt)).all()
     return {title.lower(): str(note_id) for note_id, title in rows}
 
 

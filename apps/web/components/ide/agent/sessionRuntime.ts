@@ -133,7 +133,11 @@ export class AgentSessionRuntime {
   };
 
   async run(approvals?: Record<string, { approved: boolean; reason: string }>) {
-    if (!this.session) return;
+    // Mesma guarda de `sendMessage`: sem isso, um duplo clique em "Aprovar
+    // Tudo" (ou aprovar seguido de recusar antes do card sumir) dispara duas
+    // chamadas concorrentes, e a segunda sobrescreve `abortController` da
+    // primeira, órfãozando o stream anterior sem forma de abortá-lo.
+    if (!this.session || this.running) return;
     this.running = true;
     this.pending = [];
     this.onChange();
@@ -158,7 +162,7 @@ export class AgentSessionRuntime {
   }
 
   async decide(decisions: Record<string, boolean>) {
-    if (!this.session) return;
+    if (!this.session || this.running) return;
     const approvals = Object.fromEntries(
       this.pending.map((action) => {
         const approved = decisions[action.tool_call_id] ?? false;

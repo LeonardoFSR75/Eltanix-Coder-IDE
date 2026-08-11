@@ -25,12 +25,26 @@ router = APIRouter(prefix="/api/mcp", tags=["mcp"], dependencies=[AuthDep])
 _ENV_VAR_UNSAFE_RE = re.compile(r"[^A-Z0-9_]")
 
 
-def _env_var_name(server_name: str, key: str) -> str:
-    def _sanitize(value: str) -> str:
-        sanitized = _ENV_VAR_UNSAFE_RE.sub("_", value.upper())
-        return f"_{sanitized}" if not sanitized or sanitized[0].isdigit() else sanitized
+def _sanitize_env_var_part(value: str) -> str:
+    sanitized = _ENV_VAR_UNSAFE_RE.sub("_", value.upper())
+    return f"_{sanitized}" if not sanitized or sanitized[0].isdigit() else sanitized
 
-    return f"MCP_{_sanitize(server_name)}_{_sanitize(key)}"
+
+def _env_var_name(server_name: str, key: str) -> str:
+    return f"MCP_{_sanitize_env_var_part(server_name)}_{_sanitize_env_var_part(key)}"
+
+
+def _colliding_server_name(name: str, existing_names: list[str]) -> str | None:
+    """Nomes de servidor distintos (ex. "my-server" e "my.server") sanitizam
+    para a mesma variável de ambiente — sem checar isso, salvar o segundo
+    sobrescreveria em `.env` o segredo referenciado pelo placeholder do
+    primeiro, que passaria a autenticar com a credencial errada sem aviso
+    nenhum."""
+    sanitized = _sanitize_env_var_part(name)
+    for existing in existing_names:
+        if existing != name and _sanitize_env_var_part(existing) == sanitized:
+            return existing
+    return None
 
 
 def _externalize_secrets(entry: dict[str, Any], settings: SettingsDep) -> dict[str, Any]:
@@ -124,6 +138,16 @@ async def create_server(
     payload: MCPServerIn, request: Request, settings: SettingsDep
 ) -> dict[str, Any]:
     data = config_editor.load(settings.mcp_config_file)
+    existing_names = [s.get("name", "") for s in data["servers"]]
+    if colliding := _colliding_server_name(payload.name, existing_names):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                f"nome de servidor colide com {colliding!r} depois de sanitizado para "
+                "variável de ambiente — escolha um nome que não dependa só de "
+                "pontuação para se distinguir"
+            ),
+        )
     entry = _externalize_secrets(payload.model_dump(), settings)
     try:
         config_editor.append_server(data, entry)
@@ -147,6 +171,16 @@ async def update_server(
     name: str, payload: MCPServerIn, request: Request, settings: SettingsDep
 ) -> dict[str, Any]:
     data = config_editor.load(settings.mcp_config_file)
+    existing_names = [s.get("name", "") for s in data["servers"] if s.get("name") != name]
+    if colliding := _colliding_server_name(payload.name, existing_names):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                f"nome de servidor colide com {colliding!r} depois de sanitizado para "
+                "variável de ambiente — escolha um nome que não dependa só de "
+                "pontuação para se distinguir"
+            ),
+        )
     entry = _externalize_secrets(payload.model_dump(), settings)
     try:
         config_editor.update_server(data, name, entry)

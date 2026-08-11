@@ -23,19 +23,28 @@ interface Buffer {
 
 const cache = new Map<string, Buffer>();
 
-export function getBuffer(path: string): Buffer | undefined {
-  return cache.get(path);
+// Chave inclui o projeto: dois projetos com um arquivo de mesmo caminho
+// relativo (ex. "README.md", comuníssimo) não podem compartilhar entrada —
+// senão trocar de projeto reexibiria (e poderia salvar por cima) o conteúdo
+// do projeto anterior sob o nome de arquivo certo do projeto errado.
+function key(project: string, path: string): string {
+  return `${project}::${path}`;
 }
 
-export function setBuffer(path: string, buffer: Buffer): void {
-  cache.set(path, buffer);
+export function getBuffer(project: string, path: string): Buffer | undefined {
+  return cache.get(key(project, path));
 }
 
-export function updateBufferContent(path: string, content: string): void {
-  const atual = cache.get(path);
-  cache.set(path, { content, original: atual?.original ?? content, language: atual?.language ?? null });
+export function setBuffer(project: string, path: string, buffer: Buffer): void {
+  cache.set(key(project, path), buffer);
 }
 
-export function clearBuffer(path: string): void {
-  cache.delete(path);
+export function updateBufferContent(project: string, path: string, content: string): void {
+  const k = key(project, path);
+  const atual = cache.get(k);
+  cache.set(k, { content, original: atual?.original ?? content, language: atual?.language ?? null });
+}
+
+export function clearBuffer(project: string, path: string): void {
+  cache.delete(key(project, path));
 }

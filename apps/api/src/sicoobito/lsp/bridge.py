@@ -117,20 +117,25 @@ class LanguageServerProcess:
 
     async def stop(self) -> None:
         processo = self._processo
-        self._processo = None
         if self._stderr_task is not None:
             self._stderr_task.cancel()
             self._stderr_task = None
         if processo is None or processo.returncode is not None:
+            self._processo = None
             return
 
         # Pedir para sair antes de matar: o pyright grava cache em disco no
         # `shutdown`, e um SIGKILL faz a próxima sessão reindexar do zero.
+        # `_escrever` lê `self._processo` — precisa continuar setado até aqui,
+        # senão toda chamada levanta LspError (engolida pelo except abaixo) e
+        # shutdown/exit nunca chegam a ser enviados de verdade.
         try:
             await self._escrever({"jsonrpc": "2.0", "id": -1, "method": "shutdown"})
             await self._escrever({"jsonrpc": "2.0", "method": "exit"})
         except Exception:
             pass
+        finally:
+            self._processo = None
 
         try:
             await asyncio.wait_for(processo.wait(), timeout=_ENCERRAMENTO_SEGUNDOS)

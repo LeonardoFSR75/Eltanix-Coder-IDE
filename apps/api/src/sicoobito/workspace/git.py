@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+import sys
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -24,6 +25,16 @@ log = get_logger(__name__)
 
 # Worktrees do agente vivem aqui, fora da árvore de trabalho e ignorados.
 WORKTREE_DIR = ".sicoobito/worktrees"
+
+# `repo.git.push(...)` (rede/SSH) roda sem timeout algum por padrão — uma
+# passphrase SSH pedida interativamente ou um host inalcançável trava o
+# processo (e, se chamado via `asyncio.to_thread`, o worker do pool) para
+# sempre. GitPython não suporta `kill_after_timeout` no Windows (levanta
+# GitCommandError), então só aplicamos onde o runtime de produção (containers
+# Linux, ver docker-compose.yml) de fato suporta.
+_PUSH_TIMEOUT_KWARGS: dict[str, float] = (
+    {} if sys.platform == "win32" else {"kill_after_timeout": 30.0}
+)
 
 
 class GitError(RuntimeError):
@@ -280,7 +291,7 @@ def push(root: Path, branch: str, *, remote: str = "origin", set_upstream: bool 
         raise GitError(f"Remote '{remote}' não existe neste repositório.")
     try:
         args = ["-u", remote, branch] if set_upstream else [remote, branch]
-        repo.git.push(*args)
+        repo.git.push(*args, **_PUSH_TIMEOUT_KWARGS)
     except GitCommandError as exc:
         raise GitError(f"git push falhou: {exc}") from exc
     log.info("git.push", branch=branch, remote=remote)

@@ -32,11 +32,13 @@ class NoteService:
         self.engine = engine
         self.trace_recorder = trace_recorder
 
-    async def _resolve_links(self, session: Any, content: str) -> list[str]:
+    async def _resolve_links(
+        self, session: Any, content: str, *, project_slug: str | None = None
+    ) -> list[str]:
         titles = _WIKILINK_RE.findall(content)
         if not titles:
             return []
-        by_title = await store.list_titles(session)
+        by_title = await store.list_titles(session, project_slug=project_slug)
         links: list[str] = []
         for raw in titles:
             note_id = by_title.get(raw.strip().lower())
@@ -72,7 +74,7 @@ class NoteService:
         self, *, title: str, content: str, tags: list[str], project_slug: str | None = None
     ) -> Note:
         async with session_scope() as session:
-            links = await self._resolve_links(session, content)
+            links = await self._resolve_links(session, content, project_slug=project_slug)
             note = await store.create_note(
                 session, title=title, content=content, tags=tags, project_slug=project_slug
             )
@@ -90,7 +92,12 @@ class NoteService:
         self, note_id: uuid.UUID, *, title: str, content: str, tags: list[str]
     ) -> Note | None:
         async with session_scope() as session:
-            links = await self._resolve_links(session, content)
+            # `project_slug` não muda no update — busca a nota já existente só
+            # para saber a qual projeto os wikilinks devem ficar restritos.
+            existing = await store.get_note(session, note_id)
+            if existing is None:
+                return None
+            links = await self._resolve_links(session, content, project_slug=existing.project_slug)
             note = await store.update_note(
                 session, note_id, title=title, content=content, tags=tags, links=links
             )

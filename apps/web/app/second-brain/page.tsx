@@ -30,22 +30,31 @@ export default function SecondBrainPage() {
     setEditTags(note.tags.join(" "));
   }, []);
 
+  // Guarda contra resposta fora de ordem: sem isso, trocar de projeto duas
+  // vezes rápido pode fazer a resposta do projeto antigo chegar depois da do
+  // novo e sobrescrever a lista (e a nota selecionada) com dados do projeto
+  // errado.
+  const requestIdRef = useRef(0);
+
   const refreshNotes = useCallback(async () => {
+    const requestId = ++requestIdRef.current;
     try {
       const loaded = await listNotes(currentProject);
+      if (requestIdRef.current !== requestId) return null;
       setNotes(loaded);
       return loaded;
     } catch (err) {
+      if (requestIdRef.current !== requestId) return null;
       addToast(err instanceof Error ? err.message : "Falha ao carregar notas.", "error");
       return [];
     } finally {
-      setLoading(false);
+      if (requestIdRef.current === requestId) setLoading(false);
     }
   }, [addToast, currentProject]);
 
   useEffect(() => {
     refreshNotes().then((loaded) => {
-      if (loaded.length > 0) selectNote(loaded[0]);
+      if (loaded && loaded.length > 0) selectNote(loaded[0]);
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentProject]);

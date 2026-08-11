@@ -31,6 +31,14 @@ class ServerSpec:
 # o WebSocket. Nenhum servidor abre porta própria — não há o que expor por engano.
 _SPECS: tuple[ServerSpec, ...] = (
     ServerSpec(
+        id="pyrefly",
+        command=["pyrefly", "lsp"],
+        languages=("python",),
+        initialization_options={
+            "python": {"analysis": {"typeCheckingMode": "basic", "useLibraryCodeForTypes": True}}
+        },
+    ),
+    ServerSpec(
         id="pyright",
         command=["pyright-langserver", "--stdio"],
         languages=("python",),
@@ -71,26 +79,80 @@ _SPECS: tuple[ServerSpec, ...] = (
         command=["bash-language-server", "start"],
         languages=("shellscript", "bash"),
     ),
+    ServerSpec(
+        id="clangd",
+        command=["clangd", "--background-index"],
+        languages=("c", "cpp", "objc", "objcpp"),
+    ),
+    ServerSpec(
+        id="gopls",
+        command=["gopls"],
+        languages=("go", "gomod"),
+    ),
+    ServerSpec(
+        id="ruby-lsp",
+        command=["ruby-lsp"],
+        languages=("ruby",),
+    ),
+    ServerSpec(
+        id="dockerfile",
+        command=["docker-langserver", "--stdio"],
+        languages=("dockerfile",),
+    ),
+    ServerSpec(
+        id="volar",
+        command=["vue-language-server", "--stdio"],
+        languages=("vue",),
+    ),
+    ServerSpec(
+        id="svelte",
+        command=["svelteserver", "--stdio"],
+        languages=("svelte",),
+    ),
+    ServerSpec(
+        id="tailwindcss",
+        command=["tailwindcss-language-server", "--stdio"],
+        languages=("html", "css", "javascriptreact", "typescriptreact", "vue", "svelte"),
+    ),
+    ServerSpec(
+        id="angular",
+        command=["ngserver", "--stdio"],
+        languages=("html", "typescript"),
+    ),
 )
 
-_POR_LINGUAGEM: dict[str, ServerSpec] = {
-    linguagem: spec for spec in _SPECS for linguagem in spec.languages
-}
 
 
-def server_for_language(language: str) -> ServerSpec | None:
-    return _POR_LINGUAGEM.get(language)
+
+def server_for_language(language: str, preferred_server: str | None = None) -> ServerSpec | None:
+    candidatos = [spec for spec in _SPECS if language in spec.languages]
+    if not candidatos:
+        return None
+    if preferred_server:
+        for spec in candidatos:
+            if spec.id == preferred_server:
+                return spec
+    # Retorna o primeiro candidato disponível; se nenhum estiver instalado no host,
+    # retorna o primeiro candidato como fallback para que o teste/ponte possa reportar o comando ausente.
+    for spec in candidatos:
+        if spec.available:
+            return spec
+    return candidatos[0]
 
 
 def supported_languages(*, only_installed: bool = True) -> dict[str, str]:
-    """Linguagem → id do servidor, para o front saber quando nem tentar abrir.
+    """Linguagem → id do servidor preferencial/ativo.
 
     Filtrar pelo que está instalado importa: a imagem pode ser construída sem um
     servidor, e o editor precisa degradar em silêncio em vez de abrir um
     WebSocket que morre.
     """
-    return {
-        linguagem: spec.id
-        for linguagem, spec in _POR_LINGUAGEM.items()
-        if not only_installed or spec.available
-    }
+    resultado: dict[str, str] = {}
+    for spec in _SPECS:
+        if only_installed and not spec.available:
+            continue
+        for lang in spec.languages:
+            if lang not in resultado:
+                resultado[lang] = spec.id
+    return resultado
+

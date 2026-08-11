@@ -153,7 +153,7 @@ async def create_project(payload: ProjectCreateIn, request: Request) -> dict[str
                     from sicoobito.workspace.github import GitHubClient, resolve_token
 
                     settings = get_settings()
-                    token = resolve_token(settings.github_token)
+                    token = await resolve_token(settings.github_token)
                     if token:
                         gh = GitHubClient(token)
                         repo_data = await gh.create_repository(

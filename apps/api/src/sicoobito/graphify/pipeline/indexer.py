@@ -30,7 +30,6 @@ class GraphIndexer:
         content = payload.get("content", "")
 
         tags = extract_tags(content)
-        canonical_id = f"{source_type}:{title}"
 
         # Determine entity_type formatting
         type_label = source_type.capitalize()
@@ -40,6 +39,14 @@ class GraphIndexer:
             type_label = "Module"
         elif source_type in ("adr",):
             type_label = "ADR"
+
+        # `canonical_id` usa `type_label` (já normalizado acima), não o
+        # `source_type` bruto: sem isso, o mesmo arquivo indexado duas vezes
+        # por caminhos que usam `source_type`s equivalentes mas distintos (ex.
+        # "python" do scanner de diretório vs. "code" de uma chamada manual a
+        # `/api/graphify/index`) gerava dois `GraphNode` para o mesmo arquivo
+        # em vez de um upsert no mesmo nó.
+        canonical_id = f"{type_label.lower()}:{title}"
 
         main_node_in = GraphNodeCreate(
             workspace=workspace,

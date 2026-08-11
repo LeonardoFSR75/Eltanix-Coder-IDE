@@ -40,6 +40,7 @@ def _view(entry: Any) -> dict[str, Any]:
         "risk_level": entry.risk_level,
         "status": entry.status,
         "session_id": entry.session_id,
+        "project_slug": entry.project_slug,
         "metadata": entry.event_metadata,
     }
 
@@ -50,11 +51,17 @@ async def list_audit(
     module: str | None = None,
     risk_level: str | None = None,
     q: str | None = None,
+    project_slug: str | None = None,
     limit: int = Query(default=100, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
 ) -> dict[str, Any]:
     entries = await _service(request).list_all(
-        module=module, risk_level=risk_level, q=q, limit=limit, offset=offset
+        module=module,
+        risk_level=risk_level,
+        q=q,
+        project_slug=project_slug,
+        limit=limit,
+        offset=offset,
     )
     return {"entries": [_view(e) for e in entries]}
 
