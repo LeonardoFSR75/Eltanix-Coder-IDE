@@ -4,7 +4,9 @@ from sicoobito.api.routes.audit import router as audit_router
 from sicoobito.api.routes.auth import router as auth_router
 from sicoobito.api.routes.browser import router as browser_router
 from sicoobito.api.routes.context import router as context_router
+from sicoobito.api.routes.containers import router as containers_router
 from sicoobito.api.routes.documents import router as documents_router
+
 from sicoobito.api.routes.git import router as git_router
 from sicoobito.api.routes.health import router as health_router
 from sicoobito.api.routes.lsp import router as lsp_router
@@ -27,7 +29,9 @@ __all__ = [
     "auth_router",
     "browser_router",
     "context_router",
+    "containers_router",
     "documents_router",
+
     "git_router",
     "graphify_router",
     "health_router",

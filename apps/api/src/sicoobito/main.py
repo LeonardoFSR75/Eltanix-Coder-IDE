@@ -24,7 +24,9 @@ from sicoobito.api.routes import (
     auth_router,
     browser_router,
     context_router,
+    containers_router,
     documents_router,
+
     git_router,
     graphify_router,
     health_router,
@@ -328,7 +330,9 @@ def create_app() -> FastAPI:
     app.include_router(workspace_ws_router)
     app.include_router(projects_router)
     app.include_router(packages_router)
+    app.include_router(containers_router)
     app.include_router(git_router)
+
     app.include_router(lsp_router)
     app.include_router(lsp_ws_router)
 

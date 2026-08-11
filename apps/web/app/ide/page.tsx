@@ -3,7 +3,8 @@
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { BrowserPanel, DebugPanel, Explorer, ExtensionsPanel, GitPanel, PackagesPanel, SearchPanel } from "@/components/ide/Panels";
+import { BrowserPanel, ContainersPanel, DebugPanel, Explorer, ExtensionsPanel, GitPanel, PackagesPanel, SearchPanel } from "@/components/ide/Panels";
+
 import { StatusBar } from "@/components/ide/StatusBar";
 import { TopMenuBar } from "@/components/ide/TopMenuBar";
 import { IdeProvider, useIde, type PanelId } from "@/lib/ide-store";
@@ -155,7 +156,9 @@ function Shell() {
       { id: "git", title: "Mostrar controle de versão", run: () => ide.setPanel("git") },
       { id: "packages", title: "Mostrar pacotes e dependências (requirements.txt)", run: () => ide.setPanel("packages") },
       { id: "extensions", title: "Mostrar extensões e linguagens (Pyrefly, Python...)", shortcut: "Ctrl+Shift+X", run: () => ide.setPanel("extensions") },
+      { id: "containers", title: "Mostrar containers e Docker", shortcut: "Ctrl+Shift+C", run: () => ide.setPanel("containers") },
       { id: "browser", title: "Mostrar navegador", run: () => ide.setPanel("browser") },
+
       { id: "agent", title: "Mostrar agente", run: () => ide.setAgentDockOpen(true) },
       { id: "toggle-sidebar", title: "Alternar barra lateral", shortcut: "Ctrl+B", run: () => ide.toggleSidebar() },
       {
@@ -415,6 +418,23 @@ function Shell() {
 
           <button
             type="button"
+            className={`activity${ide.panel === "containers" && ide.sidebarOpen ? " active" : ""}`}
+            title="Containers & Docker (Status & Stack)"
+            onClick={() => {
+              if (ide.panel === "containers" && ide.sidebarOpen) ide.toggleSidebar();
+              else {
+                ide.setPanel("containers");
+                ide.setSidebarOpen(true);
+              }
+            }}
+          >
+            {/* Ícone de baleia / container Docker */}
+            <span style={{ fontSize: "16px", lineHeight: "1" }}>🐳</span>
+          </button>
+
+
+          <button
+            type="button"
             className="activity"
             title="Graphify Engine (Grafo de Conhecimento)"
             onClick={() => router.push("/graphify")}
@@ -522,7 +542,9 @@ function Shell() {
             {ide.panel === "browser" && <BrowserPanel />}
             {ide.panel === "packages" && <PackagesPanel />}
             {ide.panel === "extensions" && <ExtensionsPanel />}
+            {ide.panel === "containers" && <ContainersPanel />}
           </aside>
+
         )}
 
         {ide.sidebarOpen && (

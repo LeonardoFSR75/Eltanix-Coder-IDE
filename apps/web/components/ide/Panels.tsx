@@ -35,7 +35,15 @@ import {
   syncProjectRequirements,
   type PackageItem,
 } from "@/lib/api/packages";
+import {
+  getContainerTree,
+  runContainerAction,
+  getContainerLogs,
+  type ContainerTreeResponse,
+  type ContainerItem,
+} from "@/lib/api/containers";
 import { useIde } from "@/lib/ide-store";
+
 import { ConfirmDialog, PromptDialog } from "@/components/ide/Overlays";
 import { FileIcon } from "@/components/ide/FileIcons";
 
@@ -2068,5 +2076,334 @@ export function ExtensionsPanel() {
     </div>
   );
 }
+
+// ── Containers (Docker & Container Management) ────────────────────────────
+
+export function ContainersPanel() {
+  const [data, setData] = useState<ContainerTreeResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [erro, setErro] = useState<string | null>(null);
+  const [activeLogsContainer, setActiveLogsContainer] = useState<{ id: string; name: string } | null>(null);
+  const [containerLogsContent, setContainerLogsContent] = useState<string>("");
+  const [loadingLogs, setLoadingLogs] = useState(false);
+  const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
+    containers: true,
+    images: true,
+    registries: false,
+    networks: false,
+    volumes: false,
+    contexts: false,
+    help: true,
+  });
+
+  const carregar = useCallback(async () => {
+    try {
+      setLoading(true);
+      const res = await getContainerTree();
+      setData(res);
+      setErro(null);
+    } catch (err) {
+      setErro(err instanceof Error ? err.message : String(err));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void carregar();
+  }, [carregar]);
+
+  const toggleSection = (sec: string) => {
+    setExpandedSections((prev) => ({ ...prev, [sec]: !prev[sec] }));
+  };
+
+  const handleAction = async (id: string, action: "start" | "stop" | "restart" | "remove") => {
+    try {
+      await runContainerAction(id, action);
+      await carregar();
+    } catch (err) {
+      alert(`Falha na ação ${action}: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  };
+
+  const handleOpenLogs = async (c: { id: string; name: string }) => {
+    setActiveLogsContainer(c);
+    setLoadingLogs(true);
+    try {
+      const res = await getContainerLogs(c.id);
+      setContainerLogsContent(res.logs);
+    } catch (err) {
+      setContainerLogsContent(`Erro ao carregar logs: ${err}`);
+    } finally {
+      setLoadingLogs(false);
+    }
+  };
+
+  return (
+    <div className="containers-panel">
+      <div className="containers-header">
+        <div className="containers-title-group">
+          <div className="containers-title-icon">🐳</div>
+          <div>
+            <h3 className="containers-title">Containers</h3>
+            <p className="containers-subtitle">Integração Docker Daemon & Stack Compose</p>
+          </div>
+        </div>
+        <button
+          type="button"
+          className="icon-action-btn"
+          title="Recarregar containers e Docker daemon"
+          onClick={() => void carregar()}
+        >
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M21.5 2v6h-6M2.5 22v-6h6" />
+            <path d="M2 11.5a10 10 0 0 1 18.8-4.3L21.5 8M22 12.5a10 10 0 0 1-18.8 4.2L2.5 16" />
+          </svg>
+        </button>
+      </div>
+
+      {erro && <div className="panel-error">{erro}</div>}
+
+      <div className="containers-scroll-tree">
+        {/* Section 1: Containers */}
+        <div className="docker-tree-group">
+          <div className="docker-tree-header" onClick={() => toggleSection("containers")}>
+            <span className="tree-arrow">{expandedSections.containers ? "∨" : "＞"}</span>
+            <span className="docker-group-title">Containers</span>
+          </div>
+
+          {expandedSections.containers && (
+            <div className="docker-tree-children">
+              {loading && !data ? (
+                <div className="docker-empty-state">Consultando daemon Docker local...</div>
+              ) : !data || Object.keys(data.containers_by_project).length === 0 ? (
+                <div className="docker-empty-state">Nenhum container ativo encontrado.</div>
+              ) : (
+                Object.entries(data.containers_by_project).map(([proj, containers]) => (
+                  <div key={proj} className="compose-project-group">
+                    <div className="compose-project-header">
+                      <span className="tree-arrow">∨</span>
+                      <span className="compose-icon">🗃️</span>
+                      <span className="compose-name">{proj}</span>
+                    </div>
+                    <div className="compose-containers-list">
+                      {containers.map((c) => {
+                        const isRunning = c.state === "running";
+                        return (
+                          <div key={c.id} className="container-item-row">
+                            <div className="container-item-left">
+                              <span className={`container-state-dot ${isRunning ? "running" : "stopped"}`} />
+                              <span className="container-item-name">{c.name}</span>
+                              <span className="container-item-image">{c.image}</span>
+                              <span className="container-item-status">{c.status}</span>
+                            </div>
+
+                            <div className="container-item-actions">
+                              <button
+                                type="button"
+                                className="icon-action-btn"
+                                title="Ver logs do container"
+                                onClick={() => void handleOpenLogs(c)}
+                              >
+                                📄
+                              </button>
+                              {isRunning ? (
+                                <button
+                                  type="button"
+                                  className="icon-action-btn danger"
+                                  title="Parar container"
+                                  onClick={() => void handleAction(c.id, "stop")}
+                                >
+                                  ⏹
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  className="icon-action-btn success"
+                                  title="Iniciar container"
+                                  onClick={() => void handleAction(c.id, "start")}
+                                >
+                                  ▶
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                className="icon-action-btn"
+                                title="Reiniciar container"
+                                onClick={() => void handleAction(c.id, "restart")}
+                              >
+                                🔄
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Section 2: Images */}
+        <div className="docker-tree-group">
+          <div className="docker-tree-header" onClick={() => toggleSection("images")}>
+            <span className="tree-arrow">{expandedSections.images ? "∨" : "＞"}</span>
+            <span className="docker-group-title">Images</span>
+          </div>
+
+          {expandedSections.images && (
+            <div className="docker-tree-children">
+              {data?.images.map((img) => (
+                <div key={img.id} className="docker-simple-item-row">
+                  <span className="docker-item-icon">📑</span>
+                  <span className="docker-item-label">{img.name}</span>
+                  <span className="docker-item-meta">{img.size}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Section 3: Registries */}
+        <div className="docker-tree-group">
+          <div className="docker-tree-header" onClick={() => toggleSection("registries")}>
+            <span className="tree-arrow">{expandedSections.registries ? "∨" : "＞"}</span>
+            <span className="docker-group-title">Registries</span>
+          </div>
+          {expandedSections.registries && (
+            <div className="docker-tree-children">
+              {data?.registries.map((r) => (
+                <div key={r.name} className="docker-simple-item-row">
+                  <span className="docker-item-icon">🌐</span>
+                  <span className="docker-item-label">{r.name}</span>
+                  <span className="docker-item-meta">{r.url}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Section 4: Networks */}
+        <div className="docker-tree-group">
+          <div className="docker-tree-header" onClick={() => toggleSection("networks")}>
+            <span className="tree-arrow">{expandedSections.networks ? "∨" : "＞"}</span>
+            <span className="docker-group-title">Networks</span>
+          </div>
+          {expandedSections.networks && (
+            <div className="docker-tree-children">
+              {data?.networks.map((n) => (
+                <div key={n.name} className="docker-simple-item-row">
+                  <span className="docker-item-icon">🔀</span>
+                  <span className="docker-item-label">{n.name}</span>
+                  <span className="docker-item-meta">{n.driver}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Section 5: Volumes */}
+        <div className="docker-tree-group">
+          <div className="docker-tree-header" onClick={() => toggleSection("volumes")}>
+            <span className="tree-arrow">{expandedSections.volumes ? "∨" : "＞"}</span>
+            <span className="docker-group-title">Volumes</span>
+          </div>
+          {expandedSections.volumes && (
+            <div className="docker-tree-children">
+              {data?.volumes.map((v) => (
+                <div key={v.name} className="docker-simple-item-row">
+                  <span className="docker-item-icon">💾</span>
+                  <span className="docker-item-label">{v.name}</span>
+                  <span className="docker-item-meta">{v.driver}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Section 6: Docker Contexts */}
+        <div className="docker-tree-group">
+          <div className="docker-tree-header" onClick={() => toggleSection("contexts")}>
+            <span className="tree-arrow">{expandedSections.contexts ? "∨" : "＞"}</span>
+            <span className="docker-group-title">Docker Contexts</span>
+          </div>
+          {expandedSections.contexts && (
+            <div className="docker-tree-children">
+              {data?.contexts.map((ctx) => (
+                <div key={ctx.name} className="docker-simple-item-row">
+                  <span className="docker-item-icon">📍</span>
+                  <span className="docker-item-label">{ctx.name}</span>
+                  {ctx.current && <span className="docker-item-tag-active">Ativo</span>}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Section 7: Help and Feedback (from screenshot) */}
+        <div className="docker-tree-group">
+          <div className="docker-tree-header" onClick={() => toggleSection("help")}>
+            <span className="tree-arrow">{expandedSections.help ? "∨" : "＞"}</span>
+            <span className="docker-group-title">Help and Feedback</span>
+          </div>
+          {expandedSections.help && (
+            <div className="docker-tree-children">
+              {data?.help_and_feedback.map((item) => (
+                <div key={item.title} className="docker-help-item-row">
+                  <span className="docker-item-icon">📖</span>
+                  <a href={item.url} target="_blank" rel="noopener noreferrer" className="docker-help-link">
+                    {item.title}
+                  </a>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Container Logs Viewer Modal */}
+      {activeLogsContainer && (
+        <div className="ext-details-overlay" onClick={() => setActiveLogsContainer(null)}>
+          <div className="ext-details-modal logs-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="ext-details-modal-header">
+              <span className="ext-card-icon">📄</span>
+              <div>
+                <h4>Logs: {activeLogsContainer.name}</h4>
+                <span className="ext-version-badge">ID: {activeLogsContainer.id}</span>
+              </div>
+              <button type="button" className="close-btn" onClick={() => setActiveLogsContainer(null)}>
+                ✕
+              </button>
+            </div>
+            <div className="ext-details-modal-body logs-body">
+              {loadingLogs ? (
+                <div className="packages-status-loading">Carregando logs do container...</div>
+              ) : (
+                <pre className="container-logs-output">{containerLogsContent || "Nenhum log retornado."}</pre>
+              )}
+            </div>
+            <div className="ext-details-modal-footer">
+              <button type="button" className="packages-btn-primary" onClick={() => setActiveLogsContainer(null)}>
+                Fechar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="packages-footer">
+        <span className={`status-dot ${data?.connected ? "active" : ""}`} />
+        <span>
+          {data?.connected
+            ? "Docker daemon conectado & ativo"
+            : "Docker daemon (Modo Local / Host)"}
+        </span>
+      </div>
+    </div>
+  );
+}
+
 
 
