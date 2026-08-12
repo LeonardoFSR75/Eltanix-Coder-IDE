@@ -5,6 +5,13 @@ import { useRouter } from "next/navigation";
 import { useProject } from "@/components/providers/ProjectContext";
 import { useToast } from "@/components/Toast";
 
+import {
+  createProjectTrelloCard,
+  deleteProjectTrelloCard,
+  getProjectTrelloCards,
+  updateProjectTrelloCard,
+} from "@/lib/api/trello";
+
 export type CardStatus = "todo" | "in_progress" | "review" | "done";
 export type CardPriority = "high" | "medium" | "low";
 
@@ -14,7 +21,10 @@ export interface TrelloCard {
   description: string;
   status: CardStatus;
   priority: CardPriority;
-  createdAt: string;
+  createdAt?: string;
+  created_at?: string;
+  updated_at?: string;
+  created_by_agent?: boolean;
 }
 
 const COLUMNS: { id: CardStatus; title: string; icon: string; badgeColor: string }[] = [
@@ -30,6 +40,7 @@ export default function TrelloPage() {
   const router = useRouter();
 
   const [cards, setCards] = useState<TrelloCard[]>([]);
+  const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [filterPriority, setFilterPriority] = useState<string>("all");
   const [showModal, setShowModal] = useState(false);
@@ -41,58 +52,29 @@ export default function TrelloPage() {
   const [status, setStatus] = useState<CardStatus>("todo");
   const [priority, setPriority] = useState<CardPriority>("medium");
 
-  const storageKey = currentProject ? `sicoobito_trello_${currentProject}` : null;
-
-  // Load cards from localStorage for active project
-  useEffect(() => {
-    if (!storageKey) return;
+  const loadCards = async () => {
+    if (!currentProject) return;
+    setLoading(true);
     try {
-      const stored = localStorage.getItem(storageKey);
-      if (stored) {
-        setCards(JSON.parse(stored));
-      } else {
-        // Initial sample cards for a new project
-        const samples: TrelloCard[] = [
-          {
-            id: "card-1",
-            title: "Configurar ambiente do projeto",
-            description: "Verificar dependências, Docker Compose e banco de dados local.",
-            status: "done",
-            priority: "high",
-            createdAt: new Date().toLocaleDateString("pt-BR"),
-          },
-          {
-            id: "card-2",
-            title: "Mapear AST & símbolos via Graphify",
-            description: "Indexar módulos e analisar relacionamentos de código.",
-            status: "in_progress",
-            priority: "high",
-            createdAt: new Date().toLocaleDateString("pt-BR"),
-          },
-          {
-            id: "card-3",
-            title: "Revisar cobertura de testes do backend",
-            description: "Garantir execução limpa do pytest nos endpoints do projeto.",
-            status: "todo",
-            priority: "medium",
-            createdAt: new Date().toLocaleDateString("pt-BR"),
-          },
-        ];
-        setCards(samples);
-        localStorage.setItem(storageKey, JSON.stringify(samples));
-      }
+      const res = await getProjectTrelloCards(currentProject);
+      setCards(res.cards as TrelloCard[]);
     } catch {
-      setCards([]);
-    }
-  }, [storageKey]);
-
-  // Save cards to localStorage
-  const saveCards = (updated: TrelloCard[]) => {
-    setCards(updated);
-    if (storageKey) {
-      localStorage.setItem(storageKey, JSON.stringify(updated));
+      // Fallback local
+      const storageKey = `sicoobito_trello_${currentProject}`;
+      try {
+        const stored = localStorage.getItem(storageKey);
+        if (stored) setCards(JSON.parse(stored));
+      } catch {
+        setCards([]);
+      }
+    } finally {
+      setLoading(false);
     }
   };
+
+  useEffect(() => {
+    void loadCards();
+  }, [currentProject]);
 
   const handleOpenModal = (card?: TrelloCard, initialStatus: CardStatus = "todo") => {
     if (card) {
@@ -111,43 +93,62 @@ export default function TrelloPage() {
     setShowModal(true);
   };
 
-  const handleSaveCard = (e: React.FormEvent) => {
+  const handleSaveCard = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!title.trim()) return;
+    if (!title.trim() || !currentProject) return;
 
-    if (editingCard) {
-      const updated = cards.map((c) =>
-        c.id === editingCard.id
-          ? { ...c, title: title.trim(), description: description.trim(), status, priority }
-          : c
-      );
-      saveCards(updated);
-      addToast("Cartão atualizado com sucesso!", "success");
-    } else {
-      const newCard: TrelloCard = {
-        id: `card-${Date.now()}`,
-        title: title.trim(),
-        description: description.trim(),
-        status,
-        priority,
-        createdAt: new Date().toLocaleDateString("pt-BR"),
-      };
-      saveCards([...cards, newCard]);
-      addToast("Novo cartão criado!", "success");
+    try {
+      if (editingCard) {
+        await updateProjectTrelloCard(currentProject, editingCard.id, {
+          title: title.trim(),
+          description: description.trim(),
+          status,
+          priority,
+        });
+        addToast("Cartão atualizado com sucesso!", "success");
+      } else {
+        await createProjectTrelloCard(currentProject, {
+          title: title.trim(),
+          description: description.trim(),
+          status,
+          priority,
+        });
+        addToast("Novo cartão criado!", "success");
+      }
+      await loadCards();
+    } catch (err) {
+      addToast(err instanceof Error ? err.message : String(err), "error");
     }
 
     setShowModal(false);
   };
 
-  const handleDeleteCard = (cardId: string) => {
-    const updated = cards.filter((c) => c.id !== cardId);
-    saveCards(updated);
-    addToast("Cartão removido.", "info");
+  const handleDeleteCard = async (cardId: string) => {
+    if (!currentProject) return;
+    if (!window.confirm("Deseja realmente excluir este cartão do Quadro?")) return;
+    try {
+      await deleteProjectTrelloCard(currentProject, cardId);
+      addToast("Cartão removido.", "info");
+      await loadCards();
+    } catch (err) {
+      addToast(err instanceof Error ? err.message : String(err), "error");
+    }
   };
 
-  const handleMoveCard = (cardId: string, targetStatus: CardStatus) => {
-    const updated = cards.map((c) => (c.id === cardId ? { ...c, status: targetStatus } : c));
-    saveCards(updated);
+  const handleMoveCard = async (cardId: string, targetStatus: CardStatus) => {
+    if (!currentProject) return;
+    try {
+      await updateProjectTrelloCard(currentProject, cardId, { status: targetStatus });
+      setCards((prev) => prev.map((c) => (c.id === cardId ? { ...c, status: targetStatus } : c)));
+    } catch (err) {
+      addToast(err instanceof Error ? err.message : String(err), "error");
+    }
+  };
+
+  const handleExecuteOnAgent = (card: TrelloCard) => {
+    if (!currentProject) return;
+    const taskPrompt = `${card.title}${card.description ? `: ${card.description}` : ""}`;
+    router.push(`/ide?project=${encodeURIComponent(currentProject)}&task=${encodeURIComponent(taskPrompt)}`);
   };
 
   if (!currentProject) {
@@ -390,11 +391,27 @@ export default function TrelloPage() {
                         </p>
                       )}
 
+                      {card.created_by_agent && (
+                        <div style={{ display: "inline-flex", alignItems: "center", gap: "4px", fontSize: "11px", color: "var(--accent-purple)", background: "rgba(168,85,247,0.12)", padding: "2px 6px", borderRadius: "4px", width: "fit-content" }}>
+                          🤖 Criado pelo Agente
+                        </div>
+                      )}
+
                       {/* Card Actions Footer */}
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "8px", paddingTop: "8px", borderTop: "1px solid var(--border)" }}>
-                        <span style={{ fontSize: "10px", color: "var(--text-muted)" }}>{card.createdAt}</span>
+                        <span style={{ fontSize: "10px", color: "var(--text-muted)" }}>{card.createdAt || card.created_at}</span>
 
                         <div style={{ display: "flex", gap: "4px" }}>
+                          <button
+                            type="button"
+                            onClick={() => handleExecuteOnAgent(card)}
+                            className="btn-primary-sm"
+                            style={{ padding: "2px 6px", fontSize: "11px", backgroundColor: "var(--accent)", color: "#000" }}
+                            title="Executar esta tarefa na IDE Agêntica"
+                          >
+                            🤖 Agente
+                          </button>
+
                           {/* Shift Left */}
                           {col.id !== "todo" && (
                             <button

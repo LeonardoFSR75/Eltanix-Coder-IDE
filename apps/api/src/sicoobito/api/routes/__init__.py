@@ -3,10 +3,9 @@ from sicoobito.api.routes.approval_policy import router as approval_policy_route
 from sicoobito.api.routes.audit import router as audit_router
 from sicoobito.api.routes.auth import router as auth_router
 from sicoobito.api.routes.browser import router as browser_router
-from sicoobito.api.routes.context import router as context_router
 from sicoobito.api.routes.containers import router as containers_router
+from sicoobito.api.routes.context import router as context_router
 from sicoobito.api.routes.documents import router as documents_router
-
 from sicoobito.api.routes.git import router as git_router
 from sicoobito.api.routes.health import router as health_router
 from sicoobito.api.routes.lsp import router as lsp_router
@@ -18,6 +17,7 @@ from sicoobito.api.routes.packages import router as packages_router
 from sicoobito.api.routes.projects import router as projects_router
 from sicoobito.api.routes.skills import router as skills_router
 from sicoobito.api.routes.telemetry import router as telemetry_router
+from sicoobito.api.routes.trello import router as trello_router
 from sicoobito.api.routes.workspace import router as workspace_router
 from sicoobito.api.routes.workspace import ws_router as workspace_ws_router
 from sicoobito.graphify.api.router import router as graphify_router
@@ -28,10 +28,9 @@ __all__ = [
     "audit_router",
     "auth_router",
     "browser_router",
-    "context_router",
     "containers_router",
+    "context_router",
     "documents_router",
-
     "git_router",
     "graphify_router",
     "health_router",
@@ -44,6 +43,7 @@ __all__ = [
     "projects_router",
     "skills_router",
     "telemetry_router",
+    "trello_router",
     "workspace_router",
     "workspace_ws_router",
 ]

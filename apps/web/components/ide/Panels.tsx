@@ -29,6 +29,13 @@ import {
   type GitFile,
 } from "@/lib/api/git";
 import {
+  createProjectTrelloCard,
+  getProjectTrelloCards,
+  updateProjectTrelloCard,
+  type CardStatus,
+  type TrelloCard,
+} from "@/lib/api/trello";
+import {
   getProjectPackages,
   installProjectPackage,
   uninstallProjectPackage,
@@ -1295,6 +1302,252 @@ export function BrowserPanel() {
   );
 }
 
+// ── TrelloPanel ──────────────────────────────────────────────────────────────
+
+export function TrelloPanel() {
+  const { project } = useIde();
+  const [cards, setCards] = useState<TrelloCard[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [newTitle, setNewTitle] = useState("");
+  const [activeTab, setActiveTab] = useState<CardStatus | "all">("all");
+  const [erro, setErro] = useState<string | null>(null);
+
+  const carregar = useCallback(async () => {
+    if (!project) return;
+    setLoading(true);
+    setErro(null);
+    try {
+      const data = await getProjectTrelloCards(project);
+      setCards(data.cards as TrelloCard[]);
+    } catch (err) {
+      setErro(err instanceof Error ? err.message : String(err));
+    } finally {
+      setLoading(false);
+    }
+  }, [project]);
+
+  useEffect(() => {
+    void carregar();
+  }, [carregar]);
+
+  const handleCreate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!project || !newTitle.trim() || loading) return;
+    try {
+      await createProjectTrelloCard(project, { title: newTitle.trim(), status: "todo" });
+      setNewTitle("");
+      await carregar();
+    } catch (err) {
+      setErro(err instanceof Error ? err.message : String(err));
+    }
+  };
+
+  const handleMove = async (cardId: string, targetStatus: CardStatus) => {
+    if (!project) return;
+    try {
+      await updateProjectTrelloCard(project, cardId, { status: targetStatus });
+      setCards((prev) => prev.map((c) => (c.id === cardId ? { ...c, status: targetStatus } : c)));
+    } catch (err) {
+      setErro(err instanceof Error ? err.message : String(err));
+    }
+  };
+
+  const handleExecuteOnAgent = (card: TrelloCard) => {
+    const prompt = `Executar a tarefa do Trello: "${card.title}"${card.description ? `\n\nDetalhes: ${card.description}` : ""}`;
+    const promptEl = document.querySelector(".chat-input textarea, input.prompt-input") as HTMLTextAreaElement | HTMLInputElement | null;
+    if (promptEl) {
+      promptEl.value = prompt;
+      promptEl.dispatchEvent(new Event("input", { bubbles: true }));
+      promptEl.focus();
+    } else {
+      navigator.clipboard.writeText(prompt);
+      alert("Prompt copiado para a área de transferência! Cole no chat do agente.");
+    }
+  };
+
+  const filteredCards = cards.filter((c) => activeTab === "all" || c.status === activeTab);
+
+  return (
+    <div className="panel-body trello-panel-body">
+      <div className="panel-header">
+        <div className="panel-header-title-group">
+          <span className="panel-header-title">📋 Quadro Trello</span>
+          <span className="packages-count-badge">{cards.length}</span>
+        </div>
+        <div className="panel-actions-bar">
+          <button
+            type="button"
+            className="icon-action-btn"
+            title="Recarregar cartões"
+            onClick={() => void carregar()}
+            disabled={loading}
+          >
+            🔄
+          </button>
+          <a
+            href={`/trello?project=${encodeURIComponent(project || "")}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="icon-action-btn"
+            title="Abrir Trello completo em nova aba"
+            style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", textDecoration: "none" }}
+          >
+            ↗️
+          </a>
+        </div>
+      </div>
+
+      <div className="packages-section-install" style={{ padding: "8px 12px" }}>
+        <form onSubmit={handleCreate} className="packages-form-row">
+          <input
+            type="text"
+            className="packages-input"
+            placeholder="Nova tarefa no Trello..."
+            value={newTitle}
+            onChange={(e) => setNewTitle(e.target.value)}
+            disabled={loading}
+          />
+          <button type="submit" className="packages-btn-primary" disabled={!newTitle.trim() || loading}>
+            + Adicionar
+          </button>
+        </form>
+      </div>
+
+      {/* Filter Tabs */}
+      <div style={{ display: "flex", gap: "4px", padding: "4px 12px", borderBottom: "1px solid var(--border)", overflowX: "auto" }}>
+        {(["all", "todo", "in_progress", "review", "done"] as const).map((tab) => {
+          const labels: Record<string, string> = {
+            all: "Todos",
+            todo: "A Fazer",
+            in_progress: "Em Progresso",
+            review: "Revisão",
+            done: "Concluído",
+          };
+          return (
+            <button
+              key={tab}
+              type="button"
+              onClick={() => setActiveTab(tab)}
+              style={{
+                background: activeTab === tab ? "var(--surface-2)" : "transparent",
+                border: activeTab === tab ? "1px solid var(--accent-dim)" : "1px solid transparent",
+                color: activeTab === tab ? "var(--accent)" : "var(--text-dim)",
+                borderRadius: "4px",
+                padding: "2px 8px",
+                fontSize: "11px",
+                cursor: "pointer",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {labels[tab]}
+            </button>
+          );
+        })}
+      </div>
+
+      {erro && <div className="panel-error">{erro}</div>}
+
+      {/* Cards List */}
+      <div style={{ flex: 1, overflowY: "auto", padding: "8px 12px", display: "flex", flexDirection: "column", gap: "8px" }}>
+        {filteredCards.map((card) => (
+          <div
+            key={card.id}
+            style={{
+              backgroundColor: "var(--surface-2)",
+              border: "1px solid var(--border)",
+              borderRadius: "var(--radius)",
+              padding: "8px 10px",
+              display: "flex",
+              flexDirection: "column",
+              gap: "4px",
+            }}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "6px" }}>
+              <span style={{ fontSize: "12px", fontWeight: 600, color: "var(--text)", lineHeight: 1.3 }}>
+                {card.title}
+              </span>
+              <span
+                style={{
+                  fontSize: "9px",
+                  fontWeight: 700,
+                  padding: "1px 5px",
+                  borderRadius: "3px",
+                  backgroundColor: card.status === "done" ? "var(--accent-emerald-dim)" : card.status === "in_progress" ? "var(--warn-dim)" : "var(--surface)",
+                  color: card.status === "done" ? "var(--accent-emerald)" : card.status === "in_progress" ? "var(--warn)" : "var(--text-dim)",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {card.status}
+              </span>
+            </div>
+
+            {card.description && (
+              <p style={{ fontSize: "11px", color: "var(--text-dim)", margin: 0, overflow: "hidden", textOverflow: "ellipsis", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>
+                {card.description}
+              </p>
+            )}
+
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "4px", paddingTop: "4px", borderTop: "1px dashed var(--border)" }}>
+              <button
+                type="button"
+                onClick={() => handleExecuteOnAgent(card)}
+                style={{
+                  background: "var(--accent)",
+                  color: "#000",
+                  border: "none",
+                  borderRadius: "3px",
+                  padding: "2px 6px",
+                  fontSize: "10px",
+                  fontWeight: 700,
+                  cursor: "pointer",
+                }}
+                title="Preencher no chat do Agente"
+              >
+                🤖 Executar no Agente
+              </button>
+
+              <div style={{ display: "flex", gap: "2px" }}>
+                {card.status !== "todo" && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const prev: Record<CardStatus, CardStatus> = { in_progress: "todo", review: "in_progress", done: "review", todo: "todo" };
+                      handleMove(card.id, prev[card.status]);
+                    }}
+                    style={{ background: "none", border: "1px solid var(--border)", color: "var(--text-dim)", borderRadius: "3px", padding: "0 4px", fontSize: "10px", cursor: "pointer" }}
+                    title="Mover para status anterior"
+                  >
+                    ←
+                  </button>
+                )}
+                {card.status !== "done" && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const next: Record<CardStatus, CardStatus> = { todo: "in_progress", in_progress: "review", review: "done", done: "done" };
+                      handleMove(card.id, next[card.status]);
+                    }}
+                    style={{ background: "none", border: "1px solid var(--border)", color: "var(--text-dim)", borderRadius: "3px", padding: "0 4px", fontSize: "10px", cursor: "pointer" }}
+                    title="Mover para próximo status"
+                  >
+                    →
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        ))}
+
+        {filteredCards.length === 0 && !loading && (
+          <div style={{ textAlign: "center", padding: "20px", color: "var(--text-muted)", fontSize: "12px" }}>
+            Nenhuma tarefa encontrada neste filtro.
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── PackagesPanel ───────────────────────────────────────────────────────────
 
 export function PackagesPanel() {
@@ -1303,6 +1556,7 @@ export function PackagesPanel() {
   const [reqMap, setReqMap] = useState<Record<string, string>>({});
   const [reqExists, setReqExists] = useState(false);
   const [venvExists, setVenvExists] = useState(false);
+  const [manifestFile, setManifestFile] = useState("requirements.txt");
   const [loading, setLoading] = useState(false);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [inputPkg, setInputPkg] = useState("");
@@ -1320,6 +1574,7 @@ export function PackagesPanel() {
       setReqMap(data.requirements_map);
       setReqExists(data.requirements_exists);
       setVenvExists(data.venv_exists);
+      if (data.manifest_file) setManifestFile(data.manifest_file);
     } catch (err) {
       setErro(err instanceof Error ? err.message : String(err));
     } finally {
@@ -1342,7 +1597,7 @@ export function PackagesPanel() {
     try {
       const res = await installProjectPackage(project, target, true);
       setInputPkg("");
-      setMsgSuccess(`Pacote '${res.package}' (${res.version ?? "OK"}) instalado e gravado no requirements.txt!`);
+      setMsgSuccess(`Pacote '${res.package}' instalado e gravado em ${manifestFile}!`);
       await carregar();
     } catch (err) {
       setErro(err instanceof Error ? err.message : String(err));
@@ -1360,7 +1615,7 @@ export function PackagesPanel() {
     setMsgSuccess(null);
     try {
       await uninstallProjectPackage(project, pkgName, true);
-      setMsgSuccess(`Pacote '${pkgName}' removido e atualizado no requirements.txt!`);
+      setMsgSuccess(`Pacote '${pkgName}' removido e atualizado em ${manifestFile}!`);
       await carregar();
     } catch (err) {
       setErro(err instanceof Error ? err.message : String(err));
@@ -1371,12 +1626,12 @@ export function PackagesPanel() {
 
   const handleSync = async () => {
     if (!project || actionLoading) return;
-    setActionLoading("Sincronizando de requirements.txt...");
+    setActionLoading(`Sincronizando de ${manifestFile}...`);
     setErro(null);
     setMsgSuccess(null);
     try {
       await syncProjectRequirements(project);
-      setMsgSuccess("Ambiente sincronizado com sucesso com o requirements.txt!");
+      setMsgSuccess(`Ambiente sincronizado com sucesso com ${manifestFile}!`);
       await carregar();
     } catch (err) {
       setErro(err instanceof Error ? err.message : String(err));
@@ -1414,8 +1669,8 @@ export function PackagesPanel() {
           <button
             type="button"
             className="icon-action-btn"
-            title="Abrir requirements.txt no editor"
-            onClick={() => openFile("requirements.txt")}
+            title={`Abrir ${manifestFile} no editor`}
+            onClick={() => openFile(manifestFile)}
           >
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
@@ -1432,7 +1687,7 @@ export function PackagesPanel() {
           <input
             type="text"
             className="packages-input"
-            placeholder="Nome do pacote (ex: pytest)..."
+            placeholder="Nome do pacote (ex: lodash, pytest)..."
             value={inputPkg}
             onChange={(e) => setInputPkg(e.target.value)}
             disabled={!!actionLoading}
@@ -1448,14 +1703,14 @@ export function PackagesPanel() {
 
         <div className="packages-sub-actions">
           <div className="packages-sync-info">
-            <span>⚡ Auto-sync com <code>requirements.txt</code></span>
+            <span>⚡ Auto-sync com <code>{manifestFile}</code></span>
           </div>
           <button
             type="button"
             onClick={() => void handleSync()}
             disabled={!!actionLoading || !reqExists}
             className="packages-btn-sync"
-            title="Instalar dependências do requirements.txt"
+            title={`Instalar dependências do ${manifestFile}`}
           >
             🔄 Sincronizar Tudo
           </button>

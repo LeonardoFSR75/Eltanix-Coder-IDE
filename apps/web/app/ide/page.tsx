@@ -3,7 +3,7 @@
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { BrowserPanel, ContainersPanel, DebugPanel, Explorer, ExtensionsPanel, GitPanel, PackagesPanel, SearchPanel } from "@/components/ide/Panels";
+import { BrowserPanel, ContainersPanel, DebugPanel, Explorer, ExtensionsPanel, GitPanel, PackagesPanel, SearchPanel, TrelloPanel } from "@/components/ide/Panels";
 
 import { StatusBar } from "@/components/ide/StatusBar";
 import { TopMenuBar } from "@/components/ide/TopMenuBar";
@@ -441,6 +441,26 @@ function Shell() {
             </svg>
           </button>
 
+          <button
+            type="button"
+            className={`activity${ide.panel === "trello" && ide.sidebarOpen ? " active" : ""}`}
+            title="Quadro Trello / Kanban do Projeto"
+            onClick={() => {
+              if (ide.panel === "trello" && ide.sidebarOpen) ide.toggleSidebar();
+              else {
+                ide.setPanel("trello");
+                ide.setSidebarOpen(true);
+              }
+            }}
+          >
+            {/* Ícone vetorial de Kanban / Trello */}
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="3" y="3" width="18" height="18" rx="2" />
+              <rect x="7" y="7" width="3" height="10" rx="1" />
+              <rect x="14" y="7" width="3" height="6" rx="1" />
+            </svg>
+          </button>
+
 
 
           <button
@@ -551,6 +571,7 @@ function Shell() {
             {ide.panel === "debug" && <DebugPanel />}
             {ide.panel === "browser" && <BrowserPanel />}
             {ide.panel === "packages" && <PackagesPanel />}
+            {ide.panel === "trello" && <TrelloPanel />}
             {ide.panel === "extensions" && <ExtensionsPanel />}
             {ide.panel === "containers" && <ContainersPanel />}
           </aside>

@@ -23,10 +23,9 @@ from sicoobito.api.routes import (
     audit_router,
     auth_router,
     browser_router,
-    context_router,
     containers_router,
+    context_router,
     documents_router,
-
     git_router,
     graphify_router,
     health_router,
@@ -39,6 +38,7 @@ from sicoobito.api.routes import (
     projects_router,
     skills_router,
     telemetry_router,
+    trello_router,
     workspace_router,
     workspace_ws_router,
 )
@@ -330,6 +330,7 @@ def create_app() -> FastAPI:
     app.include_router(workspace_ws_router)
     app.include_router(projects_router)
     app.include_router(packages_router)
+    app.include_router(trello_router)
     app.include_router(containers_router)
     app.include_router(git_router)
 
