@@ -72,7 +72,11 @@ async def write_todos(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
         # (instrução em prompts.py::SYSTEM_PROMPT já pedia isso em texto; aqui
         # é aplicado, não só sugerido). Ver `ToolContext.has_unresolved_failure`.
         # Itens já concluídos antes da falha permanecem concluídos.
-        if status == "completed" and ctx.has_unresolved_failure and conteudo not in concluidos_anteriores:
+        if (
+            status == "completed"
+            and ctx.has_unresolved_failure
+            and conteudo not in concluidos_anteriores
+        ):
             status = "in_progress"
             rebaixados.append(conteudo)
         todos.append({"content": conteudo, "status": status})

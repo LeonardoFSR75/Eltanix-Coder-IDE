@@ -163,7 +163,10 @@ class Sandbox:
                         "PIP_RETRIES": "0",
                         "PIP_DEFAULT_TIMEOUT": "2",
                         "VIRTUAL_ENV": "/workspace/.venv",
-                        "PATH": "/workspace/.venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+                        "PATH": (
+                            "/workspace/.venv/bin:/usr/local/sbin:/usr/local/bin:"
+                            "/usr/sbin:/usr/bin:/sbin:/bin"
+                        ),
                         **self.config.env,
                     },
                     labels={LABEL: self.session_id},

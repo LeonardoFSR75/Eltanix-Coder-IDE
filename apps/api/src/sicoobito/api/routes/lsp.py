@@ -45,7 +45,7 @@ async def languages() -> dict[str, Any]:
 async def extensions() -> dict[str, Any]:
     """Lista as extensões e suítes de linguagem ativas na IDE agêntica."""
     pyrefly_spec = server_for_language("python", preferred_server="pyrefly")
-    pyright_spec = server_for_language("python", preferred_server="pyright")
+    server_for_language("python", preferred_server="pyright")
     
     return {
         "extensions": [
@@ -54,7 +54,10 @@ async def extensions() -> dict[str, Any]:
                 "name": "Pyrefly - Python Language Server",
                 "publisher": "meta",
                 "version": "0.1.0",
-                "description": "Python autocomplete, typechecking & high-performance static analysis engine by Meta.",
+                "description": (
+                    "Python autocomplete, typechecking & high-performance static analysis "
+                    "engine by Meta."
+                ),
                 "category": "LSP & Python",
                 "installed": True,
                 "active": pyrefly_spec is not None and pyrefly_spec.available,
@@ -66,7 +69,10 @@ async def extensions() -> dict[str, Any]:
                 "name": "Python",
                 "publisher": "ms-python",
                 "version": "2026.1.0",
-                "description": "Python language support with extension hooks, code formatting & refactoring.",
+                "description": (
+                    "Python language support with extension hooks, code formatting & "
+                    "refactoring."
+                ),
                 "category": "LSP & Python",
                 "installed": True,
                 "active": True,
@@ -90,7 +96,9 @@ async def extensions() -> dict[str, Any]:
                 "name": "Python Environments",
                 "publisher": "ms-python",
                 "version": "2026.1.0",
-                "description": "Provides a unified python environment discovery and virtualenv manager.",
+                "description": (
+                    "Provides a unified python environment discovery and virtualenv manager."
+                ),
                 "category": "LSP & Python",
                 "installed": True,
                 "active": True,
@@ -102,7 +110,10 @@ async def extensions() -> dict[str, Any]:
                 "name": "Node.js & npm Package Manager",
                 "publisher": "ms-vscode",
                 "version": "2026.2.0",
-                "description": "Node.js environment discovery, package.json management & npm script execution.",
+                "description": (
+                    "Node.js environment discovery, package.json management & npm script "
+                    "execution."
+                ),
                 "category": "Node & Next.js",
                 "installed": True,
                 "active": True,
@@ -114,7 +125,10 @@ async def extensions() -> dict[str, Any]:
                 "name": "Next.js & React App Router",
                 "publisher": "vercel",
                 "version": "15.1.0",
-                "description": "Next.js App Router autocomplete, Server Components, Server Actions & route navigation.",
+                "description": (
+                    "Next.js App Router autocomplete, Server Components, Server Actions & "
+                    "route navigation."
+                ),
                 "category": "Node & Next.js",
                 "installed": True,
                 "active": True,
@@ -126,7 +140,10 @@ async def extensions() -> dict[str, Any]:
                 "name": "ESLint & Prettier",
                 "publisher": "dbaeumer",
                 "version": "3.0.10",
-                "description": "Real-time JavaScript/TypeScript linting, code formatting & style enforcement.",
+                "description": (
+                    "Real-time JavaScript/TypeScript linting, code formatting & style "
+                    "enforcement."
+                ),
                 "category": "Node & Next.js",
                 "installed": True,
                 "active": True,
@@ -138,7 +155,10 @@ async def extensions() -> dict[str, Any]:
                 "name": "React 19 & JSX Features",
                 "publisher": "meta",
                 "version": "19.0.0",
-                "description": "React Hooks, Server Components, JSX/TSX autocomplete & component inspector.",
+                "description": (
+                    "React Hooks, Server Components, JSX/TSX autocomplete & component "
+                    "inspector."
+                ),
                 "category": "Frontend & Frameworks",
                 "installed": True,
                 "active": True,
@@ -150,7 +170,10 @@ async def extensions() -> dict[str, Any]:
                 "name": "Vue.js Language Features (Volar)",
                 "publisher": "vue",
                 "version": "2.2.0",
-                "description": "Vue 3 Composition API, Single File Components (.vue), template typechecking & Volar LSP.",
+                "description": (
+                    "Vue 3 Composition API, Single File Components (.vue), template "
+                    "typechecking & Volar LSP."
+                ),
                 "category": "Frontend & Frameworks",
                 "installed": True,
                 "active": True,
@@ -162,7 +185,9 @@ async def extensions() -> dict[str, Any]:
                 "name": "Angular Language Service",
                 "publisher": "angular",
                 "version": "18.2.0",
-                "description": "Angular template IntelliSense, AOT typechecking & component navigation.",
+                "description": (
+                    "Angular template IntelliSense, AOT typechecking & component navigation."
+                ),
                 "category": "Frontend & Frameworks",
                 "installed": True,
                 "active": True,
@@ -174,7 +199,10 @@ async def extensions() -> dict[str, Any]:
                 "name": "Svelte & SvelteKit",
                 "publisher": "svelte",
                 "version": "108.4.0",
-                "description": "Svelte 5 Runes, SvelteKit routing, reactive state autocomplete & Svelte LSP.",
+                "description": (
+                    "Svelte 5 Runes, SvelteKit routing, reactive state autocomplete & "
+                    "Svelte LSP."
+                ),
                 "category": "Frontend & Frameworks",
                 "installed": True,
                 "active": True,
@@ -186,7 +214,10 @@ async def extensions() -> dict[str, Any]:
                 "name": "Tailwind CSS IntelliSense",
                 "publisher": "tailwindcss",
                 "version": "0.14.0",
-                "description": "Advanced class autocomplete, CSS directive linting, variant preview & color picker.",
+                "description": (
+                    "Advanced class autocomplete, CSS directive linting, variant preview & "
+                    "color picker."
+                ),
                 "category": "Frontend & Frameworks",
                 "installed": True,
                 "active": True,
@@ -198,7 +229,10 @@ async def extensions() -> dict[str, Any]:
                 "name": "SQLTools - Database Client",
                 "publisher": "mtxr",
                 "version": "0.28.3",
-                "description": "Conexão e navegação nativa em bancos PostgreSQL (pgvector), Redis, MySQL e SQLite.",
+                "description": (
+                    "Conexão e navegação nativa em bancos PostgreSQL (pgvector), Redis, "
+                    "MySQL e SQLite."
+                ),
                 "category": "Bancos & SQL",
                 "installed": True,
                 "active": True,
@@ -222,7 +256,10 @@ async def extensions() -> dict[str, Any]:
                 "name": "Error Lens",
                 "publisher": "usernamehw",
                 "version": "3.20.0",
-                "description": "Exibe mensagens de erro, warnings e diagnósticos do LSP diretamente inline nas linhas de código.",
+                "description": (
+                    "Exibe mensagens de erro, warnings e diagnósticos do LSP diretamente "
+                    "inline nas linhas de código."
+                ),
                 "category": "Produtividade",
                 "installed": True,
                 "active": True,
@@ -234,7 +271,10 @@ async def extensions() -> dict[str, Any]:
                 "name": "GitLens — Git supercharged",
                 "publisher": "eamodio",
                 "version": "2026.1.0",
-                "description": "Autoria de código linha por linha (blame), histórico decommits e comparação visual de branches.",
+                "description": (
+                    "Autoria de código linha por linha (blame), histórico de commits e "
+                    "comparação visual de branches."
+                ),
                 "category": "Produtividade",
                 "installed": True,
                 "active": True,
@@ -246,7 +286,10 @@ async def extensions() -> dict[str, Any]:
                 "name": "Material Icon Theme",
                 "publisher": "pkief",
                 "version": "5.7.0",
-                "description": "Ícones dinâmicos e modernos para todos os tipos de arquivo e pasta no Explorer.",
+                "description": (
+                    "Ícones dinâmicos e modernos para todos os tipos de arquivo e pasta "
+                    "no Explorer."
+                ),
                 "category": "Produtividade",
                 "installed": True,
                 "active": True,
@@ -258,7 +301,10 @@ async def extensions() -> dict[str, Any]:
                 "name": "Thunder Client",
                 "publisher": "rangav",
                 "version": "2.26.0",
-                "description": "Executor leve de requisições HTTP/REST e GraphQL integrado na IDE agêntica.",
+                "description": (
+                    "Executor leve de requisições HTTP/REST e GraphQL integrado na IDE "
+                    "agêntica."
+                ),
                 "category": "APIs & Testes",
                 "installed": True,
                 "active": True,
@@ -270,7 +316,9 @@ async def extensions() -> dict[str, Any]:
                 "name": "Vitest & Jest Runner",
                 "publisher": "vitest",
                 "version": "1.0.8",
-                "description": "Execução e debug de testes unitários com 1 clique direto no código.",
+                "description": (
+                    "Execução e debug de testes unitários com 1 clique direto no código."
+                ),
                 "category": "APIs & Testes",
                 "installed": True,
                 "active": True,
@@ -282,7 +330,10 @@ async def extensions() -> dict[str, Any]:
                 "name": "Kubernetes",
                 "publisher": "ms-kubernetes-tools",
                 "version": "1.3.15",
-                "description": "Inspeção de pods, navegação de namespaces, deployments e logs de clusters K8s.",
+                "description": (
+                    "Inspeção de pods, navegação de namespaces, deployments e logs de "
+                    "clusters K8s."
+                ),
                 "category": "DevOps & Cloud",
                 "installed": True,
                 "active": True,
@@ -294,7 +345,9 @@ async def extensions() -> dict[str, Any]:
                 "name": "HashiCorp Terraform",
                 "publisher": "hashicorp",
                 "version": "2.32.0",
-                "description": "Autocompletar, validação HCL e linting para infraestrutura como código.",
+                "description": (
+                    "Autocompletar, validação HCL e linting para infraestrutura como código."
+                ),
                 "category": "DevOps & Cloud",
                 "installed": True,
                 "active": True,
@@ -306,7 +359,9 @@ async def extensions() -> dict[str, Any]:
                 "name": "Mermaid Preview",
                 "publisher": "vscjava",
                 "version": "1.8.0",
-                "description": "Renderização e preview em tempo real de diagramas Mermaid em Markdown.",
+                "description": (
+                    "Renderização e preview em tempo real de diagramas Mermaid em Markdown."
+                ),
                 "category": "Produtividade",
                 "installed": True,
                 "active": True,
@@ -318,7 +373,10 @@ async def extensions() -> dict[str, Any]:
                 "name": "Prettier - Code Formatter",
                 "publisher": "esbenp",
                 "version": "10.4.0",
-                "description": "Formatação universal ao salvar arquivos TypeScript, JavaScript, CSS e HTML.",
+                "description": (
+                    "Formatação universal ao salvar arquivos TypeScript, JavaScript, CSS "
+                    "e HTML."
+                ),
                 "category": "Produtividade",
                 "installed": True,
                 "active": True,
@@ -333,7 +391,9 @@ async def extensions() -> dict[str, Any]:
 
 
 @router.post("/ticket")
-async def ticket(request: Request, project: str, language: str, server: str | None = None) -> dict[str, Any]:
+async def ticket(
+    request: Request, project: str, language: str, server: str | None = None
+) -> dict[str, Any]:
     if server_for_language(language, preferred_server=server) is None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

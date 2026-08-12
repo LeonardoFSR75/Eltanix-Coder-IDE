@@ -133,7 +133,8 @@ def server_for_language(language: str, preferred_server: str | None = None) -> S
             if spec.id == preferred_server:
                 return spec
     # Retorna o primeiro candidato disponível; se nenhum estiver instalado no host,
-    # retorna o primeiro candidato como fallback para que o teste/ponte possa reportar o comando ausente.
+    # retorna o primeiro candidato como fallback para que o teste/ponte possa
+    # reportar o comando ausente.
     for spec in candidatos:
         if spec.available:
             return spec

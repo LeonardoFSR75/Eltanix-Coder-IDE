@@ -123,13 +123,18 @@ async def write_file(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
                 except Exception:
                     pass
         if "<html" not in content.lower() or "<body" not in content.lower():
-            syntax_warning = " AVISO: O HTML gerado está sem estrutura completa <html>/<head>/<body>."
+            syntax_warning = (
+                " AVISO: O HTML gerado está sem estrutura completa <html>/<head>/<body>."
+            )
     elif path.endswith(".py"):
         import ast
         try:
             ast.parse(content, filename=path)
         except SyntaxError as syn_err:
-            syntax_warning = f" AVISO DE SINTAXE: O código Python possui um erro de sintaxe na linha {syn_err.lineno}: {syn_err.msg}."
+            syntax_warning = (
+                f" AVISO DE SINTAXE: O código Python possui um erro de sintaxe na linha "
+                f"{syn_err.lineno}: {syn_err.msg}."
+            )
     elif path.endswith(".json"):
         import json
         try:
@@ -220,7 +225,8 @@ async def edit_file(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
         return ToolResult.failure(
             f"O trecho não foi encontrado em {path}. "
             "Leia o arquivo novamente: ele pode ter mudado, ou a indentação/espaços diferem. "
-            "DICA: Verifique se o código possui espaços extras no fim da linha ou indentação diferente."
+            "DICA: Verifique se o código possui espaços extras no fim da linha ou "
+            "indentação diferente."
         )
     if ocorrencias > 1:
         # Substituir a primeira ocorrência silenciosamente editaria o lugar

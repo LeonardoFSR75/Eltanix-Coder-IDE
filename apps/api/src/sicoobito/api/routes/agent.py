@@ -316,7 +316,8 @@ class AcceptFileRequest(BaseModel):
 async def accept_file(
     session_id: str, payload: AcceptFileRequest, request: Request
 ) -> dict[str, Any]:
-    """Aceita uma edição do agente: copia o arquivo do worktree da sessão para o workspace principal do usuário."""
+    """Aceita uma edição do agente: copia o arquivo do worktree da sessão para o
+    workspace principal do usuário."""
     sessao = await _session(request, session_id)
     try:
         sessao.context.fs.resolve(payload.path)
@@ -326,7 +327,10 @@ async def accept_file(
     try:
         content = sessao.context.fs.read(payload.path)
     except (PathEscapeError, FileNotFoundError, ValueError, OSError) as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Arquivo não encontrado no worktree: {payload.path}") from exc
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Arquivo não encontrado no worktree: {payload.path}",
+        ) from exc
 
     try:
         from sicoobito.workspace.fs import WorkspaceFS

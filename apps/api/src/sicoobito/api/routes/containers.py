@@ -7,10 +7,9 @@ imagens locais, redes, volumes e executar ações de gerenciamento.
 
 from __future__ import annotations
 
-import datetime
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Request, status
+from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
 
 from sicoobito.api.deps import AuthDep
@@ -182,12 +181,22 @@ async def get_container_tree() -> dict[str, Any]:
                 "size": f"{round(img.attrs.get('Size', 0) / (1024 * 1024), 1)} MB",
             })
 
-        net_list = [{"name": n.name, "driver": n.attrs.get("Driver", "bridge")} for n in client.networks.list()[:10]]
-        vol_list = [{"name": v.name, "driver": v.attrs.get("Driver", "local")} for v in client.volumes.list()[:10]]
+        net_list = [
+            {"name": n.name, "driver": n.attrs.get("Driver", "bridge")}
+            for n in client.networks.list()[:10]
+        ]
+        vol_list = [
+            {"name": v.name, "driver": v.attrs.get("Driver", "local")}
+            for v in client.volumes.list()[:10]
+        ]
 
         return {
             "connected": True,
-            "daemon_info": {"server_version": getattr(client.info(), "get", lambda x: "Docker Engine")("ServerVersion")},
+            "daemon_info": {
+                "server_version": getattr(client.info(), "get", lambda x: "Docker Engine")(
+                    "ServerVersion"
+                )
+            },
             "containers_by_project": projetos if projetos else {"sicoobito": FALLBACK_CONTAINERS},
             "images": images_list if images_list else FALLBACK_IMAGES,
             "registries": [
@@ -230,7 +239,10 @@ async def container_action(container_id: str, req: ContainerActionRequest) -> di
     """Executa uma ação (start, stop, restart, remove) em um container."""
     client = _obter_cliente_docker()
     if client is None:
-        return {"ok": True, "message": f"Ação '{req.action}' executada em modo de simulação para {container_id}."}
+        return {
+            "ok": True,
+            "message": f"Ação '{req.action}' executada em modo de simulação para {container_id}.",
+        }
 
     try:
         c = client.containers.get(container_id)
@@ -243,11 +255,16 @@ async def container_action(container_id: str, req: ContainerActionRequest) -> di
         elif req.action == "remove":
             c.remove(force=True)
         else:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Ação '{req.action}' desconhecida.")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Ação '{req.action}' desconhecida.",
+            )
 
         return {"ok": True, "container_id": container_id, "action": req.action, "state": c.status}
     except Exception as exc:
-        log.warning("container.action.failed", container=container_id, action=req.action, error=str(exc))
+        log.warning(
+            "container.action.failed", container=container_id, action=req.action, error=str(exc)
+        )
         return {"ok": True, "message": f"Ação '{req.action}' registrada para {container_id}."}
 
 
@@ -258,7 +275,11 @@ async def container_logs(container_id: str, tail: int = 100) -> dict[str, Any]:
     if client is None:
         return {
             "container_id": container_id,
-            "logs": f"[simulação] Logs do container {container_id}:\n2026-08-11 11:00:00 [INFO] Container rodando com sucesso.\n2026-08-11 11:05:00 [INFO] Pronto para receber requisições.\n",
+            "logs": (
+                f"[simulação] Logs do container {container_id}:\n"
+                "2026-08-11 11:00:00 [INFO] Container rodando com sucesso.\n"
+                "2026-08-11 11:05:00 [INFO] Pronto para receber requisições.\n"
+            ),
         }
 
     try:

@@ -176,7 +176,7 @@ async def read_file(
             except (PathEscapeError, FileNotFoundError, FileTooLargeError, ValueError) as exc:
                 raise _erro_de_caminho(exc) from exc
         else:
-            raise _erro_de_caminho(FileNotFoundError(filepath))
+            raise _erro_de_caminho(FileNotFoundError(filepath)) from None
     except (PathEscapeError, FileTooLargeError, ValueError) as exc:
         raise _erro_de_caminho(exc) from exc
 
