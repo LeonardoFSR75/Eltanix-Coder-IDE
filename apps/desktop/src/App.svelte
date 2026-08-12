@@ -3,14 +3,20 @@
   import TopMenuBar from "./lib/components/TopMenuBar.svelte";
   import FileExplorer from "./lib/components/FileExplorer.svelte";
   import TabStrip, { type TabItem } from "./lib/components/TabStrip.svelte";
+  import GitPanel from "./lib/components/GitPanel.svelte";
+  import SearchPanel from "./lib/components/SearchPanel.svelte";
+  import QuickOpen from "./lib/components/QuickOpen.svelte";
+  import CommandPalette, { type Command } from "./lib/components/CommandPalette.svelte";
   import Editor from "./lib/components/Editor.svelte";
   import InlineDiffApprovalBar from "./lib/components/InlineDiffApprovalBar.svelte";
   import Terminal from "./lib/components/Terminal.svelte";
   import AgentDock from "./lib/components/AgentDock.svelte";
   import StatusBar from "./lib/components/StatusBar.svelte";
   import ProjectModal from "./lib/components/ProjectModal.svelte";
+  import ApiKeyModal from "./lib/components/ApiKeyModal.svelte";
   import { readFile, writeFile } from "./lib/api/workspace";
   import { listProjects, getProjectSummary, type ProjectRecord } from "./lib/api/projects";
+  import { hasApiKey } from "./lib/client";
 
   const STORAGE_KEY = "sicoobito_current_project";
 
@@ -25,6 +31,10 @@
   let showTerminal = $state(true);
   let showAgent = $state(true);
   let isProjectModalOpen = $state(false);
+  let isApiKeyModalOpen = $state(!hasApiKey());
+  let sidebarView = $state<"explorer" | "git" | "search">("explorer");
+  let showQuickOpen = $state(false);
+  let showCommandPalette = $state(false);
 
   let openTabs = $state<TabItem[]>([
     { path: "apps/desktop/src/App.svelte", name: "App.svelte", isDirty: false },
@@ -42,6 +52,18 @@
   } | null>(null);
 
   let activeCode = $derived(fileContents[activeTabPath] ?? "// Carregando...");
+
+  let editorRef: { notifySaved: () => void } | null = $state(null);
+  let revealTarget = $state<{ line: number; column: number } | null>(null);
+
+  async function handleNavigate(path: string, line: number, column: number) {
+    await handleOpenPath(path);
+    // Reatribuir (não mutar) para o `$effect` do Editor perceber a mudança
+    // mesmo quando o destino é a mesma linha/coluna de uma navegação anterior.
+    revealTarget = null;
+    await Promise.resolve();
+    revealTarget = { line, column };
+  }
 
   function getLanguageFromPath(path: string): string {
     if (path.endsWith(".ts")) return "typescript";
@@ -135,20 +157,42 @@
     try {
       await writeFile(currentProject, activeTabPath, contentToSave);
       openTabs = openTabs.map((t) => (t.path === activeTabPath ? { ...t, isDirty: false } : t));
+      editorRef?.notifySaved();
     } catch (err: any) {
       alert(`Erro ao salvar arquivo: ${err.message || err}`);
     }
   }
+
+  let commands = $derived.by((): Command[] => [
+    { id: "save", title: "Salvar arquivo ativo", shortcut: "Ctrl+S", run: handleSaveFile },
+    { id: "toggle-sidebar", title: "Alternar barra lateral", shortcut: "Ctrl+B", run: () => (showSidebar = !showSidebar) },
+    { id: "toggle-terminal", title: "Alternar terminal", run: () => (showTerminal = !showTerminal) },
+    { id: "toggle-agent", title: "Alternar painel do agente", run: () => (showAgent = !showAgent) },
+    { id: "view-explorer", title: "Ir para: Explorador", run: () => { showSidebar = true; sidebarView = "explorer"; } },
+    { id: "view-git", title: "Ir para: Git", run: () => { showSidebar = true; sidebarView = "git"; } },
+    { id: "view-search", title: "Ir para: Busca", run: () => { showSidebar = true; sidebarView = "search"; } },
+    { id: "quick-open", title: "Abrir arquivo por nome…", shortcut: "Ctrl+P", run: () => (showQuickOpen = true) },
+    { id: "new-project", title: "Criar / vincular novo projeto…", run: () => (isProjectModalOpen = true) },
+    { id: "api-key", title: "Configurar chave de API…", run: () => (isApiKeyModalOpen = true) },
+  ]);
 
   onMount(() => {
     refreshProjects();
     loadProjectSummary(currentProject);
 
     const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
+      const mod = e.ctrlKey || e.metaKey;
+      if (showQuickOpen || showCommandPalette) return;
+      if (mod && e.shiftKey && e.key.toLowerCase() === "p") {
+        e.preventDefault();
+        showCommandPalette = true;
+      } else if (mod && e.key.toLowerCase() === "p") {
+        e.preventDefault();
+        showQuickOpen = true;
+      } else if (mod && e.key.toLowerCase() === "s") {
         e.preventDefault();
         handleSaveFile();
-      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "b") {
+      } else if (mod && e.key.toLowerCase() === "b") {
         e.preventDefault();
         showSidebar = !showSidebar;
       }
@@ -174,6 +218,7 @@
     onToggleAgent={() => (showAgent = !showAgent)}
     onSaveFile={handleSaveFile}
     onOpenProjectModal={() => (isProjectModalOpen = true)}
+    onOpenApiKeyModal={() => (isApiKeyModalOpen = true)}
   />
 
   <ProjectModal
@@ -182,13 +227,52 @@
     onProjectCreated={handleProjectCreated}
   />
 
+  <ApiKeyModal
+    isOpen={isApiKeyModalOpen}
+    dismissible={hasApiKey()}
+    onSaved={() => {
+      isApiKeyModalOpen = false;
+      refreshProjects();
+    }}
+  />
+
   <div class="workspace-body">
     {#if showSidebar}
-      <FileExplorer
-        project={currentProject}
-        activeFilePath={activeTabPath}
-        onSelectFile={handleOpenPath}
-      />
+      <div class="sidebar-wrap">
+        <div class="sidebar-tabs">
+          <button
+            class="sidebar-tab {sidebarView === 'explorer' ? 'active' : ''}"
+            onclick={() => (sidebarView = "explorer")}
+          >
+            📁 Explorador
+          </button>
+          <button
+            class="sidebar-tab {sidebarView === 'git' ? 'active' : ''}"
+            onclick={() => (sidebarView = "git")}
+          >
+            🌿 Git
+          </button>
+          <button
+            class="sidebar-tab {sidebarView === 'search' ? 'active' : ''}"
+            onclick={() => (sidebarView = "search")}
+          >
+            🔍 Busca
+          </button>
+        </div>
+        <div class="sidebar-panel-slot">
+          {#if sidebarView === "explorer"}
+            <FileExplorer
+              project={currentProject}
+              activeFilePath={activeTabPath}
+              onSelectFile={handleOpenPath}
+            />
+          {:else if sidebarView === "git"}
+            <GitPanel project={currentProject} onOpenFile={handleOpenPath} />
+          {:else}
+            <SearchPanel project={currentProject} onOpenMatch={handleNavigate} />
+          {/if}
+        </div>
+      </div>
     {/if}
 
     <div class="editor-area">
@@ -212,10 +296,14 @@
       <div class="editor-terminal-split">
         <div class="editor-container">
           <Editor
+            bind:this={editorRef}
             value={activeCode}
             language={getLanguageFromPath(activeTabPath)}
             path={activeTabPath}
+            project={currentProject}
+            {revealTarget}
             onchange={handleCodeChange}
+            onNavigate={handleNavigate}
           />
         </div>
 
@@ -230,6 +318,7 @@
     {#if showAgent}
       <div class="agent-side-panel">
         <AgentDock
+          project={currentProject}
           activeFile={activeTabPath}
           onInsertCode={handleInsertCodeSnippet}
         />
@@ -238,6 +327,18 @@
   </div>
 
   <StatusBar branch={activeBranch} model={`Router (${profile})`} cost={activeCost} />
+
+  {#if showQuickOpen}
+    <QuickOpen
+      project={currentProject}
+      onOpenFile={handleOpenPath}
+      onClose={() => (showQuickOpen = false)}
+    />
+  {/if}
+
+  {#if showCommandPalette}
+    <CommandPalette {commands} onClose={() => (showCommandPalette = false)} />
+  {/if}
 </div>
 
 <style>
@@ -248,6 +349,39 @@
     height: 100vh;
     overflow: hidden;
     background-color: var(--bg-dark);
+  }
+  .sidebar-wrap {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+  }
+  .sidebar-tabs {
+    display: flex;
+    flex-shrink: 0;
+    background-color: var(--bg-dark);
+    border-bottom: 1px solid var(--border-color);
+  }
+  .sidebar-tab {
+    flex: 1;
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: var(--text-muted);
+    padding: 6px 4px;
+    font-size: 0.7rem;
+    cursor: pointer;
+  }
+  .sidebar-tab:hover {
+    color: var(--text-main);
+  }
+  .sidebar-tab.active {
+    color: var(--accent-cyan);
+    border-bottom-color: var(--accent-cyan);
+  }
+  .sidebar-panel-slot {
+    flex: 1;
+    min-height: 0;
+    display: flex;
   }
   .workspace-body {
     display: flex;
