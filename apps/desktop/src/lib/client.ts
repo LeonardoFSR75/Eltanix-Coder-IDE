@@ -4,7 +4,6 @@
  */
 
 const API_ORIGIN = import.meta.env.VITE_API_ORIGIN || "http://localhost:5401";
-const DEFAULT_API_KEY = "REDACTED_API_KEY";
 
 export class HttpError extends Error {
   constructor(
@@ -16,27 +15,47 @@ export class HttpError extends Error {
   }
 }
 
+/**
+ * Erro lançado quando nenhuma SICOOBITO_API_KEY foi configurada — nem via
+ * `VITE_SICOOBITO_API_KEY` (build/preview via Docker), nem digitada pelo usuário
+ * e salva no `localStorage`. Diferente de `HttpError`: não veio do servidor,
+ * então não faz sentido tentar de novo sem antes pedir a chave.
+ *
+ * Não existe fallback fixo aqui de propósito — um app empacotado via Tauri e
+ * distribuído carrega qualquer valor hardcoded para fora da máquina de quem
+ * o gerou. Sem chave configurada, o app deve pedir, nunca inventar uma.
+ */
+export class MissingApiKeyError extends Error {
+  constructor() {
+    super("Nenhuma SICOOBITO_API_KEY configurada. Configure em Configurações.");
+    this.name = "MissingApiKeyError";
+  }
+}
+
 export function getApiKey(): string {
-  if (typeof window === "undefined") return DEFAULT_API_KEY;
-  let key =
+  if (typeof window === "undefined") return "";
+  return (
     localStorage.getItem("SICOOBITO_API_KEY") ||
     localStorage.getItem("sicoobito_api_key") ||
-    import.meta.env.VITE_SICOOBITO_API_KEY ||
-    "";
-  if (!key) {
-    key = DEFAULT_API_KEY;
-    try {
-      localStorage.setItem("SICOOBITO_API_KEY", key);
-    } catch {
-      // Ignora erro de quota do localStorage
-    }
-  }
-  return key;
+    (import.meta.env.VITE_SICOOBITO_API_KEY as string | undefined) ||
+    ""
+  );
+}
+
+export function hasApiKey(): boolean {
+  return getApiKey().trim().length > 0;
 }
 
 export function setApiKey(key: string): void {
   if (typeof window !== "undefined") {
-    localStorage.setItem("SICOOBITO_API_KEY", key);
+    localStorage.setItem("SICOOBITO_API_KEY", key.trim());
+  }
+}
+
+export function clearApiKey(): void {
+  if (typeof window !== "undefined") {
+    localStorage.removeItem("SICOOBITO_API_KEY");
+    localStorage.removeItem("sicoobito_api_key");
   }
 }
 

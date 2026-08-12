@@ -12,7 +12,8 @@
     onToggleTerminal,
     onToggleAgent,
     onSaveFile,
-    onOpenProjectModal
+    onOpenProjectModal,
+    onOpenApiKeyModal
   } = $props<{
     project?: string;
     projects?: { slug: string; name: string }[];
@@ -27,6 +28,7 @@
     onToggleAgent?: () => void;
     onSaveFile?: () => void;
     onOpenProjectModal?: () => void;
+    onOpenApiKeyModal?: () => void;
   }>();
 
   const profiles = [
@@ -105,6 +107,13 @@
       title="Alternar Agente Agêntico"
     >
       🤖 Agente
+    </button>
+    <button
+      class="toggle-btn"
+      onclick={() => onOpenApiKeyModal?.()}
+      title="Configurar chave de API (SICOOBITO_API_KEY)"
+    >
+      🔑
     </button>
   </div>
 </header>
