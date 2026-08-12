@@ -203,18 +203,51 @@ class Settings(BaseSettings):
 
     github_token: str = Field(default="", alias="GITHUB_TOKEN")
 
-    # ── CORS ────────────────────────────────────────────────────────────────
+    # ── Observabilidade (Langfuse) ─────────────────────────────────────────
+    langfuse_public_key: str = Field(default="", alias="LANGFUSE_PUBLIC_KEY")
+    langfuse_secret_key: str = Field(default="", alias="LANGFUSE_SECRET_KEY")
+    langfuse_host: str = Field(default="https://cloud.langfuse.com", alias="LANGFUSE_HOST")
+    langfuse_enabled: bool = Field(default=True, alias="LANGFUSE_ENABLED")
+
     cors_origins: list[str] = Field(
-        default=["http://localhost:3000", "http://127.0.0.1:3000"],
+        default=[
+            "http://localhost:5400",
+            "http://127.0.0.1:5400",
+            "http://localhost:5409",
+            "http://127.0.0.1:5409",
+            "http://localhost:3000",
+            "http://127.0.0.1:3000",
+        ],
         alias="CORS_ORIGINS",
     )
 
+
     @field_validator("cors_origins", mode="before")
     @classmethod
-    def _split_origins(cls, value: object) -> object:
+    def _split_origins(cls, value: object) -> list[str]:
         if isinstance(value, str):
-            return [item.strip() for item in value.split(",") if item.strip()]
-        return value
+            val_str = value.strip()
+            if val_str.startswith("[") and val_str.endswith("]"):
+                import json
+                try:
+                    res = json.loads(val_str)
+                    if isinstance(res, list):
+                        return [str(x) for x in res]
+                except Exception:
+                    pass
+            return [item.strip() for item in val_str.split(",") if item.strip()]
+        if isinstance(value, list):
+            return [str(x) for x in value]
+        return [
+            "http://localhost:5400",
+            "http://127.0.0.1:5400",
+            "http://localhost:5409",
+            "http://127.0.0.1:5409",
+            "http://localhost:3000",
+            "http://127.0.0.1:3000",
+        ]
+
+
 
     @property
     def env_file_path(self) -> Path:

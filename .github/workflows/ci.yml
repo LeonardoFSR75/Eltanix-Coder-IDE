@@ -47,6 +47,25 @@ jobs:
       - name: Build
         run: npm run build
 
+  desktop-build:
+    name: Desktop (Svelte 5) — typecheck & build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/desktop
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Instalar dependências
+        run: npm install
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Build
+        run: npm run build
+
+
   api-db-tests:
     name: API — integração com Postgres (RRF)
     runs-on: ubuntu-latest

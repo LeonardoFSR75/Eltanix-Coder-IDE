@@ -74,12 +74,14 @@ Pronto:
 
 | Serviço | Porta | URL |
 |---|---|---|
-| IDE e dashboard | 5400 | http://localhost:5400/ide |
+| IDE e dashboard (Next.js Web) | 5400 | http://localhost:5400/ide |
+| IDE Desktop Preview (Svelte 5) | 5409 | http://localhost:5409 |
 | API (gateway OpenAI-compatible) | 5401 | http://localhost:5401/v1 |
 | Executor (interno) | 5402 | — |
 | Postgres | 5403 | — |
 | Redis | 5404 | — |
 | Ollama | 5405 | http://localhost:5405 |
+
 
 A faixa 5400–5499 foi escolhida para não disputar 3000, 8000 e 5432 com outros
 projetos.

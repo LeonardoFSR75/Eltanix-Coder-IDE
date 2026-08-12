@@ -281,6 +281,24 @@ services:
     depends_on:
       - api
 
+  desktop:
+    build:
+      context: ./apps/desktop
+    networks:
+      - default
+      - browser_net
+    environment:
+      VITE_API_ORIGIN: ${PUBLIC_API_ORIGIN:-http://localhost:5401}
+      VITE_SICOOBITO_API_KEY: ${SICOOBITO_API_KEY:?defina SICOOBITO_API_KEY no .env}
+      SICOOBITO_API_KEY: ${SICOOBITO_API_KEY:?defina SICOOBITO_API_KEY no .env}
+      PORT: "5409"
+    ports:
+      - "127.0.0.1:5409:5409"
+    volumes:
+      - ./apps/desktop/src:/app/src
+    depends_on:
+      - api
+
 volumes:
   pgdata:
   redisdata:

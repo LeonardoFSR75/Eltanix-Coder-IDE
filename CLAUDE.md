@@ -1,10 +1,11 @@
 # SicoobitoCode
 
-IDE agêntica local-first: FastAPI (`apps/api`) + Next.js (`apps/web`), Postgres+pgvector,
+IDE agêntica local-first: FastAPI (`apps/api`) + Next.js (`apps/web`) + Svelte 5/Tauri (`apps/desktop`), Postgres+pgvector,
 Redis, MinIO, tudo via Docker Compose. Ver [README.md](README.md) para a visão de produto
 e como subir a stack — este arquivo é sobre como trabalhar no código.
 
-Guias específicos: [apps/api/CLAUDE.md](apps/api/CLAUDE.md), [apps/web/CLAUDE.md](apps/web/CLAUDE.md).
+Guias específicos: [apps/api/CLAUDE.md](apps/api/CLAUDE.md), [apps/web/CLAUDE.md](apps/web/CLAUDE.md), [apps/desktop/CLAUDE.md](apps/desktop/CLAUDE.md).
+
 
 ## Invariantes de arquitetura (não violar sem atualizar o ADR correspondente)
 
