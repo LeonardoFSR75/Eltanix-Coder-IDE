@@ -11,6 +11,8 @@ export interface PackageItem {
 
 export interface ProjectPackagesResponse {
   project: string;
+  ecosystem?: string;
+  manifest_file?: string;
   venv_exists: boolean;
   venv_path: string;
   installed_count: number;
@@ -63,19 +65,10 @@ export async function uninstallProjectPackage(
   packageName: string,
   saveRequirements: boolean = true
 ): Promise<UninstallPackageResult> {
-  const res = await fetch(`/api/gateway/api/projects/${encodeURIComponent(slug)}/packages/uninstall`, {
-    method: "DELETE",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      package: packageName,
-      save_requirements: saveRequirements,
-    }),
+  return del<UninstallPackageResult>(`/api/projects/${encodeURIComponent(slug)}/packages/uninstall`, {
+    package: packageName,
+    save_requirements: saveRequirements,
   });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ detail: res.statusText }));
-    throw new Error(err.detail || err.error || "Falha ao desinstalar pacote");
-  }
-  return res.json();
 }
 
 export async function syncProjectRequirements(slug: string): Promise<SyncRequirementsResult> {

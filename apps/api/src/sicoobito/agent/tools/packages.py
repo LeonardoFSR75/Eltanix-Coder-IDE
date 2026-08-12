@@ -38,21 +38,33 @@ log = get_logger(__name__)
             },
             "package": {
                 "type": "string",
-                "description": "Nome do pacote ou especificação (ex: 'pandas', 'requests>=2.28.0') (obrigatório em install/uninstall)",
+                "description": (
+                    "Nome do pacote ou especificação (ex: 'pandas', 'requests>=2.28.0') "
+                    "(obrigatório em install/uninstall)"
+                ),
             },
             "save_requirements": {
                 "type": "boolean",
-                "description": "Se True (padrão), atualiza automaticamente o arquivo requirements.txt do projeto",
+                "description": (
+                    "Se True (padrão), atualiza automaticamente o arquivo requirements.txt "
+                    "do projeto"
+                ),
             },
         },
         "required": ["action"],
     },
-    summarize=lambda a: f"gerenciar pacotes ({a.get('action')}, pacote={a.get('package') or 'N/A'})",
+    summarize=(
+        lambda a: f"gerenciar pacotes ({a.get('action')}, pacote={a.get('package') or 'N/A'})"
+    ),
 )
 async def manage_packages(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
+    import shutil
+
     from sicoobito.api.routes.packages import (
+        detect_ecosystem,
+        ensure_project_env,
         ensure_venv,
-        get_pip_executable,
+        get_manifest_name,
         get_python_executable,
         get_venv_path,
         parse_requirements_txt,
@@ -64,42 +76,100 @@ async def manage_packages(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
     save_requirements = args.get("save_requirements", True)
 
     project_path = Path(ctx.workspace_root)
+    eco = detect_ecosystem(project_path)
+    manifest_name = get_manifest_name(eco)
 
     if action == "list":
+        installed_packages: list[dict[str, str]] = []
         venv_path = get_venv_path(project_path)
         py_exe = get_python_executable(venv_path)
-        pip_exe = get_pip_executable(venv_path)
-        installed_packages: list[dict[str, str]] = []
 
-        if py_exe.exists() and pip_exe.exists():
-            cmd = [str(pip_exe), "list", "--format=json"]
-            try:
-                proc = await asyncio.create_subprocess_exec(
-                    *cmd,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE,
-                    cwd=str(project_path),
-                )
-                stdout, _ = await proc.communicate()
-                if proc.returncode == 0:
+        if eco == "nodejs":
+            pkg_json = project_path / "package.json"
+            if pkg_json.exists():
+                try:
                     import json
-                    raw_pkgs = json.loads(stdout.decode(errors="ignore"))
-                    installed_packages = [
-                        {"name": p["name"], "version": p["version"]} for p in raw_pkgs
-                    ]
-            except Exception as exc:
-                log.warning("manage_packages.list.failed", error=str(exc))
+                    data = json.loads(pkg_json.read_text(encoding="utf-8", errors="ignore"))
+                    deps = data.get("dependencies", {})
+                    dev_deps = data.get("devDependencies", {})
+                    for k, v in {**deps, **dev_deps}.items():
+                        installed_packages.append({"name": k, "version": str(v)})
+                except Exception as exc:
+                    log.warning("manage_packages.node_parse.failed", error=str(exc))
+        elif eco == "go":
+            go_mod = project_path / "go.mod"
+            if go_mod.exists():
+                import re
+                for line in go_mod.read_text(encoding="utf-8", errors="ignore").splitlines():
+                    line = line.strip()
+                    match = re.match(r"^([a-zA-Z0-9_\-\.\/]+)\s+(v[0-9\.\-]+)", line)
+                    if match:
+                        installed_packages.append(
+                            {"name": match.group(1), "version": match.group(2)}
+                        )
+        elif eco == "rust":
+            cargo_toml = project_path / "Cargo.toml"
+            if cargo_toml.exists():
+                in_deps = False
+                for line in cargo_toml.read_text(encoding="utf-8", errors="ignore").splitlines():
+                    stripped = line.strip()
+                    if stripped.startswith("["):
+                        in_deps = "dependencies" in stripped.lower()
+                        continue
+                    if in_deps and "=" in stripped:
+                        parts = stripped.split("=", 1)
+                        k = parts[0].strip()
+                        v = parts[1].strip().strip('"').strip("'")
+                        installed_packages.append({"name": k, "version": v})
+        elif eco == "php":
+            composer_json = project_path / "composer.json"
+            if composer_json.exists():
+                try:
+                    import json
+                    data = json.loads(composer_json.read_text(encoding="utf-8", errors="ignore"))
+                    reqs = data.get("require", {})
+                    for k, v in reqs.items():
+                        if k != "php":
+                            installed_packages.append({"name": k, "version": str(v)})
+                except Exception as exc:
+                    log.warning("manage_packages.php_parse.failed", error=str(exc))
+        else:
+            if py_exe.exists():
+                cmd = [str(py_exe), "-m", "pip", "list", "--format=json"]
+                try:
+                    proc = await asyncio.create_subprocess_exec(
+                        *cmd,
+                        stdout=asyncio.subprocess.PIPE,
+                        stderr=asyncio.subprocess.PIPE,
+                        cwd=str(project_path),
+                    )
+                    stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=30)
+                    if proc.returncode == 0:
+                        import json
+                        raw_pkgs = json.loads(stdout.decode(errors="ignore"))
+                        installed_packages = [
+                            {"name": p["name"], "version": p["version"]} for p in raw_pkgs
+                        ]
+                except Exception as exc:
+                    log.warning("manage_packages.list.failed", error=str(exc))
 
-        req_map = parse_requirements_txt(project_path)
-        req_file = project_path / "requirements.txt"
-        req_content = req_file.read_text(encoding="utf-8", errors="ignore") if req_file.exists() else ""
+        manifest_file = project_path / manifest_name
+        req_map = (
+            parse_requirements_txt(project_path)
+            if eco == "python"
+            else {p["name"]: p["version"] for p in installed_packages}
+        )
+        req_content = (
+            manifest_file.read_text(encoding="utf-8", errors="ignore")
+            if manifest_file.exists()
+            else ""
+        )
 
         count = len(installed_packages)
         content_str = (
             f"=== Pacotes do Projeto ({project_path.name}) ===\n"
-            f"Ambiente Virtual (.venv): {'Existente' if py_exe.exists() else 'Não criado'}\n"
+            f"Ecossistema: {eco.upper()} | Manifesto: {manifest_name}\n"
             f"Total de Pacotes Instalados: {count}\n"
-            f"requirements.txt: {'Sim' if req_file.exists() else 'Não'}\n"
         )
         if installed_packages:
             amostra = ", ".join(f"{p['name']}=={p['version']}" for p in installed_packages[:15])
@@ -109,9 +179,11 @@ async def manage_packages(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
             ok=True,
             content=content_str,
             data={
+                "ecosystem": eco,
+                "manifest_file": manifest_name,
                 "installed_count": count,
                 "packages": installed_packages,
-                "requirements_exists": req_file.exists(),
+                "requirements_exists": manifest_file.exists(),
                 "requirements_content": req_content,
                 "requirements_map": req_map,
             },
@@ -122,12 +194,34 @@ async def manage_packages(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
             return ToolResult.failure("O nome do pacote é obrigatório para a ação 'install'.")
 
         try:
-            venv_path = await ensure_venv(project_path)
+            await ensure_project_env(project_path)
         except Exception as exc:
-            return ToolResult.failure(f"Falha ao preparar venv do projeto: {exc}")
+            return ToolResult.failure(f"Falha ao preparar ambiente do projeto: {exc}")
 
-        pip_exe = get_pip_executable(venv_path)
-        cmd = [str(pip_exe), "install", package]
+        if eco == "nodejs":
+            npm_bin = shutil.which("npm")
+            if not npm_bin:
+                return ToolResult.failure("npm não encontrado no sistema.")
+            cmd = [npm_bin, "install", package]
+        elif eco == "go":
+            go_bin = shutil.which("go")
+            if not go_bin:
+                return ToolResult.failure("go CLI não encontrado no sistema.")
+            cmd = [go_bin, "get", package]
+        elif eco == "rust":
+            cargo_bin = shutil.which("cargo")
+            if not cargo_bin:
+                return ToolResult.failure("cargo não encontrado no sistema.")
+            cmd = [cargo_bin, "add", package]
+        elif eco == "php":
+            composer_bin = shutil.which("composer")
+            if not composer_bin:
+                return ToolResult.failure("composer não encontrado no sistema.")
+            cmd = [composer_bin, "require", package]
+        else:
+            venv_path = get_venv_path(project_path)
+            py_exe = get_python_executable(venv_path)
+            cmd = [str(py_exe), "-m", "pip", "install", package]
 
         proc = await asyncio.create_subprocess_exec(
             *cmd,
@@ -135,7 +229,11 @@ async def manage_packages(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
             stderr=asyncio.subprocess.PIPE,
             cwd=str(project_path),
         )
-        stdout, stderr = await proc.communicate()
+        try:
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=300)
+        except TimeoutError:
+            proc.kill()
+            return ToolResult.failure(f"Tempo limite excedido ao instalar o pacote '{package}'.")
 
         if proc.returncode != 0:
             return ToolResult.failure(
@@ -145,34 +243,45 @@ async def manage_packages(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
         import re
         pkg_clean = re.split(r"[=><~!]", package)[0].strip()
         installed_version = None
-
-        cmd_show = [str(pip_exe), "show", pkg_clean]
-        proc_show = await asyncio.create_subprocess_exec(
-            *cmd_show,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            cwd=str(project_path),
-        )
-        stdout_show, _ = await proc_show.communicate()
-        if proc_show.returncode == 0:
-            for line in stdout_show.decode(errors="ignore").splitlines():
-                if line.startswith("Version:"):
-                    installed_version = line.split(":", 1)[1].strip()
-                    break
-
         req_content = ""
-        if save_requirements:
-            req_content = sync_requirements_file(project_path, pkg_clean, installed_version, remove=False)
+
+        if eco == "python" and save_requirements:
+            cmd_show = [str(py_exe), "-m", "pip", "show", pkg_clean]
+            proc_show = await asyncio.create_subprocess_exec(
+                *cmd_show,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                cwd=str(project_path),
+            )
+            try:
+                stdout_show, _ = await asyncio.wait_for(proc_show.communicate(), timeout=30)
+                if proc_show.returncode == 0:
+                    for line in stdout_show.decode(errors="ignore").splitlines():
+                        if line.startswith("Version:"):
+                            installed_version = line.split(":", 1)[1].strip()
+                            break
+            except Exception:
+                pass
+            req_content = sync_requirements_file(
+                project_path, pkg_clean, installed_version, remove=False
+            )
+        else:
+            manifest_file = project_path / manifest_name
+            if manifest_file.exists():
+                req_content = manifest_file.read_text(encoding="utf-8", errors="ignore")
 
         ver_str = f"=={installed_version}" if installed_version else ""
         return ToolResult(
             ok=True,
             content=(
-                f"Pacote '{pkg_clean}{ver_str}' instalado com sucesso no .venv do projeto."
-                + (" O requirements.txt foi atualizado." if save_requirements else "")
+                f"Pacote '{pkg_clean}{ver_str}' instalado com sucesso no ambiente "
+                f"{eco.upper()} do projeto."
+                + (f" O {manifest_name} foi atualizado." if save_requirements else "")
             ),
             data={
                 "package": pkg_clean,
+                "ecosystem": eco,
+                "manifest_file": manifest_name,
                 "version": installed_version,
                 "requirements_updated": save_requirements,
                 "requirements_content": req_content,
@@ -184,36 +293,65 @@ async def manage_packages(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
         if not package:
             return ToolResult.failure("O nome do pacote é obrigatório para a ação 'uninstall'.")
 
-        venv_path = get_venv_path(project_path)
-        pip_exe = get_pip_executable(venv_path)
+        if eco == "nodejs":
+            npm_bin = shutil.which("npm")
+            if not npm_bin:
+                return ToolResult.failure("npm não encontrado.")
+            cmd = [npm_bin, "uninstall", package]
+        elif eco == "go":
+            go_bin = shutil.which("go")
+            if not go_bin:
+                return ToolResult.failure("go CLI não encontrado.")
+            cmd = [go_bin, "mod", "edit", f"-droprequire={package}"]
+        elif eco == "rust":
+            cargo_bin = shutil.which("cargo")
+            if not cargo_bin:
+                return ToolResult.failure("cargo não encontrado.")
+            cmd = [cargo_bin, "remove", package]
+        elif eco == "php":
+            composer_bin = shutil.which("composer")
+            if not composer_bin:
+                return ToolResult.failure("composer não encontrado.")
+            cmd = [composer_bin, "remove", package]
+        else:
+            venv_path = get_venv_path(project_path)
+            py_exe = get_python_executable(venv_path)
+            if not py_exe.exists():
+                return ToolResult.failure("Ambiente virtual (.venv) do projeto não existe.")
+            cmd = [str(py_exe), "-m", "pip", "uninstall", "-y", package]
 
-        if not pip_exe.exists():
-            return ToolResult.failure("Ambiente virtual (.venv) do projeto não existe.")
-
-        cmd = [str(pip_exe), "uninstall", "-y", package]
         proc = await asyncio.create_subprocess_exec(
             *cmd,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             cwd=str(project_path),
         )
-        stdout, stderr = await proc.communicate()
+        try:
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=120)
+        except TimeoutError:
+            proc.kill()
+            return ToolResult.failure(f"Tempo limite excedido ao desinstalar '{package}'.")
 
         if proc.returncode != 0:
             return ToolResult.failure(
                 f"Falha ao desinstalar '{package}': {stderr.decode(errors='ignore')}"
             )
 
+        manifest_file = project_path / manifest_name
         req_content = ""
-        if save_requirements:
+        if eco == "python" and save_requirements:
             req_content = sync_requirements_file(project_path, package, remove=True)
+        elif manifest_file.exists():
+            req_content = manifest_file.read_text(encoding="utf-8", errors="ignore")
 
         return ToolResult(
             ok=True,
             content=f"Pacote '{package}' desinstalado com sucesso."
-            + (" Removido do requirements.txt." if save_requirements else ""),
+            + (f" Removido do {manifest_name}." if save_requirements else ""),
             data={
                 "package": package,
+                "ecosystem": eco,
+                "manifest_file": manifest_name,
                 "requirements_updated": save_requirements,
                 "requirements_content": req_content,
                 "stdout": stdout.decode(errors="ignore"),
@@ -221,17 +359,39 @@ async def manage_packages(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
         )
 
     elif action == "sync":
-        req_file = project_path / "requirements.txt"
-        if not req_file.exists():
-            return ToolResult.failure("Arquivo requirements.txt não encontrado no projeto.")
+        manifest_file = project_path / manifest_name
+        if not manifest_file.exists():
+            return ToolResult.failure(f"Arquivo {manifest_name} não encontrado no projeto.")
 
         try:
-            venv_path = await ensure_venv(project_path)
+            await ensure_project_env(project_path)
         except Exception as exc:
-            return ToolResult.failure(f"Falha ao preparar venv do projeto: {exc}")
+            return ToolResult.failure(f"Falha ao preparar ambiente do projeto: {exc}")
 
-        pip_exe = get_pip_executable(venv_path)
-        cmd = [str(pip_exe), "install", "-r", str(req_file)]
+        if eco == "nodejs":
+            npm_bin = shutil.which("npm")
+            if not npm_bin:
+                return ToolResult.failure("npm não encontrado.")
+            cmd = [npm_bin, "install"]
+        elif eco == "go":
+            go_bin = shutil.which("go")
+            if not go_bin:
+                return ToolResult.failure("go CLI não encontrado.")
+            cmd = [go_bin, "mod", "download"]
+        elif eco == "rust":
+            cargo_bin = shutil.which("cargo")
+            if not cargo_bin:
+                return ToolResult.failure("cargo não encontrado.")
+            cmd = [cargo_bin, "check"]
+        elif eco == "php":
+            composer_bin = shutil.which("composer")
+            if not composer_bin:
+                return ToolResult.failure("composer não encontrado.")
+            cmd = [composer_bin, "install"]
+        else:
+            venv_path = await ensure_venv(project_path)
+            py_exe = get_python_executable(venv_path)
+            cmd = [str(py_exe), "-m", "pip", "install", "-r", str(manifest_file)]
 
         proc = await asyncio.create_subprocess_exec(
             *cmd,
@@ -239,16 +399,23 @@ async def manage_packages(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
             stderr=asyncio.subprocess.PIPE,
             cwd=str(project_path),
         )
-        stdout, stderr = await proc.communicate()
+        try:
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=300)
+        except TimeoutError:
+            proc.kill()
+            return ToolResult.failure(f"Tempo limite excedido ao sincronizar {manifest_name}.")
 
         if proc.returncode != 0:
             return ToolResult.failure(
-                f"Falha ao sincronizar requirements.txt: {stderr.decode(errors='ignore')}"
+                f"Falha ao sincronizar {manifest_name}: {stderr.decode(errors='ignore')}"
             )
 
         return ToolResult(
             ok=True,
-            content="Ambiente .venv do projeto sincronizado com sucesso com o requirements.txt.",
+            content=(
+                f"Ambiente {eco.upper()} do projeto sincronizado com sucesso "
+                f"com o {manifest_name}."
+            ),
             data={"stdout": stdout.decode(errors="ignore")},
         )
 

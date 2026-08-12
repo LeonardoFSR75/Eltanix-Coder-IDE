@@ -56,9 +56,11 @@ export async function patch<T>(path: string, body: unknown): Promise<T> {
   return (await response.json()) as T;
 }
 
-export async function del<T>(path: string): Promise<T> {
+export async function del<T>(path: string, body?: unknown): Promise<T> {
   const response = await fetch(`${GATEWAY}${path}`, {
     method: "DELETE",
+    headers: body ? { "content-type": "application/json" } : undefined,
+    body: body ? JSON.stringify(body) : undefined,
   });
   if (!response.ok) throw new HttpError(await describeError(response), response.status);
   return (await response.json()) as T;

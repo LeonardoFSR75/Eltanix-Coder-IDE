@@ -46,6 +46,10 @@ def _projects_root(request: Request):
 class ProjectCreateIn(BaseModel):
     name: str = Field(min_length=1, max_length=255)
     description: str = Field(default="")
+    language: str | None = Field(
+        default=None,
+        description="Linguagem/ecossistema do projeto: python, nodejs, typescript, go, rust, php",
+    )
     git_url: str | None = Field(default=None)
     init_git: bool = Field(default=True, description="Inicializa repositório Git automaticamente")
     create_github_repo: bool = Field(
@@ -172,6 +176,12 @@ async def create_project(payload: ProjectCreateIn, request: Request) -> dict[str
                     log.warning("git.remote.create_failed", path=str(target_path), error=str(exc))
         except Exception as exc:
             log.warning("git.init.failed", path=str(target_path), error=str(exc))
+
+    try:
+        from sicoobito.api.routes.packages import ensure_project_env
+        await ensure_project_env(target_path, payload.language)
+    except Exception as exc:
+        log.warning("projects.auto_env.failed", slug=slug, error=str(exc))
 
     try:
         async with session_scope() as session:

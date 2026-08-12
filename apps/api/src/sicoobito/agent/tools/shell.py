@@ -74,38 +74,56 @@ async def run_command(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
     partes = comando.split()
     primeiro = partes[0] if partes else ""
     extensoes_estaticas = (".html", ".htm", ".css", ".json", ".txt", ".md", ".png", ".jpg", ".svg")
-    if any(primeiro.lower().endswith(ext) for ext in extensoes_estaticas) or any(primeiro.lower().startswith("./") and primeiro.lower().endswith(ext) for ext in extensoes_estaticas):
+    eh_arquivo_estatico = any(
+        primeiro.lower().endswith(ext) for ext in extensoes_estaticas
+    ) or any(
+        primeiro.lower().startswith("./") and primeiro.lower().endswith(ext)
+        for ext in extensoes_estaticas
+    )
+    if eh_arquivo_estatico:
         return ToolResult(
             ok=True,
             content=(
                 f"[saída 126]\n"
-                f"ERRO DE COMANDO: '{primeiro}' é um arquivo estático de dados e não um binário executável.\n"
-                f"Para testar ou servir um arquivo HTML/Web no sandbox, utilize 'python -m http.server' ou a ferramenta 'browser_action'."
+                f"ERRO DE COMANDO: '{primeiro}' é um arquivo estático de dados e não um "
+                f"binário executável.\n"
+                f"Para testar ou servir um arquivo HTML/Web no sandbox, utilize "
+                f"'python -m http.server' ou a ferramenta 'browser_action'."
             ),
             data={"command": comando, "exit_code": 126, "duration_ms": 0, "timed_out": False},
         )
 
-    # Interceptação de instalações via pip em sandbox sem rede:
+    # Interceptação de instalações de pacotes via shell em sandbox sem rede:
     cmd_lower = comando.lower()
     partes_lower = [p.lower() for p in partes]
-    eh_pip_install = (
+    eh_comando_pacote = (
         "pip install" in cmd_lower
         or "pip3 install" in cmd_lower
         or ("pip" in partes_lower and "install" in partes_lower)
+        or "npm install" in cmd_lower
+        or "npm i " in cmd_lower
+        or "yarn add" in cmd_lower
+        or "pnpm add" in cmd_lower
+        or "go get" in cmd_lower
+        or "go install" in cmd_lower
+        or "cargo add" in cmd_lower
+        or "composer require" in cmd_lower
     )
     network_enabled = getattr(getattr(ctx, "sandbox", None), "config", None) and getattr(
         ctx.sandbox.config, "network_enabled", False
     )
 
-    if eh_pip_install and not network_enabled:
+    if eh_comando_pacote and not network_enabled:
         return ToolResult(
             ok=True,
             content=(
                 "[saída 1 em 0ms]\n"
                 "ERRO DE AMBIENTE: O sandbox do SicoobitoCode está isolado da rede por segurança.\n"
-                "Comandos de 'pip install' falham pois não há conexão com o PyPI/internet no container.\n"
-                "Para instalar pacotes e dependências no ambiente (.venv) do projeto de forma persistente, utilize a "
-                "ferramenta 'manage_packages' (ex.: manage_packages(action='install', package='pandas')) "
+                "Comandos de instalação de pacotes (pip, npm, go get, cargo add, composer "
+                "require) falham no shell do container.\n"
+                "Para instalar pacotes e dependências no ambiente do projeto de forma "
+                "persistente, utilize a ferramenta 'manage_packages' "
+                "(ex.: manage_packages(action='install', package='nome_do_pacote')) "
                 "ou a aba 'Pacotes' da IDE."
             ),
             data={"command": comando, "exit_code": 1, "duration_ms": 0, "timed_out": False},
@@ -120,16 +138,33 @@ async def run_command(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
     if resultado.stderr.strip():
         corpo += f"\n\n--- stderr ---\n{summarize_output(resultado.stderr)}"
 
-    if "Temporary failure in name resolution" in corpo or "No matching distribution found" in corpo:
+    erro_de_rede = (
+        "Temporary failure in name resolution" in corpo
+        or "No matching distribution found" in corpo
+    )
+    erro_de_modulo_ausente = any(
+        m in corpo
+        for m in [
+            "ModuleNotFoundError",
+            "Cannot find module",
+            "could not import",
+            "unresolved import",
+            "Class ",
+            "Fatal error",
+        ]
+    )
+    if erro_de_rede:
         corpo += (
             "\n\n💡 DICA DE PACOTES: O sandbox de comando não tem acesso à rede. "
-            "Para instalar pacotes no projeto, utilize a ferramenta 'manage_packages' (action='install', package='...')."
+            "Para instalar pacotes no projeto, utilize a ferramenta 'manage_packages' "
+            "(action='install', package='...')."
         )
-    elif "ModuleNotFoundError" in corpo:
+    elif erro_de_modulo_ausente:
         corpo += (
-            "\n\n💡 DICA DE PACOTES: O pacote importado não está instalado no projeto. "
-            "Utilize a ferramenta 'manage_packages' (ex.: manage_packages(action='install', package='nome_do_pacote')) "
-            "para instalá-lo no ambiente (.venv) do projeto, ou utilize os módulos da biblioteca padrão do Python (stdlib)."
+            "\n\n💡 DICA DE PACOTES: O pacote/módulo importado não está instalado no "
+            "projeto. Utilize a ferramenta 'manage_packages' "
+            "(ex.: manage_packages(action='install', package='nome_do_pacote')) "
+            "para instalá-lo no ambiente do projeto (Python, Node.js, Go, Rust, PHP)."
         )
 
     estado = "sucesso" if resultado.ok else f"saída {resultado.exit_code}"
