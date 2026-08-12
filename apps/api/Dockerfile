@@ -22,7 +22,7 @@ RUN npm install -g --no-audit --no-fund \
       vscode-langservers-extracted@4.10.0 \
       yaml-language-server@1.15.0 \
       bash-language-server@5.4.3 \
-      dockerfile-language-server-formatter@0.0.12 \
+      dockerfile-language-server-nodejs@0.0.21 \
     && npm cache clean --force
 
 
