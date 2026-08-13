@@ -36,6 +36,7 @@ from sicoobito.api.routes import (
     notes_router,
     packages_router,
     projects_router,
+    security_router,
     skills_router,
     telemetry_router,
     trello_router,
@@ -329,6 +330,7 @@ def create_app() -> FastAPI:
     app.include_router(workspace_router)
     app.include_router(workspace_ws_router)
     app.include_router(projects_router)
+    app.include_router(security_router)
     app.include_router(packages_router)
     app.include_router(trello_router)
     app.include_router(containers_router)

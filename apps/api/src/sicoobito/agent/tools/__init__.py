@@ -16,6 +16,7 @@ from sicoobito.agent.tools import (  # noqa: F401
     plan,
     project_manager,
     review,
+    security,
     shell,
     skills,
     trello,

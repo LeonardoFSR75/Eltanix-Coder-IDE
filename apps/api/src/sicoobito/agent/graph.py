@@ -334,6 +334,27 @@ def build_graph(engine: RouterEngine, context: ToolContext):
                     decided_by=decidido_por,
                     project_slug=context.project_slug or None,
                 )
+                if pendentes:
+                    for pendente in pendentes:
+                        call_id = pendente["tool_call_id"]
+                        aprovado = aprovacoes.get(call_id, False)
+                        await context.audit.record_security_event(
+                            actor="agente",
+                            action="Decisão de aprovação de ferramenta",
+                            details=pendente["summary"],
+                            risk_level="critical" if pendente["risk"] == "exec" else "medium",
+                            status="success" if aprovado else "denied",
+                            session_id=state.get("session_id", ""),
+                            project_slug=context.project_slug or None,
+                            tool_name=pendente["tool"],
+                            tool_risk=pendente["risk"],
+                            decision="approved" if aprovado else "denied",
+                            source="approval_gate",
+                            metadata={
+                                "reason": motivos.get(call_id, ""),
+                                "auto_approved": decidido_por.get(call_id) == "policy",
+                            },
+                        )
             except Exception as exc:
                 # Auditoria não pode travar a execução do agente — um soluço
                 # no banco aqui derrubaria uma sessão por um problema de log,
@@ -384,6 +405,27 @@ def build_graph(engine: RouterEngine, context: ToolContext):
             fingerprint = _tool_fingerprint(nome, argumentos)
 
             if _is_stuck_repeat(fingerprint, ultima_falha, contagem_falha):
+                if context.audit is not None:
+                    try:
+                        await context.audit.record_security_event(
+                            actor="agente",
+                            action="Bloqueio por repetição perigosa",
+                            details=f"Ferramenta repetida em sequência sem sucesso: {nome}",
+                            risk_level="medium" if ferramenta.risk is not RiskClass.READ else "low",
+                            status="denied",
+                            session_id=state.get("session_id", ""),
+                            project_slug=context.project_slug or None,
+                            tool_name=nome,
+                            tool_risk=str(ferramenta.risk),
+                            decision="blocked",
+                            source="repetition_guard",
+                            metadata={
+                                "repeat_count": contagem_falha,
+                                "arguments": argumentos,
+                            },
+                        )
+                    except Exception as exc:
+                        log.warning("agent.audit.security.failed", error=str(exc)[:200])
                 respostas.append(
                     _tool_message(
                         call_id,

@@ -58,6 +58,7 @@ from sicoobito.context.repomap import build_repo_map
 from sicoobito.db.session import session_scope
 from sicoobito.logging_setup import get_logger
 from sicoobito.router.engine import RouterEngine
+from sicoobito.security.service import SecureBertService
 from sicoobito.sandbox.container import SandboxManager, SandboxUnavailableError
 from sicoobito.workspace import git as git_ops
 from sicoobito.workspace import projects as project_ops
@@ -400,6 +401,7 @@ class AgentRunner:
             notes=self.notes,
             skills=self.skills,
             audit=self.audit,
+            security=SecureBertService(),
             trace_recorder=self.trace_recorder,
             engine=self.engine,
             custom_instructions=_load_custom_instructions(workspace_root),

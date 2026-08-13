@@ -15,6 +15,7 @@ from sicoobito.api.routes.metrics import router as metrics_router
 from sicoobito.api.routes.notes import router as notes_router
 from sicoobito.api.routes.packages import router as packages_router
 from sicoobito.api.routes.projects import router as projects_router
+from sicoobito.api.routes.security import router as security_router
 from sicoobito.api.routes.skills import router as skills_router
 from sicoobito.api.routes.telemetry import router as telemetry_router
 from sicoobito.api.routes.trello import router as trello_router
@@ -41,6 +42,7 @@ __all__ = [
     "notes_router",
     "packages_router",
     "projects_router",
+    "security_router",
     "skills_router",
     "telemetry_router",
     "trello_router",

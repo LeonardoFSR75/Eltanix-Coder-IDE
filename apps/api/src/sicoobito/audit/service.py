@@ -46,6 +46,49 @@ class AuditService:
                 metadata=meta,
             )
 
+    async def record_security_event(
+        self,
+        *,
+        actor: str,
+        action: str,
+        details: str = "",
+        risk_level: str = "medium",
+        status: str = "success",
+        session_id: str | None = None,
+        project_slug: str | None = None,
+        tool_name: str | None = None,
+        tool_risk: str | None = None,
+        decision: str | None = None,
+        source: str = "agent",
+        metadata: dict | None = None,
+    ) -> AuditLogEntry:
+        """Registra eventos de segurança do agente com estrutura rica para a UI.
+
+        A ideia é padronizar os diversos gatilhos de risco (prompts maliciosos,
+        bloqueio por política, recusa de decisão, repetição perigosa) num único
+        formato que a rota de auditoria consegue exibir sem que cada evento
+        invente um payload diferente.
+        """
+        base_meta = {
+            "source": source,
+            "tool": tool_name,
+            "tool_risk": tool_risk,
+            "decision": decision,
+        }
+        if metadata:
+            base_meta.update(metadata)
+        return await self.record(
+            actor=actor,
+            module="Security",
+            action=action,
+            details=details,
+            risk_level=risk_level,
+            status=status,
+            session_id=session_id,
+            project_slug=project_slug,
+            metadata=base_meta,
+        )
+
     async def record_approvals(
         self,
         *,
@@ -83,6 +126,10 @@ class AuditService:
                     metadata={
                         "reason": reasons.get(call_id, ""),
                         "auto_approved": auto_aprovado,
+                        "tool": item.get("tool"),
+                        "tool_risk": item.get("risk"),
+                        "decision": "approved" if approved else "denied",
+                        "source": "policy" if auto_aprovado else "human",
                     },
                 )
 
