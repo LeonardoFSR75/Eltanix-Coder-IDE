@@ -6,12 +6,22 @@ import { AgentSessionRuntime, type NotifyKind } from "./sessionRuntime";
 import type { SessionStatus, SessionSummary } from "./sessionTypes";
 
 function statusOf(runtime: AgentSessionRuntime): SessionStatus {
-  if (runtime.readOnly) return "closed";
-  if (runtime.errored) return "error";
-  if (runtime.pending.length > 0) return "awaiting-approval";
-  if (runtime.running) return "running";
-  if (runtime.finished) return "done";
-  return "running";
+  switch (runtime.status) {
+    case "closed":
+      return "closed";
+    case "error":
+      return "error";
+    case "awaiting_approval":
+      return "awaiting-approval";
+    case "running":
+      return "running";
+    case "done":
+      return "done";
+    case "idle":
+      return "running";
+    default:
+      return "running";
+  }
 }
 
 /**

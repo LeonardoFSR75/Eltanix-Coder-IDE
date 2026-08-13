@@ -13,7 +13,7 @@
 
 import { get, post, streamEvents } from "@/lib/client";
 import type { Mode } from "./modes";
-import type { LogLine, PendingAction, Session, TodoItem } from "./sessionTypes";
+import type { LogLine, PendingAction, RuntimeStatus, Session, TodoItem } from "./sessionTypes";
 
 export type { LogLine, PendingAction, Session, TodoItem };
 
@@ -40,6 +40,44 @@ export class AgentSessionRuntime {
   readOnly = false;
   finished = false;
   errored = false;
+  private lastUserText: string | null = null;
+
+  get status(): RuntimeStatus {
+    if (this.readOnly) return "closed";
+    if (this.errored) return "error";
+    if (this.pending.length > 0) return "awaiting_approval";
+    if (this.running) return "running";
+    if (this.finished) return "done";
+    if (this.session) return "idle";
+    return "idle";
+  }
+
+  get awaitingApproval(): boolean {
+    return this.pending.length > 0;
+  }
+
+  get startupGuardReady(): boolean {
+    const guard = this.session?.startup_guard;
+    if (!guard) return false;
+    return Boolean(
+      guard.project_verified &&
+        guard.workspace_listed &&
+        guard.packages_checked &&
+        (guard.git_ready ?? true) &&
+        (guard.ready_for_search ?? true),
+    );
+  }
+
+  get canSubmit(): boolean {
+    return (
+      Boolean(this.session) &&
+      this.startupGuardReady &&
+      !this.readOnly &&
+      !this.running &&
+      !this.awaitingApproval &&
+      !this.errored
+    );
+  }
 
   private readonly project: string;
   private readonly onFileTouched?: (path: string) => void;
@@ -55,7 +93,27 @@ export class AgentSessionRuntime {
   }
 
   private append(line: LogLine) {
+    if (line.kind === "user" && this.lastUserText === line.text) {
+      return;
+    }
     this.log = [...this.log, line];
+    if (line.kind === "user") {
+      this.lastUserText = line.text;
+    }
+    this.onChange();
+  }
+
+  private beginTurn() {
+    this.running = true;
+    this.pending = [];
+    this.finished = false;
+    this.errored = false;
+    this.onChange();
+    this.abortController = new AbortController();
+  }
+
+  private finishTurn() {
+    this.running = false;
     this.onChange();
   }
 
@@ -65,6 +123,7 @@ export class AgentSessionRuntime {
 
     if (node === "error") {
       this.errored = true;
+      this.running = false;
       const mensagem = String(update.message ?? "erro desconhecido");
       this.append({ kind: "error", text: mensagem });
       this.onNotify?.("error", mensagem);
@@ -137,18 +196,15 @@ export class AgentSessionRuntime {
     // Tudo" (ou aprovar seguido de recusar antes do card sumir) dispara duas
     // chamadas concorrentes, e a segunda sobrescreve `abortController` da
     // primeira, órfãozando o stream anterior sem forma de abortá-lo.
-    if (!this.session || this.running) return;
-    this.running = true;
-    this.pending = [];
-    this.onChange();
-    this.abortController = new AbortController();
+    if (!this.session || this.running || this.readOnly) return;
+    this.beginTurn();
 
     try {
       await streamEvents(
         `/api/agent/sessions/${this.session.session_id}/run`,
         approvals ? { approvals } : {},
         this.consume,
-        this.abortController.signal,
+        this.abortController!.signal,
       );
     } catch (err) {
       if ((err as Error).name !== "AbortError") {
@@ -156,13 +212,12 @@ export class AgentSessionRuntime {
         this.append({ kind: "error", text: err instanceof Error ? err.message : String(err) });
       }
     } finally {
-      this.running = false;
-      this.onChange();
+      this.finishTurn();
     }
   }
 
   async decide(decisions: Record<string, boolean>) {
-    if (!this.session || this.running) return;
+    if (!this.session || this.running || this.readOnly || this.pending.length === 0) return;
     const approvals = Object.fromEntries(
       this.pending.map((action) => {
         const approved = decisions[action.tool_call_id] ?? false;
@@ -175,22 +230,16 @@ export class AgentSessionRuntime {
   }
 
   async sendMessage(text: string) {
-
-    if (!this.session || this.running) return;
+    if (!this.session || !this.canSubmit || !text.trim()) return;
     this.append({ kind: "user", text });
-    this.finished = false;
-    this.errored = false;
-    this.running = true;
-    this.pending = [];
-    this.onChange();
-    this.abortController = new AbortController();
+    this.beginTurn();
 
     try {
       await streamEvents(
         `/api/agent/sessions/${this.session.session_id}/run`,
         { message: text },
         this.consume,
-        this.abortController.signal,
+        this.abortController!.signal,
       );
     } catch (err) {
       if ((err as Error).name !== "AbortError") {
@@ -198,8 +247,7 @@ export class AgentSessionRuntime {
         this.append({ kind: "error", text: err instanceof Error ? err.message : String(err) });
       }
     } finally {
-      this.running = false;
-      this.onChange();
+      this.finishTurn();
     }
   }
 
@@ -268,6 +316,13 @@ export class AgentSessionRuntime {
         sandbox_error: null,
         github_available: false,
         warnings: [],
+        startup_guard: {
+          project_verified: true,
+          workspace_listed: true,
+          packages_checked: true,
+          git_ready: true,
+          ready_for_search: true,
+        },
       };
       for (const message of data.messages ?? []) {
         runtime.log.push(...messageToLogLines(message));

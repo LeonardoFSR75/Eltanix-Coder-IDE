@@ -98,6 +98,15 @@ def _matches_exec_command_rule(rule: ExecCommandRule, pending: PendingApproval) 
         # Aspas desbalanceadas etc. — comando malformado não casa com nada.
         return False
 
+    # Wrappers explícitos de shell (bash, sh, zsh, powershell, cmd, pwsh) são
+    # sempre rejeitados, mesmo quando o prefixo permitido parece ser "npm test".
+    # O runtime real aqui é o shell que chama o comando, não o programa que foi
+    # permitido; a regra é fail-closed e não aceita eufemismos de shell.
+    if tokens and tokens[0].lower() in {"bash", "sh", "zsh", "powershell", "pwsh", "cmd"}:
+        return False
+    if tokens and len(tokens) >= 2 and tokens[0].lower() in {"sudo"}:
+        return False
+
     for allowed in rule.allowed_prefixes:
         try:
             allowed_tokens = shlex.split(allowed)

@@ -76,6 +76,7 @@ async def list_files(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
     except (PathEscapeError, NotADirectoryError) as exc:
         return ToolResult.failure(str(exc))
 
+    ctx.session_state.workspace_listed = True
     linhas = [f"{'dir ' if e.is_dir else 'file'} {e.path}" for e in entries]
     return ToolResult(
         ok=True,
@@ -284,6 +285,18 @@ async def edit_file(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
 async def search_code(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
     if ctx.indexer is None:
         return ToolResult.failure("Índice de contexto indisponível.")
+    if not ctx.session_state.project_verified:
+        return ToolResult.failure(
+            "O projeto ainda não foi validado no PROJECTS_ROOT. Conecte o projeto antes de procurar no código."
+        )
+    if not ctx.session_state.workspace_listed:
+        return ToolResult.failure(
+            "Primeiro chame `list_files` na raiz do projeto para confirmar a estrutura antes de `search_code`."
+        )
+    if not ctx.session_state.packages_checked:
+        return ToolResult.failure(
+            "Primeiro chame `manage_packages(action='list')` para validar o ecossistema e as dependências antes de `search_code`."
+        )
 
     hits = await ctx.indexer.search(
         root=Path(ctx.workspace_root), query=args["query"], limit=args.get("limit", 8)

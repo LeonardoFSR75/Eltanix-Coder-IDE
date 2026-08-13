@@ -175,11 +175,240 @@ function ThinkingIndicator() {
   );
 }
 
+function StartupGuardSummary({
+  session,
+  collapsed,
+  onToggle,
+}: {
+  session: Session | null;
+  collapsed: boolean;
+  onToggle: () => void;
+}) {
+  const guard = session?.startup_guard;
+  if (!session || !guard) return null;
+
+  const items = [
+    { label: "Projeto validado", ok: guard.project_verified },
+    { label: "Arquivos listados", ok: guard.workspace_listed },
+    { label: "Pacotes verificados", ok: guard.packages_checked },
+    {
+      label: "Git inicializado",
+      ok: guard.git_ready ?? true,
+      title: guard.git_ready ?? true
+        ? "Git inicializado automaticamente antes da sessão"
+        : "Git ainda não foi inicializado para esta sessão",
+    },
+  ];
+
+  return (
+    <div className="agent-summary-strip startup-guard-strip">
+      <div className="agent-summary-header">
+        <span className="agent-section-label">Inicialização</span>
+        <button
+          type="button"
+          className="agent-summary-toggle"
+          onClick={onToggle}
+          aria-label={collapsed ? "Expandir inicialização" : "Minimizar inicialização"}
+          title={collapsed ? "Expandir inicialização" : "Minimizar inicialização"}
+        >
+          {collapsed ? "▸" : "▾"}
+        </button>
+      </div>
+
+      {!collapsed && (
+        <div className="agent-summary-items">
+          {items.map((item) => (
+            <span
+              key={item.label}
+              className={`agent-summary-pill ${item.ok ? "ok" : "pending"}`}
+              title={item.title ?? (item.ok ? `${item.label}: confirmado` : `${item.label}: pendente`)}
+            >
+              <span className="guard-dot" />
+              {item.label}
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ApprovalCard({
+  pending,
+  decisions,
+  running,
+  onDecide,
+  onDecision,
+}: {
+  pending: PendingAction[];
+  decisions: Record<string, boolean>;
+  running?: boolean;
+  onDecide: (decisions: Record<string, boolean>) => void;
+  onDecision: (toolCallId: string, approved: boolean) => void;
+}) {
+  if (pending.length === 0) return null;
+
+  return (
+    <div className="agent-approval-section compact-approval">
+      <div className="agent-approval-bar">
+        <span className="agent-approval-meta">
+          {pending.length === 1 ? pending[0].summary : `${pending.length} pendente${pending.length === 1 ? "" : "s"}`}
+        </span>
+
+        <div className="approval-quick-actions">
+          <button
+            type="button"
+            className="btn-approve compact-btn"
+            disabled={running}
+            onClick={() => onDecide(Object.fromEntries(pending.map((a) => [a.tool_call_id, true])))}
+          >
+            Aceitar tudo
+          </button>
+          <button
+            type="button"
+            className="btn-reject compact-btn"
+            disabled={running}
+            onClick={() => onDecide(Object.fromEntries(pending.map((a) => [a.tool_call_id, false])))}
+          >
+            Recusar tudo
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MessageStream({
+  log,
+  session,
+  pending,
+  isThinking,
+  decisions,
+  running,
+  onDecision,
+  onDecide,
+}: {
+  log: LogLine[];
+  session: Session | null;
+  pending: PendingAction[];
+  isThinking: boolean;
+  decisions: Record<string, boolean>;
+  running?: boolean;
+  onDecision: (toolCallId: string, approved: boolean) => void;
+  onDecide: (decisions: Record<string, boolean>) => void;
+}) {
+  return (
+    <div className="agent-message-stream">
+      <div className="agent-stream-section">
+        {log.map((line, index) => {
+          if (line.kind === "user") {
+            return (
+              <div key={index} className="stream-message user">
+                <div className="message-body user-body">
+                  <p className="user-text">{line.text}</p>
+                </div>
+              </div>
+            );
+          }
+
+          if (line.kind === "info") {
+            return (
+              <div key={index} className="stream-badge info">
+                <span className="stream-badge-icon">ℹ</span>
+                <span>{line.text}</span>
+              </div>
+            );
+          }
+
+          if (line.kind === "cost") {
+            return (
+              <div key={index} className="stream-badge cost">
+                <span className="stream-badge-icon">⚡</span>
+                <span>{line.text}</span>
+              </div>
+            );
+          }
+
+          if (line.kind === "tool") {
+            if (line.tool && line.toolData && hasDedicatedCard(line.tool)) {
+              return (
+                <div key={index}>
+                  <ToolCallCard
+                    tool={line.tool}
+                    content={line.toolContent ?? ""}
+                    data={line.toolData}
+                    ok={line.toolOk ?? true}
+                    sessionId={session?.session_id ?? null}
+                  />
+                </div>
+              );
+            }
+            return (
+              <div key={index} className="stream-badge tool">
+                <span className="stream-badge-icon">⚙</span>
+                <span className="tool-text">{line.text}</span>
+              </div>
+            );
+          }
+
+          if (line.kind === "error") {
+            return (
+              <div key={index} className="stream-card error">
+                <span className="stream-badge-icon">✕</span>
+                <span>{line.text}</span>
+              </div>
+            );
+          }
+
+          return (
+            <div key={index} className="stream-message assistant">
+              <div className="message-header">
+                <div className="message-avatar">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                    <defs>
+                      <linearGradient id={`msg-g-${index}`} x1="0%" y1="0%" x2="100%" y2="100%">
+                        <stop offset="0%" stopColor="#38bdf8" />
+                        <stop offset="100%" stopColor="#a78bfa" />
+                      </linearGradient>
+                    </defs>
+                    <circle cx="12" cy="12" r="8" fill={`url(#msg-g-${index})`} opacity="0.2" />
+                    <circle cx="12" cy="12" r="3" fill={`url(#msg-g-${index})`} />
+                  </svg>
+                </div>
+                <span className="message-author">Sicoobito Agente</span>
+              </div>
+              <div className="message-body">
+                <RenderedAssistantText text={line.text} />
+              </div>
+            </div>
+          );
+        })}
+
+        {isThinking && <ThinkingIndicator />}
+      </div>
+
+      {pending.length > 0 && (
+        <div className="agent-chat-footer-approval">
+          <ApprovalCard
+            pending={pending}
+            decisions={decisions}
+            running={running}
+            onDecide={onDecide}
+            onDecision={onDecision}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ── Painel Principal do Agente ─────────────────────────────────── */
 
 export function AgentPanel({ session, log, pending, running, onDecide, onPresetSelect }: AgentPanelProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [decisions, setDecisions] = useState<Record<string, boolean>>({});
+  const [summaryCollapsed, setSummaryCollapsed] = useState(false);
+  const [guardCollapsed, setGuardCollapsed] = useState(false);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -195,8 +424,6 @@ export function AgentPanel({ session, log, pending, running, onDecide, onPresetS
     setDecisions((prev) => ({ ...prev, [toolCallId]: approved }));
   };
 
-  const allDecided = pending.length > 0 && pending.every((a) => decisions[a.tool_call_id] !== undefined);
-
   // `running` vem do sessionRuntime (via AgentDock) — reflete se há um turno
   // em voo de verdade, ao contrário de inspecionar texto de log (nenhum
   // evento real emite "Executando"/"rodando", então isso nunca disparava).
@@ -207,26 +434,31 @@ export function AgentPanel({ session, log, pending, running, onDecide, onPresetS
     <div className="agent-panel-container">
       {/* Barra de contexto da sessão */}
       {session && (
-        <div className="agent-meta-bar">
-          <span className="agent-meta-chip">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <line x1="6" y1="3" x2="6" y2="15" />
-              <circle cx="18" cy="6" r="3" />
-              <circle cx="6" cy="18" r="3" />
-              <path d="M18 9a9 9 0 0 1-9 9" />
-            </svg>
-            {session.branch || "main"}
-          </span>
-          <span className={`agent-meta-chip ${session.sandbox_available ? "ok" : ""}`}>
-            {session.sandbox_available ? "◉" : "○"} sandbox
-          </span>
-          {(session.profile || session.model) && (
-            <span className="agent-meta-chip model" title="Modelo de IA / Perfil ativo nesta sessão">
-              🤖 {session.profile || session.model}
-            </span>
-          )}
-        </div>
+        <>
+          <div className="agent-summary-strip">
+            <div className="agent-summary-header">
+              <span className="agent-section-label">Resumo</span>
+              <button
+                type="button"
+                className="agent-summary-toggle"
+                onClick={() => setSummaryCollapsed((prev) => !prev)}
+                aria-label={summaryCollapsed ? "Expandir resumo" : "Minimizar resumo"}
+                title={summaryCollapsed ? "Expandir resumo" : "Minimizar resumo"}
+              >
+                {summaryCollapsed ? "▸" : "▾"}
+              </button>
+            </div>
 
+            {!summaryCollapsed && (
+              <div className="agent-summary-items">
+                <span className="agent-summary-pill">Ramo: {session.branch || "main"}</span>
+                <span className="agent-summary-pill">Sandbox: {session.sandbox_available ? "ativo" : "inativo"}</span>
+                <span className="agent-summary-pill">Modelo: {session.profile || session.model || "padrão"}</span>
+              </div>
+            )}
+          </div>
+          <StartupGuardSummary session={session} collapsed={guardCollapsed} onToggle={() => setGuardCollapsed((prev) => !prev)} />
+        </>
       )}
 
       {/* Área de mensagens */}
@@ -271,191 +503,16 @@ export function AgentPanel({ session, log, pending, running, onDecide, onPresetS
             </div>
           </div>
         ) : (
-          /* ── Stream de Mensagens — estilo Copilot Chat ── */
-          <div className="agent-message-stream">
-            {log.map((line, index) => {
-              // ── Mensagem do usuário (bolha à direita) ──
-              if (line.kind === "user") {
-                return (
-                  <div key={index} className="stream-message user">
-                    <div className="message-body user-body">
-                      <p className="user-text">{line.text}</p>
-                    </div>
-                  </div>
-                );
-              }
-
-              if (line.kind === "info") {
-                return (
-                  <div key={index} className="stream-badge info">
-                    <span className="stream-badge-icon">ℹ</span>
-                    <span>{line.text}</span>
-                  </div>
-                );
-              }
-
-              if (line.kind === "cost") {
-                return (
-                  <div key={index} className="stream-badge cost">
-                    <span className="stream-badge-icon">⚡</span>
-                    <span>{line.text}</span>
-                  </div>
-                );
-              }
-
-              if (line.kind === "tool") {
-                if (line.tool && line.toolData && hasDedicatedCard(line.tool)) {
-                  return (
-                    <div key={index}>
-                      <ToolCallCard
-                        tool={line.tool}
-                        content={line.toolContent ?? ""}
-                        data={line.toolData}
-                        ok={line.toolOk ?? true}
-                        sessionId={session?.session_id ?? null}
-                      />
-                    </div>
-                  );
-                }
-                return (
-                  <div key={index} className="stream-badge tool">
-                    <span className="stream-badge-icon">⚙</span>
-                    <span className="tool-text">{line.text}</span>
-                  </div>
-                );
-              }
-
-              if (line.kind === "error") {
-                return (
-                  <div key={index} className="stream-card error">
-                    <span className="stream-badge-icon">✕</span>
-                    <span>{line.text}</span>
-                  </div>
-                );
-              }
-
-              /* Mensagem do assistente */
-              return (
-                <div key={index} className="stream-message assistant">
-                  <div className="message-header">
-                    <div className="message-avatar">
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-                        <defs>
-                          <linearGradient id={`msg-g-${index}`} x1="0%" y1="0%" x2="100%" y2="100%">
-                            <stop offset="0%" stopColor="#38bdf8" />
-                            <stop offset="100%" stopColor="#a78bfa" />
-                          </linearGradient>
-                        </defs>
-                        <circle cx="12" cy="12" r="8" fill={`url(#msg-g-${index})`} opacity="0.2" />
-                        <circle cx="12" cy="12" r="3" fill={`url(#msg-g-${index})`} />
-                      </svg>
-                    </div>
-                    <span className="message-author">Sicoobito Agente</span>
-                  </div>
-                  <div className="message-body">
-                    <RenderedAssistantText text={line.text} />
-                  </div>
-                </div>
-              );
-            })}
-
-            {/* Indicador de pensamento quando processando */}
-            {isThinking && <ThinkingIndicator />}
-
-            {/* Card de aprovação */}
-            {pending.length > 0 && (
-              <div className="stream-approval-card">
-                <div className="approval-card-header">
-                  <div className="approval-icon-wrap">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2">
-                      <path d="M12 9v2m0 4h.01M5.07 19h13.86c1.22 0 1.97-1.33 1.36-2.4L13.36 4.58c-.61-1.06-2.12-1.06-2.73 0L3.71 16.6C3.1 17.67 3.85 19 5.07 19z" />
-                    </svg>
-                  </div>
-                  <div>
-                    <div className="approval-title">Aprovação Necessária</div>
-                    <div className="approval-subtitle">
-                      {pending.length} {pending.length === 1 ? "ação requer" : "ações requerem"} sua aprovação
-                    </div>
-                  </div>
-                </div>
-
-                <ul className="approval-list">
-                  {pending.map((action) => {
-                    const decision = decisions[action.tool_call_id];
-                    return (
-                      <li key={action.tool_call_id} className="approval-item">
-                        <span className={`risk-pill ${action.risk === "exec" ? "high" : "med"}`}>
-                          {action.risk}
-                        </span>
-                        <span className="action-summary">{action.summary}</span>
-                        <div className="approval-item-actions">
-                          <button
-                            type="button"
-                            className={`btn-approve-item${decision === true ? " selected" : ""}`}
-                            onClick={() => setDecision(action.tool_call_id, true)}
-                            title="Aprovar"
-                          >
-                            ✓
-                          </button>
-                          <button
-                            type="button"
-                            className={`btn-reject-item${decision === false ? " selected" : ""}`}
-                            onClick={() => setDecision(action.tool_call_id, false)}
-                            title="Recusar"
-                          >
-                            ✕
-                          </button>
-                        </div>
-                      </li>
-                    );
-                  })}
-                </ul>
-
-                <div className="approval-actions-row">
-                  {/* Um clique só: caso comum é aprovar (ou recusar) tudo de
-                      uma vez, então estes dois já disparam `onDecide` na hora
-                      em vez de só marcar rascunho local — antes exigia um
-                      segundo clique em "Confirmar" mesmo para o caso simples.
-                      Decidir item a item continua disponível: os botões ✓/✕
-                      de cada linha só ficam em `decisions` (rascunho) até
-                      "Confirmar" — para isso, sim, faz sentido separar. */}
-                  <button
-                    type="button"
-                    className="btn-approve"
-                    disabled={running}
-                    onClick={() =>
-                      onDecide(Object.fromEntries(pending.map((a) => [a.tool_call_id, true])))
-                    }
-                  >
-                    ✓ Aprovar Tudo
-                  </button>
-                  <button
-                    type="button"
-                    className="btn-reject"
-                    disabled={running}
-                    onClick={() =>
-                      onDecide(Object.fromEntries(pending.map((a) => [a.tool_call_id, false])))
-                    }
-                  >
-                    ✕ Recusar Tudo
-                  </button>
-                  {Object.keys(decisions).length > 0 && (
-                    <button
-                      type="button"
-                      className="btn-confirm-decisions"
-                      disabled={!allDecided || running}
-                      onClick={() => onDecide(decisions)}
-                      title={
-                        allDecided ? "Confirmar decisões item a item" : "Decida cada ação antes de confirmar"
-                      }
-                    >
-                      Confirmar seleção
-                    </button>
-                  )}
-                </div>
-              </div>
-            )}
-          </div>
+          <MessageStream
+            log={log}
+            session={session}
+            pending={pending}
+            isThinking={isThinking}
+            decisions={decisions}
+            running={running}
+            onDecision={setDecision}
+            onDecide={onDecide}
+          />
         )}
       </div>
     </div>

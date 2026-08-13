@@ -59,11 +59,25 @@ export function AgentChatInput({
   }, [task]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
-      e.preventDefault();
+    if (e.key === "Enter" && !(e.ctrlKey || e.metaKey)) {
       if (canSubmit && !running) {
+        e.preventDefault();
         onSubmit();
       }
+      return;
+    }
+
+    if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+      e.preventDefault();
+      const textarea = e.currentTarget;
+      const start = textarea.selectionStart ?? 0;
+      const end = textarea.selectionEnd ?? 0;
+      const nextValue = `${task.slice(0, start)}\n${task.slice(end)}`;
+      setTask(nextValue);
+      requestAnimationFrame(() => {
+        textarea.selectionStart = start + 1;
+        textarea.selectionEnd = start + 1;
+      });
     }
   };
 

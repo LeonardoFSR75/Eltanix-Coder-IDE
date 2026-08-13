@@ -76,3 +76,80 @@ async def get_skill(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
         content=content,
         data={"id": str(skill.id), "name": skill.name, "system_prompt": skill.system_prompt},
     )
+
+
+@tool(
+    name="propose_skill",
+    description=(
+        "Propõe uma nova habilidade ou regra aprendida (Self-Improving Skill) para ser registrada "
+        "no projeto para execuções futuras. Use quando descobrir um padrão de arquitetura, "
+        "refatoração reutilizável ou instrução importante durante esta sessão. A proposta "
+        "será submetida para revisão e aprovação do usuário."
+    ),
+    risk=RiskClass.WRITE,
+    parameters={
+        "type": "object",
+        "properties": {
+            "name": {
+                "type": "string",
+                "description": "Nome curto da skill (ex: padrao-fastapi-router, refatorar-schemas)",
+            },
+            "description": {
+                "type": "string",
+                "description": "Descrição sucinta do propósito da skill e quando usá-la",
+            },
+            "system_prompt": {
+                "type": "string",
+                "description": "Conteúdo das instruções para o sistema em futuras sessões",
+            },
+            "category": {
+                "type": "string",
+                "description": "Categoria da skill (default: 'learned')",
+            },
+            "rationale": {
+                "type": "string",
+                "description": "Justificativa do porquê esta skill está sendo proposta",
+            },
+        },
+        "required": ["name", "description", "system_prompt"],
+    },
+    summarize=lambda a: f"propor nova skill {a.get('name')!r}",
+)
+async def propose_skill(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
+    if ctx.skills is None:
+        return ToolResult.failure("Serviço de skills indisponível.")
+
+    nome = str(args.get("name", "")).strip()
+    descricao = str(args.get("description", "")).strip()
+    prompt = str(args.get("system_prompt", "")).strip()
+    categoria = str(args.get("category", "learned")).strip() or "learned"
+    justificativa = str(args.get("rationale", "")).strip()
+
+    if not nome or not descricao or not prompt:
+        return ToolResult.failure(
+            "Os parâmetros 'name', 'description' e 'system_prompt' são obrigatórios."
+        )
+
+    skill = await ctx.skills.propose_and_save(
+        name=nome,
+        description=descricao,
+        category=categoria,
+        system_prompt=prompt,
+        workspace_root=ctx.workspace_root,
+    )
+
+    msg = f"Skill {skill.name!r} criada com sucesso (ID: {skill.id})."
+    if justificativa:
+        msg += f" Motivo: {justificativa}"
+
+    return ToolResult(
+        ok=True,
+        content=msg,
+        data={
+            "id": str(skill.id),
+            "name": skill.name,
+            "category": skill.category,
+            "description": skill.description,
+        },
+    )
+

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import pytest
 
+from sicoobito.agent.runner import validate_project_runtime
 from sicoobito.agent.tools import RiskClass, ToolContext, registry
 from sicoobito.agent.tools.project_manager import manage_project
 from sicoobito.agent.tools.shell import summarize_output
@@ -25,6 +26,18 @@ def ctx(tmp_path):
         workspace_root=tmp_path,
         fs=WorkspaceFS(tmp_path),
     )
+
+
+async def test_validate_project_runtime_lists_files_and_detects_python_project(tmp_path):
+    (tmp_path / "app.py").write_text("print('oi')\n", encoding="utf-8")
+    (tmp_path / "requirements.txt").write_text("requests>=2\n", encoding="utf-8")
+
+    resultado = await validate_project_runtime(tmp_path)
+
+    assert resultado["project_ok"] is True
+    assert resultado["ecosystem"] == "python"
+    assert "app.py" in resultado["files"]
+    assert resultado["manifest_name"] == "requirements.txt"
 
 
 # ── Classificação de risco ──────────────────────────────────────────────────
@@ -463,6 +476,37 @@ async def test_run_command_appends_stdlib_hint_on_module_not_found(ctx):
     assert resultado.ok is True
     assert "manage_packages" in resultado.content
     assert "ModuleNotFoundError" in resultado.content
+
+
+async def test_run_command_prefers_project_venv_before_global_python(tmp_path):
+    venv_bin = tmp_path / ".venv" / "bin"
+    venv_bin.mkdir(parents=True)
+
+    class FakeSandboxResult:
+        stdout = "ok"
+        stderr = ""
+        exit_code = 0
+        duration_ms = 15
+        timed_out = False
+        ok = True
+
+    class FakeSandbox:
+        async def exec(self, command, timeout=None):
+            assert "VIRTUAL_ENV='/workspace/.venv'" in command
+            assert "/workspace/.venv/bin:$PATH" in command
+            return FakeSandboxResult()
+
+    ctx = ToolContext(
+        session_id="venv-check",
+        workspace_root=tmp_path,
+        fs=WorkspaceFS(tmp_path),
+    )
+    ctx.sandbox = FakeSandbox()
+
+    resultado = await registry.get("run_command").handler(ctx, {"command": "python -c \"print('ok')\""})
+
+    assert resultado.ok is True
+    assert resultado.data["exit_code"] == 0
 
 
 async def test_manage_packages_is_write_risk_and_registered():

@@ -194,16 +194,20 @@ class AuthService:
 
     async def validate_session(self, token: str) -> AppUser | None:
         token_hash = _hash_token(token)
-        async with session_scope() as session:
-            auth_session = await store.get_session_by_token_hash(session, token_hash)
-            if auth_session is None or auth_session.revoked_at is not None:
-                return None
-            now = datetime.now(UTC)
-            if auth_session.expires_at < now:
-                return None
-            await store.touch_session(session, auth_session, now=now)
-            user = await store.get_user(session, auth_session.user_id)
-        return user if user and user.is_active else None
+        try:
+            async with session_scope() as session:
+                auth_session = await store.get_session_by_token_hash(session, token_hash)
+                if auth_session is None or auth_session.revoked_at is not None:
+                    return None
+                now = datetime.now(UTC)
+                if auth_session.expires_at < now:
+                    return None
+                await store.touch_session(session, auth_session, now=now)
+                user = await store.get_user(session, auth_session.user_id)
+            return user if user and user.is_active else None
+        except Exception as exc:
+            log.warning("auth.validate_session.failed", error=str(exc)[:200])
+            return None
 
     async def revoke_session(self, token: str) -> None:
         token_hash = _hash_token(token)

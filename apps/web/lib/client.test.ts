@@ -37,6 +37,22 @@ describe("get/post/del", () => {
     await expect(get("/api/health")).rejects.toThrow("chave inválida");
   });
 
+  it("get() rewrites the stale session message into a friendlier auto-reopen notice", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        jsonResponse(
+          { detail: "Sessão desconhecida: 4d0850a0c8c5. Ela pode ter expirado com o reinício." },
+          { ok: false, status: 404 },
+        ),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(get("/api/agent/sessions/4d0850a0c8c5")).rejects.toThrow(
+      "Sessão reaberta automaticamente após o reinício do serviço. Se o histórico não aparecer, recarregue a aba.",
+    );
+  });
+
   it("post() sends method, JSON content-type and the serialized body", async () => {
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ ok: true }));
     vi.stubGlobal("fetch", fetchMock);

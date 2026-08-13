@@ -13,7 +13,7 @@
     onToggleAgent,
     onSaveFile,
     onOpenProjectModal,
-    onOpenApiKeyModal
+    onOpenLoginModal
   } = $props<{
     project?: string;
     projects?: { slug: string; name: string }[];
@@ -28,7 +28,7 @@
     onToggleAgent?: () => void;
     onSaveFile?: () => void;
     onOpenProjectModal?: () => void;
-    onOpenApiKeyModal?: () => void;
+    onOpenLoginModal?: () => void;
   }>();
 
   const profiles = [
@@ -110,10 +110,10 @@
     </button>
     <button
       class="toggle-btn"
-      onclick={() => onOpenApiKeyModal?.()}
-      title="Configurar chave de API (SICOOBITO_API_KEY)"
+      onclick={() => onOpenLoginModal?.()}
+      title="Autenticação e Sessão de Usuário"
     >
-      🔑
+      👤 Login
     </button>
   </div>
 </header>

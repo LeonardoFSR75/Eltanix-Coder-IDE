@@ -13,6 +13,14 @@ export interface PendingAction {
   summary: string;
 }
 
+export interface StartupGuard {
+  project_verified: boolean;
+  workspace_listed: boolean;
+  packages_checked: boolean;
+  git_ready?: boolean;
+  ready_for_search?: boolean;
+}
+
 export interface Session {
   session_id: string;
   branch: string;
@@ -23,6 +31,7 @@ export interface Session {
   warnings: string[];
   profile?: string | null;
   model?: string | null;
+  startup_guard?: StartupGuard;
 }
 
 export interface TodoItem {
@@ -39,6 +48,11 @@ export interface LogLine {
   toolData?: Record<string, unknown>;
   toolContent?: string;
 }
+
+/** Estado explícito do runtime de uma sessão no frontend — usado para
+ * controlar o fluxo de envio, aprovação e retomada sem depender de vários
+ * booleanos espalhados pela UI. */
+export type RuntimeStatus = "idle" | "running" | "awaiting_approval" | "done" | "error" | "closed";
 
 /** Status derivado para o card do Agent Manager — nenhum campo novo no backend. */
 export type SessionStatus = "running" | "awaiting-approval" | "done" | "error" | "closed";

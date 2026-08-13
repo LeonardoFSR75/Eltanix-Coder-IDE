@@ -76,9 +76,17 @@ async def require_session(
         if presented and hmac.compare_digest(presented, settings.api_key):
             return
 
-    if sicoobito_session:
+    session_token = sicoobito_session
+    if not session_token and authorization:
+        scheme, _, token = authorization.partition(" ")
+        if scheme.lower() == "bearer":
+            session_token = token.strip()
+        elif authorization.strip():
+            session_token = authorization.strip()
+
+    if session_token:
         auth: AuthService | None = getattr(request.app.state, "auth", None)
-        if auth is not None and await auth.validate_session(sicoobito_session) is not None:
+        if auth is not None and await auth.validate_session(session_token) is not None:
             return
 
     raise HTTPException(

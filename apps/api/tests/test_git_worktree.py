@@ -126,6 +126,17 @@ def test_worktree_auto_initializes_commit_if_empty(tmp_path):
     assert Repo(vazio).head.is_valid()
 
 
+def test_worktree_auto_initializes_git_when_project_is_not_a_repo(tmp_path):
+    sem_repo = tmp_path / "sem_repo"
+    sem_repo.mkdir()
+
+    worktree = git_ops.create_worktree(sem_repo, "semrepo")
+
+    assert worktree.path.exists()
+    assert (sem_repo / ".git").exists()
+    assert Repo(sem_repo).head.is_valid()
+
+
 def test_open_repo_on_a_plain_directory_fails(tmp_path):
     with pytest.raises(GitError, match="não é um repositório Git"):
         git_ops.status(tmp_path)

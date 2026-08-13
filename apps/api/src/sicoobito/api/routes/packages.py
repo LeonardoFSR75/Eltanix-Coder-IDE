@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import re
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any
@@ -290,11 +291,15 @@ async def ensure_venv(project_path: Path, install_base: bool = True) -> Path:
     return venv_path
 
 
+def normalize_python_package_name(pkg_name: str) -> str:
+    return pkg_name.strip().lower().replace("_", "-")
+
+
 def parse_requirements_txt(project_path: Path) -> dict[str, str]:
     req_file = project_path / "requirements.txt"
     if not req_file.exists():
         return {}
-    
+
     result = {}
     lines = req_file.read_text(encoding="utf-8", errors="ignore").splitlines()
     for line in lines:
@@ -303,7 +308,7 @@ def parse_requirements_txt(project_path: Path) -> dict[str, str]:
             continue
         match = re.match(r"^([a-zA-Z0-9_\-\.]+)(?:([=><~!]=?)(.+))?$", line)
         if match:
-            pkg_name = match.group(1).lower()
+            pkg_name = normalize_python_package_name(match.group(1))
             spec = line
             result[pkg_name] = spec
     return result
@@ -317,7 +322,7 @@ def sync_requirements_file(
     if req_file.exists():
         lines = req_file.read_text(encoding="utf-8", errors="ignore").splitlines()
 
-    norm_target = pkg_name.lower().replace("_", "-")
+    canon_target = normalize_python_package_name(pkg_name)
     new_lines: list[str] = []
     found = False
 
@@ -326,25 +331,54 @@ def sync_requirements_file(
         if not stripped or stripped.startswith("#"):
             new_lines.append(line)
             continue
-        
+
         match = re.match(r"^([a-zA-Z0-9_\-\.]+)", stripped)
         if match:
-            norm_name = match.group(1).lower().replace("_", "-")
-            if norm_name == norm_target:
+            norm_name = normalize_python_package_name(match.group(1))
+            if norm_name == canon_target:
                 found = True
                 if remove:
                     continue
                 else:
-                    new_line = f"{pkg_name}=={version}" if version else pkg_name
+                    new_line = f"{canon_target}=={version}" if version else canon_target
                     new_lines.append(new_line)
                     continue
         new_lines.append(line)
 
     if not remove and not found:
-        new_line = f"{pkg_name}=={version}" if version else pkg_name
+        new_line = f"{canon_target}=={version}" if version else canon_target
         new_lines.append(new_line)
 
     content = "\n".join(new_lines).strip() + "\n"
+    req_file.write_text(content, encoding="utf-8")
+    return content
+
+
+def export_requirements_from_venv(project_path: Path) -> str:
+    """Exporta o estado real do ambiente virtual para requirements.txt."""
+    req_file = project_path / "requirements.txt"
+    venv_path = get_venv_path(project_path)
+    py_exe = get_python_executable(venv_path)
+
+    if not py_exe.exists():
+        content = "# Dependências do projeto\n"
+        req_file.write_text(content, encoding="utf-8")
+        return content
+
+    proc = subprocess.run(
+        [str(py_exe), "-m", "pip", "freeze"],
+        capture_output=True,
+        text=True,
+        cwd=str(project_path),
+        check=False,
+    )
+
+    content = proc.stdout.strip()
+    if not content:
+        content = "# Dependências do projeto\n"
+    else:
+        content = content + "\n"
+
     req_file.write_text(content, encoding="utf-8")
     return content
 
@@ -563,6 +597,7 @@ async def install_project_package(
         )
 
     pkg_clean = re.split(r"[=><~!]", payload.package)[0].strip()
+    pkg_clean = normalize_python_package_name(pkg_clean)
     manifest_file = project_path / manifest_name
     manifest_content = (
         manifest_file.read_text(encoding="utf-8", errors="ignore")
@@ -571,26 +606,7 @@ async def install_project_package(
     )
 
     if eco == "python" and payload.save_requirements:
-        installed_version = None
-        cmd_show = [str(py_exe), "-m", "pip", "show", pkg_clean]
-        proc_show = await asyncio.create_subprocess_exec(
-            *cmd_show,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            cwd=str(project_path),
-        )
-        try:
-            stdout_show, _ = await asyncio.wait_for(proc_show.communicate(), timeout=30)
-            if proc_show.returncode == 0:
-                for line in stdout_show.decode(errors="ignore").splitlines():
-                    if line.startswith("Version:"):
-                        installed_version = line.split(":", 1)[1].strip()
-                        break
-        except Exception:
-            pass
-        manifest_content = sync_requirements_file(
-            project_path, pkg_clean, installed_version, remove=False
-        )
+        manifest_content = export_requirements_from_venv(project_path)
 
     return {
         "ok": True,
@@ -680,7 +696,7 @@ async def uninstall_project_package(
     manifest_file = project_path / manifest_name
     manifest_content = ""
     if eco == "python" and payload.save_requirements:
-        manifest_content = sync_requirements_file(project_path, payload.package, remove=True)
+        manifest_content = export_requirements_from_venv(project_path)
     elif manifest_file.exists():
         manifest_content = manifest_file.read_text(encoding="utf-8", errors="ignore")
 
@@ -746,7 +762,20 @@ async def sync_project_requirements(slug: str, request: Request) -> dict[str, An
     else:
         venv_path = await ensure_venv(project_path)
         py_exe = get_python_executable(venv_path)
-        cmd = [str(py_exe), "-m", "pip", "install", "-r", str(manifest_file)]
+        if not py_exe.exists():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Ambiente virtual não foi criado corretamente.",
+            )
+
+        manifest_content = export_requirements_from_venv(project_path)
+        return {
+            "ok": True,
+            "ecosystem": eco,
+            "manifest_file": manifest_name,
+            "message": "requirements.txt sincronizado a partir do ambiente virtual do projeto",
+            "stdout": manifest_content,
+        }
 
     proc = await asyncio.create_subprocess_exec(
         *cmd,

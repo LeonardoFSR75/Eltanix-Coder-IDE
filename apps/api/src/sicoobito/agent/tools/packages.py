@@ -175,6 +175,8 @@ async def manage_packages(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
             amostra = ", ".join(f"{p['name']}=={p['version']}" for p in installed_packages[:15])
             content_str += f"Instalados (primeiros 15): {amostra}\n"
 
+        ctx.session_state.packages_checked = True
+
         return ToolResult(
             ok=True,
             content=content_str,
@@ -242,6 +244,7 @@ async def manage_packages(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
 
         import re
         pkg_clean = re.split(r"[=><~!]", package)[0].strip()
+        pkg_clean = pkg_clean.lower().replace("_", "-")
         installed_version = None
         req_content = ""
 

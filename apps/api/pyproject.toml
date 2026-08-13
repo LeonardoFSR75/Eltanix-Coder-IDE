@@ -46,6 +46,8 @@ dependencies = [
     # MCP real — cliente para conectar servidores externos como ferramentas do agente
     "mcp>=2.0",
     "aiosqlite>=0.22.1",
+    # Observabilidade — tracing e estatísticas para LLM e LangGraph
+    "langfuse>=2.50.0",
 ]
 
 [project.optional-dependencies]

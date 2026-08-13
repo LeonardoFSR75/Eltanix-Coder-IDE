@@ -1563,6 +1563,31 @@ export function PackagesPanel() {
   const [filterText, setFilterText] = useState("");
   const [erro, setErro] = useState<string | null>(null);
   const [msgSuccess, setMsgSuccess] = useState<string | null>(null);
+  const [requirementsContent, setRequirementsContent] = useState("");
+  const [syncStatus, setSyncStatus] = useState<"ok" | "warning" | "idle">("idle");
+  const [activeTab, setActiveTab] = useState<"packages" | "requirements">("packages");
+
+  const normalizePackageName = useCallback((name: string) => name.trim().toLowerCase().replace(/[_\s]+/g, "-"), []);
+  const resolveSyncState = useCallback(
+    (installed: PackageItem[], reqs: Record<string, string>) => {
+      const ignored = new Set(["pip", "setuptools", "wheel", "distribute"]);
+      const installedNames = new Set(
+        installed
+          .map((pkg) => normalizePackageName(pkg.name))
+          .filter((name) => !ignored.has(name))
+      );
+      const reqNames = new Set(
+        Object.keys(reqs)
+          .map((name) => normalizePackageName(name))
+          .filter((name) => !ignored.has(name))
+      );
+
+      if (installedNames.size === 0) return "idle" as const;
+      const hasMismatch = [...installedNames].some((name) => !reqNames.has(name));
+      return hasMismatch ? ("warning" as const) : ("ok" as const);
+    },
+    [normalizePackageName]
+  );
 
   const carregar = useCallback(async () => {
     if (!project) return;
@@ -1570,10 +1595,15 @@ export function PackagesPanel() {
     setErro(null);
     try {
       const data = await getProjectPackages(project);
+      const normalizedReqMap = Object.fromEntries(
+        Object.entries(data.requirements_map ?? {}).map(([name, version]) => [normalizePackageName(name), version])
+      );
       setPackages(data.packages);
-      setReqMap(data.requirements_map);
+      setReqMap(normalizedReqMap);
       setReqExists(data.requirements_exists);
       setVenvExists(data.venv_exists);
+      setRequirementsContent(data.requirements_content ?? "");
+      setSyncStatus(resolveSyncState(data.packages, normalizedReqMap));
       if (data.manifest_file) setManifestFile(data.manifest_file);
     } catch (err) {
       setErro(err instanceof Error ? err.message : String(err));
@@ -1597,6 +1627,7 @@ export function PackagesPanel() {
     try {
       const res = await installProjectPackage(project, target, true);
       setInputPkg("");
+      setSyncStatus("ok");
       setMsgSuccess(`Pacote '${res.package}' instalado e gravado em ${manifestFile}!`);
       await carregar();
     } catch (err) {
@@ -1615,6 +1646,7 @@ export function PackagesPanel() {
     setMsgSuccess(null);
     try {
       await uninstallProjectPackage(project, pkgName, true);
+      setSyncStatus("ok");
       setMsgSuccess(`Pacote '${pkgName}' removido e atualizado em ${manifestFile}!`);
       await carregar();
     } catch (err) {
@@ -1626,12 +1658,13 @@ export function PackagesPanel() {
 
   const handleSync = async () => {
     if (!project || actionLoading) return;
-    setActionLoading(`Sincronizando de ${manifestFile}...`);
+    setActionLoading(`Exportando .venv para ${manifestFile}...`);
     setErro(null);
     setMsgSuccess(null);
     try {
-      await syncProjectRequirements(project);
-      setMsgSuccess(`Ambiente sincronizado com sucesso com ${manifestFile}!`);
+      const res = await syncProjectRequirements(project);
+      setSyncStatus("ok");
+      setMsgSuccess(res.message || `Ambiente exportado para ${manifestFile}!`);
       await carregar();
     } catch (err) {
       setErro(err instanceof Error ? err.message : String(err));
@@ -1682,39 +1715,67 @@ export function PackagesPanel() {
         </div>
       </div>
 
-      <div className="packages-section-install">
-        <form onSubmit={handleInstall} className="packages-form-row">
+      <div
+        className="packages-section-install"
+        style={{
+          padding: "4px 6px",
+          background: "rgba(15, 23, 42, 0.18)",
+          borderRadius: "8px",
+          border: "1px solid rgba(148, 163, 184, 0.14)",
+          margin: "6px 12px 0",
+        }}
+      >
+        <form onSubmit={handleInstall} className="packages-form-row" style={{ gap: "4px" }}>
           <input
             type="text"
             className="packages-input"
-            placeholder="Nome do pacote (ex: lodash, pytest)..."
+            placeholder="Pacote..."
             value={inputPkg}
             onChange={(e) => setInputPkg(e.target.value)}
             disabled={!!actionLoading}
+            style={{
+              background: "rgba(15, 23, 42, 0.8)",
+              border: "1px solid rgba(148, 163, 184, 0.2)",
+              color: "#e5edf9",
+              minHeight: "26px",
+              fontSize: "12px",
+            }}
           />
           <button
             type="submit"
             className="packages-btn-primary"
             disabled={!inputPkg.trim() || !!actionLoading}
+            style={{
+              minWidth: "74px",
+              minHeight: "26px",
+              borderRadius: "6px",
+              fontWeight: 700,
+              padding: "0 8px",
+              fontSize: "11px",
+            }}
           >
             {actionLoading ? "…" : "Instalar"}
           </button>
         </form>
 
-        <div className="packages-sub-actions">
-          <div className="packages-sync-info">
-            <span>⚡ Auto-sync com <code>{manifestFile}</code></span>
-          </div>
-          <button
-            type="button"
-            onClick={() => void handleSync()}
-            disabled={!!actionLoading || !reqExists}
-            className="packages-btn-sync"
-            title={`Instalar dependências do ${manifestFile}`}
-          >
-            🔄 Sincronizar Tudo
-          </button>
-        </div>
+        <button
+          type="button"
+          onClick={() => void handleSync()}
+          disabled={!!actionLoading || !venvExists}
+          className="packages-btn-sync"
+          title={`Exportar o ambiente do projeto para ${manifestFile}`}
+          style={{
+            width: "100%",
+            marginTop: "4px",
+            minHeight: "26px",
+            borderRadius: "6px",
+            fontWeight: 700,
+            padding: "0 8px",
+            fontSize: "11px",
+          }}
+        >
+          🔄 Sync
+        </button>
       </div>
 
       {actionLoading && (
@@ -1725,59 +1786,193 @@ export function PackagesPanel() {
       )}
 
       {erro && <div className="panel-error">{erro}</div>}
-      {msgSuccess && <div className="packages-status-success">{msgSuccess}</div>}
+      {msgSuccess && (
+        <div
+          style={{
+            margin: "8px 12px 0",
+            padding: "8px 10px",
+            borderRadius: "10px",
+            background: "rgba(34, 197, 94, 0.12)",
+            border: "1px solid rgba(34, 197, 94, 0.3)",
+            color: "#c8f7d3",
+            fontSize: "11px",
+            fontWeight: 600,
+          }}
+        >
+          {msgSuccess}
+        </div>
+      )}
 
-      <div className="packages-filter-box">
-        <input
-          type="text"
-          className="packages-input-filter"
-          placeholder="Filtrar pacotes instalados..."
-          value={filterText}
-          onChange={(e) => setFilterText(e.target.value)}
-        />
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: "5px",
+          margin: "6px 12px 0",
+          padding: "4px 7px",
+          borderRadius: "7px",
+          border:
+            syncStatus === "warning"
+              ? "1px solid rgba(245, 158, 11, 0.4)"
+              : "1px solid rgba(148, 163, 184, 0.22)",
+          background:
+            syncStatus === "warning"
+              ? "rgba(245, 158, 11, 0.10)"
+              : syncStatus === "ok"
+                ? "rgba(34, 197, 94, 0.10)"
+                : "rgba(148, 163, 184, 0.06)",
+          color: syncStatus === "warning" ? "#f9d58f" : syncStatus === "ok" ? "#baf7cc" : "#d7deea",
+          fontSize: "10px",
+          fontWeight: 700,
+        }}
+      >
+        <span style={{ fontSize: "10px" }}>
+          {syncStatus === "warning" ? "⚠️" : syncStatus === "ok" ? "✅" : "ℹ️"}
+        </span>
+        <span>
+          {syncStatus === "warning"
+            ? "Fora do req"
+            : syncStatus === "ok"
+              ? "Sincronizado"
+              : "Sem pacotes"}
+        </span>
       </div>
 
-      <div className="packages-list-scroll">
-        {loading ? (
-          <div className="packages-empty-state">Carregando ambiente virtual do projeto...</div>
-        ) : filtrados.length === 0 ? (
-          <div className="packages-empty-state">
-            {packages.length === 0
-              ? "Nenhum pacote instalado no .venv do projeto ainda. Digite o nome do pacote acima para instalar!"
-              : "Nenhum pacote encontrado com este filtro."}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: "4px",
+          margin: "6px 12px 0",
+          padding: "3px",
+          borderRadius: "8px",
+          background: "rgba(15, 23, 42, 0.42)",
+          border: "1px solid rgba(148, 163, 184, 0.18)",
+        }}
+      >
+        {([
+          { key: "packages", label: "Pacotes" },
+          { key: "requirements", label: "Requirements" },
+        ] as const).map((tab) => (
+          <button
+            key={tab.key}
+            type="button"
+            onClick={() => setActiveTab(tab.key)}
+            style={{
+              flex: 1,
+              border: 0,
+              borderRadius: "6px",
+              padding: "6px 6px",
+              background: activeTab === tab.key ? "rgba(96, 165, 250, 0.18)" : "transparent",
+              color: activeTab === tab.key ? "#e2ecff" : "#b3bfd3",
+              cursor: "pointer",
+              fontSize: "10px",
+              fontWeight: 700,
+            }}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {activeTab === "requirements" ? (
+        requirementsContent ? (
+          <div
+            style={{
+              margin: "8px 12px 0",
+              padding: "8px 10px",
+              borderRadius: "8px",
+              border: "1px solid rgba(148, 163, 184, 0.18)",
+              background: "rgba(15, 23, 42, 0.72)",
+              maxHeight: "140px",
+              overflow: "auto",
+            }}
+          >
+            <div
+              style={{
+                fontSize: "10px",
+                fontWeight: 700,
+                marginBottom: "6px",
+                color: "#a9b7d0",
+                letterSpacing: "0.04em",
+                textTransform: "uppercase",
+              }}
+            >
+              {manifestFile}
+            </div>
+            <pre
+              style={{
+                margin: 0,
+                whiteSpace: "pre-wrap",
+                fontSize: "11px",
+                lineHeight: "1.5",
+                color: "#dfe9f7",
+                fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
+              }}
+            >
+              {requirementsContent.trim()}
+            </pre>
           </div>
         ) : (
-          <div className="packages-items-grid">
-            {filtrados.map((pkg) => {
-              const normName = pkg.name.toLowerCase().replace("_", "-");
-              const inReq = reqMap[normName] !== undefined;
-              return (
-                <div key={pkg.name} className="package-item-card">
-                  <div className="package-item-info">
-                    <div className="package-item-title-row">
-                      <span className="package-item-name">{pkg.name}</span>
-                      {inReq && <span className="package-req-tag">req.txt</span>}
-                    </div>
-                    <span className="package-item-version">v{pkg.version}</span>
-                  </div>
-                  <button
-                    type="button"
-                    className="icon-action-btn danger"
-                    title={`Desinstalar ${pkg.name}`}
-                    onClick={() => void handleUninstall(pkg.name)}
-                    disabled={!!actionLoading}
-                  >
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                      <polyline points="3 6 5 6 21 6" />
-                      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-                    </svg>
-                  </button>
-                </div>
-              );
-            })}
+          <div className="packages-empty-state" style={{ margin: "8px 12px 0" }}>
+            Nenhum conteúdo em {manifestFile}.
           </div>
-        )}
-      </div>
+        )
+      ) : (
+        <>
+          <div className="packages-filter-box">
+            <input
+              type="text"
+              className="packages-input-filter"
+              placeholder="Filtrar pacotes instalados..."
+              value={filterText}
+              onChange={(e) => setFilterText(e.target.value)}
+            />
+          </div>
+
+          <div className="packages-list-scroll">
+            {loading ? (
+              <div className="packages-empty-state">Carregando ambiente virtual do projeto...</div>
+            ) : filtrados.length === 0 ? (
+              <div className="packages-empty-state">
+                {packages.length === 0
+                  ? "Nenhum pacote instalado no .venv do projeto ainda. Digite o nome do pacote acima para instalar!"
+                  : "Nenhum pacote encontrado com este filtro."}
+              </div>
+            ) : (
+              <div className="packages-items-grid">
+                {filtrados.map((pkg) => {
+                  const normName = normalizePackageName(pkg.name);
+                  const inReq = reqMap[normName] !== undefined || Object.keys(reqMap).some((key) => normalizePackageName(key) === normName);
+                  return (
+                    <div key={pkg.name} className="package-item-card">
+                      <div className="package-item-info">
+                        <div className="package-item-title-row">
+                          <span className="package-item-name">{pkg.name}</span>
+                          {inReq && <span className="package-req-tag">req.txt</span>}
+                        </div>
+                        <span className="package-item-version">v{pkg.version}</span>
+                      </div>
+                      <button
+                        type="button"
+                        className="icon-action-btn danger"
+                        title={`Desinstalar ${pkg.name}`}
+                        onClick={() => void handleUninstall(pkg.name)}
+                        disabled={!!actionLoading}
+                      >
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <polyline points="3 6 5 6 21 6" />
+                          <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                        </svg>
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </>
+      )}
 
       <div className="packages-footer">
         <span className={`status-dot ${venvExists ? "active" : ""}`} />

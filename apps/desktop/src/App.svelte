@@ -13,10 +13,10 @@
   import AgentDock from "./lib/components/AgentDock.svelte";
   import StatusBar from "./lib/components/StatusBar.svelte";
   import ProjectModal from "./lib/components/ProjectModal.svelte";
-  import ApiKeyModal from "./lib/components/ApiKeyModal.svelte";
+  import LoginModal from "./lib/components/LoginModal.svelte";
   import { readFile, writeFile } from "./lib/api/workspace";
   import { listProjects, getProjectSummary, type ProjectRecord } from "./lib/api/projects";
-  import { hasApiKey } from "./lib/client";
+  import { hasAuthToken, onUnauthorized } from "./lib/client";
 
   const STORAGE_KEY = "sicoobito_current_project";
 
@@ -31,7 +31,7 @@
   let showTerminal = $state(true);
   let showAgent = $state(true);
   let isProjectModalOpen = $state(false);
-  let isApiKeyModalOpen = $state(!hasApiKey());
+  let isLoginModalOpen = $state(!hasAuthToken());
   let sidebarView = $state<"explorer" | "git" | "search">("explorer");
   let showQuickOpen = $state(false);
   let showCommandPalette = $state(false);
@@ -173,10 +173,14 @@
     { id: "view-search", title: "Ir para: Busca", run: () => { showSidebar = true; sidebarView = "search"; } },
     { id: "quick-open", title: "Abrir arquivo por nome…", shortcut: "Ctrl+P", run: () => (showQuickOpen = true) },
     { id: "new-project", title: "Criar / vincular novo projeto…", run: () => (isProjectModalOpen = true) },
-    { id: "api-key", title: "Configurar chave de API…", run: () => (isApiKeyModalOpen = true) },
+    { id: "user-login", title: "Entrar / Autenticação de usuário…", run: () => (isLoginModalOpen = true) },
   ]);
 
   onMount(() => {
+    onUnauthorized(() => {
+      isLoginModalOpen = true;
+    });
+
     refreshProjects();
     loadProjectSummary(currentProject);
 
@@ -218,7 +222,7 @@
     onToggleAgent={() => (showAgent = !showAgent)}
     onSaveFile={handleSaveFile}
     onOpenProjectModal={() => (isProjectModalOpen = true)}
-    onOpenApiKeyModal={() => (isApiKeyModalOpen = true)}
+    onOpenLoginModal={() => (isLoginModalOpen = true)}
   />
 
   <ProjectModal
@@ -227,11 +231,11 @@
     onProjectCreated={handleProjectCreated}
   />
 
-  <ApiKeyModal
-    isOpen={isApiKeyModalOpen}
-    dismissible={hasApiKey()}
+  <LoginModal
+    isOpen={isLoginModalOpen}
+    dismissible={hasAuthToken()}
     onSaved={() => {
-      isApiKeyModalOpen = false;
+      isLoginModalOpen = false;
       refreshProjects();
     }}
   />

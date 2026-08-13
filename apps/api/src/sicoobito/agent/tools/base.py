@@ -31,6 +31,23 @@ class RiskClass(StrEnum):
 
 
 @dataclass(slots=True)
+class SessionRuntimeState:
+    """Estado mutável de execução da sessão de agente.
+
+    Mantém em um lugar explícito as informações que antes ficavam espalhadas em
+    atributos de `ToolContext` — isso permite evoluir a sessão sem esconder
+    estado implícito em vários campos do contexto.
+    """
+
+    current_todos: list[dict[str, Any]] = field(default_factory=list)
+    has_unresolved_failure: bool = False
+    project_verified: bool = False
+    workspace_listed: bool = False
+    packages_checked: bool = False
+    git_ready: bool = False
+
+
+@dataclass(slots=True)
 class ToolContext:
     """O que uma ferramenta pode alcançar. Montado por sessão."""
 
@@ -84,14 +101,23 @@ class ToolContext:
     max_wait_seconds: float = 300.0
     max_spawn_depth: int = 3
     max_children_per_agent: int = 4
-    # Lista de tarefas atuais no plano da sessão — atualizada por `graph.py::act()`
-    current_todos: list[dict[str, Any]] = field(default_factory=list)
-    # Atualizado por `agent/graph.py::act()` a cada ferramenta WRITE/EXEC:
-    # True se a mais recente falhou (exit code != 0, timeout, ou `ok=False`),
-    # False se a mais recente teve sucesso. `write_todos` consulta isto para
-    # recusar marcar item como `completed` logo depois de uma falha não
-    # resolvida — ver `agent/tools/plan.py`.
-    has_unresolved_failure: bool = False
+    session_state: SessionRuntimeState = field(default_factory=SessionRuntimeState)
+
+    @property
+    def current_todos(self) -> list[dict[str, Any]]:
+        return self.session_state.current_todos
+
+    @current_todos.setter
+    def current_todos(self, value: list[dict[str, Any]]) -> None:
+        self.session_state.current_todos = value
+
+    @property
+    def has_unresolved_failure(self) -> bool:
+        return self.session_state.has_unresolved_failure
+
+    @has_unresolved_failure.setter
+    def has_unresolved_failure(self, value: bool) -> None:
+        self.session_state.has_unresolved_failure = value
 
 
 @dataclass(slots=True)

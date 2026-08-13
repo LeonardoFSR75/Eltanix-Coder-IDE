@@ -494,6 +494,14 @@ class AgentSessionRecord(Base):
     profile: Mapped[str | None] = mapped_column(String(64), nullable=True)
     branch: Mapped[str | None] = mapped_column(String(255), nullable=True)
     base_branch: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Resumo compacto da sessão para a UI e para a auditoria — mantém um
+    # estado de execução legível mesmo sem reconstruir o grafo inteiro.
+    summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    total_cost_usd: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    total_tokens: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    iterations: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    pending_approvals: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    last_failed_call_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     # "open" | "closed" — só muda em close_session(); uma aba fechada sem
     # encerrar a sessão explicitamente fica "open" pra sempre aqui. Quem
     # consome esta tabela precisa combinar com o dict em memória do runner

@@ -9,6 +9,8 @@ corte cego no início.
 from __future__ import annotations
 
 import re
+import sys
+from pathlib import Path
 from typing import Any
 
 from sicoobito.agent.tools.base import RiskClass, ToolContext, ToolResult, tool
@@ -44,6 +46,21 @@ def summarize_output(text: str, *, head: int = HEAD_LINES, tail: int = TAIL_LINE
     return "\n".join(partes)
 
 
+def project_venv_prefix(workspace_root: str | Path | None) -> str:
+    """Força a execução a usar o venv montado no sandbox do projeto."""
+    if not workspace_root:
+        return ""
+
+    root = Path(workspace_root)
+    if not (root / ".venv").exists():
+        return ""
+
+    return (
+        "export VIRTUAL_ENV='/workspace/.venv'; "
+        "export PATH='/workspace/.venv/bin:$PATH'; "
+    )
+
+
 @tool(
     name="run_command",
     description=(
@@ -71,6 +88,10 @@ async def run_command(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
         )
 
     comando = args["command"].strip()
+    prefixo_venv = project_venv_prefix(getattr(ctx, "workspace_root", None))
+    if prefixo_venv and not comando.startswith(("export ", "source ", "cd ", "VIRTUAL_ENV=")):
+        comando = f"{prefixo_venv}{comando}"
+
     partes = comando.split()
     primeiro = partes[0] if partes else ""
     extensoes_estaticas = (".html", ".htm", ".css", ".json", ".txt", ".md", ".png", ".jpg", ".svg")

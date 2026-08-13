@@ -25,9 +25,23 @@ if (typeof window !== "undefined") {
   const win = window as unknown as Record<string, boolean | undefined>;
   if (!win.__monaco_loader_installed__) {
     win.__monaco_loader_installed__ = true;
+
+    const isDiffModelError = (msg?: string | null) =>
+      Boolean(msg && msg.includes("TextModel got disposed before DiffEditorWidget model got reset"));
+
     window.addEventListener("error", (event) => {
-      if (event.message?.includes("TextModel got disposed before DiffEditorWidget model got reset")) {
+      if (isDiffModelError(event.message) || isDiffModelError(event.error?.message)) {
         event.preventDefault();
+        event.stopImmediatePropagation();
+      }
+    });
+
+    window.addEventListener("unhandledrejection", (event) => {
+      const reason = event.reason;
+      const msg = typeof reason === "string" ? reason : reason?.message || String(reason || "");
+      if (isDiffModelError(msg)) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
       }
     });
   }

@@ -181,6 +181,21 @@ class RouterEngine:
             routing_strategy="simple-shuffle",
             set_verbose=False,
         )
+
+        from sicoobito.telemetry.langfuse_tracer import is_langfuse_configured
+        if is_langfuse_configured(self.settings):
+            try:
+                os.environ["LANGFUSE_PUBLIC_KEY"] = self.settings.langfuse_public_key
+                os.environ["LANGFUSE_SECRET_KEY"] = self.settings.langfuse_secret_key
+                os.environ["LANGFUSE_HOST"] = self.settings.langfuse_host
+                if "langfuse" not in litellm.success_callback:
+                    litellm.success_callback.append("langfuse")
+                if "langfuse" not in litellm.failure_callback:
+                    litellm.failure_callback.append("langfuse")
+                log.info("router.langfuse.enabled", host=self.settings.langfuse_host)
+            except Exception as exc:
+                log.warning("router.langfuse.setup_failed", error=str(exc)[:200])
+
         log.info("router.built", routes=len(model_list))
 
     @property

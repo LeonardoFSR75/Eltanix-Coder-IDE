@@ -158,7 +158,13 @@ async function describeError(response: Response): Promise<string> {
         .join(" | ");
     }
 
-    if (typeof detail === "string") return detail;
+    if (typeof detail === "string") {
+      const normalized = detail.trim();
+      if (normalized.startsWith("Sessão desconhecida:")) {
+        return "Sessão reaberta automaticamente após o reinício do serviço. Se o histórico não aparecer, recarregue a aba.";
+      }
+      return normalized;
+    }
     if (detail?.error?.message) return detail.error.message;
     return `${response.status} ${response.statusText}`;
   } catch {

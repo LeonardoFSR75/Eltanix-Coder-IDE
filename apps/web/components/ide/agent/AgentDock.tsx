@@ -87,10 +87,13 @@ export function AgentDock({
   }, []);
 
   const running = active?.running ?? false;
+  const awaitingApproval = (active?.pending.length ?? 0) > 0;
+
+  const canSubmitActivePrompt = active ? active.canSubmit : Boolean(project);
 
   const submitWithPrompt = (promptToRun?: string) => {
     const promptValue = promptToRun ?? task;
-    if (!promptValue.trim() || running || submittingRef.current) return;
+    if (!promptValue.trim() || submittingRef.current || !canSubmitActivePrompt || awaitingApproval) return;
     submittingRef.current = true;
     if (active && active.session && !active.readOnly) {
       void active.sendMessage(promptValue);
@@ -216,8 +219,15 @@ export function AgentDock({
             setFocusFiles={setFocusFiles}
             focusFolder={focusFolder}
             setFocusFolder={setFocusFolder}
-            running={running}
-            canSubmit={Boolean(task.trim() && project && !active?.readOnly)}
+            running={running || awaitingApproval}
+            canSubmit={Boolean(
+              task.trim() &&
+                project &&
+                !active?.readOnly &&
+                !awaitingApproval &&
+                !running &&
+                (active ? active.canSubmit : true),
+            )}
             onSubmit={() => submitWithPrompt()}
             sessionStarted={Boolean(active?.session)}
           />

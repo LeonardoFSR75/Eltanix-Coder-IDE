@@ -1,6 +1,6 @@
 /**
  * Cliente HTTP usado pela versão Svelte / Desktop.
- * Fala com a API do SicoobitoCode via API_ORIGIN ou proxy de dev/preview.
+ * Fala com a API do SicoobitoCode via API_ORIGIN e gerencia a autenticação por usuário e senha.
  */
 
 const API_ORIGIN = import.meta.env.VITE_API_ORIGIN || "http://localhost:5401";
@@ -15,26 +15,23 @@ export class HttpError extends Error {
   }
 }
 
-/**
- * Erro lançado quando nenhuma SICOOBITO_API_KEY foi configurada — nem via
- * `VITE_SICOOBITO_API_KEY` (build/preview via Docker), nem digitada pelo usuário
- * e salva no `localStorage`. Diferente de `HttpError`: não veio do servidor,
- * então não faz sentido tentar de novo sem antes pedir a chave.
- *
- * Não existe fallback fixo aqui de propósito — um app empacotado via Tauri e
- * distribuído carrega qualquer valor hardcoded para fora da máquina de quem
- * o gerou. Sem chave configurada, o app deve pedir, nunca inventar uma.
- */
 export class MissingApiKeyError extends Error {
   constructor() {
-    super("Nenhuma SICOOBITO_API_KEY configurada. Configure em Configurações.");
+    super("Sessão de usuário ou chave de API não configurada. Faça login.");
     this.name = "MissingApiKeyError";
   }
 }
 
-export function getApiKey(): string {
+let onUnauthorizedHandler: (() => void) | null = null;
+
+export function onUnauthorized(handler: () => void): void {
+  onUnauthorizedHandler = handler;
+}
+
+export function getAuthToken(): string {
   if (typeof window === "undefined") return "";
   return (
+    localStorage.getItem("sicoobito_session_token") ||
     localStorage.getItem("SICOOBITO_API_KEY") ||
     localStorage.getItem("sicoobito_api_key") ||
     (import.meta.env.VITE_SICOOBITO_API_KEY as string | undefined) ||
@@ -42,30 +39,125 @@ export function getApiKey(): string {
   );
 }
 
-export function hasApiKey(): boolean {
-  return getApiKey().trim().length > 0;
+export function hasAuthToken(): boolean {
+  return getAuthToken().trim().length > 0;
 }
 
-export function setApiKey(key: string): void {
+export function setAuthToken(token: string): void {
   if (typeof window !== "undefined") {
-    localStorage.setItem("SICOOBITO_API_KEY", key.trim());
+    localStorage.setItem("sicoobito_session_token", token.trim());
+    localStorage.setItem("SICOOBITO_API_KEY", token.trim());
   }
 }
 
-export function clearApiKey(): void {
+export function clearAuthToken(): void {
   if (typeof window !== "undefined") {
+    localStorage.removeItem("sicoobito_session_token");
     localStorage.removeItem("SICOOBITO_API_KEY");
     localStorage.removeItem("sicoobito_api_key");
+    localStorage.removeItem("sicoobito_user");
+  }
+}
+
+export function getApiKey(): string {
+  return getAuthToken();
+}
+
+export function hasApiKey(): boolean {
+  return hasAuthToken();
+}
+
+export function setApiKey(key: string): void {
+  setAuthToken(key);
+}
+
+export function clearApiKey(): void {
+  clearAuthToken();
+}
+
+export interface UserProfile {
+  id: string;
+  username: string;
+  display_name: string;
+}
+
+export function getAuthUser(): UserProfile | null {
+  if (typeof window === "undefined") return null;
+  const stored = localStorage.getItem("sicoobito_user");
+  if (!stored) return null;
+  try {
+    return JSON.parse(stored) as UserProfile;
+  } catch {
+    return null;
+  }
+}
+
+export async function login(username: string, password: string): Promise<boolean> {
+  const url = `${API_ORIGIN}/api/auth/login`;
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ username, password }),
+    });
+
+    if (!res.ok) {
+      return false;
+    }
+
+    const data = (await res.json()) as { token: string; expires_at: string };
+    if (!data.token) return false;
+
+    setAuthToken(data.token);
+
+    // Tenta buscar informações do usuário conectado
+    try {
+      const meRes = await fetch(`${API_ORIGIN}/api/auth/me`, {
+        headers: getHeaders(),
+      });
+      if (meRes.ok) {
+        const me = (await meRes.json()) as UserProfile;
+        localStorage.setItem("sicoobito_user", JSON.stringify(me));
+      } else {
+        localStorage.setItem(
+          "sicoobito_user",
+          JSON.stringify({ id: "user", username, display_name: username }),
+        );
+      }
+    } catch {
+      localStorage.setItem(
+        "sicoobito_user",
+        JSON.stringify({ id: "user", username, display_name: username }),
+      );
+    }
+
+    return true;
+  } catch (err) {
+    console.error("Erro ao realizar login:", err);
+    return false;
+  }
+}
+
+export function logout(): void {
+  clearAuthToken();
+  if (onUnauthorizedHandler) {
+    onUnauthorizedHandler();
   }
 }
 
 function getHeaders(extra: Record<string, string> = {}): Record<string, string> {
-  const apiKey = getApiKey();
+  const token = getAuthToken();
   const headers: Record<string, string> = { ...extra };
-  if (apiKey) {
-    headers["Authorization"] = `Bearer ${apiKey}`;
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
   }
   return headers;
+}
+
+function checkUnauthorized(status: number): void {
+  if (status === 401 && onUnauthorizedHandler) {
+    onUnauthorizedHandler();
+  }
 }
 
 export async function get<T>(path: string): Promise<T> {
@@ -75,6 +167,7 @@ export async function get<T>(path: string): Promise<T> {
     cache: "no-store",
   });
   if (!response.ok) {
+    checkUnauthorized(response.status);
     const errText = await describeError(response);
     console.warn(`[HTTP GET ERROR ${response.status}] ${url}:`, errText);
     throw new HttpError(errText, response.status);
@@ -90,6 +183,7 @@ export async function post<T>(path: string, body?: unknown): Promise<T> {
     body: JSON.stringify(body ?? {}),
   });
   if (!response.ok) {
+    checkUnauthorized(response.status);
     const errText = await describeError(response);
     console.warn(`[HTTP POST ERROR ${response.status}] ${url}:`, errText);
     throw new HttpError(errText, response.status);
@@ -105,6 +199,7 @@ export async function put<T>(path: string, body: unknown): Promise<T> {
     body: JSON.stringify(body),
   });
   if (!response.ok) {
+    checkUnauthorized(response.status);
     const errText = await describeError(response);
     console.warn(`[HTTP PUT ERROR ${response.status}] ${url}:`, errText);
     throw new HttpError(errText, response.status);
@@ -120,6 +215,7 @@ export async function patch<T>(path: string, body: unknown): Promise<T> {
     body: JSON.stringify(body),
   });
   if (!response.ok) {
+    checkUnauthorized(response.status);
     const errText = await describeError(response);
     console.warn(`[HTTP PATCH ERROR ${response.status}] ${url}:`, errText);
     throw new HttpError(errText, response.status);
@@ -135,6 +231,7 @@ export async function del<T>(path: string, body?: unknown): Promise<T> {
     body: body ? JSON.stringify(body) : undefined,
   });
   if (!response.ok) {
+    checkUnauthorized(response.status);
     const errText = await describeError(response);
     console.warn(`[HTTP DELETE ERROR ${response.status}] ${url}:`, errText);
     throw new HttpError(errText, response.status);
@@ -156,7 +253,10 @@ export async function streamEvents(
     signal,
   });
 
-  if (!response.ok) throw new HttpError(await describeError(response), response.status);
+  if (!response.ok) {
+    checkUnauthorized(response.status);
+    throw new HttpError(await describeError(response), response.status);
+  }
   if (!response.body) throw new Error("Resposta sem corpo.");
 
   const reader = response.body.getReader();

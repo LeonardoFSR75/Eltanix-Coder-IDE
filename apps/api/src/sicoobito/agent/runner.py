@@ -28,6 +28,25 @@ from sicoobito.agent import session_store
 from sicoobito.agent.approval_policy_config import load_approval_policy
 from sicoobito.agent.coordinator import AgentCoordinator
 from sicoobito.agent.graph import DEFAULT_MAX_ITERATIONS, build_graph
+
+
+def _session_summary(session: AgentSession, *, pending_count: int = 0, failed_count: int = 0) -> str:
+    """Resumo leve da sessão usado na UI e no histórico.
+
+    Mantém o texto curto e legível — o objetivo é informar rapidamente se a
+    execução está aguardando aprovação, se houve falha recorrente ou se a
+    sessão está em progresso, sem exigir abrir o transcript completo.
+    """
+    if pending_count > 0:
+        base = f"Aguardando aprovação de {pending_count} ação(ões)"
+    elif failed_count > 0:
+        base = f"Falha recorrente em {failed_count} chamada(s)"
+    else:
+        base = "Executando"
+
+    if session.branch:
+        return f"{base} em {session.branch}"
+    return base
 from sicoobito.agent.headless import run_headless_burst
 from sicoobito.agent.prompts import build_task_prompt
 from sicoobito.agent.state import AgentMode
@@ -48,6 +67,53 @@ from sicoobito.workspace.github import GitHubClient, GitHubError, parse_remote, 
 from sicoobito.workspace.projects import ProjectError
 
 log = get_logger(__name__)
+
+
+async def validate_project_runtime(workspace_root: Path) -> dict[str, Any]:
+    """Valida o projeto antes do início da sessão do agente.
+
+    A sessão só pode começar depois de confirmar que o diretório do projeto foi
+    conectado, que a árvore de arquivos foi listada, que o ecossistema/deps do
+    projeto foi detectado e que um repositório Git válido existe. Quando o
+    projeto ainda não foi inicializado como Git, o runtime o cria antes de
+    permitir a sessão avançar.
+    """
+    try:
+        git_ops.ensure_repo(workspace_root)
+    except GitError as exc:
+        return {
+            "project_ok": False,
+            "reason": f"não foi possível garantir o Git do projeto: {exc}",
+            "files": [],
+            "ecosystem": "unknown",
+            "manifest_name": None,
+        }
+
+    try:
+        entries = sorted(p.name for p in workspace_root.iterdir())
+    except OSError as exc:
+        return {
+            "project_ok": False,
+            "reason": f"não foi possível listar o projeto: {exc}",
+            "files": [],
+            "ecosystem": "unknown",
+            "manifest_name": None,
+            "git_ready": False,
+        }
+
+    from sicoobito.api.routes.packages import detect_ecosystem, get_manifest_name
+
+    eco = detect_ecosystem(workspace_root)
+    manifest_name = get_manifest_name(eco)
+
+    return {
+        "project_ok": True,
+        "reason": None,
+        "files": entries,
+        "ecosystem": eco,
+        "manifest_name": manifest_name,
+        "git_ready": True,
+    }
 
 
 def _load_custom_instructions(workspace_root: Path) -> str | None:
@@ -196,10 +262,20 @@ class AgentRunner:
         parent_session_id: str | None = None,
     ) -> AgentSession:
         session_id = session_id or self.sandboxes.new_session_id()
-        # Syscall única na criação da sessão; o trabalho pesado de disco desta
-        # função (worktree, sandbox) já roda fora do event loop.
         workspace_root = workspace_root.resolve()  # noqa: ASYNC240
-        avisos: list[str] = []
+        if not workspace_root.exists() or not workspace_root.is_dir():
+            raise ValueError(f"Projeto não existe em PROJECTS_ROOT: {workspace_root}")
+
+        runtime_validation = await validate_project_runtime(workspace_root)
+        if not runtime_validation["project_ok"]:
+            raise ValueError(runtime_validation["reason"])
+
+        avisos: list[str] = [
+            (
+                f"Projeto conectado: {len(runtime_validation['files'])} item(ns) no workspace. "
+                f"Ecossistema detectado: {runtime_validation['ecosystem']}"
+            )
+        ]
 
         # 1. Worktree: o agente nunca trabalha na árvore que você está editando.
         try:
@@ -336,6 +412,8 @@ class AgentRunner:
             max_spawn_depth=self.settings.agent_max_spawn_depth,
             max_children_per_agent=self.settings.agent_max_children_per_agent,
         )
+        contexto.session_state.project_verified = bool(runtime_validation["project_ok"])
+        contexto.session_state.git_ready = bool(runtime_validation.get("git_ready", True))
 
         sessao = AgentSession(
             session_id=session_id,
@@ -399,6 +477,40 @@ class AgentRunner:
         )
         return sessao
 
+    async def update_session_summary(
+        self,
+        session_id: str,
+        *,
+        pending_count: int = 0,
+        failed_count: int = 0,
+        total_cost_usd: float | None = None,
+        total_tokens: int | None = None,
+        iterations: int | None = None,
+    ) -> None:
+        sessao = self._sessions.get(session_id)
+        if sessao is None:
+            return
+        resumo = _session_summary(sessao, pending_count=pending_count, failed_count=failed_count)
+        try:
+            async with session_scope() as db:
+                await session_store.update_metrics(
+                    db,
+                    session_id=session_id,
+                    summary=resumo,
+                    total_cost_usd=total_cost_usd,
+                    total_tokens=total_tokens,
+                    iterations=iterations,
+                    pending_approvals=pending_count,
+                    last_failed_call_count=failed_count,
+                )
+        except Exception as exc:
+            log.warning(
+                "agent.session.summary.persist_failed",
+                session=session_id,
+                error=str(exc)[:200],
+            )
+        sessao.context.session_state.current_todos = sessao.context.current_todos
+
     def get_session(self, session_id: str) -> AgentSession | None:
         return self._sessions.get(session_id)
 
@@ -432,7 +544,7 @@ class AgentRunner:
             )
             return None
 
-        if registro is None or registro.status != "open":
+        if registro is None or registro.status not in {"open", "closed"}:
             return None
 
         raiz = self.settings.effective_projects_root
@@ -464,6 +576,9 @@ class AgentRunner:
         sessao = self._sessions.pop(session_id, None)
         if sessao is None:
             return
+        resumo_final = "Sessão encerrada"
+        if sessao.branch:
+            resumo_final = f"Sessão encerrada em {sessao.branch}"
         await self.sandboxes.release(session_id)
         if sessao.context.browser is not None:
             await sessao.context.browser.stop()
@@ -476,7 +591,9 @@ class AgentRunner:
                 log.warning("agent.session.worktree_cleanup", session=session_id, error=str(exc))
         try:
             async with session_scope() as db:
-                await session_store.mark_closed(db, session_id=session_id)
+                await session_store.mark_closed(
+                    db, session_id=session_id, summary=resumo_final
+                )
         except Exception as exc:
             log.warning(
                 "agent.session.persist_close_failed", session=session_id, error=str(exc)[:200]
@@ -558,7 +675,17 @@ class AgentRunner:
             structlog.contextvars.bind_contextvars(session_id=session.session_id)
             try:
                 compilado = await self._compiled_graph(session)
-                config = {"configurable": {"thread_id": session.session_id}}
+                config: dict[str, Any] = {"configurable": {"thread_id": session.session_id}}
+
+                from sicoobito.telemetry.langfuse_tracer import get_langfuse_callback
+                langfuse_handler = get_langfuse_callback(
+                    session_id=session.session_id,
+                    trace_name=f"agent-run:{session.mode}",
+                    tags=["sicoobito", session.mode],
+                    settings=self.settings,
+                )
+                if langfuse_handler is not None:
+                    config["callbacks"] = [langfuse_handler]
 
                 if resume is not None:
                     from langgraph.types import Command
@@ -583,6 +710,19 @@ class AgentRunner:
                 ):
                     for no, atualizacao in evento.items():
                         yield {"node": no, "update": _serializable(atualizacao)}
+                        if no == "approve":
+                            pendentes = atualizacao.get("pending") or []
+                            await self.update_session_summary(
+                                session.session_id,
+                                pending_count=len(pendentes),
+                                failed_count=max(0, int((atualizacao.get("last_failed_call_count") or 0))),
+                            )
+                        elif no == "act":
+                            await self.update_session_summary(
+                                session.session_id,
+                                pending_count=0,
+                                failed_count=max(0, int((atualizacao.get("last_failed_call_count") or 0))),
+                            )
 
                 estado = await compilado.aget_state(config) if compilado.checkpointer else None
                 if estado is not None and estado.tasks:

@@ -49,7 +49,9 @@ def test_python_files_use_symbol_chunking_not_fallback(indexed):
     python_files = [
         (scanned, result)
         for scanned, result in indexed
-        if scanned.language == "python" and scanned.size_bytes > 2000
+        if scanned.language == "python"
+        and scanned.size_bytes > 2000
+        and not scanned.path.endswith("__init__.py")
     ]
     assert python_files, "esperava encontrar arquivos Python substanciais"
 

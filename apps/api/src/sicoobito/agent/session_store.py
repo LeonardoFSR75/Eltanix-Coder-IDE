@@ -25,6 +25,12 @@ async def create(
     branch: str | None,
     base_branch: str | None,
     parent_session_id: str | None = None,
+    summary: str | None = None,
+    total_cost_usd: float | None = None,
+    total_tokens: int | None = None,
+    iterations: int | None = None,
+    pending_approvals: int | None = None,
+    last_failed_call_count: int | None = None,
 ) -> None:
     session.add(
         AgentSessionRecord(
@@ -36,6 +42,12 @@ async def create(
             branch=branch or None,
             base_branch=base_branch,
             parent_session_id=parent_session_id,
+            summary=summary,
+            total_cost_usd=total_cost_usd or 0.0,
+            total_tokens=total_tokens or 0,
+            iterations=iterations or 0,
+            pending_approvals=pending_approvals or 0,
+            last_failed_call_count=last_failed_call_count or 0,
         )
     )
     await session.flush()
@@ -45,7 +57,46 @@ async def get(session: AsyncSession, *, session_id: str) -> AgentSessionRecord |
     return await session.get(AgentSessionRecord, session_id)
 
 
-async def mark_closed(session: AsyncSession, *, session_id: str) -> None:
+async def update_summary(session: AsyncSession, *, session_id: str, summary: str | None) -> None:
+    registro = await session.get(AgentSessionRecord, session_id)
+    if registro is None:
+        return
+    registro.summary = summary
+    await session.flush()
+
+
+async def update_metrics(
+    session: AsyncSession,
+    *,
+    session_id: str,
+    summary: str | None = None,
+    total_cost_usd: float | None = None,
+    total_tokens: int | None = None,
+    iterations: int | None = None,
+    pending_approvals: int | None = None,
+    last_failed_call_count: int | None = None,
+) -> None:
+    registro = await session.get(AgentSessionRecord, session_id)
+    if registro is None:
+        return
+    if summary is not None:
+        registro.summary = summary
+    if total_cost_usd is not None:
+        registro.total_cost_usd = total_cost_usd
+    if total_tokens is not None:
+        registro.total_tokens = total_tokens
+    if iterations is not None:
+        registro.iterations = iterations
+    if pending_approvals is not None:
+        registro.pending_approvals = pending_approvals
+    if last_failed_call_count is not None:
+        registro.last_failed_call_count = last_failed_call_count
+    await session.flush()
+
+
+async def mark_closed(
+    session: AsyncSession, *, session_id: str, summary: str | None = None
+) -> None:
     registro = await session.get(AgentSessionRecord, session_id)
     if registro is None:
         # A sessão pode ter sido criada antes desta tabela existir, ou o
@@ -53,6 +104,8 @@ async def mark_closed(session: AsyncSession, *, session_id: str) -> None:
         # runner.py) — fechar algo que não está lá não é erro.
         return
     registro.status = "closed"
+    if summary is not None:
+        registro.summary = summary
     await session.flush()
 
 

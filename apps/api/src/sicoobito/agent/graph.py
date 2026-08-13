@@ -343,7 +343,7 @@ def build_graph(engine: RouterEngine, context: ToolContext):
         return {"approvals": aprovacoes, "approval_reasons": motivos, "pending": []}
 
     async def act(state: AgentState) -> dict[str, Any]:
-        context.current_todos = state.get("todos") or []
+        context.session_state.current_todos = state.get("todos") or []
         ultima = state["messages"][-1] if state["messages"] else {}
         tool_calls = ultima.get("tool_calls") or []
         aprovacoes = state.get("approvals") or {}
@@ -404,7 +404,7 @@ def build_graph(engine: RouterEngine, context: ToolContext):
             except Exception as exc:
                 log.warning("agent.tool.failed", tool=nome, error=str(exc)[:200])
                 if ferramenta.risk is not RiskClass.READ:
-                    context.has_unresolved_failure = True
+                    context.session_state.has_unresolved_failure = True
                 if context.trace_recorder is not None:
                     context.trace_recorder.record(
                         kind="tool",
@@ -422,7 +422,7 @@ def build_graph(engine: RouterEngine, context: ToolContext):
 
             status_da_ferramenta = _telemetry_status(nome, resultado)
             if ferramenta.risk is not RiskClass.READ:
-                context.has_unresolved_failure = status_da_ferramenta == "error"
+                context.session_state.has_unresolved_failure = status_da_ferramenta == "error"
 
             if context.trace_recorder is not None:
                 context.trace_recorder.record(
@@ -451,7 +451,7 @@ def build_graph(engine: RouterEngine, context: ToolContext):
                 alterados.append(str(caminho))
             if "todos" in resultado.data:
                 todos_atualizados = resultado.data["todos"]
-                context.current_todos = todos_atualizados
+                context.session_state.current_todos = todos_atualizados
 
         atualizacao: dict[str, Any] = {
             "messages": respostas,

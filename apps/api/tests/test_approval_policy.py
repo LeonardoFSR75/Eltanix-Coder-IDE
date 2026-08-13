@@ -183,6 +183,32 @@ def test_exec_command_rule_rejects_empty_command(ctx):
     assert evaluate_policy(policy, ctx, pending) is None
 
 
+def test_exec_command_rule_rejects_shell_wrapper_commands(ctx):
+    policy = ApprovalPolicy(rules=[ExecCommandRule(allowed_prefixes=["npm test"])])
+    pending = _pending("run_command", {"command": "bash -lc 'npm test --watch=false'"})
+    assert evaluate_policy(policy, ctx, pending) is None
+
+    pending_powershell = _pending(
+        "run_command", {"command": "powershell -Command \"npm test --watch=false\""}
+    )
+    assert evaluate_policy(policy, ctx, pending_powershell) is None
+
+
+def test_tool_context_exposes_explicit_session_runtime_state_and_keeps_compatibility():
+    ctx = ToolContext(session_id="s1", workspace_root="/tmp", fs=None)
+    ctx.session_state.current_todos = [{"content": "teste", "status": "pending"}]
+    ctx.session_state.has_unresolved_failure = True
+
+    assert ctx.current_todos == [{"content": "teste", "status": "pending"}]
+    assert ctx.has_unresolved_failure is True
+
+    ctx.current_todos = [{"content": "novo", "status": "completed"}]
+    ctx.has_unresolved_failure = False
+
+    assert ctx.session_state.current_todos == [{"content": "novo", "status": "completed"}]
+    assert ctx.session_state.has_unresolved_failure is False
+
+
 # ── Múltiplas regras e falha de avaliação (fail closed) ─────────────────────
 
 

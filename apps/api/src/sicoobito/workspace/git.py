@@ -80,6 +80,48 @@ class CoChangeEntry:
     count: int
 
 
+def _bootstrap_repo(root: Path, repo: Repo) -> Repo:
+    """Inicializa a árvore mínima do repositório para permitir trabalho do agente.
+
+    Quando a pasta do projeto ainda é um diretório comum, o agente precisa
+    criar um repo antes de qualquer worktree ou operação de branch. Sem este
+    bootstrap, o runtime falha do lado do Git em vez de solucionar a condição
+    de início do projeto.
+    """
+    try:
+        gitignore_path = root / ".gitignore"
+        if not gitignore_path.exists():
+            gitignore_path.write_text(".sicoobito/\nnode_modules/\n__pycache__/\n", encoding="utf-8")
+        if repo.head.is_valid():
+            return repo
+        repo.index.add([str(gitignore_path.relative_to(root))])
+        repo.index.commit("Initial commit")
+        log.info("git.auto_initial_commit.created", root=str(root))
+    except Exception as exc:
+        log.warning("git.auto_initial_commit.failed", root=str(root), error=str(exc)[:200])
+    return repo
+
+
+def ensure_repo(root: Path) -> Repo:
+    """Garante que um diretório do projeto tenha uma estrutura Git válida."""
+    root = root.resolve()
+    if not root.exists() or not root.is_dir():
+        raise GitError(f"{root} não existe ou não é um diretório válido.")
+
+    git_dir = root / ".git"
+    if not git_dir.exists():
+        try:
+            repo = Repo.init(root, initial_branch="main")
+            return _bootstrap_repo(root, repo)
+        except Exception as exc:
+            raise GitError(f"não foi possível inicializar o repositório Git em {root}: {exc}") from exc
+
+    try:
+        return Repo(root, search_parent_directories=False)
+    except Exception as exc:
+        raise GitError(f"{root} não é um repositório Git válido: {exc}") from exc
+
+
 def open_repo(root: Path) -> Repo:
     try:
         return Repo(root, search_parent_directories=False)
@@ -191,7 +233,7 @@ def create_worktree(
     root: Path, session_id: str, *, base_branch: str | None = None
 ) -> AgentWorktree:
     """Cria um worktree e um branch dedicados a uma sessão do agente."""
-    repo = open_repo(root)
+    repo = ensure_repo(root)
     _ensure_excluded(repo)
 
     if not repo.head.is_valid():

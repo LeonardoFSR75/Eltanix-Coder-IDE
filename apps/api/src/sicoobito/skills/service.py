@@ -4,6 +4,7 @@ CRUD simples e o contador de uso que a ferramenta `get_skill` incrementa."""
 from __future__ import annotations
 
 import uuid
+from pathlib import Path
 
 from sicoobito.db.models import Skill
 from sicoobito.db.session import session_scope
@@ -79,3 +80,47 @@ class SkillService:
             await store.increment_usage(session, skill_id)
             await session.refresh(skill)
             return skill
+
+    async def propose_and_save(
+        self,
+        *,
+        name: str,
+        description: str,
+        category: str = "learned",
+        system_prompt: str,
+        parameters_json: str = "{}",
+        workspace_root: Path | None = None,
+    ) -> Skill:
+        """Cria a skill no banco e opcionalmente grava o arquivo `.sicoobito/skills/<name>.md`
+        no repositório do workspace para persistência no Git (Self-Improving Skill)."""
+        async with session_scope() as session:
+            skill = await store.create_skill(
+                session,
+                name=name,
+                description=description,
+                category=category,
+                system_prompt=system_prompt,
+                parameters_json=parameters_json,
+            )
+
+        if workspace_root is not None:
+            try:
+                ws_path = Path(workspace_root)
+                skills_dir = ws_path / ".sicoobito" / "skills"
+                skills_dir.mkdir(parents=True, exist_ok=True)
+                slug_name = "".join(c if c.isalnum() or c in "-_" else "_" for c in name.lower())
+                file_path = skills_dir / f"{slug_name}.md"
+                file_content = (
+                    f"---\n"
+                    f"name: {name}\n"
+                    f"category: {category}\n"
+                    f"description: {description}\n"
+                    f"---\n\n"
+                    f"{system_prompt}\n"
+                )
+                file_path.write_text(file_content, encoding="utf-8")
+            except Exception:
+                pass
+
+        return skill
+

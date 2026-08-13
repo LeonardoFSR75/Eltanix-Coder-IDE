@@ -148,7 +148,13 @@ async def list_sessions(
                 "mode": r.mode,
                 "profile": r.profile,
                 "branch": r.branch,
+                "summary": r.summary,
                 "status": r.status,
+                "total_cost_usd": r.total_cost_usd,
+                "total_tokens": r.total_tokens,
+                "iterations": r.iterations,
+                "pending_approvals": r.pending_approvals,
+                "last_failed_call_count": r.last_failed_call_count,
                 # Preenchido só pra sessões criadas via `spawn_agent`
                 # (orquestração multiagente, ver ADR 0004) — `None` pra
                 # qualquer sessão raiz.
@@ -357,6 +363,13 @@ async def close_session(session_id: str, payload: CloseRequest, request: Request
 
 
 def _session_view(sessao: AgentSession) -> dict[str, Any]:
+    startup = sessao.context.session_state
+    ready_for_search = (
+        startup.project_verified
+        and startup.workspace_listed
+        and startup.packages_checked
+        and startup.git_ready
+    )
     return {
         "session_id": sessao.session_id,
         "mode": sessao.mode,
@@ -367,8 +380,18 @@ def _session_view(sessao: AgentSession) -> dict[str, Any]:
         "worktree_path": str(sessao.worktree_path),
         "branch": sessao.branch,
         "base_branch": sessao.base_branch,
+        "summary": sessao.context.session_state.current_todos and (
+            "Plano em execução"
+        ) or "Sessão em execução",
         "sandbox_available": sessao.sandbox_available,
         "sandbox_error": sessao.sandbox_error,
         "github_available": sessao.context.github is not None,
         "warnings": sessao.warnings,
+        "startup_guard": {
+            "project_verified": startup.project_verified,
+            "workspace_listed": startup.workspace_listed,
+            "packages_checked": startup.packages_checked,
+            "git_ready": startup.git_ready,
+            "ready_for_search": ready_for_search,
+        },
     }

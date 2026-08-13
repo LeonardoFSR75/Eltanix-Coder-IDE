@@ -55,7 +55,7 @@ async def write_todos(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
     rebaixados: list[str] = []
     concluidos_anteriores = {
         str(t.get("content", "")).strip()
-        for t in (getattr(ctx, "current_todos", None) or [])
+        for t in (ctx.session_state.current_todos if hasattr(ctx, "session_state") else getattr(ctx, "current_todos", []) or [])
         if isinstance(t, dict) and t.get("status") == "completed"
     }
     for item in brutos:
