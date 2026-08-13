@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "securebert2"
+version = "0.1.0"
+description = "Local package wrapper for Cisco SecureBERT 2.0 research repo"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "torch>=2.1",
+    "transformers>=4.40",
+    "lightning>=2.2",
+    "tqdm>=4.66",
+    "pandas>=2.0",
+    "pyarrow>=15.0",
+]
+
+[tool.setuptools]
+include-package-data = true
+py-modules = ["dataset"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["securebert2*", "mlm*", "doc_embedding*", "rt2*", "vuln_classification*"]
+namespaces = true

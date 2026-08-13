@@ -3,7 +3,7 @@
 import { useCallback, useMemo, useReducer, useRef } from "react";
 import type { Mode } from "./modes";
 import { AgentSessionRuntime, type NotifyKind } from "./sessionRuntime";
-import type { SessionStatus, SessionSummary } from "./sessionTypes";
+import type { Session, SessionStatus, SessionSummary } from "./sessionTypes";
 
 function statusOf(runtime: AgentSessionRuntime): SessionStatus {
   switch (runtime.status) {
@@ -52,19 +52,61 @@ export function useAgentSessions({
   const startSession = useCallback(
     (task: string, mode: Mode, profile?: string | null, focusFiles?: string[], focusFolder?: string | null) => {
       if (!project) return;
-      void AgentSessionRuntime.start(
-        { project, onFileTouched, onChange: notify, onNotify },
-        task,
-        mode,
-        profile,
-        focusFiles,
-        focusFolder,
-      ).then((runtime) => {
-        if (!runtime.session) return; // criação falhou; o erro já está no log da própria instância descartada
-        runtimesRef.current.set(runtime.session.session_id, runtime);
-        activeIdRef.current = runtime.session.session_id;
-        notify();
+
+      const pendingId = `pending-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const runtime = new AgentSessionRuntime({
+        project,
+        onFileTouched,
+        onChange: notify,
+        onNotify,
       });
+      runtime.task = task;
+      runtime.append({ kind: "user", text: task });
+
+      runtimesRef.current.set(pendingId, runtime);
+      activeIdRef.current = pendingId;
+      notify();
+
+      void (async () => {
+        try {
+          const created = await post<Session>("/api/agent/sessions", {
+            task,
+            mode,
+            project,
+            profile: profile || undefined,
+            focus_files: focusFiles ?? [],
+            focus_folder: focusFolder ?? undefined,
+          });
+
+          runtime.session = created;
+          runtime.append({
+            kind: "info",
+            text: `sessão ${created.session_id} · branch ${created.branch || "(nenhum)"}`,
+          });
+          for (const aviso of created.warnings ?? []) {
+            runtime.append({ kind: "error", text: aviso });
+          }
+
+          runtimesRef.current.delete(pendingId);
+          runtimesRef.current.set(created.session_id, runtime);
+          activeIdRef.current = created.session_id;
+          notify();
+
+          void runtime.run();
+        } catch (error) {
+          runtime.errored = true;
+          runtime.running = false;
+          runtime.append({
+            kind: "error",
+            text: error instanceof Error ? error.message : String(error),
+          });
+          runtimesRef.current.delete(pendingId);
+          if (runtime.session) {
+            runtimesRef.current.set(runtime.session.session_id, runtime);
+          }
+          notify();
+        }
+      })();
     },
     [project, onFileTouched, onNotify, notify],
   );
