@@ -35,11 +35,15 @@ WORKDIR /app
 COPY apps/api/pyproject.toml apps/api/uv.lock apps/api/.python-version ./
 RUN uv sync --frozen --no-install-project --extra azure
 
+COPY apps/api/vendor ./vendor
+RUN uv pip install --python /app/.venv/bin/python -e /app/vendor/securebert2
+
 COPY apps/api/src ./src
 COPY apps/api/alembic ./alembic
 COPY apps/api/alembic.ini ./
 COPY config ./config
 RUN uv sync --frozen --extra azure
+RUN uv pip install --python /app/.venv/bin/python -e /app/vendor/securebert2
 
 ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \

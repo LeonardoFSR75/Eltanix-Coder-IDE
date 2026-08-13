@@ -48,7 +48,6 @@ dependencies = [
     "aiosqlite>=0.22.1",
     # Observabilidade — tracing e estatísticas para LLM e LangGraph
     "langfuse>=2.50.0",
-    "securebert2 @ file:///C:/Users/leona/Documents/Projetos/SicoobitoCode/vendor/securebert2",
 ]
 
 [project.optional-dependencies]
