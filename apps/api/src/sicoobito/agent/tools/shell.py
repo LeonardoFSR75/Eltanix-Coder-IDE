@@ -169,6 +169,59 @@ async def run_command(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
             data={"command": comando, "exit_code": 1, "duration_ms": 0, "timed_out": False},
         )
 
+    # Interceptação de servidores contínuos (Flask, Uvicorn, Next.js, etc.):
+    # Servidores bloqueiam o sandbox se executados em foreground. Auto-backgrounding
+    # com '& sleep 2' permite inicializar o servidor em segundo plano e prosseguir.
+    eh_servidor_provavel = any(
+        srv in cmd_lower
+        for srv in [
+            "flask run",
+            "uvicorn",
+            "http.server",
+            "gunicorn",
+            "streamlit run",
+            "npm run dev",
+            "npm start",
+            "next dev",
+            "vite",
+        ]
+    ) or any(
+        cmd_lower.startswith(p)
+        for p in [
+            "python app.py",
+            "python3 app.py",
+            "python server.py",
+            "python3 server.py",
+            "node server.js",
+            "node app.js",
+            "node index.js",
+        ]
+    )
+    eh_comando_pontual = any(
+        t in cmd_lower
+        for t in [
+            "pytest",
+            "unittest",
+            "test_",
+            "_test",
+            "check",
+            "lint",
+            "build",
+            "-c",
+            "--help",
+            "-h",
+            "-v",
+            "--version",
+            "cat ",
+            "ls ",
+            "grep ",
+        ]
+    )
+    tem_background = "&" in comando or "nohup" in comando
+
+    if eh_servidor_provavel and not eh_comando_pontual and not tem_background:
+        comando = f"{comando} & sleep 2"
+
     try:
         resultado = await ctx.sandbox.exec(comando, timeout=args.get("timeout"))
     except SandboxError as exc:
