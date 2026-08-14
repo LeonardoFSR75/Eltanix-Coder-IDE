@@ -2671,7 +2671,8 @@ textarea:focus-visible,
   white-space: nowrap;
 }
 
-.agent-messages-scroll {
+.agent-messages-scroll,
+.agent-panel-scroll {
   flex: 1;
   min-height: 0;
   overflow-y: auto;

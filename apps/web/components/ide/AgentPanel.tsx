@@ -536,7 +536,7 @@ export function AgentPanel({
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [log, pending]);
+  }, [log, pending, activity, recentActivities, running]);
 
   useEffect(() => {
     setDecisions({});
@@ -599,7 +599,7 @@ export function AgentPanel({
       )}
 
       {/* Conteúdo principal com scroll */}
-      <div ref={scrollRef} className="agent-panel-scroll">
+      <div ref={scrollRef} className="agent-messages-scroll">
         {log.length === 0 && !isThinking ? (
           <div className="agent-empty-hero">
             <div className="agent-hero-avatar">
