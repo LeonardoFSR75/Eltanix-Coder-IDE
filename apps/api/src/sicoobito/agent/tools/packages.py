@@ -76,16 +76,42 @@ async def manage_packages(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
     save_requirements = args.get("save_requirements", True)
 
     project_path = Path(ctx.workspace_root)
+    canonical_root = project_path
+    if getattr(ctx, "project_root", None):
+        canonical_root = Path(ctx.project_root)
+    else:
+        cur = project_path.resolve()
+        while cur != cur.parent:
+            if cur.name == "worktrees" and cur.parent.name == ".sicoobito":
+                canonical_root = cur.parent.parent
+                break
+            cur = cur.parent
+    project_display_name = ctx.project_slug or canonical_root.name
+
+    # Garante que ambientes persistentes (.venv, node_modules) do projeto canônico estejam disponíveis no worktree
+    if canonical_root != project_path and not (project_path / ".venv").exists() and (canonical_root / ".venv").exists():
+        try:
+            from sicoobito.workspace.git import _link_or_share_env
+            _link_or_share_env(canonical_root, project_path)
+        except Exception as exc:
+            log.warning("manage_packages.link_env_failed", error=str(exc))
+
     eco = detect_ecosystem(project_path)
+    if eco == "python" and not (project_path / "requirements.txt").exists() and (canonical_root / "requirements.txt").exists():
+        eco = detect_ecosystem(canonical_root)
     manifest_name = get_manifest_name(eco)
 
     if action == "list":
         installed_packages: list[dict[str, str]] = []
         venv_path = get_venv_path(project_path)
+        if not venv_path.exists() and (canonical_root / ".venv").exists():
+            venv_path = get_venv_path(canonical_root)
         py_exe = get_python_executable(venv_path)
 
         if eco == "nodejs":
             pkg_json = project_path / "package.json"
+            if not pkg_json.exists() and (canonical_root / "package.json").exists():
+                pkg_json = canonical_root / "package.json"
             if pkg_json.exists():
                 try:
                     import json
@@ -98,6 +124,8 @@ async def manage_packages(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
                     log.warning("manage_packages.node_parse.failed", error=str(exc))
         elif eco == "go":
             go_mod = project_path / "go.mod"
+            if not go_mod.exists() and (canonical_root / "go.mod").exists():
+                go_mod = canonical_root / "go.mod"
             if go_mod.exists():
                 import re
                 for line in go_mod.read_text(encoding="utf-8", errors="ignore").splitlines():
@@ -109,6 +137,8 @@ async def manage_packages(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
                         )
         elif eco == "rust":
             cargo_toml = project_path / "Cargo.toml"
+            if not cargo_toml.exists() and (canonical_root / "Cargo.toml").exists():
+                cargo_toml = canonical_root / "Cargo.toml"
             if cargo_toml.exists():
                 in_deps = False
                 for line in cargo_toml.read_text(encoding="utf-8", errors="ignore").splitlines():
@@ -123,6 +153,8 @@ async def manage_packages(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
                         installed_packages.append({"name": k, "version": v})
         elif eco == "php":
             composer_json = project_path / "composer.json"
+            if not composer_json.exists() and (canonical_root / "composer.json").exists():
+                composer_json = canonical_root / "composer.json"
             if composer_json.exists():
                 try:
                     import json
@@ -154,10 +186,16 @@ async def manage_packages(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
                     log.warning("manage_packages.list.failed", error=str(exc))
 
         manifest_file = project_path / manifest_name
+        if not manifest_file.exists() and (canonical_root / manifest_name).exists():
+            manifest_file = canonical_root / manifest_name
         req_map = (
             parse_requirements_txt(project_path)
-            if eco == "python"
-            else {p["name"]: p["version"] for p in installed_packages}
+            if eco == "python" and (project_path / "requirements.txt").exists()
+            else (
+                parse_requirements_txt(canonical_root)
+                if eco == "python" and (canonical_root / "requirements.txt").exists()
+                else {p["name"]: p["version"] for p in installed_packages}
+            )
         )
         req_content = (
             manifest_file.read_text(encoding="utf-8", errors="ignore")
@@ -167,7 +205,7 @@ async def manage_packages(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
 
         count = len(installed_packages)
         content_str = (
-            f"=== Pacotes do Projeto ({project_path.name}) ===\n"
+            f"=== Pacotes do Projeto ({project_display_name}) ===\n"
             f"Ecossistema: {eco.upper()} | Manifesto: {manifest_name}\n"
             f"Total de Pacotes Instalados: {count}\n"
         )
@@ -268,8 +306,14 @@ async def manage_packages(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
             req_content = sync_requirements_file(
                 project_path, pkg_clean, installed_version, remove=False
             )
+            if canonical_root != project_path and (canonical_root / "requirements.txt").exists():
+                sync_requirements_file(
+                    canonical_root, pkg_clean, installed_version, remove=False
+                )
         else:
             manifest_file = project_path / manifest_name
+            if not manifest_file.exists() and (canonical_root / manifest_name).exists():
+                manifest_file = canonical_root / manifest_name
             if manifest_file.exists():
                 req_content = manifest_file.read_text(encoding="utf-8", errors="ignore")
 
@@ -318,6 +362,8 @@ async def manage_packages(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
             cmd = [composer_bin, "remove", package]
         else:
             venv_path = get_venv_path(project_path)
+            if not venv_path.exists() and (canonical_root / ".venv").exists():
+                venv_path = get_venv_path(canonical_root)
             py_exe = get_python_executable(venv_path)
             if not py_exe.exists():
                 return ToolResult.failure("Ambiente virtual (.venv) do projeto não existe.")
@@ -341,9 +387,13 @@ async def manage_packages(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
             )
 
         manifest_file = project_path / manifest_name
+        if not manifest_file.exists() and (canonical_root / manifest_name).exists():
+            manifest_file = canonical_root / manifest_name
         req_content = ""
         if eco == "python" and save_requirements:
             req_content = sync_requirements_file(project_path, package, remove=True)
+            if canonical_root != project_path and (canonical_root / "requirements.txt").exists():
+                sync_requirements_file(canonical_root, package, remove=True)
         elif manifest_file.exists():
             req_content = manifest_file.read_text(encoding="utf-8", errors="ignore")
 

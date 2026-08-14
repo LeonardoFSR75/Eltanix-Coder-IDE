@@ -16,6 +16,7 @@ from __future__ import annotations
 import asyncio
 import hmac
 import os
+from pathlib import Path
 import shlex
 import time
 from typing import Annotated, Any
@@ -94,6 +95,7 @@ class CreateRequest(BaseModel):
     session_id: str = Field(min_length=1, max_length=64)
     # Caminho do workspace **como a API o enxerga**; traduzido aqui.
     workspace: str
+    env_mounts: dict[str, str] = Field(default_factory=dict)
     # `image`/`network` propositalmente NÃO existem aqui: a imagem e a rede
     # do sandbox são fixadas só por env var deste processo (DEFAULT_IMAGE,
     # NETWORK_ENABLED) — um payload não pode afrouxar o isolamento de rede
@@ -157,30 +159,49 @@ async def create_sandbox(payload: CreateRequest) -> dict[str, Any]:
     # este é o serviço isolado de produção (ADR 0002). Mudou uma flag aqui,
     # mude a mesma lá.
     try:
+        vols = {host_path: {"bind": WORKDIR, "mode": "rw"}}
+        for env_name, container_path in payload.env_mounts.items():
+            if env_name in {".venv", "node_modules", "vendor"}:
+                host_env_path = to_host_path(container_path)
+                vols[host_env_path] = {"bind": f"{WORKDIR}/{env_name}", "mode": "rw"}
+
+        default_env = {
+            "HOME": "/tmp",
+            "PYTHONDONTWRITEBYTECODE": "1",
+            "PIP_DISABLE_PIP_VERSION_CHECK": "1",
+            "PIP_NO_INPUT": "1",
+            "PIP_RETRIES": "0",
+            "PIP_DEFAULT_TIMEOUT": "2",
+            "VIRTUAL_ENV": "/workspace/.venv",
+            "PYTHONPATH": (
+                "/workspace:"
+                "/workspace/.venv/lib/python3.12/site-packages:"
+                "/workspace/.venv/lib/python3.11/site-packages:"
+                "/workspace/.venv/lib/python3.10/site-packages:"
+                "/workspace/.venv/Lib/site-packages:"
+                "/workspace/.venv/lib/site-packages"
+            ),
+            "PATH": (
+                "/usr/local/sbin:/usr/local/bin:"
+                "/usr/sbin:/usr/bin:/sbin:/bin:"
+                "/workspace/.venv/bin:/workspace/.venv/Scripts:"
+                "/workspace/node_modules/.bin"
+            ),
+        }
+
         container = client().containers.run(
             DEFAULT_IMAGE,
-            # Mantém o container vivo entre execuções da mesma sessão, em vez
-            # de pagar o custo de subir um por comando.
             command=["sleep", "infinity"],
             name=nome,
             detach=True,
             working_dir=WORKDIR,
-            volumes={host_path: {"bind": WORKDIR, "mode": "rw"}},
+            volumes=vols,
             network_mode="bridge" if NETWORK_ENABLED else "none",
             mem_limit=DEFAULT_MEMORY,
             cpu_quota=CPU_QUOTA,
             pids_limit=PIDS_LIMIT,
             user="1000:1000",
-            environment={
-                "HOME": "/tmp",
-                "PYTHONDONTWRITEBYTECODE": "1",
-                "PIP_DISABLE_PIP_VERSION_CHECK": "1",
-                "PIP_NO_INPUT": "1",
-                "PIP_RETRIES": "0",
-                "PIP_DEFAULT_TIMEOUT": "2",
-                "VIRTUAL_ENV": "/workspace/.venv",
-                "PATH": "/workspace/.venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
-            },
+            environment=default_env,
             labels={LABEL: payload.session_id},
             privileged=False,
             security_opt=["no-new-privileges:true"],
@@ -212,6 +233,15 @@ async def exec_command(session_id: str, payload: ExecRequest) -> dict[str, Any]:
 
     inicio = time.perf_counter()
 
+    exec_env = [
+        "HOME=/tmp",
+        "PYTHONDONTWRITEBYTECODE=1",
+        "PIP_DISABLE_PIP_VERSION_CHECK=1",
+        "VIRTUAL_ENV=/workspace/.venv",
+        "PYTHONPATH=/workspace:/workspace/.venv/lib/python3.12/site-packages:/workspace/.venv/lib/python3.11/site-packages:/workspace/.venv/lib/python3.10/site-packages:/workspace/.venv/Lib/site-packages:/workspace/.venv/lib/site-packages",
+        "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/workspace/.venv/bin:/workspace/.venv/Scripts:/workspace/node_modules/.bin",
+    ]
+
     def _run() -> tuple[int, bytes, bytes]:
         handle = client().api.exec_create(
             cid,
@@ -220,6 +250,7 @@ async def exec_command(session_id: str, payload: ExecRequest) -> dict[str, Any]:
             stdout=True,
             stderr=True,
             user="1000:1000",
+            environment=exec_env,
         )
         saida = client().api.exec_start(handle["Id"], demux=True)
         info = client().api.exec_inspect(handle["Id"])

@@ -56,26 +56,12 @@ export class AgentSessionRuntime {
     return this.pending.length > 0;
   }
 
-  get startupGuardReady(): boolean {
-    const guard = this.session?.startup_guard;
-    if (!guard) return false;
-    return Boolean(
-      guard.project_verified &&
-        guard.workspace_listed &&
-        guard.packages_checked &&
-        (guard.git_ready ?? true) &&
-        (guard.ready_for_search ?? true),
-    );
-  }
-
   get canSubmit(): boolean {
     return (
       Boolean(this.session) &&
-      this.startupGuardReady &&
       !this.readOnly &&
       !this.running &&
-      !this.awaitingApproval &&
-      !this.errored
+      !this.awaitingApproval
     );
   }
 

@@ -55,6 +55,7 @@ class ToolContext:
     workspace_root: Any  # Path — sem anotar para não importar pathlib no protocolo
     fs: Any  # WorkspaceFS
     project_slug: str = ""
+    project_root: Any = None  # Path — raiz canônica do projeto original
     projects_root: Any = None  # Path — raiz que contém todos os projetos
     sandbox: Any | None = None  # Sandbox
     indexer: Any | None = None  # ContextIndexer

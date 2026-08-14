@@ -32,7 +32,7 @@ describe("AgentSessionRuntime", () => {
     expect(runtime.awaitingApproval).toBe(true);
   });
 
-  it("blocks sending until startup guard is ready", () => {
+  it("allows sending when session is ready and idle", () => {
     const runtime = new AgentSessionRuntime({
       project: "demo",
       onChange: vi.fn(),
@@ -46,19 +46,12 @@ describe("AgentSessionRuntime", () => {
       sandbox_error: null,
       github_available: false,
       warnings: [],
-      startup_guard: {
-        project_verified: true,
-        workspace_listed: true,
-        packages_checked: false,
-        git_ready: true,
-        ready_for_search: false,
-      },
     };
 
-    expect(runtime.canSubmit).toBe(false);
+    expect(runtime.canSubmit).toBe(true);
   });
 
-  it("blocks sending until Git bootstrap is ready", () => {
+  it("blocks sending when running", () => {
     const runtime = new AgentSessionRuntime({
       project: "demo",
       onChange: vi.fn(),
@@ -72,15 +65,9 @@ describe("AgentSessionRuntime", () => {
       sandbox_error: null,
       github_available: false,
       warnings: [],
-      startup_guard: {
-        project_verified: true,
-        workspace_listed: true,
-        packages_checked: true,
-        git_ready: false,
-        ready_for_search: false,
-      },
     };
 
+    runtime.running = true;
     expect(runtime.canSubmit).toBe(false);
   });
 

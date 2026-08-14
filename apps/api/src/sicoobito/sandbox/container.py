@@ -137,6 +137,52 @@ class Sandbox:
         # services/executor/app.py::create_sandbox — este é o caminho local/dev
         # (ADR 0002), aquele é o serviço isolado de produção. Mudou uma flag
         # aqui, mude a mesma lá.
+        # Monta /workspace e mapeia diretamente .venv, node_modules e vendor caso existam no projeto
+        vols: dict[str, dict[str, str]] = {str(self.workspace): {"bind": WORKDIR, "mode": "rw"}}
+        canonical_project = self.workspace
+        cur = self.workspace.resolve()
+        while cur != cur.parent:
+            if cur.name == "worktrees" and cur.parent.name == ".sicoobito":
+                canonical_project = cur.parent.parent
+                break
+            cur = cur.parent
+
+        for env_dir, bind_target in [
+            (".venv", f"{WORKDIR}/.venv"),
+            ("node_modules", f"{WORKDIR}/node_modules"),
+            ("vendor", f"{WORKDIR}/vendor"),
+        ]:
+            src_path = (self.workspace / env_dir) if (self.workspace / env_dir).exists() else (canonical_project / env_dir)
+            if src_path.exists() and not src_path.is_symlink():
+                vols[str(src_path.resolve())] = {"bind": bind_target, "mode": "rw"}
+            elif (canonical_project / env_dir).exists() and not (canonical_project / env_dir).is_symlink():
+                vols[str((canonical_project / env_dir).resolve())] = {"bind": bind_target, "mode": "rw"}
+
+        default_env = {
+            "HOME": "/tmp",
+            "PYTHONDONTWRITEBYTECODE": "1",
+            "PIP_DISABLE_PIP_VERSION_CHECK": "1",
+            "PIP_NO_INPUT": "1",
+            "PIP_RETRIES": "0",
+            "PIP_DEFAULT_TIMEOUT": "2",
+            "VIRTUAL_ENV": "/workspace/.venv",
+            "PYTHONPATH": (
+                "/workspace:"
+                "/workspace/.venv/lib/python3.12/site-packages:"
+                "/workspace/.venv/lib/python3.11/site-packages:"
+                "/workspace/.venv/lib/python3.10/site-packages:"
+                "/workspace/.venv/Lib/site-packages:"
+                "/workspace/.venv/lib/site-packages"
+            ),
+            "PATH": (
+                "/usr/local/sbin:/usr/local/bin:"
+                "/usr/sbin:/usr/bin:/sbin:/bin:"
+                "/workspace/.venv/bin:/workspace/.venv/Scripts:"
+                "/workspace/node_modules/.bin"
+            ),
+            **self.config.env,
+        }
+
         try:
             container = await asyncio.to_thread(
                 lambda: self._client.containers.run(
@@ -148,27 +194,14 @@ class Sandbox:
                     name=self.container_name,
                     detach=True,
                     working_dir=WORKDIR,
-                    volumes={str(self.workspace): {"bind": WORKDIR, "mode": "rw"}},
+                    volumes=vols,
                     network_mode="bridge" if self.config.network_enabled else "none",
                     mem_limit=self.config.memory_limit,
                     cpu_quota=self.config.cpu_quota,
                     pids_limit=self.config.pids_limit,
                     # Não-root: o estrago de um comando ruim fica contido.
                     user="1000:1000",
-                    environment={
-                        "HOME": "/tmp",
-                        "PYTHONDONTWRITEBYTECODE": "1",
-                        "PIP_DISABLE_PIP_VERSION_CHECK": "1",
-                        "PIP_NO_INPUT": "1",
-                        "PIP_RETRIES": "0",
-                        "PIP_DEFAULT_TIMEOUT": "2",
-                        "VIRTUAL_ENV": "/workspace/.venv",
-                        "PATH": (
-                            "/workspace/.venv/bin:/usr/local/sbin:/usr/local/bin:"
-                            "/usr/sbin:/usr/bin:/sbin:/bin"
-                        ),
-                        **self.config.env,
-                    },
+                    environment=default_env,
                     labels={LABEL: self.session_id},
                     # Sem privilégio extra e sem escalada via setuid.
                     privileged=False,
@@ -215,6 +248,15 @@ class Sandbox:
         # naturalmente escreve. A contenção vem do container, não da sintaxe.
         argv = ["sh", "-c", command]
 
+        exec_env = [
+            "HOME=/tmp",
+            "PYTHONDONTWRITEBYTECODE=1",
+            "PIP_DISABLE_PIP_VERSION_CHECK=1",
+            "VIRTUAL_ENV=/workspace/.venv",
+            "PYTHONPATH=/workspace:/workspace/.venv/lib/python3.12/site-packages:/workspace/.venv/lib/python3.11/site-packages:/workspace/.venv/lib/python3.10/site-packages:/workspace/.venv/Lib/site-packages:/workspace/.venv/lib/site-packages",
+            "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/workspace/.venv/bin:/workspace/.venv/Scripts:/workspace/node_modules/.bin",
+        ]
+
         def _run() -> tuple[int, bytes, bytes]:
             handle = self._client.api.exec_create(
                 self._container.id,
@@ -223,6 +265,7 @@ class Sandbox:
                 stdout=True,
                 stderr=True,
                 user="1000:1000",
+                environment=exec_env,
             )
             output = self._client.api.exec_start(handle["Id"], demux=True)
             info = self._client.api.exec_inspect(handle["Id"])

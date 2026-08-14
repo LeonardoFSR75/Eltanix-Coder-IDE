@@ -47,17 +47,26 @@ def summarize_output(text: str, *, head: int = HEAD_LINES, tail: int = TAIL_LINE
 
 
 def project_venv_prefix(workspace_root: str | Path | None) -> str:
-    """Força a execução a usar o venv montado no sandbox do projeto."""
+    """Força a execução a usar o venv montado no sandbox do projeto garantindo os caminhos padrão do Linux."""
     if not workspace_root:
         return ""
 
     root = Path(workspace_root)
-    if not (root / ".venv").exists():
+    canonical = root
+    cur = root.resolve()
+    while cur != cur.parent:
+        if cur.name == "worktrees" and cur.parent.name == ".sicoobito":
+            canonical = cur.parent.parent
+            break
+        cur = cur.parent
+
+    if not (root / ".venv").exists() and not (canonical / ".venv").exists():
         return ""
 
     return (
         "export VIRTUAL_ENV='/workspace/.venv'; "
-        "export PATH='/workspace/.venv/bin:$PATH'; "
+        "export PATH='/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/workspace/.venv/bin:/workspace/.venv/Scripts:/workspace/node_modules/.bin:$PATH'; "
+        "export PYTHONPATH='/workspace:/workspace/.venv/lib/python3.12/site-packages:/workspace/.venv/lib/python3.11/site-packages:/workspace/.venv/lib/python3.10/site-packages:/workspace/.venv/Lib/site-packages:/workspace/.venv/lib/site-packages:$PYTHONPATH'; "
     )
 
 

@@ -493,7 +493,8 @@ async def test_run_command_prefers_project_venv_before_global_python(tmp_path):
     class FakeSandbox:
         async def exec(self, command, timeout=None):
             assert "VIRTUAL_ENV='/workspace/.venv'" in command
-            assert "/workspace/.venv/bin:$PATH" in command
+            assert "/workspace/.venv/bin" in command
+            assert "PYTHONPATH=" in command
             return FakeSandboxResult()
 
     ctx = ToolContext(

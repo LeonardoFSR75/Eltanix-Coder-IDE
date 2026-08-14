@@ -65,11 +65,27 @@ class RemoteSandbox:
         return httpx.AsyncClient(timeout=timeout_seconds), True
 
     async def start(self) -> str:
+        canonical = self.workspace
+        cur = self.workspace.resolve()
+        while cur != cur.parent:
+            if cur.name == "worktrees" and cur.parent.name == ".sicoobito":
+                canonical = cur.parent.parent
+                break
+            cur = cur.parent
+
+        env_mounts: dict[str, str] = {}
+        for env_dir in [".venv", "node_modules", "vendor"]:
+            if (canonical / env_dir).exists():
+                env_mounts[env_dir] = (canonical / env_dir).as_posix()
+            elif (self.workspace / env_dir).exists():
+                env_mounts[env_dir] = (self.workspace / env_dir).as_posix()
+
         payload = {
             "session_id": self.session_id,
             # O caminho vai como este processo o enxerga; o executor traduz para
             # o equivalente no host, que é o que o daemon do Docker entende.
             "workspace": self.workspace.as_posix(),
+            "env_mounts": env_mounts,
             # Sem `image`/`network` de propósito: o executor recusa aceitá-los
             # do chamador (ver services/executor/app.py) — imagem e rede do
             # sandbox são fixadas só pela env var do próprio executor (ADR 0002).

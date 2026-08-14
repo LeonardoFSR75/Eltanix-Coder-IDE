@@ -271,6 +271,14 @@ class AgentRunner:
         if not runtime_validation["project_ok"]:
             raise ValueError(runtime_validation["reason"])
 
+        # Garante o ambiente de pacotes (.venv, node_modules, etc) no projeto raiz antes de criar o worktree
+        try:
+            from sicoobito.api.routes.packages import ensure_project_env
+
+            await ensure_project_env(workspace_root)
+        except Exception as exc:
+            log.warning("runner.ensure_project_env.failed", project=workspace_root.name, error=str(exc))
+
         avisos: list[str] = [
             (
                 f"Projeto conectado: {len(runtime_validation['files'])} item(ns) no workspace. "
@@ -295,19 +303,32 @@ class AgentRunner:
         # commitado). Melhor esforço — falha aqui não impede a sessão.
         if branch:
             try:
+                ignored_prefixes = (
+                    ".venv/",
+                    ".venv\\",
+                    "node_modules/",
+                    "node_modules\\",
+                    "vendor/",
+                    "vendor\\",
+                    "__pycache__/",
+                    "__pycache__\\",
+                    ".sicoobito/",
+                    ".sicoobito\\",
+                )
                 repo_status = git_ops.status(workspace_root)
                 nao_rastreados = sorted(
-                    f.path for f in repo_status.files if f.status == "untracked"
+                    f.path
+                    for f in repo_status.files
+                    if f.status == "untracked"
+                    and not any(f.path.startswith(ign) or f.path == ign.rstrip("/\\") for ign in ignored_prefixes)
                 )
                 if nao_rastreados:
                     listagem = ", ".join(nao_rastreados[:8])
                     if len(nao_rastreados) > 8:
                         listagem += f" e mais {len(nao_rastreados) - 8}"
                     avisos.append(
-                        f"{len(nao_rastreados)} arquivo(s) não commitado(s) no projeto "
-                        "não estarão visíveis para o agente (o worktree isolado só vê o "
-                        f"que está na branch): {listagem}. Se a tarefa depende deles, "
-                        "faça `git add`/commit antes de começar."
+                        f"{len(nao_rastreados)} arquivo(s) com alterações locais/untracked "
+                        f"foram sincronizados no worktree da sessão: {listagem}."
                     )
             except GitError:
                 pass
@@ -389,6 +410,7 @@ class AgentRunner:
             workspace_root=worktree_path,
             fs=WorkspaceFS(worktree_path),
             project_slug=workspace_root.name,
+            project_root=workspace_root,
             projects_root=self.settings.effective_projects_root,
             sandbox=sandbox,
             indexer=self.indexer,

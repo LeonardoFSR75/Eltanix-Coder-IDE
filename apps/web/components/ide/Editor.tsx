@@ -223,20 +223,36 @@ export function Editor({
 
     setLoading(true);
     setError(null);
-    setShowDiff(false);
-    readFile(project, path, activeSessionId)
-      .then((data) => {
+
+    const fetchWorktree = readFile(project, path, activeSessionId);
+    const fetchPrincipal = activeSessionId ? readFileOrNull(project, path) : Promise.resolve(null);
+
+    Promise.all([fetchWorktree, fetchPrincipal])
+      .then(([sessionData, principalData]) => {
         if (cancelled) return;
-        setContent(data.content);
-        originalRef.current = data.content;
-        const detected = data.language || autoDetectLanguage(path, data.content);
+        const worktreeContent = sessionData.content;
+        const baseContent = principalData ? principalData.content : null;
+        const hasAgentDiff = Boolean(
+          activeSessionId && baseContent !== null && baseContent !== worktreeContent
+        );
+
+        setContent(worktreeContent);
+        originalRef.current = baseContent ?? worktreeContent;
+        setHeadContent(baseContent);
+        setShowDiff(hasAgentDiff);
+
+        const detected = sessionData.language || autoDetectLanguage(path, worktreeContent);
         setRawLanguage(detected);
         setLanguage(MONACO_LANGUAGE[detected] ?? "plaintext");
         setDirty(false);
         setLoadedPath(path);
         loadedPathRef.current = path;
         markDirty(path, false, groupId);
-        setBuffer(project, path, { content: data.content, original: data.content, language: data.language });
+        setBuffer(project, path, {
+          content: worktreeContent,
+          original: worktreeContent,
+          language: sessionData.language,
+        });
       })
       .catch((err) => {
         if (!cancelled) setError(err instanceof Error ? err.message : String(err));
@@ -377,11 +393,11 @@ export function Editor({
         <LspBadge status={lsp.status} />
 
         <div className="editor-bar-actions" style={{ marginLeft: "auto", display: "flex", gap: 6, alignItems: "center" }}>
-          {activeSessionId && (
+          {activeSessionId && headContent !== null && headContent !== content && (
             <div className="agent-worktree-pill">
               <span className="agent-worktree-label">
                 <span className="agent-worktree-dot" />
-                🤖 Agente (Worktree)
+                🤖 Alterações do Agente
               </span>
               <div className="agent-worktree-actions">
                 <button
@@ -587,6 +603,17 @@ export function Editor({
         />
       ) : (
         <div className="editor-container-grid">
+          {activeSessionId && headContent !== null && headContent !== content && (
+            <div className="inline-approval-floating-overlay">
+              <InlineDiffApprovalBar
+                onAccept={() => void acceptAgentCode()}
+                onReject={() => void rejectAgentCode()}
+                onToggleSideBySide={() => void toggleDiffView()}
+                isSideBySide={showDiff}
+                busy={loading || saving}
+              />
+            </div>
+          )}
           <div className="editor-pane">
             <MonacoEditor
               height="100%"
@@ -653,6 +680,7 @@ export function DiffView({
   onReject,
   busy = false,
   zebra = true,
+  showApprovalBar = true,
 }: {
   original: string;
   modified: string;
@@ -661,13 +689,14 @@ export function DiffView({
   onReject?: () => void;
   busy?: boolean;
   zebra?: boolean;
+  showApprovalBar?: boolean;
 }) {
   const { theme } = useTheme();
   const [sideBySide, setSideBySide] = useState(false);
 
   return (
     <div className={`editor-diff-wrapper ${zebra ? "zebra-stripes" : ""}`}>
-      {(onAccept || onReject) && (
+      {showApprovalBar && (onAccept || onReject) && (
         <div className="inline-approval-floating-overlay">
           <InlineDiffApprovalBar
             onAccept={() => onAccept?.()}

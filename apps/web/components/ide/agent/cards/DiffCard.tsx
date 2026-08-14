@@ -87,8 +87,7 @@ export function DiffCard({
           original={decision === "rejected" ? after : before}
           modified={decision === "rejected" ? before : after}
           language={language}
-          onAccept={decision === "pending" && sessionId ? () => void accept() : undefined}
-          onReject={decision === "pending" && sessionId ? () => void reject() : undefined}
+          showApprovalBar={false}
           busy={busy}
         />
       </div>

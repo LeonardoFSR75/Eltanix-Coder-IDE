@@ -229,6 +229,54 @@ def _ensure_excluded(repo: Repo) -> None:
         log.warning("git.exclude.failed", error=str(exc))
 
 
+def _link_or_share_env(root: Path, target: Path) -> None:
+    """Compartilha os ambientes persistentes (.venv, node_modules, vendor, .env) do projeto raiz com o worktree."""
+    import os
+
+    env_dirs = [".venv", "node_modules", "vendor"]
+    for dir_name in env_dirs:
+        src = root / dir_name
+        dst = target / dir_name
+        if src.exists() and not dst.exists():
+            try:
+                if sys.platform == "win32":
+                    import _winapi
+
+                    _winapi.CreateJunction(str(src), str(dst))
+                else:
+                    os.symlink(src, dst, target_is_directory=True)
+                log.info("git.worktree.env_linked", dir=dir_name, target=str(target))
+            except Exception as exc:
+                log.warning("git.worktree.env_link_failed", dir=dir_name, error=str(exc))
+
+    env_file_src = root / ".env"
+    env_file_dst = target / ".env"
+    if env_file_src.exists() and not env_file_dst.exists():
+        try:
+            shutil.copy2(env_file_src, env_file_dst)
+        except Exception:
+            pass
+
+
+def _sync_uncommitted_state(root: Path, target: Path) -> None:
+    """Copia alterações não commitadas e arquivos untracked do projeto raiz para o novo worktree do agente."""
+    ignored = {".git", ".sicoobito", ".venv", "node_modules", "vendor", "__pycache__"}
+    try:
+        repo_status = status(root)
+        for f in repo_status.files:
+            rel_p = Path(f.path)
+            if any(part in ignored for part in rel_p.parts):
+                continue
+            src_file = root / rel_p
+            dst_file = target / rel_p
+            if src_file.is_file():
+                dst_file.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(src_file, dst_file)
+        log.info("git.worktree.uncommitted_synced", target=str(target), count=len(repo_status.files))
+    except Exception as exc:
+        log.warning("git.worktree.sync_uncommitted_failed", error=str(exc))
+
+
 def create_worktree(
     root: Path, session_id: str, *, base_branch: str | None = None
 ) -> AgentWorktree:
@@ -264,6 +312,7 @@ def create_worktree(
 
     if target.exists():
         # Sessão retomada: reaproveita o worktree existente em vez de falhar.
+        _link_or_share_env(root, target)
         log.info("git.worktree.reused", path=str(target), branch=branch)
         return AgentWorktree(path=target, branch=branch, base_branch=base)
 
@@ -276,6 +325,8 @@ def create_worktree(
     except GitCommandError as exc:
         raise GitError(f"não foi possível criar o worktree: {exc}") from exc
 
+    _link_or_share_env(root, target)
+    _sync_uncommitted_state(root, target)
     log.info("git.worktree.created", path=str(target), branch=branch, base=base)
     return AgentWorktree(path=target, branch=branch, base_branch=base)
 
@@ -283,6 +334,20 @@ def create_worktree(
 def remove_worktree(root: Path, session_id: str, *, delete_branch: bool = False) -> None:
     repo = open_repo(root)
     target = (root / WORKTREE_DIR / session_id).resolve()
+
+    if target.exists():
+        import os
+
+        for dir_name in [".venv", "node_modules", "vendor"]:
+            junc = target / dir_name
+            if junc.exists():
+                try:
+                    if sys.platform == "win32":
+                        os.rmdir(junc)
+                    else:
+                        os.unlink(junc)
+                except Exception:
+                    pass
 
     try:
         repo.git.worktree("remove", "--force", str(target))
