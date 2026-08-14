@@ -147,8 +147,8 @@ class AgentCoordinator:
                 if not meta:
                     continue
                 meta = {
-                    (k.decode() if isinstance(k, bytes) else k): (
-                        v.decode() if isinstance(v, bytes) else v
+                    (k.decode() if isinstance(k, bytes) else str(k)): (
+                        v.decode() if isinstance(v, bytes) else str(v)
                     )
                     for k, v in meta.items()
                 }
@@ -156,9 +156,9 @@ class AgentCoordinator:
                 nodes.append(
                     AgentNode(
                         session_id=atual,
-                        display_name=meta.get("display_name", atual),
+                        display_name=str(meta.get("display_name", atual)),
                         status=meta.get("status", "running"),  # type: ignore[arg-type]
-                        parent_id=meta.get("parent_id") or None,
+                        parent_id=str(meta["parent_id"]) if meta.get("parent_id") else None,
                         depth=int(meta.get("depth", 0) or 0),
                         children=filhos,
                     )
@@ -219,7 +219,9 @@ class AgentCoordinator:
             return []
         if not itens:
             return []
-        return [json.loads(item) for item in itens]
+        return [
+            json.loads(item.decode() if isinstance(item, bytes) else str(item)) for item in itens
+        ]
 
     async def wait_for_message(
         self, session_id: str, *, timeout_seconds: float

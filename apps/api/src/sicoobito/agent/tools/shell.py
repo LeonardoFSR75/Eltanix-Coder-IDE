@@ -9,7 +9,6 @@ corte cego no início.
 from __future__ import annotations
 
 import re
-import sys
 from pathlib import Path
 from typing import Any
 
@@ -47,7 +46,8 @@ def summarize_output(text: str, *, head: int = HEAD_LINES, tail: int = TAIL_LINE
 
 
 def project_venv_prefix(workspace_root: str | Path | None) -> str:
-    """Força a execução a usar o venv montado no sandbox do projeto garantindo os caminhos padrão do Linux."""
+    """Força a execução a usar o venv montado no sandbox do projeto garantindo os
+    caminhos padrão do Linux."""
     if not workspace_root:
         return ""
 
@@ -63,10 +63,22 @@ def project_venv_prefix(workspace_root: str | Path | None) -> str:
     if not (root / ".venv").exists() and not (canonical / ".venv").exists():
         return ""
 
+    paths = (
+        "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:"
+        "/workspace/.venv/bin:/workspace/.venv/Scripts:/workspace/node_modules/.bin:$PATH"
+    )
+    pythonpaths = (
+        "/workspace:"
+        "/workspace/.venv/lib/python3.12/site-packages:"
+        "/workspace/.venv/lib/python3.11/site-packages:"
+        "/workspace/.venv/lib/python3.10/site-packages:"
+        "/workspace/.venv/Lib/site-packages:"
+        "/workspace/.venv/lib/site-packages:$PYTHONPATH"
+    )
     return (
-        "export VIRTUAL_ENV='/workspace/.venv'; "
-        "export PATH='/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/workspace/.venv/bin:/workspace/.venv/Scripts:/workspace/node_modules/.bin:$PATH'; "
-        "export PYTHONPATH='/workspace:/workspace/.venv/lib/python3.12/site-packages:/workspace/.venv/lib/python3.11/site-packages:/workspace/.venv/lib/python3.10/site-packages:/workspace/.venv/Lib/site-packages:/workspace/.venv/lib/site-packages:$PYTHONPATH'; "
+        f"export VIRTUAL_ENV='/workspace/.venv'; "
+        f"export PATH='{paths}'; "
+        f"export PYTHONPATH='{pythonpaths}'; "
     )
 
 
@@ -104,9 +116,7 @@ async def run_command(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
     partes = comando.split()
     primeiro = partes[0] if partes else ""
     extensoes_estaticas = (".html", ".htm", ".css", ".json", ".txt", ".md", ".png", ".jpg", ".svg")
-    eh_arquivo_estatico = any(
-        primeiro.lower().endswith(ext) for ext in extensoes_estaticas
-    ) or any(
+    eh_arquivo_estatico = any(primeiro.lower().endswith(ext) for ext in extensoes_estaticas) or any(
         primeiro.lower().startswith("./") and primeiro.lower().endswith(ext)
         for ext in extensoes_estaticas
     )
@@ -169,8 +179,7 @@ async def run_command(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
         corpo += f"\n\n--- stderr ---\n{summarize_output(resultado.stderr)}"
 
     erro_de_rede = (
-        "Temporary failure in name resolution" in corpo
-        or "No matching distribution found" in corpo
+        "Temporary failure in name resolution" in corpo or "No matching distribution found" in corpo
     )
     erro_de_modulo_ausente = any(
         m in corpo
@@ -204,9 +213,10 @@ async def run_command(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
         dica_timeout = (
             "\n\nDICA: o comando não retornou sozinho dentro do tempo limite — "
             "provavelmente é um servidor ou processo de longa duração. Rode em "
-            "background (ex.: `comando &` ou `nohup comando > saida.log 2>&1 &`) e "
-            "depois verifique com outro `run_command` (ex.: `curl` no endpoint ou "
-            "`cat saida.log`) em vez de rodar em primeiro plano de novo."
+            "background (ex.: `comando & sleep 2` ou "
+            "`nohup comando > saida.log 2>&1 & sleep 2`) "
+            "para dar tempo do servidor inicializar a porta antes de testar com "
+            "`browser_action` ou `curl`."
         )
 
     return ToolResult(

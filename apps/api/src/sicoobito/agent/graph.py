@@ -247,14 +247,17 @@ def build_graph(engine: RouterEngine, context: ToolContext):
         for chamada in tool_calls:
             nome = (chamada.get("function") or {}).get("name", "")
             ferramenta = registry.get(nome)
-            if ferramenta is None or not ferramenta.risk.requires_approval:
+            if ferramenta is None:
                 continue
             argumentos = _parse_arguments(chamada)
+            risk = ferramenta.resolve_risk(argumentos)
+            if not risk.requires_approval:
+                continue
             pendentes.append(
                 PendingApproval(
                     tool_call_id=chamada.get("id", ""),
                     tool=nome,
-                    risk=str(ferramenta.risk),
+                    risk=str(risk),
                     arguments=argumentos,
                     summary=ferramenta.describe_call(argumentos),
                 )
@@ -364,7 +367,7 @@ def build_graph(engine: RouterEngine, context: ToolContext):
         return {"approvals": aprovacoes, "approval_reasons": motivos, "pending": []}
 
     async def act(state: AgentState) -> dict[str, Any]:
-        context.session_state.current_todos = state.get("todos") or []
+        context.session_state.current_todos = [dict(t) for t in (state.get("todos") or [])]
         ultima = state["messages"][-1] if state["messages"] else {}
         tool_calls = ultima.get("tool_calls") or []
         aprovacoes = state.get("approvals") or {}
@@ -387,7 +390,10 @@ def build_graph(engine: RouterEngine, context: ToolContext):
                 )
                 continue
 
-            if ferramenta.risk.requires_approval and not aprovacoes.get(call_id, False):
+            argumentos = _parse_arguments(chamada)
+            risk = ferramenta.resolve_risk(argumentos)
+
+            if risk.requires_approval and not aprovacoes.get(call_id, False):
                 respostas.append(
                     _tool_message(
                         call_id,
@@ -401,7 +407,6 @@ def build_graph(engine: RouterEngine, context: ToolContext):
                 )
                 continue
 
-            argumentos = _parse_arguments(chamada)
             fingerprint = _tool_fingerprint(nome, argumentos)
 
             if _is_stuck_repeat(fingerprint, ultima_falha, contagem_falha):
@@ -445,7 +450,7 @@ def build_graph(engine: RouterEngine, context: ToolContext):
                 resultado = await ferramenta.handler(context, argumentos)
             except Exception as exc:
                 log.warning("agent.tool.failed", tool=nome, error=str(exc)[:200])
-                if ferramenta.risk is not RiskClass.READ:
+                if risk is not RiskClass.READ:
                     context.session_state.has_unresolved_failure = True
                 if context.trace_recorder is not None:
                     context.trace_recorder.record(
@@ -463,7 +468,7 @@ def build_graph(engine: RouterEngine, context: ToolContext):
                 continue
 
             status_da_ferramenta = _telemetry_status(nome, resultado)
-            if ferramenta.risk is not RiskClass.READ:
+            if risk is not RiskClass.READ:
                 context.session_state.has_unresolved_failure = status_da_ferramenta == "error"
 
             if context.trace_recorder is not None:

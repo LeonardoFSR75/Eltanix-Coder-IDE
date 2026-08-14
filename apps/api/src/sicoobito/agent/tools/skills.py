@@ -152,4 +152,3 @@ async def propose_skill(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
             "description": skill.description,
         },
     )
-

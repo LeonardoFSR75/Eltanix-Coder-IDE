@@ -122,8 +122,6 @@ _SPECS: tuple[ServerSpec, ...] = (
 )
 
 
-
-
 def server_for_language(language: str, preferred_server: str | None = None) -> ServerSpec | None:
     candidatos = [spec for spec in _SPECS if language in spec.languages]
     if not candidatos:
@@ -156,4 +154,3 @@ def supported_languages(*, only_installed: bool = True) -> dict[str, str]:
             if lang not in resultado:
                 resultado[lang] = spec.id
     return resultado
-

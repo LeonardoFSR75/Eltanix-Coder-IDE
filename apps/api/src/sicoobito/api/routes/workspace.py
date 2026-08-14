@@ -188,7 +188,6 @@ async def read_file(
     }
 
 
-
 class WriteFileRequest(BaseModel):
     project: str = Field(min_length=1)
     path: str = Field(min_length=1)

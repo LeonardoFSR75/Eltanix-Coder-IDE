@@ -62,9 +62,7 @@ async def trello_manage(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
 
     if action == "list":
         status_filter = args.get("status")
-        filtered_cards = [
-            c for c in cards if not status_filter or c.get("status") == status_filter
-        ]
+        filtered_cards = [c for c in cards if not status_filter or c.get("status") == status_filter]
         count = len(filtered_cards)
 
         summary_lines = [
@@ -120,13 +118,13 @@ async def trello_manage(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
         )
 
     elif action == "move":
-        card_id = args.get("card_id")
+        move_id = args.get("card_id")
         title = args.get("title")
         status_val = args.get("status", "in_progress")
 
         target = None
         for c in cards:
-            if (card_id and c.get("id") == card_id) or (
+            if (move_id and c.get("id") == move_id) or (
                 title and title.lower() in c.get("title", "").lower()
             ):
                 target = c
@@ -134,7 +132,7 @@ async def trello_manage(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
 
         if not target:
             return ToolResult.failure(
-                f"Cartão não encontrado para mover (ID: {card_id}, Título: {title})."
+                f"Cartão não encontrado para mover (ID: {move_id}, Título: {title})."
             )
 
         old_status = target.get("status")
@@ -152,14 +150,14 @@ async def trello_manage(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
         )
 
     elif action == "delete":
-        card_id = args.get("card_id")
+        del_id = args.get("card_id")
         title = args.get("title")
 
         new_cards = [
             c
             for c in cards
             if not (
-                (card_id and c.get("id") == card_id)
+                (del_id and c.get("id") == del_id)
                 or (title and title.lower() in c.get("title", "").lower())
             )
         ]

@@ -90,6 +90,7 @@ FALLBACK_IMAGES = [
 def _obter_cliente_docker():
     try:
         import docker
+
         return docker.from_env()
     except Exception as exc:
         log.warning("docker.client.unavailable", error=str(exc))
@@ -100,7 +101,7 @@ def _obter_cliente_docker():
 async def get_container_tree() -> dict[str, Any]:
     """Retorna a árvore completa do Docker (containers, imagens, redes, volumes)."""
     client = _obter_cliente_docker()
-    
+
     if client is None:
         return {
             "connected": False,
@@ -130,7 +131,10 @@ async def get_container_tree() -> dict[str, Any]:
             ],
             "help_and_feedback": [
                 {"title": "Read Extension Documentation", "url": "https://docs.docker.com"},
-                {"title": "Get Started with Docker Tutorial", "url": "https://docs.docker.com/get-started"},
+                {
+                    "title": "Get Started with Docker Tutorial",
+                    "url": "https://docs.docker.com/get-started",
+                },
                 {"title": "Open Container Tools Extension Walkthrough", "url": "#"},
                 {"title": "Install Docker DX for Improved Editing", "url": "#"},
                 {"title": "Review Issues", "url": "#"},
@@ -147,7 +151,7 @@ async def get_container_tree() -> dict[str, Any]:
         for c in cont_list:
             labels = c.labels or {}
             projeto = labels.get("com.docker.compose.project", "Containers Avulsos")
-            
+
             ports_str = []
             if c.ports:
                 for container_port, host_bindings in c.ports.items():
@@ -174,12 +178,14 @@ async def get_container_tree() -> dict[str, Any]:
         for img in client.images.list()[:20]:
             tags = img.tags
             name = tags[0] if tags else f"sha256:{img.short_id}"
-            images_list.append({
-                "id": img.short_id,
-                "name": name,
-                "tag": name.split(":")[-1] if ":" in name else "latest",
-                "size": f"{round(img.attrs.get('Size', 0) / (1024 * 1024), 1)} MB",
-            })
+            images_list.append(
+                {
+                    "id": img.short_id,
+                    "name": name,
+                    "tag": name.split(":")[-1] if ":" in name else "latest",
+                    "size": f"{round(img.attrs.get('Size', 0) / (1024 * 1024), 1)} MB",
+                }
+            )
 
         net_list = [
             {"name": n.name, "driver": n.attrs.get("Driver", "bridge")}
@@ -212,7 +218,10 @@ async def get_container_tree() -> dict[str, Any]:
             ],
             "help_and_feedback": [
                 {"title": "Read Extension Documentation", "url": "https://docs.docker.com"},
-                {"title": "Get Started with Docker Tutorial", "url": "https://docs.docker.com/get-started"},
+                {
+                    "title": "Get Started with Docker Tutorial",
+                    "url": "https://docs.docker.com/get-started",
+                },
                 {"title": "Open Container Tools Extension Walkthrough", "url": "#"},
                 {"title": "Install Docker DX for Improved Editing", "url": "#"},
                 {"title": "Review Issues", "url": "#"},

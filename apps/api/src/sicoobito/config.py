@@ -231,7 +231,6 @@ class Settings(BaseSettings):
         alias="CORS_ORIGINS",
     )
 
-
     @field_validator("cors_origins", mode="before")
     @classmethod
     def _split_origins(cls, value: object) -> list[str]:
@@ -239,6 +238,7 @@ class Settings(BaseSettings):
             val_str = value.strip()
             if val_str.startswith("[") and val_str.endswith("]"):
                 import json
+
                 try:
                     res = json.loads(val_str)
                     if isinstance(res, list):
@@ -256,8 +256,6 @@ class Settings(BaseSettings):
             "http://localhost:3000",
             "http://127.0.0.1:3000",
         ]
-
-
 
     @property
     def env_file_path(self) -> Path:

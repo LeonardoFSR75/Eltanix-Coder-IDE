@@ -297,14 +297,16 @@ async def scan_all_servers(
             res = await scanner.scan_server(cfg, analyzers=payload.analyzers)
             results.append(res.to_dict())
         except Exception as exc:
-            results.append({
-                "server_name": raw_server.get("name", "desconhecido"),
-                "status": "error",
-                "tools_scanned": 0,
-                "findings_count": 0,
-                "findings": [],
-                "error": str(exc),
-            })
+            results.append(
+                {
+                    "server_name": raw_server.get("name", "desconhecido"),
+                    "status": "error",
+                    "tools_scanned": 0,
+                    "findings_count": 0,
+                    "findings": [],
+                    "error": str(exc),
+                }
+            )
 
     return {"results": results}
 
@@ -318,13 +320,12 @@ async def scan_single_server(
     data = config_editor.load(settings.mcp_config_file)
     try:
         raw_server = next(s for s in data.get("servers", []) if s.get("name") == name)
-    except StopIteration:
+    except StopIteration as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"servidor não encontrado: {name}",
-        )
+        ) from exc
 
     cfg = MCPServerConfig.model_validate(raw_server)
     res = await scanner.scan_server(cfg, analyzers=payload.analyzers)
     return {"result": res.to_dict()}
-

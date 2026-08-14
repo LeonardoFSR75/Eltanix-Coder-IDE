@@ -114,9 +114,10 @@ async def write_file(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
     syntax_warning = ""
     if path.endswith((".html", ".htm")):
         import re
+
         if "\n" not in content or content.count("\n") < 3:
-            formatted = re.sub(r'>(<[^\/])', r'>\n\1', content)
-            formatted = re.sub(r'>(</)', r'>\n\1', formatted)
+            formatted = re.sub(r">(<[^\/])", r">\n\1", content)
+            formatted = re.sub(r">(</)", r">\n\1", formatted)
             if formatted != content:
                 content = formatted
                 try:
@@ -129,6 +130,7 @@ async def write_file(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
             )
     elif path.endswith(".py"):
         import ast
+
         try:
             ast.parse(content, filename=path)
         except SyntaxError as syn_err:
@@ -138,11 +140,11 @@ async def write_file(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
             )
     elif path.endswith(".json"):
         import json
+
         try:
             json.loads(content)
         except json.JSONDecodeError as json_err:
             syntax_warning = f" AVISO DE SINTAXE: O JSON é inválido: {json_err.msg}."
-
 
     return ToolResult(
         ok=True,
@@ -161,7 +163,6 @@ async def write_file(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
             "existed": existia,
         },
     )
-
 
 
 @tool(
@@ -287,15 +288,18 @@ async def search_code(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
         return ToolResult.failure("Índice de contexto indisponível.")
     if not ctx.session_state.project_verified:
         return ToolResult.failure(
-            "O projeto ainda não foi validado no PROJECTS_ROOT. Conecte o projeto antes de procurar no código."
+            "O projeto ainda não foi validado no PROJECTS_ROOT. "
+            "Conecte o projeto antes de procurar no código."
         )
     if not ctx.session_state.workspace_listed:
         return ToolResult.failure(
-            "Primeiro chame `list_files` na raiz do projeto para confirmar a estrutura antes de `search_code`."
+            "Primeiro chame `list_files` na raiz do projeto para confirmar "
+            "a estrutura antes de `search_code`."
         )
     if not ctx.session_state.packages_checked:
         return ToolResult.failure(
-            "Primeiro chame `manage_packages(action='list')` para validar o ecossistema e as dependências antes de `search_code`."
+            "Primeiro chame `manage_packages(action='list')` para validar o ecossistema "
+            "e as dependências antes de `search_code`."
         )
 
     hits = await ctx.indexer.search(

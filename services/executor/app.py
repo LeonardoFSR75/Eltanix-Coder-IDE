@@ -17,11 +17,13 @@ import asyncio
 import hmac
 import os
 from pathlib import Path
+import posixpath
 import shlex
 import time
 from typing import Annotated, Any
 
 import docker
+import docker.errors
 from fastapi import Depends, FastAPI, Header, HTTPException, status
 from pydantic import BaseModel, Field
 
@@ -66,8 +68,6 @@ def require_token(authorization: Annotated[str | None, Header()] = None) -> None
 
 Auth = Depends(require_token)
 
-
-import posixpath
 
 def to_host_path(container_path: str) -> str:
     """Traduz um caminho visto pela API para o caminho equivalente no host."""
@@ -150,7 +150,7 @@ async def create_sandbox(payload: CreateRequest) -> dict[str, Any]:
         container = existentes[0]
         if container.status != "running":
             container.start()
-        _container_cache[payload.session_id] = container.id
+        _container_cache[payload.session_id] = str(container.id)
         return {"id": container.id, "name": nome, "reused": True}
 
     # As flags de segurança abaixo (user, cap_drop, security_opt, privileged,
@@ -167,6 +167,10 @@ async def create_sandbox(payload: CreateRequest) -> dict[str, Any]:
 
         default_env = {
             "HOME": "/tmp",
+            "HOST": "0.0.0.0",
+            "FLASK_RUN_HOST": "0.0.0.0",
+            "UVICORN_HOST": "0.0.0.0",
+            "VITE_HOST": "0.0.0.0",
             "PYTHONDONTWRITEBYTECODE": "1",
             "PIP_DISABLE_PIP_VERSION_CHECK": "1",
             "PIP_NO_INPUT": "1",
@@ -174,6 +178,7 @@ async def create_sandbox(payload: CreateRequest) -> dict[str, Any]:
             "PIP_DEFAULT_TIMEOUT": "2",
             "VIRTUAL_ENV": "/workspace/.venv",
             "PYTHONPATH": (
+                "/tmp/sicoobito_bootstrap:"
                 "/workspace:"
                 "/workspace/.venv/lib/python3.12/site-packages:"
                 "/workspace/.venv/lib/python3.11/site-packages:"
@@ -182,12 +187,27 @@ async def create_sandbox(payload: CreateRequest) -> dict[str, Any]:
                 "/workspace/.venv/lib/site-packages"
             ),
             "PATH": (
+                "/tmp/sicoobito_bootstrap:"
                 "/usr/local/sbin:/usr/local/bin:"
                 "/usr/sbin:/usr/bin:/sbin:/bin:"
                 "/workspace/.venv/bin:/workspace/.venv/Scripts:"
                 "/workspace/node_modules/.bin"
             ),
         }
+
+        # Conecta o sandbox na rede interna browser_net para que o serviço browser
+        # consiga inspecionar a aplicação web sem liberar acesso à internet pública.
+        sandbox_network = "bridge" if NETWORK_ENABLED else "none"
+        if not NETWORK_ENABLED:
+            try:
+                for net in client().networks.list():
+                    if net.name in ("browser_net", "sicoobito_browser_net") or (
+                        net.name and net.name.endswith("_browser_net")
+                    ):
+                        sandbox_network = net.name
+                        break
+            except Exception:  # noqa: BLE001
+                pass
 
         container = client().containers.run(
             DEFAULT_IMAGE,
@@ -196,7 +216,7 @@ async def create_sandbox(payload: CreateRequest) -> dict[str, Any]:
             detach=True,
             working_dir=WORKDIR,
             volumes=vols,
-            network_mode="bridge" if NETWORK_ENABLED else "none",
+            network_mode=sandbox_network,
             mem_limit=DEFAULT_MEMORY,
             cpu_quota=CPU_QUOTA,
             pids_limit=PIDS_LIMIT,
@@ -208,7 +228,96 @@ async def create_sandbox(payload: CreateRequest) -> dict[str, Any]:
             cap_drop=["ALL"],
             auto_remove=False,
         )
-        _container_cache[payload.session_id] = container.id
+        _container_cache[payload.session_id] = str(container.id)
+
+        # Injeta bootstrap: 0.0.0.0 socket bind automático e utilitários pkill, fuser, lsof
+        bootstrap_script = r"""
+import os, stat
+os.makedirs('/tmp/sicoobito_bootstrap', exist_ok=True)
+with open('/tmp/sicoobito_bootstrap/sitecustomize.py', 'w') as f:
+    f.write('''import socket
+_orig_bind = socket.socket.bind
+def _sicoobito_bind(self, address):
+    if isinstance(address, tuple) and len(address) >= 2:
+        if address[0] in ('127.0.0.1', 'localhost'):
+            address = ('0.0.0.0', address[1], *address[2:])
+    return _orig_bind(self, address)
+socket.socket.bind = _sicoobito_bind
+''')
+with open('/tmp/sicoobito_bootstrap/pkill', 'w') as f:
+    f.write('''#!/usr/bin/env python3
+import sys, os, signal, glob
+pattern = ""
+sig = signal.SIGTERM
+for arg in sys.argv[1:]:
+    if arg.startswith('-') and not arg.startswith('-f'):
+        if arg in ('-9', '-KILL'): sig = signal.SIGKILL
+    else: pattern = arg
+curr = os.getpid()
+killed = 0
+for p in glob.glob('/proc/[0-9]*'):
+    try:
+        pid = int(os.path.basename(p))
+        if pid in (1, curr): continue
+        with open(f'{p}/cmdline', 'r', errors='ignore') as cf:
+            cmd = cf.read().replace('\\x00', ' ')
+        if pattern and pattern in cmd:
+            os.kill(pid, sig)
+            killed += 1
+    except Exception: pass
+sys.exit(0 if killed > 0 else 1)
+''')
+fuser_code = '''#!/usr/bin/env python3
+import sys, os, signal, glob
+target_port = None
+kill_mode = '-k' in sys.argv or sys.argv[0].endswith('fuser')
+for arg in sys.argv[1:]:
+    for sub in arg.replace(':', ' ').replace('/', ' ').split():
+        if sub.isdigit():
+            target_port = int(sub)
+            break
+hex_port = f"{target_port:04X}" if target_port else None
+inodes = set()
+try:
+    with open('/proc/net/tcp', 'r') as f:
+        for line in f.readlines()[1:]:
+            parts = line.strip().split()
+            if len(parts) >= 10:
+                local_addr, inode = parts[1], parts[9]
+                if hex_port is None or local_addr.endswith(':' + hex_port):
+                    inodes.add(inode)
+except Exception: pass
+pids = set()
+curr = os.getpid()
+for p in glob.glob('/proc/[0-9]*'):
+    try:
+        pid = int(os.path.basename(p))
+        if pid in (1, curr): continue
+        for fd in glob.glob(f'{p}/fd/*'):
+            try:
+                link = os.readlink(fd)
+                for inode in inodes:
+                    if f'[{inode}]' in link: pids.add(pid)
+            except Exception: pass
+    except Exception: pass
+for pid in pids:
+    if kill_mode:
+        try: os.kill(pid, signal.SIGKILL); print(f"Killed process {pid}")
+        except Exception: pass
+    else:
+        print(pid)
+'''
+with open('/tmp/sicoobito_bootstrap/fuser', 'w') as f: f.write(fuser_code)
+with open('/tmp/sicoobito_bootstrap/lsof', 'w') as f: f.write(fuser_code)
+with open('/tmp/sicoobito_bootstrap/netstat', 'w') as f: f.write(fuser_code)
+for name in ('pkill', 'fuser', 'lsof', 'netstat'):
+    path = f'/tmp/sicoobito_bootstrap/{name}'
+    os.chmod(path, os.stat(path).st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+"""
+        try:
+            container.exec_run(["python", "-c", bootstrap_script])
+        except Exception:  # noqa: BLE001
+            pass
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY, detail=f"falha ao criar sandbox: {exc}"
@@ -224,7 +333,7 @@ async def exec_command(session_id: str, payload: ExecRequest) -> dict[str, Any]:
     if cid is None:
         try:
             container = client().containers.get(nome)
-            cid = container.id
+            cid = str(container.id)
             _container_cache[session_id] = cid
         except docker.errors.NotFound as exc:
             raise HTTPException(

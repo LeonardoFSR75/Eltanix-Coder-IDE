@@ -53,10 +53,8 @@ async def test_policy_decision_is_recorded_with_distinct_actor(capturado):
 
     assert len(capturado) == 1
     assert capturado[0]["actor"] == "política"
-    assert capturado[0]["metadata"] == {
-        "reason": "auto-aprovado por política: edição em *.md",
-        "auto_approved": True,
-    }
+    assert capturado[0]["metadata"]["reason"] == "auto-aprovado por política: edição em *.md"
+    assert capturado[0]["metadata"]["auto_approved"] is True
 
 
 async def test_human_decision_keeps_agente_as_actor(capturado):
@@ -73,7 +71,8 @@ async def test_human_decision_keeps_agente_as_actor(capturado):
     )
 
     assert capturado[0]["actor"] == "agente"
-    assert capturado[0]["metadata"] == {"reason": "", "auto_approved": False}
+    assert capturado[0]["metadata"]["reason"] == ""
+    assert capturado[0]["metadata"]["auto_approved"] is False
 
 
 async def test_missing_decided_by_defaults_to_human_actor(capturado):

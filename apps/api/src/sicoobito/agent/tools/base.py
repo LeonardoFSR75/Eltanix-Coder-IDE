@@ -136,15 +136,44 @@ class ToolResult:
         return cls(ok=False, content=f"ERRO: {message}")
 
 
-@dataclass(slots=True)
 class Tool:
     name: str
     description: str
-    risk: RiskClass
+    _risk: RiskClass | Callable[[dict[str, Any]], RiskClass]
     parameters: dict[str, Any]
     handler: Callable[[ToolContext, dict[str, Any]], Awaitable[ToolResult]]
-    # Resumo curto mostrado no pedido de aprovação, no lugar do JSON cru.
     summarize: Callable[[dict[str, Any]], str] | None = None
+
+    def __init__(
+        self,
+        name: str,
+        description: str,
+        risk: RiskClass | Callable[[dict[str, Any]], RiskClass],
+        parameters: dict[str, Any],
+        handler: Callable[[ToolContext, dict[str, Any]], Awaitable[ToolResult]],
+        summarize: Callable[[dict[str, Any]], str] | None = None,
+    ) -> None:
+        self.name = name
+        self.description = description
+        self._risk = risk
+        self.parameters = parameters
+        self.handler = handler
+        self.summarize = summarize
+
+    @property
+    def risk(self) -> RiskClass:
+        if callable(self._risk):
+            return self._risk({"action": "install"})
+        return self._risk
+
+    def resolve_risk(self, arguments: dict[str, Any] | None = None) -> RiskClass:
+        if callable(self._risk):
+            return self._risk(arguments or {})
+        return self._risk
+
+    @property
+    def base_risk(self) -> RiskClass:
+        return self.resolve_risk({})
 
     def to_openai_schema(self) -> dict[str, Any]:
         return {
@@ -185,7 +214,7 @@ class ToolRegistry:
         return list(self._tools.values())
 
     def by_risk(self, risk: RiskClass) -> list[Tool]:
-        return [t for t in self._tools.values() if t.risk is risk]
+        return [t for t in self._tools.values() if t.base_risk is risk]
 
     def schemas(self, *, allow_exec: bool = True, allow_write: bool = True) -> list[dict[str, Any]]:
         """Schemas para o modelo.
@@ -196,9 +225,10 @@ class ToolRegistry:
         """
         tools = []
         for tool in self._tools.values():
-            if tool.risk is RiskClass.EXEC and not allow_exec:
+            risk = tool.base_risk
+            if risk is RiskClass.EXEC and not allow_exec:
                 continue
-            if tool.risk is RiskClass.WRITE and not allow_write:
+            if risk is RiskClass.WRITE and not allow_write:
                 continue
             tools.append(tool.to_openai_schema())
         return tools
@@ -211,7 +241,7 @@ def tool(
     *,
     name: str,
     description: str,
-    risk: RiskClass,
+    risk: RiskClass | Callable[[dict[str, Any]], RiskClass],
     parameters: dict[str, Any],
     summarize: Callable[[dict[str, Any]], str] | None = None,
 ):

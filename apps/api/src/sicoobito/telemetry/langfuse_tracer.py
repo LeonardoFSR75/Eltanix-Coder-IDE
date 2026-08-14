@@ -27,13 +27,16 @@ def _get_callback_class() -> Any:
     """Importa dinamicamente a classe CallbackHandler da biblioteca langfuse."""
     try:
         from langfuse.callback import CallbackHandler
+
         return CallbackHandler
     except ImportError:
         try:
             from langfuse.langchain import CallbackHandler  # type: ignore[no-redef]
+
             return CallbackHandler
         except ImportError:
             from langfuse import CallbackHandler  # type: ignore[no-redef]
+
             return CallbackHandler
 
 

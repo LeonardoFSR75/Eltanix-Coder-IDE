@@ -12,9 +12,8 @@ import json
 import os
 import shutil
 from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
-from pathlib import Path
-from typing import Any, Literal
+from datetime import UTC, datetime
+from typing import Any, Literal, cast
 
 import httpx
 
@@ -44,9 +43,7 @@ class MCPScanResult:
     findings_count: int
     findings: list[MCPScanFinding]
     error: str | None = None
-    scanned_at: str = field(
-        default_factory=lambda: datetime.now(timezone.utc).isoformat()
-    )
+    scanned_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -157,13 +154,15 @@ class MCPScannerService:
         if self.settings.openai_api_key:
             cmd.extend(["-e", f"OPENAI_API_KEY={self.settings.openai_api_key}"])
 
-        cmd.extend([
-            "cisco-mcp-scanner",
-            "--format",
-            "raw",
-            "--analyzers",
-            ",".join(analyzers),
-        ])
+        cmd.extend(
+            [
+                "cisco-mcp-scanner",
+                "--format",
+                "raw",
+                "--analyzers",
+                ",".join(analyzers),
+            ]
+        )
 
         if server.transport == "stdio":
             if not server.command:
@@ -208,9 +207,7 @@ class MCPScannerService:
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
-            stdout_bytes, stderr_bytes = await asyncio.wait_for(
-                process.communicate(), timeout=45.0
-            )
+            stdout_bytes, stderr_bytes = await asyncio.wait_for(process.communicate(), timeout=45.0)
             stdout_str = stdout_bytes.decode(errors="replace").strip()
             stderr_str = stderr_bytes.decode(errors="replace").strip()
 
@@ -226,7 +223,7 @@ class MCPScannerService:
                 )
 
             return self._parse_cli_raw_output(server.name, stdout_str)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             return MCPScanResult(
                 server_name=server.name,
                 status="error",
@@ -246,9 +243,7 @@ class MCPScannerService:
                 error=str(exc),
             )
 
-    def _parse_api_response(
-        self, server_name: str, tools_count: int, data: Any
-    ) -> MCPScanResult:
+    def _parse_api_response(self, server_name: str, tools_count: int, data: Any) -> MCPScanResult:
         findings: list[MCPScanFinding] = []
         if isinstance(data, list):
             items = data
@@ -265,11 +260,15 @@ class MCPScannerService:
             elif sev in ("medium", "low") and status != "threat":
                 status = "warning"
 
+            parsed_sev = cast(
+                Literal["safe", "low", "medium", "high", "critical", "unknown"],
+                sev if sev in ("safe", "low", "medium", "high", "critical") else "unknown",
+            )
             findings.append(
                 MCPScanFinding(
                     tool_name=item.get("tool_name", "general"),
                     analyzer=item.get("analyzer", "unknown"),
-                    severity=sev if sev in ("safe", "low", "medium", "high", "critical") else "unknown",
+                    severity=parsed_sev,
                     rule_id=item.get("rule_id", item.get("id", "finding")),
                     message=item.get("message", item.get("title", "")),
                     description=item.get("description", ""),
@@ -287,7 +286,6 @@ class MCPScannerService:
 
     def _parse_cli_raw_output(self, server_name: str, raw_output: str) -> MCPScanResult:
         findings: list[MCPScanFinding] = []
-        tools_scanned = 0
         try:
             # Encontra blocos JSON na saída se houver logs misturados
             json_start = raw_output.find("{")

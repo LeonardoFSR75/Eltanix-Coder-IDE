@@ -1,8 +1,9 @@
 {
-  "//": "Layout src: sem extraPaths o analisador não resolve 'from sicoobito...' a partir da raiz do repositório, e 'ir para definição' não encontra nada dentro do projeto.",
   "include": ["apps/api/src", "apps/api/tests", "services"],
   "exclude": ["**/node_modules", "**/.venv", "**/__pycache__", "**/.git"],
   "extraPaths": ["apps/api/src"],
+  "venvPath": "apps/api",
+  "venv": ".venv",
   "typeCheckingMode": "basic",
   "reportMissingImports": "warning"
 }

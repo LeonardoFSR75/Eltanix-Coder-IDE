@@ -106,7 +106,16 @@ async def browser_action(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
     except BrowserUnavailableError as exc:
         return ToolResult.failure(str(exc))
     except BrowserError as exc:
-        return ToolResult.failure(f"ação de navegador falhou: {exc}")
+        msg = f"ação de navegador falhou: {exc}"
+        if "ERR_CONNECTION_REFUSED" in msg or "Connection refused" in msg:
+            msg += (
+                "\n\n💡 DICA DE NAVEGADOR: A conexão com o servidor foi recusada. "
+                "Certifique-se de que o servidor web foi iniciado no sandbox "
+                "(ex: `python app.py & sleep 2` ou `python -m http.server 5000 & sleep 2`), "
+                "que esteja escutando na interface correta (ex: 0.0.0.0 ou 127.0.0.1) "
+                "e aguarde a porta abrir antes de navegar."
+            )
+        return ToolResult.failure(msg)
 
     if acao == "screenshot":
         imagem = resultado.get("image_base64", "")

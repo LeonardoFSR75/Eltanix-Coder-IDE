@@ -53,8 +53,12 @@ async def securebert_analyze(payload: SecureBertAnalyzeRequest, request: Request
                 actor="api",
                 module="Security",
                 action="Análise de texto com SecureBERT",
-                details=f"classification={result.get('classification')} score={result.get('score')}",
-                risk_level="medium" if result.get("classification") in {"suspicious", "unsafe"} else "low",
+                details=(
+                    f"classification={result.get('classification')} score={result.get('score')}"
+                ),
+                risk_level=(
+                    "medium" if result.get("classification") in {"suspicious", "unsafe"} else "low"
+                ),
                 status="success",
                 metadata={
                     "provider": result.get("provider"),

@@ -19,7 +19,10 @@ from sicoobito.agent.tools.base import RiskClass, ToolContext, ToolResult, tool
         "properties": {
             "text": {
                 "type": "string",
-                "description": "Texto em claro a ser classificado. Pode ser um prompt, mensagem ou instrução do usuário.",
+                "description": (
+                    "Texto em claro a ser classificado. "
+                    "Pode ser um prompt, mensagem ou instrução do usuário."
+                ),
             }
         },
         "required": ["text"],
@@ -42,8 +45,13 @@ async def analyze_prompt_risk(ctx: ToolContext, args: dict[str, Any]) -> ToolRes
                     actor="agente",
                     module="Security",
                     action="Análise de prompt com SecureBERT",
-                    details=f"classificação={result.get('classification')} score={result.get('score')}",
-                    risk_level="medium" if result.get("classification") in {"suspicious", "unsafe"} else "low",
+                    details=(
+                        f"classificação={result.get('classification')} "
+                        f"score={result.get('score')}"
+                    ),
+                    risk_level="medium"
+                    if result.get("classification") in {"suspicious", "unsafe"}
+                    else "low",
                     status="success",
                     session_id=ctx.session_id,
                     project_slug=ctx.project_slug or None,
@@ -77,7 +85,10 @@ async def analyze_prompt_risk(ctx: ToolContext, args: dict[str, Any]) -> ToolRes
 
     return ToolResult(
         ok=True,
-        content=f"classificação={result.get('classification')} score={result.get('score')} provider={result.get('provider')}",
+        content=(
+            f"classificação={result.get('classification')} "
+            f"score={result.get('score')} provider={result.get('provider')}"
+        ),
         data=result,
     )
 
@@ -86,8 +97,8 @@ async def analyze_prompt_risk(ctx: ToolContext, args: dict[str, Any]) -> ToolRes
     name="mcp_security_scan",
     description=(
         "Escaneia servidores ou ferramentas MCP com o Cisco AI Defense MCP Scanner "
-        "em busca de injeções de prompt, exfiltração de dados, vulnerabilidades e anomalias de comportamento. "
-        "Leitura apenas — não altera estado."
+        "em busca de injeções de prompt, exfiltração de dados, vulnerabilidades e "
+        "anomalias de comportamento. Leitura apenas — não altera estado."
     ),
     risk=RiskClass.READ,
     parameters={
@@ -95,7 +106,10 @@ async def analyze_prompt_risk(ctx: ToolContext, args: dict[str, Any]) -> ToolRes
         "properties": {
             "server_name": {
                 "type": "string",
-                "description": "Nome do servidor MCP cadastrado para auditar (opcional se quiser escanear todos).",
+                "description": (
+                    "Nome do servidor MCP cadastrado para auditar "
+                    "(opcional se quiser escanear todos)."
+                ),
             },
             "analyzers": {
                 "type": "array",
@@ -123,12 +137,17 @@ async def mcp_security_scan(ctx: ToolContext, args: dict[str, Any]) -> ToolResul
         if server_name:
             target = next((s for s in servers if s.get("name") == server_name), None)
             if not target:
-                return ToolResult.failure(f"Servidor MCP '{server_name}' não encontrado na configuração.")
+                return ToolResult.failure(
+                    f"Servidor MCP '{server_name}' não encontrado na configuração."
+                )
             cfg = MCPServerConfig.model_validate(target)
             res = await scanner.scan_server(cfg, analyzers=analyzers)
             return ToolResult(
                 ok=res.status != "error",
-                content=f"Servidor '{server_name}': status={res.status}, achados={res.findings_count}, ferramentas={res.tools_scanned}",
+                content=(
+                    f"Servidor '{server_name}': status={res.status}, "
+                    f"achados={res.findings_count}, ferramentas={res.tools_scanned}"
+                ),
                 data=res.to_dict(),
             )
         else:
@@ -144,4 +163,3 @@ async def mcp_security_scan(ctx: ToolContext, args: dict[str, Any]) -> ToolResul
             )
     except Exception as exc:
         return ToolResult.failure(f"Falha ao executar scanner MCP: {exc}")
-

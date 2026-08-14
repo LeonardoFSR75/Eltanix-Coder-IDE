@@ -65,7 +65,5 @@ async def run_headless_burst(
             # distinção.
             await coordinator.set_status(session.session_id, "completed")
     except Exception as exc:
-        log.warning(
-            "agent.headless.burst_failed", session=session.session_id, error=str(exc)[:200]
-        )
+        log.warning("agent.headless.burst_failed", session=session.session_id, error=str(exc)[:200])
         await coordinator.set_status(session.session_id, "failed")

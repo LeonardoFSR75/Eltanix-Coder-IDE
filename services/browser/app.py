@@ -79,8 +79,9 @@ async def _launch_browser() -> Any:
     global _playwright, _browser
     if _browser is not None:
         return _browser
-    _playwright = await async_playwright().start()
-    _browser = await _playwright.chromium.launch(headless=True)
+    pw = await async_playwright().start()
+    _playwright = pw
+    _browser = await pw.chromium.launch(headless=True)
     return _browser
 
 
@@ -166,7 +167,41 @@ async def run_action(session_id: str, payload: ActionRequest) -> dict[str, Any]:
     try:
         if payload.action == "navigate":
             validate_url(payload.url)
-            resposta = await page.goto(payload.url, timeout=payload.timeout_ms, wait_until="load")
+            alvo_url = payload.url or ""
+            parsed = urlparse(alvo_url)
+            hostname = (parsed.hostname or "").lower()
+            port = parsed.port
+
+            urls_to_try = [alvo_url]
+            if hostname in {"localhost", "127.0.0.1", "0.0.0.0"}:
+                clean_sid = session_id.removeprefix("panel-")
+                sandbox_host = f"sicoobito-{clean_sid}"
+                host_gateway = os.getenv("HOST_GATEWAY_HOST", "host.docker.internal")
+
+                candidatos: list[str] = []
+                if port:
+                    candidatos.append(parsed._replace(netloc=f"{sandbox_host}:{port}").geturl())
+                    candidatos.append(parsed._replace(netloc=f"{host_gateway}:{port}").geturl())
+                else:
+                    candidatos.append(parsed._replace(netloc=sandbox_host).geturl())
+                    candidatos.append(parsed._replace(netloc=host_gateway).geturl())
+                urls_to_try = [*candidatos, alvo_url]
+
+            resposta = None
+            ultimo_erro = None
+            for tentativa_url in urls_to_try:
+                try:
+                    resposta = await page.goto(
+                        tentativa_url, timeout=payload.timeout_ms, wait_until="domcontentloaded"
+                    )
+                    ultimo_erro = None
+                    break
+                except Exception as exc:  # noqa: BLE001
+                    ultimo_erro = exc
+
+            if ultimo_erro is not None:
+                raise ultimo_erro
+
             return {
                 "ok": True,
                 "url": page.url,

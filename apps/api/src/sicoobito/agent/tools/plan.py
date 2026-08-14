@@ -55,7 +55,11 @@ async def write_todos(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
     rebaixados: list[str] = []
     concluidos_anteriores = {
         str(t.get("content", "")).strip()
-        for t in (ctx.session_state.current_todos if hasattr(ctx, "session_state") else getattr(ctx, "current_todos", []) or [])
+        for t in (
+            ctx.session_state.current_todos
+            if hasattr(ctx, "session_state")
+            else getattr(ctx, "current_todos", []) or []
+        )
         if isinstance(t, dict) and t.get("status") == "completed"
     }
     for item in brutos:
@@ -91,6 +95,4 @@ async def write_todos(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
             f"seguida de um sucesso ({itens}). Corrija o problema (ou confirme com um "
             "comando que passe) antes de marcar como concluído."
         )
-    return ToolResult(
-        ok=True, content=f"Plano atualizado:\n{resumo}{aviso}", data={"todos": todos}
-    )
+    return ToolResult(ok=True, content=f"Plano atualizado:\n{resumo}{aviso}", data={"todos": todos})

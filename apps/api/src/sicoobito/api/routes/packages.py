@@ -25,7 +25,12 @@ router = APIRouter(
 
 
 def _projects_root(request: Request) -> Path:
-    return getattr(request.app.state, "projects_root", None) or get_settings().projects_root
+    raiz = getattr(request.app.state, "projects_root", None) or get_settings().projects_root
+    if isinstance(raiz, Path):
+        return raiz
+    if raiz:
+        return Path(str(raiz))
+    return Path(".")
 
 
 def get_venv_path(project_path: Path) -> Path:
@@ -144,6 +149,7 @@ async def ensure_node_env(project_path: Path) -> Path:
     node_modules = project_path / "node_modules"
     if not node_modules.exists():
         import shutil
+
         npm_bin = shutil.which("npm")
         if npm_bin:
             try:
@@ -170,6 +176,7 @@ async def ensure_go_env(project_path: Path) -> Path:
         mod_name = re.sub(r"[^a-z0-9_.-]", "", project_path.name.lower()) or "app"
         go_mod.write_text(f"module {mod_name}\n\ngo 1.22\n", encoding="utf-8")
     import shutil
+
     go_bin = shutil.which("go")
     if go_bin:
         try:
@@ -265,7 +272,13 @@ async def ensure_venv(project_path: Path, install_base: bool = True) -> Path:
             try:
                 log.info("packages.venv.base_install", project=project_path.name)
                 cmd_base = [
-                    str(py_exe), "-m", "pip", "install", "--upgrade", "pip", *DEFAULT_BASE_PACKAGES
+                    str(py_exe),
+                    "-m",
+                    "pip",
+                    "install",
+                    "--upgrade",
+                    "pip",
+                    *DEFAULT_BASE_PACKAGES,
                 ]
                 proc_base = await asyncio.create_subprocess_exec(
                     *cmd_base,
@@ -394,9 +407,7 @@ class InstallPackageIn(BaseModel):
 
 class UninstallPackageIn(BaseModel):
     package: str = Field(min_length=1, description="Nome do pacote a desinstalar")
-    save_requirements: bool = Field(
-        default=True, description="Remove do manifesto automaticamente"
-    )
+    save_requirements: bool = Field(default=True, description="Remove do manifesto automaticamente")
 
 
 @router.get("")
@@ -426,6 +437,7 @@ async def get_project_packages(slug: str, request: Request) -> dict[str, Any]:
         if pkg_json.exists():
             try:
                 import json
+
                 data = json.loads(pkg_json.read_text(encoding="utf-8", errors="ignore"))
                 deps = data.get("dependencies", {})
                 dev_deps = data.get("devDependencies", {})
@@ -460,6 +472,7 @@ async def get_project_packages(slug: str, request: Request) -> dict[str, Any]:
         if composer_json.exists():
             try:
                 import json
+
                 data = json.loads(composer_json.read_text(encoding="utf-8", errors="ignore"))
                 reqs = data.get("require", {})
                 for k, v in reqs.items():
@@ -480,19 +493,17 @@ async def get_project_packages(slug: str, request: Request) -> dict[str, Any]:
                 stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=30)
                 if proc.returncode == 0:
                     import json
+
                     raw_pkgs = json.loads(stdout.decode(errors="ignore"))
                     installed_packages = [
-                        {"name": p["name"], "version": p["version"]}
-                        for p in raw_pkgs
+                        {"name": p["name"], "version": p["version"]} for p in raw_pkgs
                     ]
             except Exception as exc:
                 log.warning("packages.list.failed", slug=slug, error=str(exc))
 
     manifest_file = project_path / manifest_name
     manifest_content = (
-        manifest_file.read_text(encoding="utf-8", errors="ignore")
-        if manifest_file.exists()
-        else ""
+        manifest_file.read_text(encoding="utf-8", errors="ignore") if manifest_file.exists() else ""
     )
     req_map = (
         parse_requirements_txt(project_path)
@@ -591,8 +602,7 @@ async def install_project_package(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=(
-                f"Falha ao instalar pacote '{payload.package}': "
-                f"{stderr.decode(errors='ignore')}"
+                f"Falha ao instalar pacote '{payload.package}': {stderr.decode(errors='ignore')}"
             ),
         )
 
@@ -600,9 +610,7 @@ async def install_project_package(
     pkg_clean = normalize_python_package_name(pkg_clean)
     manifest_file = project_path / manifest_name
     manifest_content = (
-        manifest_file.read_text(encoding="utf-8", errors="ignore")
-        if manifest_file.exists()
-        else ""
+        manifest_file.read_text(encoding="utf-8", errors="ignore") if manifest_file.exists() else ""
     )
 
     if eco == "python" and payload.save_requirements:
@@ -805,4 +813,3 @@ async def sync_project_requirements(slug: str, request: Request) -> dict[str, An
         "message": f"Ambiente sincronizado com sucesso a partir do {manifest_name}",
         "stdout": stdout.decode(errors="ignore"),
     }
-

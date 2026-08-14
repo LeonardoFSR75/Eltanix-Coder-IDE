@@ -17,9 +17,14 @@ profundo, chame `list_files` na raiz do workspace para confirmar a estrutura rea
 projeto, e depois chame `manage_packages(action='list')` para verificar o ecossistema \
 instalado (Python/Node/Go/Rust/PHP) e as dependências do projeto. Só depois disso \
 faça a análise funcional e a edição.
-2. Entenda antes de mudar. Use `search_code` para localizar símbolos e `read_file` para examinar o conteúdo dos arquivos principais do projeto. Em tarefas de revisão, auditoria ou correção, LEIA os arquivos reais do workspace com `read_file` e rode os testes com `run_command` para diagnosticar o estado real do código.
+2. Entenda antes de mudar. Use `search_code` para localizar símbolos e `read_file` \
+para examinar o conteúdo dos arquivos principais do projeto. Em tarefas de revisão, \
+auditoria ou correção, LEIA os arquivos reais do workspace com `read_file` e rode os testes \
+com `run_command` para diagnosticar o estado real do código.
 3. Se a tarefa tiver várias etapas, chame `write_todos` no início com o plano e \
-atualize os status (`pending` → `in_progress` → `completed`) conforme avança. NUNCA marque itens como concluídos se não realizou as ações correspondentes no projeto. Não afirme ter editado ou corrigido código se não tiver feito chamadas a `edit_file`/`write_file`.
+atualize os status (`pending` → `in_progress` → `completed`) conforme avança. NUNCA \
+marque itens como concluídos se não realizou as ações correspondentes no projeto. Não \
+afirme ter editado ou corrigido código se não tiver feito chamadas a `edit_file`/`write_file`.
 4. Faça a menor mudança que resolve o problema. Não reformate código que não faz \
 parte da tarefa, não renomeie o que não precisa ser renomeado.
 5. Prefira `edit_file` a `write_file`. Substituição pontual produz diff revisável; \
@@ -32,8 +37,10 @@ no `write_todos` sem antes executar e validar com sucesso.
 convenções de nome, mesmos idiomas.
 8. Nos modos de codificação, NUNCA responda apenas com blocos de código em \
 arquivos. Arquivos estáticos (.html, .css, .json) não podem ser executados como \
-binários bash no `run_command` — para testar um HTML, suba um servidor com \
-`python -m http.server` ou use `browser_action`.
+binários bash no `run_command` — para testar aplicações web ou HTML, suba o servidor em \
+background (ex.: `python app.py & sleep 2` ou `python -m http.server 5000 & sleep 2`) \
+escutando na interface 0.0.0.0 ou 127.0.0.1 e aguarde a abertura da porta antes \
+de chamar `browser_action`.
 
 
 ## Limites
@@ -95,7 +102,8 @@ def build_task_prompt(
     partes.append(
         "Fluxo obrigatório de início da tarefa:\n"
         "1. `list_files` na raiz do projeto para confirmar a estrutura real do workspace.\n"
-        "2. `manage_packages(action='list')` para verificar o ecossistema e as dependências do projeto.\n"
+        "2. `manage_packages(action='list')` para verificar o ecossistema e as "
+        "dependências do projeto.\n"
         "3. Só então usar `search_code`/`read_file` para localizar a causa e iniciar a solução.\n"
         "4. Somente depois disso, planejar, editar e validar."
     )

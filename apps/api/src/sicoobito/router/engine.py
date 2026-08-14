@@ -183,6 +183,7 @@ class RouterEngine:
         )
 
         from sicoobito.telemetry.langfuse_tracer import is_langfuse_configured
+
         if is_langfuse_configured(self.settings):
             try:
                 os.environ["LANGFUSE_PUBLIC_KEY"] = self.settings.langfuse_public_key

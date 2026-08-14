@@ -139,9 +139,7 @@ async def lifespan(app: FastAPI):
     # Redis conectado, o que faz `spawn_agent` falhar fechado (diferente do
     # resto da plataforma, que degrada pra "mais lento": aqui não há fonte de
     # verdade alternativa pra quem é filho de quem).
-    agent_coordinator = AgentCoordinator(
-        redis, ttl_seconds=settings.agent_coordination_ttl_seconds
-    )
+    agent_coordinator = AgentCoordinator(redis, ttl_seconds=settings.agent_coordination_ttl_seconds)
 
     indexer = ContextIndexer(settings=settings, engine=engine, trace_recorder=trace_recorder)
 
@@ -194,6 +192,7 @@ async def lifespan(app: FastAPI):
     # único com acesso ao daemon do Docker (ver ADR 0002). É o modo usado
     # quando a própria API roda em container. Sem ele, cai no daemon local, que
     # é o que faz sentido rodando direto na máquina de desenvolvimento.
+    sandboxes: SandboxManager | ExecutorSandboxManager
     if settings.executor_url:
         sandboxes = ExecutorSandboxManager(
             ExecutorConfig(

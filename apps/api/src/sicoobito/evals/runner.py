@@ -62,15 +62,17 @@ async def _run_case(
     indexer: ContextIndexer,
 ) -> dict[str, Any]:
     if case.source == "documents":
-        results = await documents.search(case.query, limit=case.limit)
-        hits = [(h.content, f"{h.document_id}#{h.chunk_index}") for h in results]
+        doc_results = await documents.search(case.query, limit=case.limit)
+        hits = [(h.content, f"{h.document_id}#{h.chunk_index}") for h in doc_results]
     elif case.source == "notes":
-        results = await notes.search(case.query, limit=case.limit)
-        hits = [(h.content, f"{h.note_id}#{h.chunk_index}") for h in results]
+        note_results = await notes.search(case.query, limit=case.limit)
+        hits = [(h.content, f"{h.note_id}#{h.chunk_index}") for h in note_results]
     else:
         assert case.root is not None
-        results = await indexer.search(root=Path(case.root), query=case.query, limit=case.limit)
-        hits = [(h.content, h.citation) for h in results]
+        code_results = await indexer.search(
+            root=Path(case.root), query=case.query, limit=case.limit
+        )
+        hits = [(h.content, h.citation) for h in code_results]
     return score_case(hits, case)
 
 

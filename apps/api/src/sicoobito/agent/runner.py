@@ -28,25 +28,6 @@ from sicoobito.agent import session_store
 from sicoobito.agent.approval_policy_config import load_approval_policy
 from sicoobito.agent.coordinator import AgentCoordinator
 from sicoobito.agent.graph import DEFAULT_MAX_ITERATIONS, build_graph
-
-
-def _session_summary(session: AgentSession, *, pending_count: int = 0, failed_count: int = 0) -> str:
-    """Resumo leve da sessão usado na UI e no histórico.
-
-    Mantém o texto curto e legível — o objetivo é informar rapidamente se a
-    execução está aguardando aprovação, se houve falha recorrente ou se a
-    sessão está em progresso, sem exigir abrir o transcript completo.
-    """
-    if pending_count > 0:
-        base = f"Aguardando aprovação de {pending_count} ação(ões)"
-    elif failed_count > 0:
-        base = f"Falha recorrente em {failed_count} chamada(s)"
-    else:
-        base = "Executando"
-
-    if session.branch:
-        return f"{base} em {session.branch}"
-    return base
 from sicoobito.agent.headless import run_headless_burst
 from sicoobito.agent.prompts import build_task_prompt
 from sicoobito.agent.state import AgentMode
@@ -58,8 +39,9 @@ from sicoobito.context.repomap import build_repo_map
 from sicoobito.db.session import session_scope
 from sicoobito.logging_setup import get_logger
 from sicoobito.router.engine import RouterEngine
-from sicoobito.security.service import SecureBertService
 from sicoobito.sandbox.container import SandboxManager, SandboxUnavailableError
+from sicoobito.sandbox.executor import ExecutorSandboxManager
+from sicoobito.security.service import SecureBertService
 from sicoobito.workspace import git as git_ops
 from sicoobito.workspace import projects as project_ops
 from sicoobito.workspace.fs import WorkspaceFS
@@ -91,7 +73,7 @@ async def validate_project_runtime(workspace_root: Path) -> dict[str, Any]:
         }
 
     try:
-        entries = sorted(p.name for p in workspace_root.iterdir())
+        entries = sorted(p.name for p in workspace_root.iterdir())  # noqa: ASYNC240
     except OSError as exc:
         return {
             "project_ok": False,
@@ -153,6 +135,27 @@ class AgentSession:
     focus_folder: str | None = None
 
 
+def _session_summary(
+    session: AgentSession, *, pending_count: int = 0, failed_count: int = 0
+) -> str:
+    """Resumo leve da sessão usado na UI e no histórico.
+
+    Mantém o texto curto e legível — o objetivo é informar rapidamente se a
+    execução está aguardando aprovação, se houve falha recorrente ou se a
+    sessão está em progresso, sem exigir abrir o transcript completo.
+    """
+    if pending_count > 0:
+        base = f"Aguardando aprovação de {pending_count} ação(ões)"
+    elif failed_count > 0:
+        base = f"Falha recorrente em {failed_count} chamada(s)"
+    else:
+        base = "Executando"
+
+    if session.branch:
+        return f"{base} em {session.branch}"
+    return base
+
+
 class AgentRunner:
     def __init__(
         self,
@@ -160,7 +163,7 @@ class AgentRunner:
         settings: Settings,
         engine: RouterEngine,
         indexer: ContextIndexer,
-        sandboxes: SandboxManager,
+        sandboxes: SandboxManager | ExecutorSandboxManager,
         browser_config: BrowserConfig | None = None,
         documents: DocumentService | None = None,
         notes: NoteService | None = None,
@@ -271,13 +274,16 @@ class AgentRunner:
         if not runtime_validation["project_ok"]:
             raise ValueError(runtime_validation["reason"])
 
-        # Garante o ambiente de pacotes (.venv, node_modules, etc) no projeto raiz antes de criar o worktree
+        # Garante o ambiente de pacotes (.venv, node_modules, etc) no projeto raiz
+        # antes de criar o worktree
         try:
             from sicoobito.api.routes.packages import ensure_project_env
 
             await ensure_project_env(workspace_root)
         except Exception as exc:
-            log.warning("runner.ensure_project_env.failed", project=workspace_root.name, error=str(exc))
+            log.warning(
+                "runner.ensure_project_env.failed", project=workspace_root.name, error=str(exc)
+            )
 
         avisos: list[str] = [
             (
@@ -320,7 +326,10 @@ class AgentRunner:
                     f.path
                     for f in repo_status.files
                     if f.status == "untracked"
-                    and not any(f.path.startswith(ign) or f.path == ign.rstrip("/\\") for ign in ignored_prefixes)
+                    and not any(
+                        f.path.startswith(ign) or f.path == ign.rstrip("/\\")
+                        for ign in ignored_prefixes
+                    )
                 )
                 if nao_rastreados:
                     listagem = ", ".join(nao_rastreados[:8])
@@ -371,6 +380,7 @@ class AgentRunner:
             depth = await self.coordinator.depth_of(parent_session_id) + 1
 
         async def _spawn_child_agent(*, task: str, display_name: str) -> str:
+            assert self.coordinator is not None
             filho = await self.create_session(
                 task=task,
                 workspace_root=workspace_root,
@@ -385,6 +395,7 @@ class AgentRunner:
             return filho.session_id
 
         async def _wake_agent(target_session_id: str) -> bool:
+            assert self.coordinator is not None
             if self.is_being_driven(target_session_id):
                 # Já tem alguém (humano via SSE, ou outro burst) avançando
                 # essa sessão — ela vai drenar a própria caixa de mensagens
@@ -394,9 +405,7 @@ class AgentRunner:
             alvo = self._sessions.get(target_session_id)
             if alvo is None:
                 return False
-            if self.coordinator is not None and await self.coordinator.is_stopped(
-                target_session_id
-            ):
+            if await self.coordinator.is_stopped(target_session_id):
                 return False
             burst = asyncio.get_running_loop().create_task(
                 run_headless_burst(self, self.coordinator, alvo)
@@ -437,6 +446,8 @@ class AgentRunner:
             max_children_per_agent=self.settings.agent_max_children_per_agent,
         )
         contexto.session_state.project_verified = bool(runtime_validation["project_ok"])
+        contexto.session_state.workspace_listed = bool(runtime_validation.get("files"))
+        contexto.session_state.packages_checked = bool(runtime_validation["project_ok"])
         contexto.session_state.git_ready = bool(runtime_validation.get("git_ready", True))
 
         sessao = AgentSession(
@@ -615,9 +626,7 @@ class AgentRunner:
                 log.warning("agent.session.worktree_cleanup", session=session_id, error=str(exc))
         try:
             async with session_scope() as db:
-                await session_store.mark_closed(
-                    db, session_id=session_id, summary=resumo_final
-                )
+                await session_store.mark_closed(db, session_id=session_id, summary=resumo_final)
         except Exception as exc:
             log.warning(
                 "agent.session.persist_close_failed", session=session_id, error=str(exc)[:200]
@@ -637,13 +646,12 @@ class AgentRunner:
             resultado = await build_repo_map(
                 self.indexer.workspace_key(session.workspace_root), token_budget=1500
             )
-            mapa = resultado.get("text") or None
+            mapa = str(resultado.get("text")) if resultado.get("text") else None
         except Exception as exc:
             log.debug("agent.repomap.unavailable", error=str(exc)[:200])
 
         prompt_text = build_task_prompt(
             session.task,
-            # pyrefly: ignore [bad-argument-type]
             repo_map=mapa,
             mode=session.mode,
             focus_files=session.focus_files,
@@ -702,6 +710,7 @@ class AgentRunner:
                 config: dict[str, Any] = {"configurable": {"thread_id": session.session_id}}
 
                 from sicoobito.telemetry.langfuse_tracer import get_langfuse_callback
+
                 langfuse_handler = get_langfuse_callback(
                     session_id=session.session_id,
                     trace_name=f"agent-run:{session.mode}",
@@ -739,21 +748,41 @@ class AgentRunner:
                             await self.update_session_summary(
                                 session.session_id,
                                 pending_count=len(pendentes),
-                                failed_count=max(0, int((atualizacao.get("last_failed_call_count") or 0))),
+                                failed_count=max(
+                                    0, int(atualizacao.get("last_failed_call_count") or 0)
+                                ),
                             )
                         elif no == "act":
                             await self.update_session_summary(
                                 session.session_id,
                                 pending_count=0,
-                                failed_count=max(0, int((atualizacao.get("last_failed_call_count") or 0))),
+                                failed_count=max(
+                                    0, int(atualizacao.get("last_failed_call_count") or 0)
+                                ),
                             )
 
                 estado = await compilado.aget_state(config) if compilado.checkpointer else None
-                if estado is not None and estado.tasks:
-                    # Grafo parado numa interrupção: há aprovação pendente.
-                    for tarefa in estado.tasks:
-                        for interrupcao in getattr(tarefa, "interrupts", []) or []:
-                            yield {"node": "interrupt", "update": _serializable(interrupcao.value)}
+                if estado is not None:
+                    pendentes_no_estado = estado.values.get("pending") or []
+                    if pendentes_no_estado and not estado.values.get("finished", False):
+                        yield {
+                            "node": "interrupt",
+                            "update": _serializable(
+                                {
+                                    "type": "approval_required",
+                                    "session_id": session.session_id,
+                                    "actions": pendentes_no_estado,
+                                    "auto_approved": [],
+                                }
+                            ),
+                        }
+                    elif estado.tasks:
+                        for tarefa in estado.tasks:
+                            for interrupcao in getattr(tarefa, "interrupts", []) or []:
+                                yield {
+                                    "node": "interrupt",
+                                    "update": _serializable(interrupcao.value),
+                                }
             finally:
                 structlog.contextvars.unbind_contextvars("session_id")
 

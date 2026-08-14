@@ -18,6 +18,13 @@ from sicoobito.logging_setup import get_logger
 log = get_logger(__name__)
 
 
+def _packages_risk(args: dict[str, Any]) -> RiskClass:
+    action = (args.get("action") or "list").strip().lower()
+    if action == "list":
+        return RiskClass.READ
+    return RiskClass.WRITE
+
+
 @tool(
     name="manage_packages",
     description=(
@@ -27,7 +34,7 @@ log = get_logger(__name__)
         "de comando não tem acesso à rede, esta é a ferramenta correta para adicionar "
         "dependências ao projeto."
     ),
-    risk=RiskClass.WRITE,
+    risk=_packages_risk,
     parameters={
         "type": "object",
         "properties": {
@@ -80,7 +87,7 @@ async def manage_packages(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
     if getattr(ctx, "project_root", None):
         canonical_root = Path(ctx.project_root)
     else:
-        cur = project_path.resolve()
+        cur = project_path.resolve()  # noqa: ASYNC240
         while cur != cur.parent:
             if cur.name == "worktrees" and cur.parent.name == ".sicoobito":
                 canonical_root = cur.parent.parent
@@ -88,16 +95,26 @@ async def manage_packages(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
             cur = cur.parent
     project_display_name = ctx.project_slug or canonical_root.name
 
-    # Garante que ambientes persistentes (.venv, node_modules) do projeto canônico estejam disponíveis no worktree
-    if canonical_root != project_path and not (project_path / ".venv").exists() and (canonical_root / ".venv").exists():
+    # Garante que ambientes persistentes (.venv, node_modules) do projeto
+    # canônico estejam disponíveis no worktree
+    if (
+        canonical_root != project_path
+        and not (project_path / ".venv").exists()
+        and (canonical_root / ".venv").exists()
+    ):
         try:
             from sicoobito.workspace.git import _link_or_share_env
+
             _link_or_share_env(canonical_root, project_path)
         except Exception as exc:
             log.warning("manage_packages.link_env_failed", error=str(exc))
 
     eco = detect_ecosystem(project_path)
-    if eco == "python" and not (project_path / "requirements.txt").exists() and (canonical_root / "requirements.txt").exists():
+    if (
+        eco == "python"
+        and not (project_path / "requirements.txt").exists()
+        and (canonical_root / "requirements.txt").exists()
+    ):
         eco = detect_ecosystem(canonical_root)
     manifest_name = get_manifest_name(eco)
 
@@ -115,6 +132,7 @@ async def manage_packages(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
             if pkg_json.exists():
                 try:
                     import json
+
                     data = json.loads(pkg_json.read_text(encoding="utf-8", errors="ignore"))
                     deps = data.get("dependencies", {})
                     dev_deps = data.get("devDependencies", {})
@@ -128,6 +146,7 @@ async def manage_packages(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
                 go_mod = canonical_root / "go.mod"
             if go_mod.exists():
                 import re
+
                 for line in go_mod.read_text(encoding="utf-8", errors="ignore").splitlines():
                     line = line.strip()
                     match = re.match(r"^([a-zA-Z0-9_\-\.\/]+)\s+(v[0-9\.\-]+)", line)
@@ -158,6 +177,7 @@ async def manage_packages(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
             if composer_json.exists():
                 try:
                     import json
+
                     data = json.loads(composer_json.read_text(encoding="utf-8", errors="ignore"))
                     reqs = data.get("require", {})
                     for k, v in reqs.items():
@@ -178,6 +198,7 @@ async def manage_packages(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
                     stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=30)
                     if proc.returncode == 0:
                         import json
+
                         raw_pkgs = json.loads(stdout.decode(errors="ignore"))
                         installed_packages = [
                             {"name": p["name"], "version": p["version"]} for p in raw_pkgs
@@ -281,6 +302,7 @@ async def manage_packages(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
             )
 
         import re
+
         pkg_clean = re.split(r"[=><~!]", package)[0].strip()
         pkg_clean = pkg_clean.lower().replace("_", "-")
         installed_version = None
@@ -307,9 +329,7 @@ async def manage_packages(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
                 project_path, pkg_clean, installed_version, remove=False
             )
             if canonical_root != project_path and (canonical_root / "requirements.txt").exists():
-                sync_requirements_file(
-                    canonical_root, pkg_clean, installed_version, remove=False
-                )
+                sync_requirements_file(canonical_root, pkg_clean, installed_version, remove=False)
         else:
             manifest_file = project_path / manifest_name
             if not manifest_file.exists() and (canonical_root / manifest_name).exists():
@@ -466,8 +486,7 @@ async def manage_packages(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
         return ToolResult(
             ok=True,
             content=(
-                f"Ambiente {eco.upper()} do projeto sincronizado com sucesso "
-                f"com o {manifest_name}."
+                f"Ambiente {eco.upper()} do projeto sincronizado com sucesso com o {manifest_name}."
             ),
             data={"stdout": stdout.decode(errors="ignore")},
         )

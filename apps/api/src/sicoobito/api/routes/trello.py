@@ -40,7 +40,12 @@ class TrelloCardUpdateIn(BaseModel):
 
 
 def _projects_root(request: Request) -> Path:
-    return getattr(request.app.state, "projects_root", None) or get_settings().projects_root
+    raiz = getattr(request.app.state, "projects_root", None) or get_settings().projects_root
+    if isinstance(raiz, Path):
+        return raiz
+    if raiz:
+        return Path(str(raiz))
+    return Path(".")
 
 
 def get_kanban_file(project_path: Path) -> Path:

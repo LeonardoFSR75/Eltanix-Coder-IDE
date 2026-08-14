@@ -152,11 +152,13 @@ class Sandbox:
             ("node_modules", f"{WORKDIR}/node_modules"),
             ("vendor", f"{WORKDIR}/vendor"),
         ]:
-            src_path = (self.workspace / env_dir) if (self.workspace / env_dir).exists() else (canonical_project / env_dir)
+            ws_dir = self.workspace / env_dir
+            canon_dir = canonical_project / env_dir
+            src_path = ws_dir if ws_dir.exists() else canon_dir
             if src_path.exists() and not src_path.is_symlink():
                 vols[str(src_path.resolve())] = {"bind": bind_target, "mode": "rw"}
-            elif (canonical_project / env_dir).exists() and not (canonical_project / env_dir).is_symlink():
-                vols[str((canonical_project / env_dir).resolve())] = {"bind": bind_target, "mode": "rw"}
+            elif canon_dir.exists() and not canon_dir.is_symlink():
+                vols[str(canon_dir.resolve())] = {"bind": bind_target, "mode": "rw"}
 
         default_env = {
             "HOME": "/tmp",

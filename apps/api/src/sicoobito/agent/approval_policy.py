@@ -37,9 +37,7 @@ _DANGEROUS_COMMAND_CHARS = (";", "&", "|", "`", "$(", ">", "<", "\n")
 
 class EditPathRule(BaseModel):
     kind: Literal["edit_path_glob"] = "edit_path_glob"
-    tools: list[Literal["edit_file", "write_file"]] = Field(
-        default_factory=lambda: ["edit_file"]
-    )
+    tools: list[Literal["edit_file", "write_file"]] = Field(default_factory=lambda: ["edit_file"])
     # Glob simples (fnmatch: *, ?, [seq]) sobre o caminho relativo ao
     # workspace — não trata "/" como especial (mesmo espírito "sem DSL": um
     # glob mais expressivo é complexidade que essa regra não precisa).
@@ -60,9 +58,7 @@ class ApprovalPolicy(BaseModel):
     rules: list[EditPathRule | ExecCommandRule] = Field(default_factory=list)
 
 
-def _matches_edit_path_rule(
-    rule: EditPathRule, ctx: ToolContext, pending: PendingApproval
-) -> bool:
+def _matches_edit_path_rule(rule: EditPathRule, ctx: ToolContext, pending: PendingApproval) -> bool:
     if pending["tool"] not in rule.tools:
         return False
 
@@ -119,10 +115,7 @@ def _matches_exec_command_rule(rule: ExecCommandRule, pending: PendingApproval) 
 
 def _describe(rule: EditPathRule | ExecCommandRule) -> str:
     if isinstance(rule, EditPathRule):
-        return (
-            f"edição em {rule.path_glob!r} com até {rule.max_changed_lines} "
-            "linha(s) alterada(s)"
-        )
+        return f"edição em {rule.path_glob!r} com até {rule.max_changed_lines} linha(s) alterada(s)"
     return f"comando de shell com prefixo permitido ({', '.join(rule.allowed_prefixes)})"
 
 

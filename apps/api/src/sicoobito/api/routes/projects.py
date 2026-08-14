@@ -39,8 +39,13 @@ def _audit(request: Request) -> AuditService | None:
     return getattr(request.app.state, "audit", None)
 
 
-def _projects_root(request: Request):
-    return getattr(request.app.state, "projects_root", None) or get_settings().projects_root
+def _projects_root(request: Request) -> Path:
+    raiz = getattr(request.app.state, "projects_root", None) or get_settings().projects_root
+    if isinstance(raiz, Path):
+        return raiz
+    if raiz:
+        return Path(str(raiz))
+    return Path(".")
 
 
 class ProjectCreateIn(BaseModel):
@@ -179,6 +184,7 @@ async def create_project(payload: ProjectCreateIn, request: Request) -> dict[str
 
     try:
         from sicoobito.api.routes.packages import ensure_project_env
+
         await ensure_project_env(target_path, payload.language)
     except Exception as exc:
         log.warning("projects.auto_env.failed", slug=slug, error=str(exc))

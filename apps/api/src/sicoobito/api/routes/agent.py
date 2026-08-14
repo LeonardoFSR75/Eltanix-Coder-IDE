@@ -340,13 +340,13 @@ async def accept_file(
 
     try:
         from sicoobito.workspace.fs import WorkspaceFS
+
         main_fs = WorkspaceFS(sessao.workspace_root)
         written = main_fs.write(payload.path, content)
     except (PathEscapeError, ValueError, OSError) as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
     return {"path": payload.path, "accepted": True, "bytes": written}
-
 
 
 class CloseRequest(BaseModel):
@@ -380,9 +380,11 @@ def _session_view(sessao: AgentSession) -> dict[str, Any]:
         "worktree_path": str(sessao.worktree_path),
         "branch": sessao.branch,
         "base_branch": sessao.base_branch,
-        "summary": sessao.context.session_state.current_todos and (
+        "summary": (
             "Plano em execução"
-        ) or "Sessão em execução",
+            if sessao.context.session_state.current_todos
+            else "Sessão em execução"
+        ),
         "sandbox_available": sessao.sandbox_available,
         "sandbox_error": sessao.sandbox_error,
         "github_available": sessao.context.github is not None,

@@ -172,9 +172,7 @@ def _analyze_with_transformers(text: str) -> tuple[float, float, list[str]]:
     """Retorna (score_raw, score_normalized, reasons) usando o modelo."""  # pragma: no cover
     try:
         tokenizer, model, ref_safe, ref_unsafe = _load_securebert()
-        enc = tokenizer(
-            [text], return_tensors="pt", padding=True, truncation=True, max_length=256
-        )
+        enc = tokenizer([text], return_tensors="pt", padding=True, truncation=True, max_length=256)
         with torch.no_grad():
             out = model(**enc)
         emb = out.last_hidden_state[:, 0, :].squeeze(0)
@@ -208,8 +206,8 @@ class SecureBertAnalysis:
     provider: str
     available: bool
     classification: str
-    score: float       # normalizado 0–1 (para UI)
-    score_raw: float   # soma bruta / saída do modelo (para diagnóstico)
+    score: float  # normalizado 0–1 (para UI)
+    score_raw: float  # soma bruta / saída do modelo (para diagnóstico)
     reasons: list[str]
     version: str
     mode: str

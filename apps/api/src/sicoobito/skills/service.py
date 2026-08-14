@@ -123,4 +123,3 @@ class SkillService:
                 pass
 
         return skill
-

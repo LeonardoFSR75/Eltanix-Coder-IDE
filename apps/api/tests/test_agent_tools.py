@@ -68,6 +68,24 @@ def test_mutating_tools_require_approval():
         assert ferramenta.risk.requires_approval is True
 
 
+def test_manage_packages_dynamic_risk():
+    ferramenta = registry.get("manage_packages")
+    assert ferramenta is not None
+    # Listagem de pacotes é somente-leitura e não pede aprovação
+    risk_list = ferramenta.resolve_risk({"action": "list"})
+    assert risk_list is RiskClass.READ
+    assert risk_list.requires_approval is False
+
+    # Instalação e mutação exigem aprovação
+    risk_install = ferramenta.resolve_risk({"action": "install", "package": "pandas"})
+    assert risk_install is RiskClass.WRITE
+    assert risk_install.requires_approval is True
+
+    risk_uninstall = ferramenta.resolve_risk({"action": "uninstall", "package": "pandas"})
+    assert risk_uninstall is RiskClass.WRITE
+    assert risk_uninstall.requires_approval is True
+
+
 def test_command_execution_is_its_own_risk_class():
     ferramenta = registry.get("run_command")
     assert ferramenta.risk is RiskClass.EXEC

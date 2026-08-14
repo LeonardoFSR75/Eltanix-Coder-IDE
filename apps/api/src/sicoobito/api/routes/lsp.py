@@ -46,7 +46,7 @@ async def extensions() -> dict[str, Any]:
     """Lista as extensões e suítes de linguagem ativas na IDE agêntica."""
     pyrefly_spec = server_for_language("python", preferred_server="pyrefly")
     server_for_language("python", preferred_server="pyright")
-    
+
     return {
         "extensions": [
             {
@@ -70,8 +70,7 @@ async def extensions() -> dict[str, Any]:
                 "publisher": "ms-python",
                 "version": "2026.1.0",
                 "description": (
-                    "Python language support with extension hooks, code formatting & "
-                    "refactoring."
+                    "Python language support with extension hooks, code formatting & refactoring."
                 ),
                 "category": "LSP & Python",
                 "installed": True,
@@ -111,8 +110,7 @@ async def extensions() -> dict[str, Any]:
                 "publisher": "ms-vscode",
                 "version": "2026.2.0",
                 "description": (
-                    "Node.js environment discovery, package.json management & npm script "
-                    "execution."
+                    "Node.js environment discovery, package.json management & npm script execution."
                 ),
                 "category": "Node & Next.js",
                 "installed": True,
@@ -141,8 +139,7 @@ async def extensions() -> dict[str, Any]:
                 "publisher": "dbaeumer",
                 "version": "3.0.10",
                 "description": (
-                    "Real-time JavaScript/TypeScript linting, code formatting & style "
-                    "enforcement."
+                    "Real-time JavaScript/TypeScript linting, code formatting & style enforcement."
                 ),
                 "category": "Node & Next.js",
                 "installed": True,
@@ -156,8 +153,7 @@ async def extensions() -> dict[str, Any]:
                 "publisher": "meta",
                 "version": "19.0.0",
                 "description": (
-                    "React Hooks, Server Components, JSX/TSX autocomplete & component "
-                    "inspector."
+                    "React Hooks, Server Components, JSX/TSX autocomplete & component inspector."
                 ),
                 "category": "Frontend & Frameworks",
                 "installed": True,
@@ -200,8 +196,7 @@ async def extensions() -> dict[str, Any]:
                 "publisher": "svelte",
                 "version": "108.4.0",
                 "description": (
-                    "Svelte 5 Runes, SvelteKit routing, reactive state autocomplete & "
-                    "Svelte LSP."
+                    "Svelte 5 Runes, SvelteKit routing, reactive state autocomplete & Svelte LSP."
                 ),
                 "category": "Frontend & Frameworks",
                 "installed": True,
@@ -302,8 +297,7 @@ async def extensions() -> dict[str, Any]:
                 "publisher": "rangav",
                 "version": "2.26.0",
                 "description": (
-                    "Executor leve de requisições HTTP/REST e GraphQL integrado na IDE "
-                    "agêntica."
+                    "Executor leve de requisições HTTP/REST e GraphQL integrado na IDE agêntica."
                 ),
                 "category": "APIs & Testes",
                 "installed": True,
@@ -331,8 +325,7 @@ async def extensions() -> dict[str, Any]:
                 "publisher": "ms-kubernetes-tools",
                 "version": "1.3.15",
                 "description": (
-                    "Inspeção de pods, navegação de namespaces, deployments e logs de "
-                    "clusters K8s."
+                    "Inspeção de pods, navegação de namespaces, deployments e logs de clusters K8s."
                 ),
                 "category": "DevOps & Cloud",
                 "installed": True,
@@ -374,8 +367,7 @@ async def extensions() -> dict[str, Any]:
                 "publisher": "esbenp",
                 "version": "10.4.0",
                 "description": (
-                    "Formatação universal ao salvar arquivos TypeScript, JavaScript, CSS "
-                    "e HTML."
+                    "Formatação universal ao salvar arquivos TypeScript, JavaScript, CSS e HTML."
                 ),
                 "category": "Produtividade",
                 "installed": True,
@@ -385,9 +377,6 @@ async def extensions() -> dict[str, Any]:
             },
         ]
     }
-
-
-
 
 
 @router.post("/ticket")
@@ -428,7 +417,6 @@ async def lsp_socket(websocket: WebSocket, project: str, language: str) -> None:
     if spec is None:
         await websocket.close(code=4404, reason=f"sem language server para {language}")
         return
-
 
     raiz_projetos = settings.effective_projects_root
     if raiz_projetos is None:

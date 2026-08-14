@@ -238,3 +238,24 @@ def test_close_session_that_does_not_exist(monkeypatch):
 
     assert response.status_code == 200
     assert response.json()["closed"] is False
+
+
+def test_navigate_localhost_falls_back_to_host_gateway(monkeypatch):
+    app_module = _reload_app(monkeypatch, token=None)
+    page = _install_fake_page(app_module, monkeypatch)
+
+    # Primeira chamada falha com connection refused; segunda (fallback) tem sucesso
+    page.goto.side_effect = [
+        RuntimeError("net::ERR_CONNECTION_REFUSED at http://localhost:5000"),
+        MagicMock(status=200),
+    ]
+
+    client = TestClient(app_module.app)
+    response = client.post(
+        "/sessions/s1/action", json={"action": "navigate", "url": "http://localhost:5000/app"}
+    )
+
+    assert response.status_code == 200
+    assert response.json()["ok"] is True
+    assert page.goto.await_count == 2
+

@@ -91,7 +91,9 @@ def _bootstrap_repo(root: Path, repo: Repo) -> Repo:
     try:
         gitignore_path = root / ".gitignore"
         if not gitignore_path.exists():
-            gitignore_path.write_text(".sicoobito/\nnode_modules/\n__pycache__/\n", encoding="utf-8")
+            gitignore_path.write_text(
+                ".sicoobito/\nnode_modules/\n__pycache__/\n", encoding="utf-8"
+            )
         if repo.head.is_valid():
             return repo
         repo.index.add([str(gitignore_path.relative_to(root))])
@@ -114,7 +116,8 @@ def ensure_repo(root: Path) -> Repo:
             repo = Repo.init(root, initial_branch="main")
             return _bootstrap_repo(root, repo)
         except Exception as exc:
-            raise GitError(f"não foi possível inicializar o repositório Git em {root}: {exc}") from exc
+            msg = f"não foi possível inicializar o repositório Git em {root}: {exc}"
+            raise GitError(msg) from exc
 
     try:
         return Repo(root, search_parent_directories=False)
@@ -230,7 +233,8 @@ def _ensure_excluded(repo: Repo) -> None:
 
 
 def _link_or_share_env(root: Path, target: Path) -> None:
-    """Compartilha os ambientes persistentes (.venv, node_modules, vendor, .env) do projeto raiz com o worktree."""
+    """Compartilha os ambientes (.venv, node_modules, vendor, .env) do projeto raiz com o
+    worktree."""
     import os
 
     env_dirs = [".venv", "node_modules", "vendor"]
@@ -259,7 +263,7 @@ def _link_or_share_env(root: Path, target: Path) -> None:
 
 
 def _sync_uncommitted_state(root: Path, target: Path) -> None:
-    """Copia alterações não commitadas e arquivos untracked do projeto raiz para o novo worktree do agente."""
+    """Copia alterações não commitadas e arquivos untracked do projeto raiz para o worktree."""
     ignored = {".git", ".sicoobito", ".venv", "node_modules", "vendor", "__pycache__"}
     try:
         repo_status = status(root)
@@ -272,7 +276,9 @@ def _sync_uncommitted_state(root: Path, target: Path) -> None:
             if src_file.is_file():
                 dst_file.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(src_file, dst_file)
-        log.info("git.worktree.uncommitted_synced", target=str(target), count=len(repo_status.files))
+        log.info(
+            "git.worktree.uncommitted_synced", target=str(target), count=len(repo_status.files)
+        )
     except Exception as exc:
         log.warning("git.worktree.sync_uncommitted_failed", error=str(exc))
 
@@ -434,16 +440,21 @@ def blame(root: Path, path: str, rev: str = "HEAD") -> list[BlameHunk]:
 
     hunks: list[BlameHunk] = []
     linha = 1
-    for commit, linhas in entradas or []:
-        quantidade = len(linhas)
+    for item in entradas or []:
+        commit, linhas = item
+        quantidade = len(linhas) if hasattr(linhas, "__len__") else 1
+        commit_msg = str(getattr(commit, "message", "") or "").splitlines()
+        first_line = commit_msg[0] if commit_msg else ""
         hunks.append(
             BlameHunk(
                 start_line=linha,
                 end_line=linha + quantidade - 1,
-                sha=commit.hexsha[:8],
-                author=str(commit.author),
-                date=datetime.fromtimestamp(commit.committed_date, tz=UTC).isoformat(),
-                message=commit.message.splitlines()[0] if commit.message else "",
+                sha=str(getattr(commit, "hexsha", ""))[:8],
+                author=str(getattr(commit, "author", "")),
+                date=datetime.fromtimestamp(
+                    int(getattr(commit, "committed_date", 0)), tz=UTC
+                ).isoformat(),
+                message=first_line,
             )
         )
         linha += quantidade
@@ -468,9 +479,10 @@ def co_change(root: Path, path: str, limit: int = 50) -> list[CoChangeEntry]:
         except GitCommandError:
             continue
         for outro in tocados:
-            if outro == path:
+            outro_str = str(outro)
+            if outro_str == path:
                 continue
-            contagem[outro] = contagem.get(outro, 0) + 1
+            contagem[outro_str] = contagem.get(outro_str, 0) + 1
 
     ordenado = sorted(contagem.items(), key=lambda par: par[1], reverse=True)
     return [CoChangeEntry(path=p, count=c) for p, c in ordenado[:20]]

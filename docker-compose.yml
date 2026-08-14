@@ -179,7 +179,11 @@ services:
       context: ./services/browser
     environment:
       BROWSER_TOKEN: ${BROWSER_TOKEN:-browser-local}
+      HOST_GATEWAY_HOST: ${HOST_GATEWAY_HOST:-host.docker.internal}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     networks:
+      - default
       - browser_net
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://localhost:5406/health')"]
