@@ -30,6 +30,8 @@ from typing import Annotated, Any, Literal
 from fastapi import Depends, FastAPI, Header, HTTPException, status
 from pydantic import BaseModel, Field
 
+from urllib.parse import urlparse
+
 TOKEN = os.getenv("BROWSER_TOKEN", "")
 SESSION_TTL_SECONDS = int(os.getenv("BROWSER_SESSION_TTL_SECONDS", "1800"))
 REAP_INTERVAL_SECONDS = int(os.getenv("BROWSER_REAP_INTERVAL_SECONDS", "300"))
@@ -38,16 +40,22 @@ _playwright: Any | None = None
 _browser: Any | None = None
 _pages: dict[str, Any] = {}
 _last_used: dict[str, float] = {}
+_console_logs: dict[str, list[str]] = {}
+_page_errors: dict[str, list[str]] = {}
 
 
 async def _reap_loop() -> None:
     while True:
         await asyncio.sleep(REAP_INTERVAL_SECONDS)
         agora = time.time()
-        expiradas = [sid for sid, ultimo in _last_used.items() if agora - ultimo > SESSION_TTL_SECONDS]
+        expiradas = [
+            sid for sid, ultimo in _last_used.items() if agora - ultimo > SESSION_TTL_SECONDS
+        ]
         for sid in expiradas:
             page = _pages.pop(sid, None)
             _last_used.pop(sid, None)
+            _console_logs.pop(sid, None)
+            _page_errors.pop(sid, None)
             if page is not None and not page.is_closed():
                 await page.close()
 
@@ -109,6 +117,34 @@ async def _get_page(session_id: str) -> Any:
     page = await browser.new_page()
     _pages[session_id] = page
     _last_used[session_id] = time.time()
+    _console_logs.setdefault(session_id, [])
+    _page_errors.setdefault(session_id, [])
+
+    def _on_console(msg: Any) -> None:
+        try:
+            tipo = getattr(msg, "type", "log")
+            if tipo in ("error", "warning"):
+                texto = getattr(msg, "text", str(msg))
+                _console_logs[session_id].append(f"[{tipo.upper()}] {texto}")
+                if len(_console_logs[session_id]) > 50:
+                    _console_logs[session_id].pop(0)
+        except Exception:
+            pass
+
+    def _on_pageerror(exc: Any) -> None:
+        try:
+            _page_errors[session_id].append(str(exc))
+            if len(_page_errors[session_id]) > 20:
+                _page_errors[session_id].pop(0)
+        except Exception:
+            pass
+
+    try:
+        page.on("console", _on_console)
+        page.on("pageerror", _on_pageerror)
+    except Exception:
+        pass
+
     return page
 
 
@@ -126,8 +162,6 @@ async def create_session(payload: CreateSessionRequest) -> dict[str, Any]:
     await _get_page(payload.session_id)
     return {"session_id": payload.session_id, "created": True}
 
-
-from urllib.parse import urlparse
 
 ALLOWED_SCHEMES = ("http://", "https://")
 BLOCKED_HOSTS = {
@@ -176,28 +210,59 @@ async def run_action(session_id: str, payload: ActionRequest) -> dict[str, Any]:
             if hostname in {"localhost", "127.0.0.1", "0.0.0.0"}:
                 clean_sid = session_id.removeprefix("panel-")
                 sandbox_host = f"sicoobito-{clean_sid}"
+                sandbox_legacy_host = f"sicoobito-sandbox-{clean_sid}"
                 host_gateway = os.getenv("HOST_GATEWAY_HOST", "host.docker.internal")
 
                 candidatos: list[str] = []
                 if port:
                     candidatos.append(parsed._replace(netloc=f"{sandbox_host}:{port}").geturl())
+                    candidatos.append(
+                        parsed._replace(netloc=f"{sandbox_legacy_host}:{port}").geturl()
+                    )
                     candidatos.append(parsed._replace(netloc=f"{host_gateway}:{port}").geturl())
                 else:
                     candidatos.append(parsed._replace(netloc=sandbox_host).geturl())
+                    candidatos.append(parsed._replace(netloc=sandbox_legacy_host).geturl())
                     candidatos.append(parsed._replace(netloc=host_gateway).geturl())
                 urls_to_try = [*candidatos, alvo_url]
 
+            # Limpa logs da sessão anterior para esta nova navegação
+            _console_logs[session_id] = []
+            _page_errors[session_id] = []
+
             resposta = None
             ultimo_erro = None
-            for tentativa_url in urls_to_try:
-                try:
-                    resposta = await page.goto(
-                        tentativa_url, timeout=payload.timeout_ms, wait_until="domcontentloaded"
-                    )
-                    ultimo_erro = None
+            limite_tempo = time.perf_counter() + min(payload.timeout_ms / 1000, 15.0)
+
+            while True:
+                for tentativa_url in urls_to_try:
+                    try:
+                        timeout_tentativa = min(payload.timeout_ms, 5000)
+                        resposta = await page.goto(
+                            tentativa_url,
+                            timeout=timeout_tentativa,
+                            wait_until="domcontentloaded",
+                        )
+                        ultimo_erro = None
+                        break
+                    except Exception as exc:  # noqa: BLE001
+                        ultimo_erro = exc
+
+                if ultimo_erro is None:
                     break
-                except Exception as exc:  # noqa: BLE001
-                    ultimo_erro = exc
+
+                if time.perf_counter() >= limite_tempo:
+                    break
+
+                err_str = str(ultimo_erro)
+                if (
+                    "ERR_CONNECTION_REFUSED" in err_str
+                    or "ERR_NAME_NOT_RESOLVED" in err_str
+                    or "Timeout" in err_str
+                ):
+                    await asyncio.sleep(0.5)
+                else:
+                    break
 
             if ultimo_erro is not None:
                 raise ultimo_erro
@@ -208,6 +273,8 @@ async def run_action(session_id: str, payload: ActionRequest) -> dict[str, Any]:
                 "title": await page.title(),
                 "status": resposta.status if resposta else None,
                 "duration_ms": int((time.perf_counter() - inicio) * 1000),
+                "console_errors": list(_console_logs.get(session_id, [])),
+                "page_errors": list(_page_errors.get(session_id, [])),
             }
 
         if payload.action == "click":
@@ -217,13 +284,25 @@ async def run_action(session_id: str, payload: ActionRequest) -> dict[str, Any]:
                 await page.mouse.click(payload.x, payload.y)
             else:
                 raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="informe selector ou x/y")
-            return {"ok": True, "duration_ms": int((time.perf_counter() - inicio) * 1000)}
+            return {
+                "ok": True,
+                "duration_ms": int((time.perf_counter() - inicio) * 1000),
+                "console_errors": list(_console_logs.get(session_id, [])),
+                "page_errors": list(_page_errors.get(session_id, [])),
+            }
 
         if payload.action == "type":
             if not payload.selector or payload.text is None:
-                raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="type exige selector e text")
+                raise HTTPException(
+                    status.HTTP_400_BAD_REQUEST, detail="type exige selector e text"
+                )
             await page.fill(payload.selector, payload.text, timeout=payload.timeout_ms)
-            return {"ok": True, "duration_ms": int((time.perf_counter() - inicio) * 1000)}
+            return {
+                "ok": True,
+                "duration_ms": int((time.perf_counter() - inicio) * 1000),
+                "console_errors": list(_console_logs.get(session_id, [])),
+                "page_errors": list(_page_errors.get(session_id, [])),
+            }
 
         if payload.action == "screenshot":
             png = await page.screenshot(timeout=payload.timeout_ms)
@@ -232,6 +311,8 @@ async def run_action(session_id: str, payload: ActionRequest) -> dict[str, Any]:
                 "image_base64": base64.b64encode(png).decode("ascii"),
                 "url": page.url,
                 "duration_ms": int((time.perf_counter() - inicio) * 1000),
+                "console_errors": list(_console_logs.get(session_id, [])),
+                "page_errors": list(_page_errors.get(session_id, [])),
             }
 
         if payload.action == "content":
@@ -240,6 +321,8 @@ async def run_action(session_id: str, payload: ActionRequest) -> dict[str, Any]:
                 "ok": True,
                 "text": texto[:20_000],
                 "duration_ms": int((time.perf_counter() - inicio) * 1000),
+                "console_errors": list(_console_logs.get(session_id, [])),
+                "page_errors": list(_page_errors.get(session_id, [])),
             }
     except HTTPException:
         raise
@@ -255,6 +338,8 @@ async def run_action(session_id: str, payload: ActionRequest) -> dict[str, Any]:
 async def close_session(session_id: str) -> dict[str, Any]:
     page = _pages.pop(session_id, None)
     _last_used.pop(session_id, None)
+    _console_logs.pop(session_id, None)
+    _page_errors.pop(session_id, None)
     closed = False
     if page is not None and not page.is_closed():
         await page.close()

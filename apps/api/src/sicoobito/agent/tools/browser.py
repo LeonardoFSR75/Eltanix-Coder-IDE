@@ -117,12 +117,23 @@ async def browser_action(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
             )
         return ToolResult.failure(msg)
 
+    erros_console = resultado.get("console_errors") or []
+    erros_pagina = resultado.get("page_errors") or []
+    aviso_erros = ""
+    if erros_pagina or erros_console:
+        linhas: list[str] = ["\n\n⚠️ AVISO: Erros detectados na página/console do navegador:"]
+        for p_err in erros_pagina[:5]:
+            linhas.append(f"  - [PAGE ERROR] {p_err}")
+        for c_err in erros_console[:5]:
+            linhas.append(f"  - {c_err}")
+        aviso_erros = "\n".join(linhas)
+
     if acao == "screenshot":
         imagem = resultado.get("image_base64", "")
         return ToolResult(
             ok=True,
-            content=f"Screenshot capturado ({len(imagem)} chars base64).",
-            data={"image_base64": imagem, "url": resultado.get("url")},
+            content=f"Screenshot capturado ({len(imagem)} chars base64).{aviso_erros}",
+            data={**resultado, "image_base64": imagem, "url": resultado.get("url")},
         )
     if acao == "navigate":
         url_str = resultado.get("url")
@@ -130,11 +141,13 @@ async def browser_action(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
         status_code = resultado.get("status")
         return ToolResult(
             ok=True,
-            content=f"Aberto {url_str} — título: {title_str!r}, status {status_code}.",
+            content=(
+                f"Aberto {url_str} — título: {title_str!r}, status {status_code}.{aviso_erros}"
+            ),
             data=resultado,
         )
     if acao == "content":
         texto = resultado.get("text", "")
-        return ToolResult(ok=True, content=texto, data={"text": texto})
+        return ToolResult(ok=True, content=f"{texto}{aviso_erros}", data=resultado)
 
-    return ToolResult(ok=True, content=f"{acao} concluído.", data=resultado)
+    return ToolResult(ok=True, content=f"{acao} concluído.{aviso_erros}", data=resultado)

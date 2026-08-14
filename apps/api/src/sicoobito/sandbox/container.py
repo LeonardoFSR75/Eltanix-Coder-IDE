@@ -26,6 +26,7 @@ import uuid
 from dataclasses import dataclass, field
 from io import BytesIO
 from pathlib import Path
+from typing import Any
 
 from sicoobito.logging_setup import get_logger
 
@@ -102,8 +103,8 @@ class Sandbox:
         self.session_id = session_id
         self.workspace = workspace.resolve()
         self.config = config or SandboxConfig()
-        self._container = None
-        self._client = None
+        self._container: Any | None = None
+        self._client: Any | None = None
         self.created_at = 0.0
 
     @property
@@ -116,13 +117,15 @@ class Sandbox:
 
     async def start(self) -> str:
         if self._container is not None:
-            return self._container.id
+            return str(self._container.id)
 
         self._client = await asyncio.to_thread(_docker_client)
+        client = self._client
+        assert client is not None
 
         # Sessão retomada depois de um reload: reaproveita o container.
         existing = await asyncio.to_thread(
-            lambda: self._client.containers.list(all=True, filters={"name": self.container_name})
+            lambda: client.containers.list(all=True, filters={"name": self.container_name})
         )
         if existing:
             container = existing[0]
@@ -130,7 +133,7 @@ class Sandbox:
                 await asyncio.to_thread(container.start)
             self._container = container
             log.info("sandbox.reused", session=self.session_id, container=container.short_id)
-            return container.id
+            return str(container.id)
 
         # As flags de segurança abaixo (user, cap_drop, security_opt, privileged,
         # mem/cpu/pids limit) espelham as mesmas restrições em
@@ -185,9 +188,23 @@ class Sandbox:
             **self.config.env,
         }
 
+        # Conecta o sandbox na rede interna browser_net para que o serviço browser
+        # consiga inspecionar a aplicação web sem liberar acesso à internet pública.
+        sandbox_network = "bridge" if self.config.network_enabled else "none"
+        if not self.config.network_enabled:
+            try:
+                for net in client.networks.list():
+                    if net.name in ("browser_net", "sicoobito_browser_net") or (
+                        net.name and net.name.endswith("_browser_net")
+                    ):
+                        sandbox_network = net.name
+                        break
+            except Exception:
+                pass
+
         try:
             container = await asyncio.to_thread(
-                lambda: self._client.containers.run(
+                lambda: client.containers.run(
                     self.config.image,
                     # `sleep infinity` mantém o container vivo para receber
                     # vários `exec` na mesma sessão, em vez de subir um
@@ -197,7 +214,7 @@ class Sandbox:
                     detach=True,
                     working_dir=WORKDIR,
                     volumes=vols,
-                    network_mode="bridge" if self.config.network_enabled else "none",
+                    network_mode=sandbox_network,
                     mem_limit=self.config.memory_limit,
                     cpu_quota=self.config.cpu_quota,
                     pids_limit=self.config.pids_limit,
@@ -224,7 +241,7 @@ class Sandbox:
             image=self.config.image,
             network=self.config.network_enabled,
         )
-        return container.id
+        return str(container.id)
 
     async def exec(
         self,
@@ -233,15 +250,20 @@ class Sandbox:
         timeout: int | None = None,  # noqa: ASYNC109 - ver docstring
         workdir: str | None = None,
     ) -> ExecResult:
-        """Executa um comando dentro do container.
+        """Executa um comando dentro do container vivo da sessão.
 
-        O `timeout` é parâmetro em vez de responsabilidade do chamador porque o
-        estouro precisa virar `ExecResult(timed_out=True)` — uma observação que
-        o modelo lê e usa para decidir o próximo passo. Um `CancelledError`
-        propagado abortaria o turno inteiro em vez de informar o agente.
+        `timeout` é aplicado no `asyncio.wait_for`, não como parâmetro do
+        Docker: o daemon do Docker não tem timeout nativo no `exec_create`
+        nem no `exec_start`, e se um comando travar (ex. `sleep infinity`,
+        servidor web sem `&`), quem cancela a espera é o loop do Python.
         """
         if self._container is None:
             await self.start()
+
+        client = self._client
+        container = self._container
+        if client is None or container is None:
+            raise SandboxError("sandbox não foi iniciado")
 
         timeout = timeout or self.config.timeout_seconds
         started = time.perf_counter()
@@ -260,8 +282,8 @@ class Sandbox:
         ]
 
         def _run() -> tuple[int, bytes, bytes]:
-            handle = self._client.api.exec_create(
-                self._container.id,
+            handle = client.api.exec_create(
+                container.id,
                 argv,
                 workdir=workdir or WORKDIR,
                 stdout=True,
@@ -269,8 +291,8 @@ class Sandbox:
                 user="1000:1000",
                 environment=exec_env,
             )
-            output = self._client.api.exec_start(handle["Id"], demux=True)
-            info = self._client.api.exec_inspect(handle["Id"])
+            output = client.api.exec_start(handle["Id"], demux=True)
+            info = client.api.exec_inspect(handle["Id"])
             stdout, stderr = output if isinstance(output, tuple) else (output, b"")
             return info.get("ExitCode", -1), stdout or b"", stderr or b""
 
@@ -284,37 +306,31 @@ class Sandbox:
             return ExecResult(
                 exit_code=124,
                 stdout="",
-                stderr=f"Comando excedeu {timeout}s e foi interrompido.",
+                stderr=f"tempo limite esgotado ({timeout}s)",
                 duration_ms=duration,
                 timed_out=True,
             )
-        except Exception as exc:
-            raise SandboxError(f"falha ao executar no sandbox: {exc}") from exc
 
         duration = int((time.perf_counter() - started) * 1000)
-        result = ExecResult(
+        return ExecResult(
             exit_code=exit_code,
-            stdout=stdout.decode("utf-8", "replace"),
-            stderr=stderr.decode("utf-8", "replace"),
+            stdout=stdout.decode("utf-8", errors="replace"),
+            stderr=stderr.decode("utf-8", errors="replace"),
             duration_ms=duration,
+            timed_out=False,
         )
-        log.info(
-            "sandbox.exec",
-            session=self.session_id,
-            command=command[:120],
-            exit_code=result.exit_code,
-            duration_ms=duration,
-        )
-        return result
 
-    async def put_file(self, relative_path: str, content: str) -> None:
-        """Escreve um arquivo dentro do container sem passar pelo shell.
+    async def write_file(self, relative_path: str, content: str) -> None:
+        """Cria/sobrescreve um arquivo dentro do container usando `put_archive`.
 
-        Evita ter de escapar o conteúdo dentro de um `echo`, que quebra com
-        aspas, crase e quebra de linha.
+        Evita rodar `cat <<'EOF'` via shell para não ter problema de escape de
+        aspas ou estouro de tamanho de argumento de linha de comando.
         """
         if self._container is None:
             await self.start()
+        container = self._container
+        if container is None:
+            raise SandboxError("sandbox não foi iniciado")
 
         data = content.encode("utf-8")
         buffer = BytesIO()
@@ -325,7 +341,7 @@ class Sandbox:
             archive.addfile(info, BytesIO(data))
         buffer.seek(0)
 
-        await asyncio.to_thread(lambda: self._container.put_archive(WORKDIR, buffer.getvalue()))
+        await asyncio.to_thread(lambda: container.put_archive(WORKDIR, buffer.getvalue()))
 
     async def stop(self, *, remove: bool = True) -> None:
         if self._container is None:

@@ -11,10 +11,16 @@ from __future__ import annotations
 import pytest
 
 from sicoobito.agent.runner import validate_project_runtime
-from sicoobito.agent.tools import RiskClass, ToolContext, registry
+from sicoobito.agent.tools import RiskClass, Tool, ToolContext, registry
 from sicoobito.agent.tools.project_manager import manage_project
 from sicoobito.agent.tools.shell import summarize_output
 from sicoobito.workspace.fs import WorkspaceFS
+
+
+def _tool(name: str) -> Tool:
+    ferramenta = registry.get(name)
+    assert ferramenta is not None, f"ferramenta '{name}' não encontrada"
+    return ferramenta
 
 
 @pytest.fixture
@@ -54,23 +60,20 @@ def test_read_tools_do_not_require_approval():
         "write_todos",
         "request_code_review",
     ):
-        ferramenta = registry.get(nome)
-        assert ferramenta is not None, nome
+        ferramenta = _tool(nome)
         assert ferramenta.risk is RiskClass.READ
         assert ferramenta.risk.requires_approval is False
 
 
 def test_mutating_tools_require_approval():
     for nome in ("write_file", "edit_file", "git_commit", "open_pull_request"):
-        ferramenta = registry.get(nome)
-        assert ferramenta is not None, nome
+        ferramenta = _tool(nome)
         assert ferramenta.risk is RiskClass.WRITE
         assert ferramenta.risk.requires_approval is True
 
 
 def test_manage_packages_dynamic_risk():
-    ferramenta = registry.get("manage_packages")
-    assert ferramenta is not None
+    ferramenta = _tool("manage_packages")
     # Listagem de pacotes é somente-leitura e não pede aprovação
     risk_list = ferramenta.resolve_risk({"action": "list"})
     assert risk_list is RiskClass.READ
@@ -87,7 +90,7 @@ def test_manage_packages_dynamic_risk():
 
 
 def test_command_execution_is_its_own_risk_class():
-    ferramenta = registry.get("run_command")
+    ferramenta = _tool("run_command")
     assert ferramenta.risk is RiskClass.EXEC
     assert ferramenta.risk.requires_approval is True
 
@@ -96,7 +99,7 @@ def test_browser_action_is_exec_risk():
     # Mesma classe de run_command: uma URL vem do modelo, e conteúdo externo
     # manipulado poderia tentar fazer o agente navegar para um destino que
     # não é da tarefa — a aprovação humana é a barreira.
-    ferramenta = registry.get("browser_action")
+    ferramenta = _tool("browser_action")
     assert ferramenta.risk is RiskClass.EXEC
     assert ferramenta.risk.requires_approval is True
 
@@ -126,10 +129,10 @@ def test_every_tool_exposes_a_valid_openai_schema():
 
 def test_approval_summaries_are_human_readable():
     # É este texto que a pessoa lê antes de aprovar; JSON cru não serve.
-    resumo = registry.get("write_file").describe_call({"path": "a.py", "content": "x"})
+    resumo = _tool("write_file").describe_call({"path": "a.py", "content": "x"})
     assert "a.py" in resumo and "{" not in resumo
 
-    resumo = registry.get("run_command").describe_call({"command": "pytest -q"})
+    resumo = _tool("run_command").describe_call({"command": "pytest -q"})
     assert "pytest -q" in resumo
 
 
@@ -137,20 +140,20 @@ def test_approval_summaries_are_human_readable():
 
 
 async def test_read_file_returns_content(ctx):
-    resultado = await registry.get("read_file").handler(ctx, {"path": "app.py"})
+    resultado = await _tool("read_file").handler(ctx, {"path": "app.py"})
     assert resultado.ok
     assert "def f()" in resultado.content
 
 
 async def test_read_file_outside_workspace_returns_error_not_exception(ctx):
     # O modelo precisa ler o erro para corrigir; exceção mataria o turno.
-    resultado = await registry.get("read_file").handler(ctx, {"path": "../fora.txt"})
+    resultado = await _tool("read_file").handler(ctx, {"path": "../fora.txt"})
     assert resultado.ok is False
     assert "ERRO" in resultado.content
 
 
 async def test_edit_file_replaces_and_returns_a_diff(ctx):
-    resultado = await registry.get("edit_file").handler(
+    resultado = await _tool("edit_file").handler(
         ctx, {"path": "app.py", "old_text": "return 1", "new_text": "return 2"}
     )
     assert resultado.ok
@@ -162,7 +165,7 @@ async def test_edit_file_replaces_and_returns_a_diff(ctx):
 async def test_edit_file_exposes_before_and_after_for_diff_review(ctx):
     # A revisão de diff no frontend usa before/after direto, sem parsear o
     # unified diff.
-    resultado = await registry.get("edit_file").handler(
+    resultado = await _tool("edit_file").handler(
         ctx, {"path": "app.py", "old_text": "return 1", "new_text": "return 2"}
     )
     assert "return 1" in resultado.data["before"]
@@ -170,7 +173,7 @@ async def test_edit_file_exposes_before_and_after_for_diff_review(ctx):
 
 
 async def test_write_file_exposes_before_and_after_for_diff_review(ctx):
-    resultado = await registry.get("write_file").handler(
+    resultado = await _tool("write_file").handler(
         ctx, {"path": "app.py", "content": "conteudo novo"}
     )
     assert "def f()" in resultado.data["before"]
@@ -183,7 +186,7 @@ async def test_edit_file_matches_across_line_ending_conventions(ctx, tmp_path):
     # forma silenciosa e sistemática.
     (tmp_path / "crlf.py").write_bytes(b"def f():\r\n    return 1\r\n")
 
-    resultado = await registry.get("edit_file").handler(
+    resultado = await _tool("edit_file").handler(
         ctx,
         {
             "path": "crlf.py",
@@ -201,7 +204,7 @@ async def test_edit_file_matches_across_line_ending_conventions(ctx, tmp_path):
 async def test_edit_file_preserves_lf_files_as_lf(ctx, tmp_path):
     (tmp_path / "lf.py").write_bytes(b"a = 1\nb = 2\n")
 
-    resultado = await registry.get("edit_file").handler(
+    resultado = await _tool("edit_file").handler(
         ctx, {"path": "lf.py", "old_text": "b = 2", "new_text": "b = 3"}
     )
 
@@ -213,7 +216,7 @@ async def test_edit_file_refuses_ambiguous_matches(ctx):
     # Substituir a primeira ocorrência silenciosamente editaria o lugar errado.
     antes = ctx.fs.read("dup.py")
 
-    resultado = await registry.get("edit_file").handler(
+    resultado = await _tool("edit_file").handler(
         ctx, {"path": "dup.py", "old_text": "x = 1", "new_text": "x = 2"}
     )
 
@@ -223,7 +226,7 @@ async def test_edit_file_refuses_ambiguous_matches(ctx):
 
 
 async def test_edit_file_reports_a_missing_match_usefully(ctx):
-    resultado = await registry.get("edit_file").handler(
+    resultado = await _tool("edit_file").handler(
         ctx, {"path": "app.py", "old_text": "não existe", "new_text": "y"}
     )
     assert resultado.ok is False
@@ -231,14 +234,14 @@ async def test_edit_file_reports_a_missing_match_usefully(ctx):
 
 
 async def test_run_command_without_sandbox_explains_why(ctx):
-    resultado = await registry.get("run_command").handler(ctx, {"command": "ls"})
+    resultado = await _tool("run_command").handler(ctx, {"command": "ls"})
     assert resultado.ok is False
     assert "Docker" in resultado.content
 
 
 async def test_run_command_intercepts_static_html_file_execution(ctx):
     ctx.sandbox = object()  # fake sandbox
-    resultado = await registry.get("run_command").handler(ctx, {"command": "./index.html"})
+    resultado = await _tool("run_command").handler(ctx, {"command": "./index.html"})
     assert resultado.ok is True
     assert "ERRO DE COMANDO" in resultado.content
     assert "index.html" in resultado.content
@@ -253,7 +256,7 @@ async def test_run_command_intercepts_pip_install_when_network_disabled(ctx):
         config = FakeConfig()
 
     ctx.sandbox = FakeSandbox()
-    resultado = await registry.get("run_command").handler(ctx, {"command": "pip install pytest"})
+    resultado = await _tool("run_command").handler(ctx, {"command": "pip install pytest"})
     assert resultado.ok is True
     assert "ERRO DE AMBIENTE" in resultado.content
     assert "isolado da rede" in resultado.content
@@ -282,14 +285,14 @@ class _FakeBrowser:
 
 
 async def test_browser_action_without_browser_explains_why(ctx):
-    resultado = await registry.get("browser_action").handler(ctx, {"action": "screenshot"})
+    resultado = await _tool("browser_action").handler(ctx, {"action": "screenshot"})
     assert resultado.ok is False
     assert "indisponível" in resultado.content
 
 
 async def test_browser_action_rejects_non_http_navigate(ctx):
     ctx.browser = _FakeBrowser()
-    resultado = await registry.get("browser_action").handler(
+    resultado = await _tool("browser_action").handler(
         ctx, {"action": "navigate", "url": "file:///etc/passwd"}
     )
     assert resultado.ok is False
@@ -298,13 +301,13 @@ async def test_browser_action_rejects_non_http_navigate(ctx):
 
 async def test_browser_action_click_requires_selector_or_coordinates(ctx):
     ctx.browser = _FakeBrowser()
-    resultado = await registry.get("browser_action").handler(ctx, {"action": "click"})
+    resultado = await _tool("browser_action").handler(ctx, {"action": "click"})
     assert resultado.ok is False
 
 
 async def test_browser_action_type_requires_selector_and_text(ctx):
     ctx.browser = _FakeBrowser()
-    resultado = await registry.get("browser_action").handler(
+    resultado = await _tool("browser_action").handler(
         ctx, {"action": "type", "selector": "#campo"}
     )
     assert resultado.ok is False
@@ -313,7 +316,7 @@ async def test_browser_action_type_requires_selector_and_text(ctx):
 async def test_browser_action_navigate_reports_title_and_status(ctx):
     fake = _FakeBrowser()
     ctx.browser = fake
-    resultado = await registry.get("browser_action").handler(
+    resultado = await _tool("browser_action").handler(
         ctx, {"action": "navigate", "url": "http://web:5400/ide"}
     )
     assert resultado.ok
@@ -323,13 +326,13 @@ async def test_browser_action_navigate_reports_title_and_status(ctx):
 
 async def test_browser_action_screenshot_returns_base64_in_data(ctx):
     ctx.browser = _FakeBrowser()
-    resultado = await registry.get("browser_action").handler(ctx, {"action": "screenshot"})
+    resultado = await _tool("browser_action").handler(ctx, {"action": "screenshot"})
     assert resultado.ok
     assert resultado.data["image_base64"] == "ZmFrZQ=="
 
 
 async def test_open_pr_without_github_explains_what_is_missing(ctx):
-    resultado = await registry.get("open_pull_request").handler(
+    resultado = await _tool("open_pull_request").handler(
         ctx, {"title": "t", "body": "b"}
     )
     assert resultado.ok is False
@@ -340,7 +343,7 @@ async def test_open_pr_without_github_explains_what_is_missing(ctx):
 
 
 async def test_write_todos_echoes_items_in_structured_data(ctx):
-    resultado = await registry.get("write_todos").handler(
+    resultado = await _tool("write_todos").handler(
         ctx,
         {
             "items": [
@@ -357,14 +360,14 @@ async def test_write_todos_echoes_items_in_structured_data(ctx):
 
 
 async def test_write_todos_defaults_invalid_status_to_pending(ctx):
-    resultado = await registry.get("write_todos").handler(
+    resultado = await _tool("write_todos").handler(
         ctx, {"items": [{"content": "algo", "status": "concluido"}]}
     )
     assert resultado.data["todos"] == [{"content": "algo", "status": "pending"}]
 
 
 async def test_write_todos_drops_items_without_content(ctx):
-    resultado = await registry.get("write_todos").handler(
+    resultado = await _tool("write_todos").handler(
         ctx, {"items": [{"content": "  ", "status": "pending"}, {"content": "ok", "status": "pending"}]}
     )
     assert resultado.data["todos"] == [{"content": "ok", "status": "pending"}]
@@ -373,12 +376,12 @@ async def test_write_todos_drops_items_without_content(ctx):
 async def test_write_todos_replaces_list_entirely_each_call(ctx):
     # Cada chamada substitui a lista inteira — o modelo reenvia todos os
     # itens, não só o que mudou.
-    primeira = await registry.get("write_todos").handler(
+    primeira = await _tool("write_todos").handler(
         ctx, {"items": [{"content": "a", "status": "pending"}, {"content": "b", "status": "pending"}]}
     )
     assert len(primeira.data["todos"]) == 2
 
-    segunda = await registry.get("write_todos").handler(
+    segunda = await _tool("write_todos").handler(
         ctx, {"items": [{"content": "a", "status": "completed"}]}
     )
     assert segunda.data["todos"] == [{"content": "a", "status": "completed"}]
@@ -436,7 +439,7 @@ async def test_manage_project_list_does_not_raise_attribute_error(tmp_path):
 async def test_edit_file_matches_with_trailing_whitespace_differences(ctx, tmp_path):
     (tmp_path / "trailing.py").write_text("def test():   \n    return 42   \n", encoding="utf-8")
 
-    resultado = await registry.get("edit_file").handler(
+    resultado = await _tool("edit_file").handler(
         ctx,
         {
             "path": "trailing.py",
@@ -456,7 +459,7 @@ async def test_write_todos_preserves_previously_completed_items_on_failure(ctx):
     ]
     ctx.has_unresolved_failure = True
 
-    resultado = await registry.get("write_todos").handler(
+    resultado = await _tool("write_todos").handler(
         ctx,
         {
             "items": [
@@ -490,7 +493,7 @@ async def test_run_command_appends_stdlib_hint_on_module_not_found(ctx):
             return FakeSandboxResult()
 
     ctx.sandbox = FakeSandbox()
-    resultado = await registry.get("run_command").handler(ctx, {"command": "python main.py"})
+    resultado = await _tool("run_command").handler(ctx, {"command": "python main.py"})
     assert resultado.ok is True
     assert "manage_packages" in resultado.content
     assert "ModuleNotFoundError" in resultado.content
@@ -522,23 +525,61 @@ async def test_run_command_prefers_project_venv_before_global_python(tmp_path):
     )
     ctx.sandbox = FakeSandbox()
 
-    resultado = await registry.get("run_command").handler(ctx, {"command": "python -c \"print('ok')\""})
+    resultado = await _tool("run_command").handler(ctx, {"command": "python -c \"print('ok')\""})
 
     assert resultado.ok is True
     assert resultado.data["exit_code"] == 0
 
 
 async def test_manage_packages_is_write_risk_and_registered():
-    ferramenta = registry.get("manage_packages")
-    assert ferramenta is not None
+    ferramenta = _tool("manage_packages")
     assert ferramenta.risk is RiskClass.WRITE
     assert ferramenta.risk.requires_approval is True
 
 
 async def test_manage_packages_list(ctx):
-    resultado = await registry.get("manage_packages").handler(ctx, {"action": "list"})
+    resultado = await _tool("manage_packages").handler(ctx, {"action": "list"})
     assert resultado.ok
     assert "Pacotes do Projeto" in resultado.content
     assert "installed_count" in resultado.data
+
+
+async def test_browser_action_is_exec_risk_and_registered():
+    ferramenta = _tool("browser_action")
+    assert ferramenta.risk is RiskClass.EXEC
+    assert ferramenta.risk.requires_approval is True
+
+
+async def test_browser_action_unavailable_when_no_browser(ctx):
+    ctx.browser = None
+    resultado = await _tool("browser_action").handler(
+        ctx, {"action": "navigate", "url": "http://localhost:5000"}
+    )
+    assert resultado.ok is False
+    assert "Navegador indisponível" in resultado.content
+
+
+async def test_browser_action_navigate_with_console_errors(ctx):
+    class FakeBrowserClient:
+        async def action(self, payload, timeout_ms=15000):
+            return {
+                "ok": True,
+                "url": payload.get("url"),
+                "title": "Minha App",
+                "status": 200,
+                "duration_ms": 120,
+                "console_errors": ["[ERROR] Uncaught ReferenceError: x is not defined"],
+                "page_errors": ["Error: React render failed"],
+            }
+
+    ctx.browser = FakeBrowserClient()
+    resultado = await _tool("browser_action").handler(
+        ctx, {"action": "navigate", "url": "http://localhost:5000"}
+    )
+    assert resultado.ok is True
+    assert "Minha App" in resultado.content
+    assert "⚠️ AVISO: Erros detectados na página/console" in resultado.content
+    assert "ReferenceError: x is not defined" in resultado.content
+    assert "React render failed" in resultado.content
 
 

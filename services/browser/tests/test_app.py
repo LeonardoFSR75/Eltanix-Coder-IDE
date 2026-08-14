@@ -259,3 +259,44 @@ def test_navigate_localhost_falls_back_to_host_gateway(monkeypatch):
     assert response.json()["ok"] is True
     assert page.goto.await_count == 2
 
+
+def test_navigate_returns_console_and_page_errors(monkeypatch):
+    app_module = _reload_app(monkeypatch, token=None)
+    page = _install_fake_page(app_module, monkeypatch)
+
+    async def fake_goto(*args, **kwargs):
+        app_module._console_logs["s1"].append(
+            "[ERROR] Uncaught TypeError: undefined is not a function"
+        )
+        app_module._page_errors["s1"].append("ReferenceError: App is not defined")
+        return MagicMock(status=200)
+
+    page.goto.side_effect = fake_goto
+
+    client = TestClient(app_module.app)
+    response = client.post(
+        "/sessions/s1/action", json={"action": "navigate", "url": "http://web:5400/app"}
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["ok"] is True
+    assert "console_errors" in data
+    assert "page_errors" in data
+    assert len(data["console_errors"]) == 1
+    assert len(data["page_errors"]) == 1
+
+
+def test_close_session_cleans_logs(monkeypatch):
+    app_module = _reload_app(monkeypatch, token=None)
+    _install_fake_page(app_module, monkeypatch)
+    app_module._console_logs["s1"] = ["[ERROR] test"]
+    app_module._page_errors["s1"] = ["Error: test"]
+
+    client = TestClient(app_module.app)
+    response = client.delete("/sessions/s1")
+
+    assert response.status_code == 200
+    assert "s1" not in app_module._console_logs
+    assert "s1" not in app_module._page_errors
+

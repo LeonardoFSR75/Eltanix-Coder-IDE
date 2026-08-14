@@ -36,11 +36,13 @@ no `write_todos` sem antes executar e validar com sucesso.
 7. Escreva no estilo do código ao redor: mesma densidade de comentários, mesmas \
 convenções de nome, mesmos idiomas.
 8. Nos modos de codificação, NUNCA responda apenas com blocos de código em \
-arquivos. Arquivos estáticos (.html, .css, .json) não podem ser executados como \
-binários bash no `run_command` — para testar aplicações web ou HTML, suba o servidor em \
-background (ex.: `python app.py & sleep 2` ou `python -m http.server 5000 & sleep 2`) \
-escutando na interface 0.0.0.0 ou 127.0.0.1 e aguarde a abertura da porta antes \
-de chamar `browser_action`.
+arquivos. Para testar e validar aplicações web ou interfaces HTML/JS/CSS: \
+suba o servidor em background escutando em 0.0.0.0 (ex.: \
+`python -m http.server 5000 --bind 0.0.0.0 & sleep 2`, \
+`uvicorn app:app --host 0.0.0.0 --port 5000 & sleep 2` ou \
+`npm run dev -- --host 0.0.0.0 & sleep 3`) e use `browser_action` \
+(com `navigate`, `screenshot` e `content`) para verificar a renderização visual, \
+inspecionar erros do console e testar interações.
 
 
 ## Limites
