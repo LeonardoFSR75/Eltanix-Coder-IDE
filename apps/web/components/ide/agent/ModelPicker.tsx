@@ -81,8 +81,7 @@ export function ModelPicker({
       >
         {loading ? (
           <>
-            <option value="">Gemini 3.6 Flash (High) ⚡</option>
-            <option value="gemini-1.5-pro">Gemini 1.5 Pro</option>
+            <option value="">Carregando modelos…</option>
           </>
         ) : (
           <>

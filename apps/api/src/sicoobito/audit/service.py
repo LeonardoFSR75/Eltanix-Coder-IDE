@@ -140,6 +140,7 @@ class AuditService:
         risk_level: str | None = None,
         q: str | None = None,
         project_slug: str | None = None,
+        session_id: str | None = None,
         limit: int = 100,
         offset: int = 0,
     ) -> list[AuditLogEntry]:
@@ -150,6 +151,7 @@ class AuditService:
                 risk_level=risk_level,
                 q=q,
                 project_slug=project_slug,
+                session_id=session_id,
                 limit=limit,
                 offset=offset,
             )

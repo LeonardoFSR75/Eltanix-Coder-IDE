@@ -52,6 +52,7 @@ async def list_audit(
     risk_level: str | None = None,
     q: str | None = None,
     project_slug: str | None = None,
+    session_id: str | None = None,
     limit: int = Query(default=100, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
 ) -> dict[str, Any]:
@@ -60,6 +61,7 @@ async def list_audit(
         risk_level=risk_level,
         q=q,
         project_slug=project_slug,
+        session_id=session_id,
         limit=limit,
         offset=offset,
     )

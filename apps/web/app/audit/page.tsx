@@ -13,17 +13,24 @@ export default function AuditPage() {
 
   const [moduleFilter, setModuleFilter] = useState<string>("ALL");
   const [riskFilter, setRiskFilter] = useState<string>("ALL");
+  const [sessionFilter, setSessionFilter] = useState<string>("ALL");
   const [searchQuery, setSearchQuery] = useState("");
 
   const refresh = useCallback(async () => {
     try {
-      setLogs(await listAudit());
+      const filters = {
+        module: moduleFilter !== "ALL" ? moduleFilter : undefined,
+        risk_level: riskFilter !== "ALL" ? riskFilter : undefined,
+        session_id: sessionFilter !== "ALL" ? sessionFilter : undefined,
+        q: searchQuery.trim() || undefined,
+      };
+      setLogs(await listAudit(filters));
     } catch (err) {
       addToast(err instanceof Error ? err.message : "Falha ao carregar auditoria.", "error");
     } finally {
       setLoading(false);
     }
-  }, [addToast]);
+  }, [addToast, moduleFilter, riskFilter, searchQuery, sessionFilter]);
 
   useEffect(() => {
     refresh();
@@ -32,15 +39,21 @@ export default function AuditPage() {
   const filteredLogs = logs.filter((log) => {
     const matchesModule = moduleFilter === "ALL" || log.module === moduleFilter;
     const matchesRisk = riskFilter === "ALL" || log.risk_level === riskFilter;
+    const matchesSession =
+      sessionFilter === "ALL" || (log.session_id ?? "") === sessionFilter;
     const matchesSearch =
       log.action.toLowerCase().includes(searchQuery.toLowerCase()) ||
       log.actor.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      log.details.toLowerCase().includes(searchQuery.toLowerCase());
+      log.details.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (log.session_id ?? "").toLowerCase().includes(searchQuery.toLowerCase());
 
-    return matchesModule && matchesRisk && matchesSearch;
+    return matchesModule && matchesRisk && matchesSession && matchesSearch;
   });
 
   const allModules = Array.from(new Set(logs.map((l) => l.module))).sort();
+  const allSessions = Array.from(new Set(logs.map((l) => l.session_id).filter(Boolean)))
+    .sort()
+    .map((session) => String(session));
 
   const handleExportJSON = () => {
     const jsonString = `data:text/json;charset=utf-8,${encodeURIComponent(JSON.stringify(filteredLogs, null, 2))}`;
@@ -114,7 +127,7 @@ export default function AuditPage() {
             <input
               type="text"
               className="input-text"
-              placeholder="🔍 Pesquisar ator, ação ou detalhe do log..."
+              placeholder="🔍 Pesquisar ator, ação, sessão ou detalhe do log..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
             />
@@ -145,6 +158,21 @@ export default function AuditPage() {
               <option value="low">Risco Baixo (Low)</option>
               <option value="medium">Risco Médio (Medium)</option>
               <option value="critical">Risco Crítico (Critical)</option>
+            </select>
+          </div>
+
+          <div className="form-group">
+            <select
+              value={sessionFilter}
+              onChange={(e) => setSessionFilter(e.target.value)}
+              className="input-select"
+            >
+              <option value="ALL">Todas as Sessões</option>
+              {allSessions.map((session) => (
+                <option key={session} value={session}>
+                  Sessão {session}
+                </option>
+              ))}
             </select>
           </div>
         </div>

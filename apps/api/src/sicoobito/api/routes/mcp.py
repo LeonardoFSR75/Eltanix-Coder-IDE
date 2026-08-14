@@ -14,8 +14,9 @@ from sicoobito.api.deps import AuthDep, SettingsDep
 from sicoobito.audit.service import AuditService
 from sicoobito.logging_setup import get_logger
 from sicoobito.mcp import config_editor
-from sicoobito.mcp.config import load_catalog
+from sicoobito.mcp.config import MCPServerConfig, load_catalog
 from sicoobito.mcp.manager import MCPManager
+from sicoobito.mcp.scanner import MCPScannerService
 from sicoobito.router import env_editor
 
 log = get_logger(__name__)
@@ -268,3 +269,62 @@ async def delete_server(name: str, request: Request, settings: SettingsDep) -> d
             risk_level="medium",
         )
     return {"servers": servers}
+
+
+@router.get("/scanner/status")
+async def scanner_status(settings: SettingsDep) -> dict[str, Any]:
+    """Retorna a disponibilidade do scanner de segurança Cisco MCP Scanner."""
+    scanner = MCPScannerService(settings)
+    return await scanner.check_health()
+
+
+class ScanRequestIn(BaseModel):
+    analyzers: list[str] = Field(default_factory=lambda: ["yara"])
+
+
+@router.post("/scan")
+async def scan_all_servers(
+    payload: ScanRequestIn, request: Request, settings: SettingsDep
+) -> dict[str, Any]:
+    """Escaneia todos os servidores MCP configurados."""
+    scanner = MCPScannerService(settings)
+    data = config_editor.load(settings.mcp_config_file)
+    results: list[dict[str, Any]] = []
+
+    for raw_server in data.get("servers", []):
+        try:
+            cfg = MCPServerConfig.model_validate(raw_server)
+            res = await scanner.scan_server(cfg, analyzers=payload.analyzers)
+            results.append(res.to_dict())
+        except Exception as exc:
+            results.append({
+                "server_name": raw_server.get("name", "desconhecido"),
+                "status": "error",
+                "tools_scanned": 0,
+                "findings_count": 0,
+                "findings": [],
+                "error": str(exc),
+            })
+
+    return {"results": results}
+
+
+@router.post("/servers/{name}/scan")
+async def scan_single_server(
+    name: str, payload: ScanRequestIn, request: Request, settings: SettingsDep
+) -> dict[str, Any]:
+    """Escaneia um servidor MCP específico por nome."""
+    scanner = MCPScannerService(settings)
+    data = config_editor.load(settings.mcp_config_file)
+    try:
+        raw_server = next(s for s in data.get("servers", []) if s.get("name") == name)
+    except StopIteration:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"servidor não encontrado: {name}",
+        )
+
+    cfg = MCPServerConfig.model_validate(raw_server)
+    res = await scanner.scan_server(cfg, analyzers=payload.analyzers)
+    return {"result": res.to_dict()}
+

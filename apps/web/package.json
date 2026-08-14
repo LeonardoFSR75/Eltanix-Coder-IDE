@@ -19,7 +19,8 @@
     "monaco-editor": "^0.56.0",
     "next": "15.5.22",
     "react": "19.0.0",
-    "react-dom": "19.0.0"
+    "react-dom": "19.0.0",
+    "dompurify": "^3.4.12"
   },
   "devDependencies": {
     "@testing-library/jest-dom": "^7.0.0",
@@ -32,8 +33,5 @@
     "jsdom": "^30.0.1",
     "typescript": "5.7.3",
     "vitest": "^4.1.10"
-  },
-  "overrides": {
-    "dompurify": "3.4.12"
   }
 }

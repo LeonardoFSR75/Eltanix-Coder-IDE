@@ -92,7 +92,7 @@ export class AgentSessionRuntime {
     this.onNotify = opts.onNotify;
   }
 
-  private append(line: LogLine) {
+  append(line: LogLine) {
     if (line.kind === "user" && this.lastUserText === line.text) {
       return;
     }

@@ -162,6 +162,16 @@ class Settings(BaseSettings):
     browser_url: str = Field(default="", alias="BROWSER_URL")
     browser_token: str = Field(default="", alias="BROWSER_TOKEN")
 
+    # ── Scanner de Segurança MCP (Cisco AI Defense) ─────────────────────────
+    mcp_scanner_url: str = Field(default="", alias="MCP_SCANNER_URL")
+    mcp_scanner_api_key: str = Field(default="", alias="MCP_SCANNER_API_KEY")
+
+    # ── Segurança / Classificador SecureBERT ────────────────────────────────
+    # Quando True, o SecureBertService ativa o modelo neural real HuggingFace
+    # (ehsanaghaei/SecureBERT) se transformers/torch estiverem instalados.
+    # Quando False, utiliza o analisador heurístico veloz sem carregar pesos.
+    securebert_model_enabled: bool = Field(default=False, alias="SECUREBERT_MODEL_ENABLED")
+
     # ── Armazenamento de blobs (documentos do RAG) ──────────────────────────
     # Visto pelo processo da API — dentro do compose é `minio:9000`.
     minio_endpoint: str = Field(default="localhost:5407", alias="MINIO_ENDPOINT")

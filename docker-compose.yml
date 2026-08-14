@@ -12,6 +12,7 @@ name: sicoobito
 #   5405  ollama
 #   5406  browser (só na rede interna — `browser_net` não permite publicar
 #         porta para o host; diagnóstico via `docker exec`)
+#   5410  mcp-scanner (Cisco AI Defense MCP Security Scanner)
 #
 # Todas as portas publicadas são vinculadas a 127.0.0.1: nenhum destes
 # serviços tem autenticação forte o suficiente para ficar alcançável pela
@@ -187,6 +188,27 @@ services:
       retries: 10
       start_period: 15s
 
+  mcp-scanner:
+    build:
+      context: ./services/mcp-scanner
+    image: cisco-mcp-scanner:latest
+    command: ["server"]
+    networks:
+      - default
+    environment:
+      MCP_SCANNER_API_KEY: ${CISCO_AI_DEFENSE_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+    ports:
+      - "127.0.0.1:5410:8000"
+    volumes:
+      - ./config:/workspace/config:ro
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
   api:
     build:
       context: .
@@ -209,10 +231,15 @@ services:
       # se o serviço `browser` estiver de pé (ele está, neste compose).
       BROWSER_URL: ${BROWSER_URL:-http://browser:5406}
       BROWSER_TOKEN: ${BROWSER_TOKEN:-browser-local}
+      # Cisco AI Defense MCP Security Scanner
+      MCP_SCANNER_URL: ${MCP_SCANNER_URL:-http://mcp-scanner:8000}
       # O Ollama é um serviço do compose; `host.docker.internal` só entra se você
       # sobrescrever isto para usar uma instalação do host.
       OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://ollama:11434}
       LITELLM_LOCAL_MODEL_COST_MAP: "True"
+      # SecureBERT: ativação do modelo neural real HuggingFace (ehsanaghaei/SecureBERT)
+      SECUREBERT_MODEL_ENABLED: ${SECUREBERT_MODEL_ENABLED:-true}
+      HF_HOME: /root/.cache/huggingface
       # `minio:9000` só é alcançável de dentro do compose; URLs pré-assinadas
       # devolvidas ao browser precisam do endpoint publicado no host.
       MINIO_ENDPOINT: minio:9000
@@ -239,6 +266,8 @@ services:
       - ./config:/app/config
       - ./.env:/app/.env
       - ./apps/api/src:/app/src:ro
+      # Cache de modelos do HuggingFace (SecureBERT ~500 MB) persistido entre reinícios
+      - hfcache:/root/.cache/huggingface
     extra_hosts:
       # Permite alcançar o Ollama rodando no host.
       - "host.docker.internal:host-gateway"
@@ -252,6 +281,8 @@ services:
       executor:
         condition: service_started
       browser:
+        condition: service_started
+      mcp-scanner:
         condition: service_started
 
   web:
@@ -304,4 +335,5 @@ volumes:
   redisdata:
   ollamadata:
   miniodata:
+  hfcache:
 

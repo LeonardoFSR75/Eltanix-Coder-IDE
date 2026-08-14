@@ -61,7 +61,7 @@ export function AgentDock({
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [sessionsVersion, setSessionsVersion] = useState(0);
   const settingsRef = useRef<HTMLButtonElement>(null);
-  const submittingRef = useRef(false);
+
 
   // O terminal reaproveita o sandbox da sessão do agente — segue a sessão
   // ativa no Agent Manager, não só a primeira criada.
@@ -93,8 +93,7 @@ export function AgentDock({
 
   const submitWithPrompt = (promptToRun?: string) => {
     const promptValue = promptToRun ?? task;
-    if (!promptValue.trim() || submittingRef.current || !canSubmitActivePrompt || awaitingApproval) return;
-    submittingRef.current = true;
+    if (!promptValue.trim() || !canSubmitActivePrompt || awaitingApproval) return;
     if (active && active.session && !active.readOnly) {
       void active.sendMessage(promptValue);
     } else {
@@ -103,11 +102,7 @@ export function AgentDock({
       startSession(promptValue, mode, profile, filesToPass, focusFolder);
       setSessionsVersion((v) => v + 1);
     }
-
     setTask("");
-    setTimeout(() => {
-      submittingRef.current = false;
-    }, 1000);
   };
 
 
@@ -204,6 +199,7 @@ export function AgentDock({
             log={active?.log ?? []}
             pending={active?.readOnly ? [] : (active?.pending ?? [])}
             running={running}
+            readOnly={active?.readOnly}
             onDecide={(decisions) => void active?.decide(decisions)}
             onPresetSelect={handlePresetSelect}
           />

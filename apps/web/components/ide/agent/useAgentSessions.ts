@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useMemo, useReducer, useRef } from "react";
+import { post } from "@/lib/client";
 import type { Mode } from "./modes";
 import { AgentSessionRuntime, type NotifyKind } from "./sessionRuntime";
 import type { Session, SessionStatus, SessionSummary } from "./sessionTypes";
@@ -100,10 +101,10 @@ export function useAgentSessions({
             kind: "error",
             text: error instanceof Error ? error.message : String(error),
           });
-          runtimesRef.current.delete(pendingId);
-          if (runtime.session) {
-            runtimesRef.current.set(runtime.session.session_id, runtime);
-          }
+          // Mantém a entrada no mapa sob o próprio `pendingId` — sem isto, o
+          // erro fica registrado numa sessão que ninguém mais referencia
+          // (activeIdRef ainda aponta para pendingId), e a UI volta para a
+          // tela de boas-vindas como se nada tivesse acontecido.
           notify();
         }
       })();

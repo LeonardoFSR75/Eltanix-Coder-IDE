@@ -91,11 +91,22 @@ export function AgentChatInput({
     setFocusFiles((prev) => prev.filter((p) => p !== path));
   };
 
-  const promptAddFolder = () => {
-    const input = window.prompt("Caminho relativo da pasta para focar (ex: apps/api ou src):");
-    if (input && input.trim()) {
-      setFocusFolder(input.trim());
+  const [showFolderInput, setShowFolderInput] = useState(false);
+  const [folderDraft, setFolderDraft] = useState("");
+  const folderInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (showFolderInput && folderInputRef.current) {
+      folderInputRef.current.focus();
     }
+  }, [showFolderInput]);
+
+  const submitFolder = () => {
+    if (folderDraft.trim()) {
+      setFocusFolder(folderDraft.trim());
+    }
+    setFolderDraft("");
+    setShowFolderInput(false);
   };
 
   return (
@@ -187,6 +198,13 @@ export function AgentChatInput({
               </button>
             </div>
 
+            {/* Badge de modo avançado (orchestra/explore selecionado via popover) */}
+            {(mode === "orchestra" || mode === "explore") && (
+              <span className="mode-active-badge" title={MODE_HINT[mode]}>
+                {mode === "orchestra" ? "🎼 Orchestra" : "🔍 Explore"}
+              </span>
+            )}
+
             {/* Botões de contexto */}
             <div className="context-actions">
               {active && !focusFiles.includes(active) && (
@@ -202,11 +220,11 @@ export function AgentChatInput({
                   </svg>
                 </button>
               )}
-              {!focusFolder && (
+              {!focusFolder && !showFolderInput && (
                 <button
                   type="button"
                   className="context-add-btn"
-                  onClick={promptAddFolder}
+                  onClick={() => setShowFolderInput(true)}
                   disabled={running}
                   title="Anexar pasta de contexto"
                 >
@@ -216,6 +234,24 @@ export function AgentChatInput({
                     <line x1="9" y1="14" x2="15" y2="14" />
                   </svg>
                 </button>
+              )}
+              {showFolderInput && (
+                <div className="folder-inline-input">
+                  <input
+                    ref={folderInputRef}
+                    type="text"
+                    className="folder-input"
+                    placeholder="apps/api ou src..."
+                    value={folderDraft}
+                    onChange={(e) => setFolderDraft(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") { e.preventDefault(); submitFolder(); }
+                      if (e.key === "Escape") { setFolderDraft(""); setShowFolderInput(false); }
+                    }}
+                    onBlur={() => { if (!folderDraft.trim()) setShowFolderInput(false); }}
+                  />
+                  <button type="button" className="folder-input-ok" onClick={submitFolder}>✓</button>
+                </div>
               )}
             </div>
 

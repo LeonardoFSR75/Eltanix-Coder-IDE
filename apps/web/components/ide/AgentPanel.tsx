@@ -5,12 +5,14 @@ import { useToast } from "@/components/Toast";
 import { useIde } from "@/lib/ide-store";
 import { hasDedicatedCard, ToolCallCard } from "./agent/cards";
 import type { LogLine, PendingAction, Session } from "./agent/sessionTypes";
+import DOMPurify from "dompurify";
 
 interface AgentPanelProps {
   session: Session | null;
   log: LogLine[];
   pending: PendingAction[];
   running?: boolean;
+  readOnly?: boolean;
   onDecide: (decisions: Record<string, boolean>) => void;
   onPresetSelect?: (prompt: string) => void;
 }
@@ -123,24 +125,26 @@ function RenderedAssistantText({ text }: { text: string }) {
         }
         if (!part.trim()) return null;
 
-        // Sanitizar HTML para prevenir XSS antes de aplicar marcações markdown
-        const escapedPart = part
+        // Processar formatação inline básica e sanitizar com DOMPurify
+        const formatted = part
           .replace(/&/g, "&amp;")
           .replace(/</g, "&lt;")
           .replace(/>/g, "&gt;")
           .replace(/"/g, "&quot;")
-          .replace(/'/g, "&#039;");
-
-        // Processar formatação inline básica
-        const formatted = escapedPart
+          .replace(/'/g, "&#039;")
           .replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>")
           .replace(/`([^`]+)`/g, '<code class="inline-code">$1</code>');
+
+        const sanitized = DOMPurify.sanitize(formatted, {
+          ALLOWED_TAGS: ["strong", "code", "em", "br"],
+          ALLOWED_ATTR: ["class"],
+        });
 
         return (
           <div
             key={index}
             className="assistant-paragraph"
-            dangerouslySetInnerHTML={{ __html: formatted }}
+            dangerouslySetInnerHTML={{ __html: sanitized }}
           />
         );
       })}
@@ -404,7 +408,7 @@ function MessageStream({
 
 /* ── Painel Principal do Agente ─────────────────────────────────── */
 
-export function AgentPanel({ session, log, pending, running, onDecide, onPresetSelect }: AgentPanelProps) {
+export function AgentPanel({ session, log, pending, running, readOnly, onDecide, onPresetSelect }: AgentPanelProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [decisions, setDecisions] = useState<Record<string, boolean>>({});
   const [summaryCollapsed, setSummaryCollapsed] = useState(false);

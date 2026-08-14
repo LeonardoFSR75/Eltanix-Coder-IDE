@@ -5,12 +5,17 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   MCPCatalogTemplate,
+  MCPScanResult,
+  MCPScannerStatus,
   MCPServerRecord,
   MCPTransport,
   createMcpServer,
   deleteMcpServer,
+  getMcpScannerStatus,
   listMcpCatalog,
   listMcpServers,
+  scanAllMcpServers,
+  scanMcpServer,
   toggleMcpServer,
 } from "@/lib/api/mcp";
 import { useToast } from "@/components/Toast";
@@ -32,6 +37,11 @@ export default function MCPPage() {
   const [selectedServer, setSelectedServer] = useState<MCPServerRecord | null>(null);
   const [creating, setCreating] = useState(false);
 
+  const [scannerStatus, setScannerStatus] = useState<MCPScannerStatus | null>(null);
+  const [scanResults, setScanResults] = useState<Record<string, MCPScanResult>>({});
+  const [scanningServer, setScanningServer] = useState<string | null>(null);
+  const [selectedAnalyzer, setSelectedAnalyzer] = useState<"yara" | "yara,llm">("yara");
+
   const [name, setName] = useState("");
   const [transport, setTransport] = useState<MCPTransport>("stdio");
   const [command, setCommand] = useState("");
@@ -45,9 +55,14 @@ export default function MCPPage() {
 
   const refresh = useCallback(async () => {
     try {
-      const [loaded, templates] = await Promise.all([listMcpServers(), listMcpCatalog()]);
+      const [loaded, templates, scanner] = await Promise.all([
+        listMcpServers(),
+        listMcpCatalog(),
+        getMcpScannerStatus().catch(() => ({ available: false, mode: "none" as const })),
+      ]);
       setServers(loaded);
       setCatalog(templates);
+      setScannerStatus(scanner);
       if (loaded.length > 0 && !selectedServer) {
         setSelectedServer(loaded[0]);
       }
@@ -58,6 +73,48 @@ export default function MCPPage() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [addToast]);
+
+  const handleScanSingle = async (serverName: string) => {
+    try {
+      setScanningServer(serverName);
+      addToast(`Iniciando escaneamento de "${serverName}" com Cisco MCP Scanner...`, "info");
+      const analyzers = selectedAnalyzer.split(",");
+      const result = await scanMcpServer(serverName, analyzers);
+      setScanResults((prev) => ({ ...prev, [serverName]: result }));
+      if (result.status === "safe") {
+        addToast(`✅ Servidor "${serverName}" escaneado: Seguro! Nenhuma vulnerabilidade encontrada.`, "success");
+      } else if (result.status === "threat") {
+        addToast(`🚨 Ameaça detectada em "${serverName}"! Verifique o relatório.`, "error");
+      } else if (result.status === "warning") {
+        addToast(`⚠️ Alertas de segurança encontrados em "${serverName}".`, "info");
+      } else if (result.status === "error") {
+        addToast(`Erro ao escanear "${serverName}": ${result.error || "Falha na execução"}`, "error");
+      }
+    } catch (err) {
+      addToast(err instanceof Error ? err.message : "Falha ao executar escaneamento.", "error");
+    } finally {
+      setScanningServer(null);
+    }
+  };
+
+  const handleScanAll = async () => {
+    try {
+      setScanningServer("ALL");
+      addToast("Escaneando todos os servidores MCP...", "info");
+      const analyzers = selectedAnalyzer.split(",");
+      const results = await scanAllMcpServers(analyzers);
+      const mapped: Record<string, MCPScanResult> = {};
+      for (const r of results) {
+        mapped[r.server_name] = r;
+      }
+      setScanResults((prev) => ({ ...prev, ...mapped }));
+      addToast("Escaneamento concluído para todos os servidores!", "success");
+    } catch (err) {
+      addToast(err instanceof Error ? err.message : "Falha ao escanear servidores.", "error");
+    } finally {
+      setScanningServer(null);
+    }
+  };
 
   useEffect(() => {
     refresh();
@@ -185,7 +242,18 @@ export default function MCPPage() {
     <div className="shell">
       <div className="page-header">
         <div>
-          <span className="page-badge">🔌 Servidores MCP</span>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
+            <span className="page-badge">🔌 Servidores MCP</span>
+            {scannerStatus?.available ? (
+              <span className="badge badge-success" style={{ fontSize: 11 }}>
+                🛡️ Cisco AI Defense Scanner: Ativo ({scannerStatus.mode === "docker_or_cli" ? "Docker" : "API"})
+              </span>
+            ) : (
+              <span className="badge badge-muted" style={{ fontSize: 11 }}>
+                🛡️ Cisco MCP Scanner: Docker Standby
+              </span>
+            )}
+          </div>
           <h1>Conectores MCP do Agente</h1>
           <p>
             Servidores conectados aqui viram ferramentas reais do agente (prefixo{" "}
@@ -194,7 +262,15 @@ export default function MCPPage() {
             confiáveis abaixo têm suas ferramentas somente-leitura liberadas direto.
           </p>
         </div>
-        <div className="header-actions">
+        <div className="header-actions" style={{ display: "flex", gap: 8 }}>
+          <button
+            type="button"
+            className="btn-secondary-sm"
+            onClick={handleScanAll}
+            disabled={scanningServer !== null || servers.length === 0}
+          >
+            {scanningServer === "ALL" ? "⏳ Escaneando..." : "🛡️ Escanear Todos (Cisco Scanner)"}
+          </button>
           <Link href="/skills" className="btn-secondary-sm">
             ⚡ Skills do Agente
           </Link>
@@ -206,66 +282,179 @@ export default function MCPPage() {
         {!loading && servers.length === 0 && (
           <p className="text-xs text-muted">Nenhum servidor MCP cadastrado ainda.</p>
         )}
-        {servers.map((s) => (
-          <div
-            key={s.name}
-            className={`mcp-server-card ${selectedServer?.name === s.name ? "active" : ""}`}
-            onClick={() => setSelectedServer(s)}
-          >
-            <div className="mcp-card-header">
-              <span className={`status-indicator ${s.status === "connected" ? "online" : "offline"}`} />
-              <h3>{s.name}</h3>
-              <span className="mcp-type-badge">{s.transport.toUpperCase()}</span>
-            </div>
+        {servers.map((s) => {
+          const scan = scanResults[s.name];
+          const isScanning = scanningServer === s.name || scanningServer === "ALL";
 
-            <div className="mcp-endpoint font-mono">
-              {s.transport === "stdio" ? `${s.command} ${s.args.join(" ")}` : s.url}
-            </div>
+          return (
+            <div
+              key={s.name}
+              className={`mcp-server-card ${selectedServer?.name === s.name ? "active" : ""}`}
+              onClick={() => setSelectedServer(s)}
+            >
+              <div className="mcp-card-header">
+                <span className={`status-indicator ${s.status === "connected" ? "online" : "offline"}`} />
+                <h3>{s.name}</h3>
+                <span className="mcp-type-badge">{s.transport.toUpperCase()}</span>
+              </div>
 
-            <div className="mcp-capabilities-grid">
-              <div className="cap-box">
-                <span className="cap-num">{s.tools_count}</span>
-                <span className="cap-label">Tools</span>
+              <div className="mcp-endpoint font-mono">
+                {s.transport === "stdio" ? `${s.command} ${s.args.join(" ")}` : s.url}
               </div>
-              <div className="cap-box">
-                <span className="cap-num">{STATUS_LABEL[s.status]}</span>
-                <span className="cap-label">Status</span>
+
+              <div className="mcp-capabilities-grid">
+                <div className="cap-box">
+                  <span className="cap-num">{s.tools_count}</span>
+                  <span className="cap-label">Tools</span>
+                </div>
+                <div className="cap-box">
+                  <span className="cap-num">{STATUS_LABEL[s.status]}</span>
+                  <span className="cap-label">Status</span>
+                </div>
+              </div>
+
+              {scan && (
+                <div style={{ marginTop: 8, padding: "4px 8px", borderRadius: 4, fontSize: 11, background: scan.status === "safe" ? "rgba(16,185,129,0.1)" : scan.status === "threat" ? "rgba(239,68,68,0.15)" : "rgba(245,158,11,0.15)", color: scan.status === "safe" ? "#10b981" : scan.status === "threat" ? "#ef4444" : "#f59e0b" }}>
+                  {scan.status === "safe" && "🛡️ Cisco Scanner: Seguro (0 ameaças)"}
+                  {scan.status === "threat" && `🚨 Cisco Scanner: ${scan.findings_count} Ameaça(s)`}
+                  {scan.status === "warning" && `⚠️ Cisco Scanner: ${scan.findings_count} Alerta(s)`}
+                  {scan.status === "error" && "❌ Erro no scan"}
+                </div>
+              )}
+
+              {s.status === "error" && s.error && (
+                <p className="text-xs" style={{ color: "var(--danger)" }}>
+                  {s.error}
+                </p>
+              )}
+
+              <div className="mcp-card-footer">
+                <span>{s.trust_annotations ? "Confiável" : "Sempre pede aprovação"}</span>
+                <div style={{ display: "flex", gap: 6 }}>
+                  <button
+                    type="button"
+                    className="btn-secondary-sm"
+                    title="Escanear com Cisco AI Defense MCP Scanner"
+                    disabled={isScanning}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleScanSingle(s.name);
+                    }}
+                  >
+                    {isScanning ? "⏳..." : "🛡️ Scan"}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-secondary-sm"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleToggle(s);
+                    }}
+                  >
+                    {s.enabled ? "Desabilitar" : "Habilitar"}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-danger-sm"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDelete(s);
+                    }}
+                  >
+                    Remover
+                  </button>
+                </div>
               </div>
             </div>
-            {s.status === "error" && s.error && (
-              <p className="text-xs" style={{ color: "var(--danger)" }}>
-                {s.error}
-              </p>
-            )}
+          );
+        })}
+      </div>
 
-            <div className="mcp-card-footer">
-              <span>{s.trust_annotations ? "Confiável" : "Sempre pede aprovação"}</span>
-              <div style={{ display: "flex", gap: 6 }}>
-                <button
-                  type="button"
-                  className="btn-secondary-sm"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleToggle(s);
-                  }}
-                >
-                  {s.enabled ? "Desabilitar" : "Habilitar"}
-                </button>
-                <button
-                  type="button"
-                  className="btn-danger-sm"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleDelete(s);
-                  }}
-                >
-                  Remover
-                </button>
-              </div>
+      {/* Painel de Auditoria de Segurança Cisco MCP Scanner */}
+      {selectedServer && (
+        <div className="panel-box mb-6" style={{ borderLeft: "4px solid var(--primary, #0284c7)" }}>
+          <div className="panel-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <h3>🛡️ Auditoria de Segurança Cisco AI Defense ({selectedServer.name})</h3>
+              <span className="badge badge-info" style={{ fontSize: 11 }}>Cisco MCP Scanner</span>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <select
+                className="input-select"
+                style={{ width: "auto", padding: "4px 8px", fontSize: 12 }}
+                value={selectedAnalyzer}
+                onChange={(e) => setSelectedAnalyzer(e.target.value as "yara" | "yara,llm")}
+              >
+                <option value="yara">Motor YARA (Regras Estáticas)</option>
+                <option value="yara,llm">YARA + LLM-as-a-Judge (Semântico)</option>
+              </select>
+              <button
+                type="button"
+                className="btn-primary-sm"
+                onClick={() => handleScanSingle(selectedServer.name)}
+                disabled={scanningServer === selectedServer.name}
+              >
+                {scanningServer === selectedServer.name ? "⏳ Escaneando..." : "▶ Iniciar Scan Agora"}
+              </button>
             </div>
           </div>
-        ))}
-      </div>
+
+          {scanResults[selectedServer.name] ? (
+            <div style={{ marginTop: 12 }}>
+              {(() => {
+                const res = scanResults[selectedServer.name];
+                return (
+                  <div>
+                    <div style={{ display: "flex", gap: 16, marginBottom: 12, fontSize: 13 }}>
+                      <div>
+                        <strong>Status: </strong>
+                        <span style={{ fontWeight: 600, color: res.status === "safe" ? "#10b981" : res.status === "threat" ? "#ef4444" : "#f59e0b" }}>
+                          {res.status.toUpperCase()}
+                        </span>
+                      </div>
+                      <div><strong>Ferramentas Analisadas:</strong> {res.tools_scanned}</div>
+                      <div><strong>Achados de Segurança:</strong> {res.findings_count}</div>
+                      <div><strong>Data/Hora:</strong> {new Date(res.scanned_at).toLocaleTimeString()}</div>
+                    </div>
+
+                    {res.error && (
+                      <div className="alert alert-danger" style={{ padding: "8px 12px", marginBottom: 12, borderRadius: 6, background: "rgba(239,68,68,0.1)", color: "#ef4444", fontSize: 12 }}>
+                        {res.error}
+                      </div>
+                    )}
+
+                    {res.findings.length > 0 ? (
+                      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                        {res.findings.map((f, idx) => (
+                          <div key={idx} style={{ padding: "10px 12px", background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 6 }}>
+                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+                              <span style={{ fontWeight: 600, fontSize: 13 }}>{f.tool_name} — {f.rule_id}</span>
+                              <span className={`badge ${f.severity === "high" || f.severity === "critical" ? "badge-danger" : "badge-warning"}`} style={{ fontSize: 10 }}>
+                                {f.severity.toUpperCase()} ({f.analyzer})
+                              </span>
+                            </div>
+                            <p style={{ margin: 0, fontSize: 12, color: "var(--text-muted)" }}>{f.message || f.description}</p>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      !res.error && (
+                        <p style={{ color: "#10b981", fontSize: 12, margin: 0 }}>
+                          ✅ Nenhuma vulnerabilidade, injeção de prompt ou comportamento malicioso detectado neste servidor MCP.
+                        </p>
+                      )
+                    )}
+                  </div>
+                );
+              })()}
+            </div>
+          ) : (
+            <p className="text-xs text-muted" style={{ marginTop: 8 }}>
+              Clique em &quot;Iniciar Scan Agora&quot; para inspecionar este servidor com os analisadores de segurança Cisco AI Defense (YARA / LLM).
+            </p>
+          )}
+        </div>
+      )}
 
       {catalog.length > 0 && (
         <div className="panel-box mb-6">
@@ -447,3 +636,4 @@ export default function MCPPage() {
     </div>
   );
 }
+

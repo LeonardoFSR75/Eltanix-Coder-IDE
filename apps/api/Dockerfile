@@ -33,7 +33,7 @@ WORKDIR /app
 # As dependências entram antes do código: mudar um arquivo-fonte não invalida
 # a camada de instalação.
 COPY apps/api/pyproject.toml apps/api/uv.lock apps/api/.python-version ./
-RUN uv sync --frozen --no-install-project --extra azure
+RUN uv sync --frozen --no-install-project --extra azure --extra securebert
 
 COPY apps/api/vendor ./vendor
 RUN uv pip install --python /app/.venv/bin/python -e /app/vendor/securebert2
@@ -42,13 +42,14 @@ COPY apps/api/src ./src
 COPY apps/api/alembic ./alembic
 COPY apps/api/alembic.ini ./
 COPY config ./config
-RUN uv sync --frozen --extra azure
+RUN uv sync --frozen --extra azure --extra securebert
 RUN uv pip install --python /app/.venv/bin/python -e /app/vendor/securebert2
 
 ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     LITELLM_LOCAL_MODEL_COST_MAP=True \
+    HF_HOME=/root/.cache/huggingface \
     SICOOBITO_CONFIG_DIR=/app/config
 
 # O git recusa operar num diretório de outro dono, e os projetos montados vêm

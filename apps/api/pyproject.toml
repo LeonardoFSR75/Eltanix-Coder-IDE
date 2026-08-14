@@ -52,6 +52,14 @@ dependencies = [
 
 [project.optional-dependencies]
 azure = ["azure-identity>=1.19"]
+# Integração opcional com o modelo real SecureBERT (ehsanaghaei/SecureBERT).
+# Instalar com: uv sync --extra securebert
+# Sem isto, o SecureBertService opera em modo heurístico (sem dependências extras).
+securebert = [
+    "transformers>=4.40",
+    "torch>=2.2",
+    "sentencepiece>=0.2",
+]
 
 [project.scripts]
 sicoobito-eval-rag = "sicoobito.evals.runner:main"

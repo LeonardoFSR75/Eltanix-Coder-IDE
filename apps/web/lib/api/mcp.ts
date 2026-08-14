@@ -88,3 +88,49 @@ export async function deleteMcpServer(name: string): Promise<MCPServerRecord[]> 
   );
   return servers;
 }
+
+export interface MCPScanFinding {
+  tool_name: string;
+  analyzer: string;
+  severity: "safe" | "low" | "medium" | "high" | "critical" | "unknown";
+  rule_id: string;
+  message: string;
+  description: string;
+  details: Record<string, unknown>;
+}
+
+export interface MCPScanResult {
+  server_name: string;
+  status: "safe" | "warning" | "threat" | "error" | "skipped";
+  tools_scanned: number;
+  findings_count: number;
+  findings: MCPScanFinding[];
+  error?: string | null;
+  scanned_at: string;
+}
+
+export interface MCPScannerStatus {
+  available: boolean;
+  mode: "api_server" | "docker_or_cli" | "none";
+  url?: string;
+  image?: string;
+  message?: string;
+}
+
+export async function getMcpScannerStatus(): Promise<MCPScannerStatus> {
+  return await get<MCPScannerStatus>("/api/mcp/scanner/status");
+}
+
+export async function scanAllMcpServers(analyzers: string[] = ["yara"]): Promise<MCPScanResult[]> {
+  const { results } = await post<{ results: MCPScanResult[] }>("/api/mcp/scan", { analyzers });
+  return results;
+}
+
+export async function scanMcpServer(name: string, analyzers: string[] = ["yara"]): Promise<MCPScanResult> {
+  const { result } = await post<{ result: MCPScanResult }>(
+    `/api/mcp/servers/${encodeURIComponent(name)}/scan`,
+    { analyzers }
+  );
+  return result;
+}
+

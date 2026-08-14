@@ -46,6 +46,7 @@ async def list_entries(
     module: str | None = None,
     risk_level: str | None = None,
     project_slug: str | None = None,
+    session_id: str | None = None,
     q: str | None = None,
     limit: int = 100,
     offset: int = 0,
@@ -57,6 +58,8 @@ async def list_entries(
         stmt = stmt.where(AuditLogEntry.risk_level == risk_level)
     if project_slug:
         stmt = stmt.where(AuditLogEntry.project_slug == project_slug)
+    if session_id:
+        stmt = stmt.where(AuditLogEntry.session_id == session_id)
     if q:
         like = f"%{q}%"
         stmt = stmt.where(AuditLogEntry.action.ilike(like) | AuditLogEntry.details.ilike(like))
