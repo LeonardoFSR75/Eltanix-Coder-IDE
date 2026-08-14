@@ -13,9 +13,9 @@
 
 import { get, post, streamEvents } from "@/lib/client";
 import type { Mode } from "./modes";
-import type { LogLine, PendingAction, RuntimeStatus, Session, TodoItem } from "./sessionTypes";
+import type { ActivityEvent, LogLine, PendingAction, RuntimeStatus, Session, TodoItem } from "./sessionTypes";
 
-export type { LogLine, PendingAction, Session, TodoItem };
+export type { ActivityEvent, LogLine, PendingAction, Session, TodoItem };
 
 export type NotifyKind = "approval" | "done" | "error";
 
@@ -35,6 +35,8 @@ export class AgentSessionRuntime {
   pending: PendingAction[] = [];
   running = false;
   todos: TodoItem[] = [];
+  currentActivity: ActivityEvent | null = null;
+  recentActivities: ActivityEvent[] = [];
   // Sessão carregada do histórico (via /messages), sem stream ativo — o
   // card de aprovação e o input de chat ficam desabilitados para ela.
   readOnly = false;
@@ -94,12 +96,15 @@ export class AgentSessionRuntime {
     this.pending = [];
     this.finished = false;
     this.errored = false;
+    this.currentActivity = { stage: "thinking", detail: "Iniciando análise...", timestamp: Date.now() };
+    this.recentActivities = [];
     this.onChange();
     this.abortController = new AbortController();
   }
 
   private finishTurn() {
     this.running = false;
+    this.currentActivity = null;
     this.onChange();
   }
 
@@ -107,9 +112,29 @@ export class AgentSessionRuntime {
     const { node, update } = (event ?? {}) as { node?: string; update?: Record<string, unknown> };
     if (!node || !update) return;
 
+    if (node === "activity") {
+      const act = update as unknown as ActivityEvent;
+      this.currentActivity = act;
+      if (act.stage === "tool_start" || act.stage === "tool_end") {
+        const existingIdx = act.call_id
+          ? this.recentActivities.findIndex((a) => a.call_id === act.call_id)
+          : -1;
+        if (existingIdx >= 0) {
+          const updated = [...this.recentActivities];
+          updated[existingIdx] = act;
+          this.recentActivities = updated;
+        } else {
+          this.recentActivities = [...this.recentActivities, act];
+        }
+      }
+      this.onChange();
+      return;
+    }
+
     if (node === "error") {
       this.errored = true;
       this.running = false;
+      this.currentActivity = null;
       const mensagem = String(update.message ?? "erro desconhecido");
       this.append({ kind: "error", text: mensagem });
       this.onNotify?.("error", mensagem);
@@ -119,6 +144,7 @@ export class AgentSessionRuntime {
     if (node === "interrupt" || update.type === "approval_required") {
       this.pending = (update.actions ?? []) as PendingAction[];
       this.running = false;
+      this.currentActivity = null;
       this.onChange();
       if (this.pending.length > 0) {
         this.onNotify?.("approval", `${this.pending.length} ação(ões) aguardando aprovação`);

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import operator
-from typing import Annotated, Any, Literal, TypedDict
+from typing import Annotated, Any, Literal, NotRequired, TypedDict
 
 AgentMode = Literal["ask", "edit", "agent", "plan", "auto", "orchestra", "explore"]
 
@@ -16,7 +16,7 @@ class ReviewNote(TypedDict):
     summary: str
 
 
-class PendingApproval(TypedDict, total=False):
+class PendingApproval(TypedDict):
     """Chamada de ferramenta aguardando decisão humana."""
 
     tool_call_id: str
@@ -27,7 +27,7 @@ class PendingApproval(TypedDict, total=False):
     # Presente só quando `.sicoobito/approval_policy.yaml` liga
     # `second_opinion` e a ferramenta é `edit_file`/`write_file` — ver
     # `agent/graph.py::_attach_review_notes`.
-    review: ReviewNote
+    review: NotRequired[ReviewNote]
 
 
 class TodoItem(TypedDict):

@@ -39,6 +39,17 @@ export interface TodoItem {
   status: "pending" | "in_progress" | "completed";
 }
 
+export interface ActivityEvent {
+  stage: "thinking" | "tool_start" | "tool_end";
+  tool?: string;
+  summary?: string;
+  detail?: string;
+  ok?: boolean;
+  duration_ms?: number;
+  call_id?: string;
+  timestamp: number;
+}
+
 export interface LogLine {
   kind: "info" | "assistant" | "tool" | "error" | "cost" | "user";
   text: string;

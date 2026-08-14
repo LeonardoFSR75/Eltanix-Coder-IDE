@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from sqlalchemy.orm import Session
-
 from sicoobito.graphify.metrics.analytics import GraphAnalytics
 from sicoobito.graphify.pipeline.indexer import GraphIndexer
 from sicoobito.graphify.rag.graph_rag import GraphRAGQueryEngine
@@ -21,7 +19,7 @@ MAX_MULTI_WORKSPACE_FANOUT = 10
 
 
 class GraphifyEngine:
-    def __init__(self, session: Session) -> None:
+    def __init__(self, session: Any) -> None:
         self.session = session
         self.store = GraphStore(session)
         self.indexer = GraphIndexer(self.store)
@@ -30,7 +28,10 @@ class GraphifyEngine:
 
     async def index_item(self, source_type: str, payload: dict[str, Any]) -> dict[str, Any]:
         result = await self.indexer.run_pipeline(source_type, payload)
-        self.session.commit()
+        if hasattr(self.session, "commit"):
+            commit_res = self.session.commit()
+            if hasattr(commit_res, "__await__"):
+                await commit_res
         return result
 
     async def search_graph_rag(
@@ -41,9 +42,12 @@ class GraphifyEngine:
         )
         return res.model_dump()
 
-    def get_metrics(self, workspace: str = "default") -> dict[str, Any]:
-        res = self.analytics.compute_all(workspace)
-        self.session.commit()
+    async def get_metrics(self, workspace: str = "default") -> dict[str, Any]:
+        res = await self.analytics.compute_all(workspace)
+        if hasattr(self.session, "commit"):
+            commit_res = self.session.commit()
+            if hasattr(commit_res, "__await__"):
+                await commit_res
         return res
 
     async def search_multi_workspace(

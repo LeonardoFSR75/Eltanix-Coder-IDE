@@ -103,6 +103,9 @@ class ToolContext:
     max_wait_seconds: float = 300.0
     max_spawn_depth: int = 3
     max_children_per_agent: int = 4
+    # Callback assíncrono para streaming em tempo real de micro-atividades
+    # (ex: início/fim de tool, thinking)
+    on_activity: Any | None = None
     session_state: SessionRuntimeState = field(default_factory=SessionRuntimeState)
 
     @property

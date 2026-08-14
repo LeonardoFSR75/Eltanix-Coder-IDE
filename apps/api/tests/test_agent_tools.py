@@ -368,7 +368,13 @@ async def test_write_todos_defaults_invalid_status_to_pending(ctx):
 
 async def test_write_todos_drops_items_without_content(ctx):
     resultado = await _tool("write_todos").handler(
-        ctx, {"items": [{"content": "  ", "status": "pending"}, {"content": "ok", "status": "pending"}]}
+        ctx,
+        {
+            "items": [
+                {"content": "  ", "status": "pending"},
+                {"content": "ok", "status": "pending"},
+            ]
+        },
     )
     assert resultado.data["todos"] == [{"content": "ok", "status": "pending"}]
 
@@ -377,7 +383,13 @@ async def test_write_todos_replaces_list_entirely_each_call(ctx):
     # Cada chamada substitui a lista inteira — o modelo reenvia todos os
     # itens, não só o que mudou.
     primeira = await _tool("write_todos").handler(
-        ctx, {"items": [{"content": "a", "status": "pending"}, {"content": "b", "status": "pending"}]}
+        ctx,
+        {
+            "items": [
+                {"content": "a", "status": "pending"},
+                {"content": "b", "status": "pending"},
+            ]
+        },
     )
     assert len(primeira.data["todos"]) == 2
 
@@ -489,7 +501,7 @@ async def test_run_command_appends_stdlib_hint_on_module_not_found(ctx):
         ok = False
 
     class FakeSandbox:
-        async def exec(self, command, timeout=None):
+        async def exec(self, command, **kwargs):
             return FakeSandboxResult()
 
     ctx.sandbox = FakeSandbox()
@@ -512,7 +524,7 @@ async def test_run_command_prefers_project_venv_before_global_python(tmp_path):
         ok = True
 
     class FakeSandbox:
-        async def exec(self, command, timeout=None):
+        async def exec(self, command, **kwargs):
             assert "VIRTUAL_ENV='/workspace/.venv'" in command
             assert "/workspace/.venv/bin" in command
             assert "PYTHONPATH=" in command
@@ -581,5 +593,28 @@ async def test_browser_action_navigate_with_console_errors(ctx):
     assert "⚠️ AVISO: Erros detectados na página/console" in resultado.content
     assert "ReferenceError: x is not defined" in resultado.content
     assert "React render failed" in resultado.content
+
+
+async def test_tool_context_on_activity_callback(ctx):
+    events = []
+
+    async def _on_act(event):
+        events.append(event)
+
+    ctx.on_activity = _on_act
+    assert ctx.on_activity is not None
+
+    # Simula disparo de atividade
+    await ctx.on_activity(
+        {
+            "stage": "tool_start",
+            "tool": "read_file",
+            "summary": "Lendo 'test.py'",
+            "call_id": "call_123",
+        }
+    )
+    assert len(events) == 1
+    assert events[0]["stage"] == "tool_start"
+    assert events[0]["tool"] == "read_file"
 
 

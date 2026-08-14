@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useToast } from "@/components/Toast";
 import { useIde } from "@/lib/ide-store";
 import { hasDedicatedCard, ToolCallCard } from "./agent/cards";
-import type { LogLine, PendingAction, Session } from "./agent/sessionTypes";
+import type { ActivityEvent, LogLine, PendingAction, Session } from "./agent/sessionTypes";
 import DOMPurify from "dompurify";
 
 interface AgentPanelProps {
@@ -12,6 +12,8 @@ interface AgentPanelProps {
   log: LogLine[];
   pending: PendingAction[];
   running?: boolean;
+  activity?: ActivityEvent | null;
+  recentActivities?: ActivityEvent[];
   readOnly?: boolean;
   onDecide: (decisions: Record<string, boolean>) => void;
   onPresetSelect?: (prompt: string) => void;
@@ -152,29 +154,119 @@ function RenderedAssistantText({ text }: { text: string }) {
   );
 }
 
-/* ── Indicador de Pensamento (Thinking) ──────────────────────────── */
+/* ── Indicador de Atividade ao Vivo com Cronômetro e Etapas ──────── */
 
-function ThinkingIndicator() {
+function getToolMeta(tool?: string, stage?: string) {
+  if (stage === "thinking" || !tool) {
+    return {
+      icon: "🧠",
+      badge: "Pensando",
+      className: "activity-thinking",
+    };
+  }
+  switch (tool) {
+    case "read_file":
+    case "list_files":
+      return { icon: "📄", badge: "Leitura de Arquivo", className: "activity-read" };
+    case "edit_file":
+    case "write_file":
+      return { icon: "✍️", badge: "Edição de Código", className: "activity-write" };
+    case "run_command":
+      return { icon: "⚙️", badge: "Terminal / Sandbox", className: "activity-exec" };
+    case "browser_action":
+      return { icon: "🌐", badge: "Navegador Headless", className: "activity-browser" };
+    case "search_code":
+      return { icon: "🔍", badge: "Busca no Código", className: "activity-search" };
+    case "git_status":
+    case "git_diff":
+    case "git_commit":
+      return { icon: "🌿", badge: "Git", className: "activity-git" };
+    case "write_todos":
+      return { icon: "📋", badge: "Plano / Tarefas", className: "activity-todo" };
+    default:
+      return { icon: "⚡", badge: tool, className: "activity-default" };
+  }
+}
+
+function AgentLiveActivity({
+  activity,
+  recentActivities,
+}: {
+  activity: ActivityEvent | null;
+  recentActivities: ActivityEvent[];
+}) {
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const [showHistory, setShowHistory] = useState(false);
+
+  useEffect(() => {
+    setElapsedSeconds(0);
+    const start = Date.now();
+    const interval = setInterval(() => {
+      setElapsedSeconds(Math.floor((Date.now() - start) / 1000));
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [activity?.tool, activity?.stage]);
+
+  const meta = getToolMeta(activity?.tool, activity?.stage);
+  const title =
+    activity?.summary ||
+    activity?.detail ||
+    (activity?.stage === "thinking"
+      ? "Sicoobito Agente está pensando e planejando o próximo passo..."
+      : `Executando ${activity?.tool}...`);
+
+  const formatTimer = (s: number) => {
+    const mins = Math.floor(s / 60);
+    const secs = s % 60;
+    return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}s`;
+  };
+
   return (
-    <div className="agent-thinking">
-      <div className="thinking-avatar">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-          <defs>
-            <linearGradient id="think-g" x1="0%" y1="0%" x2="100%" y2="100%">
-              <stop offset="0%" stopColor="#38bdf8" />
-              <stop offset="100%" stopColor="#a78bfa" />
-            </linearGradient>
-          </defs>
-          <circle cx="12" cy="12" r="10" fill="url(#think-g)" opacity="0.15" />
-          <circle cx="12" cy="12" r="3" fill="url(#think-g)" />
-        </svg>
+    <div className={`agent-live-activity ${meta.className}`}>
+      <div className="live-activity-header">
+        <div className="live-activity-badge-group">
+          <span className="live-activity-pulse-dot" />
+          <span className="live-activity-icon">{meta.icon}</span>
+          <span className="live-activity-badge">{meta.badge}</span>
+        </div>
+
+        <span className="live-activity-timer">{formatTimer(elapsedSeconds)}</span>
       </div>
-      <span className="thinking-label">Sicoobito Agente está pensando</span>
-      <span className="thinking-dots">
-        <span />
-        <span />
-        <span />
-      </span>
+
+      <div className="live-activity-content">
+        <div className="live-activity-title">{title}</div>
+      </div>
+
+      {recentActivities.length > 1 && (
+        <div className="live-activity-history-toggle">
+          <button
+            type="button"
+            className="live-activity-btn-toggle"
+            onClick={() => setShowHistory((prev) => !prev)}
+          >
+            <span>{showHistory ? "▾ Ocultar etapas deste turno" : `▸ Ver ${recentActivities.length} etapas deste turno`}</span>
+          </button>
+        </div>
+      )}
+
+      {showHistory && recentActivities.length > 0 && (
+        <div className="live-activity-timeline">
+          {recentActivities.map((item, idx) => {
+            const itemMeta = getToolMeta(item.tool, item.stage);
+            const isLatest = idx === recentActivities.length - 1;
+            return (
+              <div key={idx} className={`timeline-item ${isLatest ? "active" : "completed"}`}>
+                <span className="timeline-icon">{itemMeta.icon}</span>
+                <span className="timeline-text">{item.summary || item.detail || item.tool}</span>
+                {typeof item.duration_ms === "number" && (
+                  <span className="timeline-duration">{(item.duration_ms / 1000).toFixed(1)}s</span>
+                )}
+                {item.ok === false && <span className="timeline-fail">falha</span>}
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
@@ -287,6 +379,8 @@ function MessageStream({
   session,
   pending,
   isThinking,
+  activity,
+  recentActivities,
   decisions,
   running,
   onDecision,
@@ -296,6 +390,8 @@ function MessageStream({
   session: Session | null;
   pending: PendingAction[];
   isThinking: boolean;
+  activity?: ActivityEvent | null;
+  recentActivities?: ActivityEvent[];
   decisions: Record<string, boolean>;
   running?: boolean;
   onDecision: (toolCallId: string, approved: boolean) => void;
@@ -348,27 +444,34 @@ function MessageStream({
               );
             }
             return (
-              <div key={index} className="stream-badge tool">
-                <span className="stream-badge-icon">⚙</span>
-                <span className="tool-text">{line.text}</span>
+              <div key={index} className={`stream-tool-call ${line.toolOk === false ? "failed" : "ok"}`}>
+                <div className="tool-call-header">
+                  <span className="tool-call-icon">{line.toolOk === false ? "✗" : "⚙"}</span>
+                  <span className="tool-call-name">{line.tool || "ferramenta"}</span>
+                  <span className="tool-call-status">
+                    {line.toolOk === false ? "falha" : "concluído"}
+                  </span>
+                </div>
+                <p className="tool-call-summary">{line.text}</p>
               </div>
             );
           }
 
           if (line.kind === "error") {
             return (
-              <div key={index} className="stream-card error">
-                <span className="stream-badge-icon">✕</span>
+              <div key={index} className="stream-error-banner">
+                <span className="stream-error-icon">⚠</span>
                 <span>{line.text}</span>
               </div>
             );
           }
 
+          // Resposta do assistente
           return (
             <div key={index} className="stream-message assistant">
               <div className="message-header">
                 <div className="message-avatar">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
                     <defs>
                       <linearGradient id={`msg-g-${index}`} x1="0%" y1="0%" x2="100%" y2="100%">
                         <stop offset="0%" stopColor="#38bdf8" />
@@ -388,7 +491,12 @@ function MessageStream({
           );
         })}
 
-        {isThinking && <ThinkingIndicator />}
+        {isThinking && (
+          <AgentLiveActivity
+            activity={activity ?? null}
+            recentActivities={recentActivities ?? []}
+          />
+        )}
       </div>
 
       {pending.length > 0 && (
@@ -408,7 +516,17 @@ function MessageStream({
 
 /* ── Painel Principal do Agente ─────────────────────────────────── */
 
-export function AgentPanel({ session, log, pending, running, readOnly, onDecide, onPresetSelect }: AgentPanelProps) {
+export function AgentPanel({
+  session,
+  log,
+  pending,
+  running,
+  activity,
+  recentActivities,
+  readOnly,
+  onDecide,
+  onPresetSelect,
+}: AgentPanelProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [decisions, setDecisions] = useState<Record<string, boolean>>({});
   const [summaryCollapsed, setSummaryCollapsed] = useState(false);
@@ -428,10 +546,6 @@ export function AgentPanel({ session, log, pending, running, readOnly, onDecide,
     setDecisions((prev) => ({ ...prev, [toolCallId]: approved }));
   };
 
-  // `running` vem do sessionRuntime (via AgentDock) — reflete se há um turno
-  // em voo de verdade, ao contrário de inspecionar texto de log (nenhum
-  // evento real emite "Executando"/"rodando", então isso nunca disparava).
-  // Some quando já existe aprovação pendente para não duplicar indicador.
   const isThinking = Boolean(running) && pending.length === 0;
 
   return (
@@ -456,35 +570,56 @@ export function AgentPanel({ session, log, pending, running, readOnly, onDecide,
             {!summaryCollapsed && (
               <div className="agent-summary-items">
                 <span className="agent-summary-pill">Ramo: {session.branch || "main"}</span>
-                <span className="agent-summary-pill">Sandbox: {session.sandbox_available ? "ativo" : "inativo"}</span>
-                <span className="agent-summary-pill">Modelo: {session.profile || session.model || "padrão"}</span>
+                {session.profile && (
+                  <span className="agent-summary-pill">Perfil: {session.profile}</span>
+                )}
+                {session.model && (
+                  <span className="agent-summary-pill">Modelo: {session.model}</span>
+                )}
+                <span
+                  className={`agent-summary-pill ${session.sandbox_available ? "ok" : "warn"}`}
+                >
+                  Sandbox: {session.sandbox_available ? "conectado" : "indisponível"}
+                </span>
+                <span
+                  className={`agent-summary-pill ${session.github_available ? "ok" : "dim"}`}
+                >
+                  GitHub: {session.github_available ? "conectado" : "sem token"}
+                </span>
               </div>
             )}
           </div>
-          <StartupGuardSummary session={session} collapsed={guardCollapsed} onToggle={() => setGuardCollapsed((prev) => !prev)} />
+
+          <StartupGuardSummary
+            session={session}
+            collapsed={guardCollapsed}
+            onToggle={() => setGuardCollapsed((prev) => !prev)}
+          />
         </>
       )}
 
-      {/* Área de mensagens */}
-      <div className="agent-messages-scroll" ref={scrollRef}>
-        {log.length === 0 ? (
-          /* ── Estado Hero (Welcome) — estilo Copilot ── */
-          <div className="agent-hero-state">
-            <div className="copilot-hero-icon">
-              <svg width="32" height="32" viewBox="0 0 24 24" fill="none">
+      {/* Conteúdo principal com scroll */}
+      <div ref={scrollRef} className="agent-panel-scroll">
+        {log.length === 0 && !isThinking ? (
+          <div className="agent-empty-hero">
+            <div className="agent-hero-avatar">
+              <svg width="40" height="40" viewBox="0 0 24 24" fill="none">
                 <defs>
                   <linearGradient id="hero-g" x1="0%" y1="0%" x2="100%" y2="100%">
                     <stop offset="0%" stopColor="#38bdf8" />
-                    <stop offset="50%" stopColor="#818cf8" />
                     <stop offset="100%" stopColor="#a78bfa" />
                   </linearGradient>
                 </defs>
                 <circle cx="12" cy="12" r="10" fill="url(#hero-g)" opacity="0.15" />
-                <circle cx="12" cy="12" r="5" fill="url(#hero-g)" opacity="0.4" />
-                <circle cx="12" cy="12" r="2" fill="url(#hero-g)" />
+                <path
+                  d="M12 6v6l4 2"
+                  stroke="url(#hero-g)"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                />
               </svg>
             </div>
-            <h2 className="agent-hero-title">Sicoobito Agente</h2>
+            <h3 className="agent-hero-title">Como posso ajudar?</h3>
             <p className="agent-hero-subtitle">
               Pergunte, gere, refatore ou corrija bugs.
             </p>
@@ -512,6 +647,8 @@ export function AgentPanel({ session, log, pending, running, readOnly, onDecide,
             session={session}
             pending={pending}
             isThinking={isThinking}
+            activity={activity}
+            recentActivities={recentActivities}
             decisions={decisions}
             running={running}
             onDecision={setDecision}

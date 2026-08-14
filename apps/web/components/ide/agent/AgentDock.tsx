@@ -199,6 +199,8 @@ export function AgentDock({
             log={active?.log ?? []}
             pending={active?.readOnly ? [] : (active?.pending ?? [])}
             running={running}
+            activity={active?.currentActivity ?? null}
+            recentActivities={active?.recentActivities ?? []}
             readOnly={active?.readOnly}
             onDecide={(decisions) => void active?.decide(decisions)}
             onPresetSelect={handlePresetSelect}

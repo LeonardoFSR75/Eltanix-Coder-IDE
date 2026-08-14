@@ -235,7 +235,8 @@ class AgentRunner:
             dsn = self.settings.database_url.replace("postgresql+asyncpg://", "postgresql://")
             self._checkpointer_cm = AsyncPostgresSaver.from_conn_string(dsn)
             self._checkpointer = await self._checkpointer_cm.__aenter__()
-            await self._checkpointer.setup()
+            if self._checkpointer is not None:
+                await self._checkpointer.setup()
             log.info("agent.checkpointer.ready")
         except Exception as exc:
             log.warning("agent.checkpointer.unavailable", error=str(exc)[:200])
@@ -707,7 +708,7 @@ class AgentRunner:
             structlog.contextvars.bind_contextvars(session_id=session.session_id)
             try:
                 compilado = await self._compiled_graph(session)
-                config: dict[str, Any] = {"configurable": {"thread_id": session.session_id}}
+                config: Any = {"configurable": {"thread_id": session.session_id}}
 
                 from sicoobito.telemetry.langfuse_tracer import get_langfuse_callback
 
@@ -738,28 +739,88 @@ class AgentRunner:
                     else:
                         entrada = await self._initial_state(session)
 
-                async for evento in compilado.astream(
-                    entrada, config=config, stream_mode="updates"
-                ):
-                    for no, atualizacao in evento.items():
-                        yield {"node": no, "update": _serializable(atualizacao)}
-                        if no == "approve":
-                            pendentes = atualizacao.get("pending") or []
-                            await self.update_session_summary(
-                                session.session_id,
-                                pending_count=len(pendentes),
-                                failed_count=max(
-                                    0, int(atualizacao.get("last_failed_call_count") or 0)
-                                ),
-                            )
-                        elif no == "act":
-                            await self.update_session_summary(
-                                session.session_id,
-                                pending_count=0,
-                                failed_count=max(
-                                    0, int(atualizacao.get("last_failed_call_count") or 0)
-                                ),
-                            )
+                activity_queue: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue()
+
+                async def _on_activity(act_evt: dict[str, Any]) -> None:
+                    await activity_queue.put(act_evt)
+
+                session.context.on_activity = _on_activity
+
+                event_queue: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue()
+
+                async def _run_graph() -> None:
+                    try:
+                        async for evento in compilado.astream(
+                            entrada, config=config, stream_mode="updates"
+                        ):
+                            for no, atualizacao in evento.items():
+                                await event_queue.put(
+                                    {"node": no, "update": _serializable(atualizacao)}
+                                )
+                    except Exception as exc:
+                        await event_queue.put({"node": "error", "update": {"message": str(exc)}})
+                    finally:
+                        await event_queue.put(None)
+
+                graph_task = asyncio.create_task(_run_graph())
+
+                try:
+                    graph_done = False
+                    while not graph_done or not activity_queue.empty():
+                        # Drena micro-atividades pendentes
+                        while not activity_queue.empty():
+                            act_item = activity_queue.get_nowait()
+                            if act_item is not None:
+                                yield {"node": "activity", "update": act_item}
+
+                        if graph_done:
+                            break
+
+                        get_graph_coro = asyncio.create_task(event_queue.get())
+                        get_act_coro = asyncio.create_task(activity_queue.get())
+
+                        done, pending = await asyncio.wait(
+                            [get_graph_coro, get_act_coro],
+                            return_when=asyncio.FIRST_COMPLETED,
+                        )
+
+                        for pending_t in pending:
+                            pending_t.cancel()
+
+                        for done_t in done:
+                            item = done_t.result()
+                            if item is None and done_t is get_graph_coro:
+                                graph_done = True
+                            elif item is not None:
+                                if done_t is get_act_coro:
+                                    yield {"node": "activity", "update": item}
+                                else:
+                                    yield item
+                                    no = item.get("node")
+                                    atualizacao = item.get("update") or {}
+                                    if no == "approve":
+                                        pendentes = atualizacao.get("pending") or []
+                                        await self.update_session_summary(
+                                            session.session_id,
+                                            pending_count=len(pendentes),
+                                            failed_count=max(
+                                                0,
+                                                int(atualizacao.get("last_failed_call_count") or 0),
+                                            ),
+                                        )
+                                    elif no == "act":
+                                        await self.update_session_summary(
+                                            session.session_id,
+                                            pending_count=0,
+                                            failed_count=max(
+                                                0,
+                                                int(atualizacao.get("last_failed_call_count") or 0),
+                                            ),
+                                        )
+                finally:
+                    session.context.on_activity = None
+                    if not graph_task.done():
+                        graph_task.cancel()
 
                 estado = await compilado.aget_state(config) if compilado.checkpointer else None
                 if estado is not None:
@@ -784,6 +845,7 @@ class AgentRunner:
                                     "update": _serializable(interrupcao.value),
                                 }
             finally:
+                session.context.on_activity = None
                 structlog.contextvars.unbind_contextvars("session_id")
 
     async def get_messages(self, session: AgentSession) -> list[dict[str, Any]]:
@@ -796,7 +858,7 @@ class AgentRunner:
         compilado = await self._compiled_graph(session)
         if not compilado.checkpointer:
             return []
-        config = {"configurable": {"thread_id": session.session_id}}
+        config: Any = {"configurable": {"thread_id": session.session_id}}
         estado = await compilado.aget_state(config)
         if estado is None:
             return []

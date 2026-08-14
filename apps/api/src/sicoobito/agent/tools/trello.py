@@ -164,14 +164,14 @@ async def trello_manage(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
 
         if len(new_cards) == len(cards):
             return ToolResult.failure(
-                f"Cartão não encontrado para exclusão (ID: {card_id}, Título: {title})."
+                f"Cartão não encontrado para exclusão (ID: {del_id}, Título: {title})."
             )
 
         save_kanban_cards(project_path, new_cards)
         return ToolResult(
             ok=True,
             content="Cartão removido do Quadro Trello do projeto.",
-            data={"action": "delete", "card_id": card_id},
+            data={"action": "delete", "card_id": del_id},
         )
 
     return ToolResult.failure(f"Ação desconhecida: {action}")

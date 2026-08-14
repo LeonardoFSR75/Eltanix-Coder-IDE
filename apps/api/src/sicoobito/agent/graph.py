@@ -201,7 +201,21 @@ def build_graph(engine: RouterEngine, context: ToolContext):
         )
 
     async def think(state: AgentState) -> dict[str, Any]:
-        mensagens = _para_api([{"role": "system", "content": system_prompt}, *state["messages"]])
+        if context.on_activity is not None:
+            try:
+                await context.on_activity(
+                    {
+                        "stage": "thinking",
+                        "detail": "Analisando contexto e formulando ações...",
+                        "iteration": state.get("iterations", 0) + 1,
+                        "timestamp": int(time.time() * 1000),
+                    }
+                )
+            except Exception:
+                pass
+
+        mensagens_state = state.get("messages") or []
+        mensagens = _para_api([{"role": "system", "content": system_prompt}, *mensagens_state])
 
         resultado = await engine.complete(
             requested_model=state.get("model") or "coding",
@@ -368,7 +382,8 @@ def build_graph(engine: RouterEngine, context: ToolContext):
 
     async def act(state: AgentState) -> dict[str, Any]:
         context.session_state.current_todos = [dict(t) for t in (state.get("todos") or [])]
-        ultima = state["messages"][-1] if state["messages"] else {}
+        mensagens_state = state.get("messages") or []
+        ultima = mensagens_state[-1] if mensagens_state else {}
         tool_calls = ultima.get("tool_calls") or []
         aprovacoes = state.get("approvals") or {}
         motivos = state.get("approval_reasons") or {}
@@ -408,6 +423,21 @@ def build_graph(engine: RouterEngine, context: ToolContext):
                 continue
 
             fingerprint = _tool_fingerprint(nome, argumentos)
+            resumo_chamada = ferramenta.describe_call(argumentos)
+
+            if context.on_activity is not None:
+                try:
+                    await context.on_activity(
+                        {
+                            "stage": "tool_start",
+                            "tool": nome,
+                            "summary": resumo_chamada,
+                            "call_id": call_id,
+                            "timestamp": int(time.time() * 1000),
+                        }
+                    )
+                except Exception:
+                    pass
 
             if _is_stuck_repeat(fingerprint, ultima_falha, contagem_falha):
                 if context.audit is not None:
@@ -449,6 +479,22 @@ def build_graph(engine: RouterEngine, context: ToolContext):
             try:
                 resultado = await ferramenta.handler(context, argumentos)
             except Exception as exc:
+                duracao_ms = int((time.perf_counter() - inicio) * 1000)
+                if context.on_activity is not None:
+                    try:
+                        await context.on_activity(
+                            {
+                                "stage": "tool_end",
+                                "tool": nome,
+                                "summary": resumo_chamada,
+                                "ok": False,
+                                "duration_ms": duracao_ms,
+                                "call_id": call_id,
+                                "timestamp": int(time.time() * 1000),
+                            }
+                        )
+                    except Exception:
+                        pass
                 log.warning("agent.tool.failed", tool=nome, error=str(exc)[:200])
                 if risk is not RiskClass.READ:
                     context.session_state.has_unresolved_failure = True
@@ -456,7 +502,7 @@ def build_graph(engine: RouterEngine, context: ToolContext):
                     context.trace_recorder.record(
                         kind="tool",
                         name=nome,
-                        latency_ms=(time.perf_counter() - inicio) * 1000.0,
+                        latency_ms=duracao_ms,
                         status="error",
                         session_id=state.get("session_id", ""),
                         error=str(exc),
@@ -467,6 +513,23 @@ def build_graph(engine: RouterEngine, context: ToolContext):
                 )
                 continue
 
+            duracao_ms = int((time.perf_counter() - inicio) * 1000)
+            if context.on_activity is not None:
+                try:
+                    await context.on_activity(
+                        {
+                            "stage": "tool_end",
+                            "tool": nome,
+                            "summary": resumo_chamada,
+                            "ok": resultado.ok,
+                            "duration_ms": duracao_ms,
+                            "call_id": call_id,
+                            "timestamp": int(time.time() * 1000),
+                        }
+                    )
+                except Exception:
+                    pass
+
             status_da_ferramenta = _telemetry_status(nome, resultado)
             if risk is not RiskClass.READ:
                 context.session_state.has_unresolved_failure = status_da_ferramenta == "error"
@@ -475,7 +538,7 @@ def build_graph(engine: RouterEngine, context: ToolContext):
                 context.trace_recorder.record(
                     kind="tool",
                     name=nome,
-                    latency_ms=(time.perf_counter() - inicio) * 1000.0,
+                    latency_ms=duracao_ms,
                     status=status_da_ferramenta,
                     session_id=state.get("session_id", ""),
                 )
@@ -496,8 +559,8 @@ def build_graph(engine: RouterEngine, context: ToolContext):
             )
             if caminho := resultado.data.get("path"):
                 alterados.append(str(caminho))
-            if "todos" in resultado.data:
-                todos_atualizados = resultado.data["todos"]
+            if "todos" in resultado.data and resultado.data["todos"] is not None:
+                todos_atualizados = list(resultado.data["todos"])
                 context.session_state.current_todos = todos_atualizados
 
         atualizacao: dict[str, Any] = {
