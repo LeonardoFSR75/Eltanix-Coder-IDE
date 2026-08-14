@@ -371,11 +371,15 @@ async def exec_command(session_id: str, payload: ExecRequest) -> dict[str, Any]:
 
     exec_env = [
         "HOME=/tmp",
+        "HOST=0.0.0.0",
+        "FLASK_RUN_HOST=0.0.0.0",
+        "UVICORN_HOST=0.0.0.0",
+        "VITE_HOST=0.0.0.0",
         "PYTHONDONTWRITEBYTECODE=1",
         "PIP_DISABLE_PIP_VERSION_CHECK=1",
         "VIRTUAL_ENV=/workspace/.venv",
-        "PYTHONPATH=/workspace:/workspace/.venv/lib/python3.12/site-packages:/workspace/.venv/lib/python3.11/site-packages:/workspace/.venv/lib/python3.10/site-packages:/workspace/.venv/Lib/site-packages:/workspace/.venv/lib/site-packages",
-        "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/workspace/.venv/bin:/workspace/.venv/Scripts:/workspace/node_modules/.bin",
+        "PYTHONPATH=/tmp/sicoobito_bootstrap:/workspace:/workspace/.venv/lib/python3.12/site-packages:/workspace/.venv/lib/python3.11/site-packages:/workspace/.venv/lib/python3.10/site-packages:/workspace/.venv/Lib/site-packages:/workspace/.venv/lib/site-packages",
+        "PATH=/tmp/sicoobito_bootstrap:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/workspace/.venv/bin:/workspace/.venv/Scripts:/workspace/node_modules/.bin",
     ]
 
     def _run() -> tuple[int, bytes, bytes]:
