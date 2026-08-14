@@ -423,6 +423,7 @@ class AgentRunner:
             project_root=workspace_root,
             projects_root=self.settings.effective_projects_root,
             sandbox=sandbox,
+            sandboxes=self.sandboxes,
             indexer=self.indexer,
             github=github,
             repo_ref=repo_ref,

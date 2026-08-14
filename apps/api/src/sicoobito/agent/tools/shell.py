@@ -103,6 +103,12 @@ def project_venv_prefix(workspace_root: str | Path | None) -> str:
     summarize=lambda a: f"executar: {a.get('command')}",
 )
 async def run_command(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
+    if ctx.sandbox is None and getattr(ctx, "sandboxes", None) is not None:
+        try:
+            ctx.sandbox = await ctx.sandboxes.acquire(ctx.session_id, ctx.workspace_root)
+        except Exception:
+            pass
+
     if ctx.sandbox is None:
         return ToolResult.failure(
             "Sandbox indisponível — o Docker precisa estar rodando para executar comandos."

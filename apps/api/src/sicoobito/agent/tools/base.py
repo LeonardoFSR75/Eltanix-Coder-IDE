@@ -58,6 +58,7 @@ class ToolContext:
     project_root: Any = None  # Path — raiz canônica do projeto original
     projects_root: Any = None  # Path — raiz que contém todos os projetos
     sandbox: Any | None = None  # Sandbox
+    sandboxes: Any | None = None  # SandboxPool (para re-aquisição sob demanda)
     indexer: Any | None = None  # ContextIndexer
     github: Any | None = None  # GitHubClient
     repo_ref: Any | None = None  # RepoRef
