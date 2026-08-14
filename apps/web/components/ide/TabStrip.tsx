@@ -33,7 +33,10 @@ export function TabStrip({ groupId }: { groupId: string }) {
       }}
     >
       {group.tabs.map((tab) => {
-        const filename = tab.split("/").pop() ?? tab;
+        const isBrowserTab = tab.startsWith("browser:");
+        const browserUrl = isBrowserTab ? tab.slice("browser:".length) : "";
+        const cleanHost = browserUrl.replace(/^https?:\/\//, "").split("/")[0] || "localhost";
+        const filename = isBrowserTab ? `🌐 ${cleanHost}` : (tab.split("/").pop() ?? tab);
         return (
           <div
             key={tab}

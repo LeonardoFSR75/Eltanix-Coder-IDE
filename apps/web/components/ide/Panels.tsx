@@ -1102,6 +1102,7 @@ function useStablePanelSessionId(): string {
 }
 
 export function BrowserPanel() {
+  const { openFile } = useIde();
   const sessionId = useStablePanelSessionId();
   const [urlInput, setUrlInput] = useState("http://web:5400");
   const [currentUrl, setCurrentUrl] = useState<string | null>(null);
@@ -1207,6 +1208,18 @@ export function BrowserPanel() {
       <div className="panel-header">
         <span className="panel-header-title">Navegador</span>
         <div className="panel-actions-bar">
+          <button
+            type="button"
+            className="icon-action-btn"
+            title="Abrir no editor central em tamanho grande"
+            onClick={() => openFile(`browser:${currentUrl || urlInput || "http://localhost:5000"}`)}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+              <polyline points="15 3 21 3 21 9" />
+              <line x1="10" y1="14" x2="21" y2="3" />
+            </svg>
+          </button>
           <button
             type="button"
             className="icon-action-btn"

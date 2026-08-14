@@ -113,6 +113,18 @@ function Shell() {
     [ide],
   );
 
+  useEffect(() => {
+    const handleBrowserOpen = (evt: Event) => {
+      const customEvt = evt as CustomEvent<{ url: string }>;
+      const url = customEvt.detail?.url;
+      if (url) {
+        ide.openFile(`browser:${url}`);
+      }
+    };
+    window.addEventListener("sicoobito:browser:open", handleBrowserOpen);
+    return () => window.removeEventListener("sicoobito:browser:open", handleBrowserOpen);
+  }, [ide]);
+
   const handleCreateProject = async () => {
     const nome = window.prompt("Nome da pasta do projeto (será criada ou vinculada dentro do PROJECTS_ROOT):");
     if (!nome || !nome.trim()) return;

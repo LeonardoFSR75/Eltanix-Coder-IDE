@@ -192,6 +192,15 @@ export class AgentSessionRuntime {
           toolData: (message.data ?? {}) as Record<string, unknown>,
           toolContent: content,
         });
+        if (message.name === "browser_action" && message.ok !== false) {
+          const data = (message.data ?? {}) as Record<string, unknown>;
+          const navUrl = typeof data.url === "string" ? data.url : "";
+          if (navUrl && typeof window !== "undefined") {
+            window.dispatchEvent(
+              new CustomEvent("sicoobito:browser:open", { detail: { url: navUrl } })
+            );
+          }
+        }
       }
       for (const path of (update.files_changed ?? []) as string[]) {
         this.onFileTouched?.(path);

@@ -1,5 +1,6 @@
 "use client";
 
+import { useIde } from "@/lib/ide-store";
 import { riskLevelForTool, ToolCardShell } from "./ToolCardShell";
 import type { ToolCardProps } from "./types";
 
@@ -7,12 +8,18 @@ import type { ToolCardProps } from "./types";
 // só (mesmo padrão de run_command para shell) — o card exibe o screenshot,
 // url/título, e alertas de erros de console/página capturados pelo Playwright.
 export function BrowserCard({ tool, content, data, ok }: ToolCardProps) {
+  const { openFile } = useIde();
   const image = typeof data.image_base64 === "string" ? data.image_base64 : null;
   const url = typeof data.url === "string" ? data.url : undefined;
   const title = typeof data.title === "string" ? data.title : undefined;
   const consoleErrors = Array.isArray(data.console_errors) ? (data.console_errors as string[]) : [];
   const pageErrors = Array.isArray(data.page_errors) ? (data.page_errors as string[]) : [];
   const hasErrors = consoleErrors.length > 0 || pageErrors.length > 0;
+
+  const abrirNoEditor = () => {
+    const alvo = url || "http://localhost:5000";
+    openFile(`browser:${alvo}`);
+  };
 
   return (
     <ToolCardShell
@@ -24,8 +31,23 @@ export function BrowserCard({ tool, content, data, ok }: ToolCardProps) {
       defaultOpen={Boolean(image || hasErrors)}
     >
       {image && (
-        <div className="browser-card-screenshot">
-          <img src={`data:image/png;base64,${image}`} alt={title || url || "screenshot"} />
+        <div className="browser-card-screenshot-container" style={{ position: "relative" }}>
+          <div
+            className="browser-card-screenshot"
+            onClick={abrirNoEditor}
+            style={{ cursor: "pointer" }}
+            title="Clique para abrir e interagir no painel central do editor"
+          >
+            <img src={`data:image/png;base64,${image}`} alt={title || url || "screenshot"} />
+          </div>
+          <button
+            type="button"
+            className="browser-card-open-btn"
+            onClick={abrirNoEditor}
+            title="Abrir no editor central para visualizar em tamanho grande e interagir"
+          >
+            <span>🔍 Abrir no Navegador Central (Grande) ↗</span>
+          </button>
         </div>
       )}
       {hasErrors && (

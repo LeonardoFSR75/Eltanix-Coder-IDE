@@ -18,6 +18,7 @@ import {
 
 import { Breadcrumbs } from "@/components/ide/Breadcrumbs";
 import { InlineDiffApprovalBar } from "@/components/ide/InlineDiffApprovalBar";
+import { EditorBrowserView } from "./EditorBrowserView";
 
 
 // O nome da linguagem no nosso catálogo nem sempre é o id do Monaco.
@@ -112,6 +113,12 @@ export function Editor({
   } = useIde();
   const group = groups[groupId];
   const path = group?.active ?? null;
+
+  if (path && path.startsWith("browser:")) {
+    const browserUrl = path.slice("browser:".length);
+    return <EditorBrowserView initialUrl={browserUrl} />;
+  }
+
   const reveal = globalReveal?.path === path ? globalReveal : null;
   const syncVersion = path ? fileSyncVersion[path] ?? 0 : 0;
   const [content, setContent] = useState("");
