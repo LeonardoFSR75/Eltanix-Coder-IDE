@@ -127,6 +127,98 @@ async def health() -> dict[str, Any]:
     }
 
 
+def _ensure_bootstrap(container: Any) -> None:
+    bootstrap_script = r"""
+import os, stat
+os.makedirs('/tmp/sicoobito_bootstrap', exist_ok=True)
+with open('/tmp/sicoobito_bootstrap/sitecustomize.py', 'w') as f:
+    f.write('''import socket
+_orig_bind = socket.socket.bind
+def _sicoobito_bind(self, address):
+    if isinstance(address, tuple) and len(address) >= 2:
+        if address[0] in ('127.0.0.1', 'localhost'):
+            address = ('0.0.0.0', address[1], *address[2:])
+    return _orig_bind(self, address)
+socket.socket.bind = _sicoobito_bind
+''')
+pkill_code = '''#!/usr/bin/env python3
+import sys, os, signal, glob
+pattern = ""
+sig = signal.SIGTERM
+for arg in sys.argv[1:]:
+    if arg.startswith('-') and not arg.startswith('-f'):
+        if arg in ('-9', '-KILL'): sig = signal.SIGKILL
+    else: pattern = arg
+curr = os.getpid()
+killed = 0
+for p in glob.glob('/proc/[0-9]*'):
+    try:
+        pid = int(os.path.basename(p))
+        if pid in (1, curr): continue
+        with open(f'{p}/cmdline', 'r', errors='ignore') as cf:
+            cmd = cf.read().replace('\\x00', ' ')
+        if pattern and pattern in cmd:
+            os.kill(pid, sig)
+            killed += 1
+    except Exception: pass
+sys.exit(0 if killed > 0 else 1)
+'''
+with open('/tmp/sicoobito_bootstrap/pkill', 'w') as f: f.write(pkill_code)
+with open('/tmp/sicoobito_bootstrap/killall', 'w') as f: f.write(pkill_code)
+
+fuser_code = '''#!/usr/bin/env python3
+import sys, os, signal, glob
+target_port = None
+kill_mode = '-k' in sys.argv or sys.argv[0].endswith('fuser')
+for arg in sys.argv[1:]:
+    for sub in arg.replace(':', ' ').replace('/', ' ').split():
+        if sub.isdigit():
+            target_port = int(sub)
+            break
+hex_port = f"{target_port:04X}" if target_port else None
+inodes = set()
+try:
+    with open('/proc/net/tcp', 'r') as f:
+        for line in f.readlines()[1:]:
+            parts = line.strip().split()
+            if len(parts) >= 10:
+                local_addr, inode = parts[1], parts[9]
+                if hex_port is None or local_addr.endswith(':' + hex_port):
+                    inodes.add(inode)
+except Exception: pass
+pids = set()
+curr = os.getpid()
+for p in glob.glob('/proc/[0-9]*'):
+    try:
+        pid = int(os.path.basename(p))
+        if pid in (1, curr): continue
+        for fd in glob.glob(f'{p}/fd/*'):
+            try:
+                link = os.readlink(fd)
+                for inode in inodes:
+                    if f'[{inode}]' in link: pids.add(pid)
+            except Exception: pass
+    except Exception: pass
+for pid in pids:
+    if kill_mode:
+        try: os.kill(pid, signal.SIGKILL); print(f"Killed process {pid}")
+        except Exception: pass
+    else:
+        print(pid)
+'''
+with open('/tmp/sicoobito_bootstrap/fuser', 'w') as f: f.write(fuser_code)
+with open('/tmp/sicoobito_bootstrap/lsof', 'w') as f: f.write(fuser_code)
+with open('/tmp/sicoobito_bootstrap/netstat', 'w') as f: f.write(fuser_code)
+for name in ('pkill', 'killall', 'fuser', 'lsof', 'netstat'):
+    path = f'/tmp/sicoobito_bootstrap/{name}'
+    os.chmod(path, os.stat(path).st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+"""
+    try:
+        container.exec_run(["python", "-c", bootstrap_script])
+    except Exception:  # noqa: BLE001
+        pass
+
+
 _container_cache: dict[str, str] = {}
 
 
@@ -141,6 +233,7 @@ async def create_sandbox(payload: CreateRequest) -> dict[str, Any]:
             container = client().containers.get(cid)
             if container.status != "running":
                 container.start()
+            _ensure_bootstrap(container)
             return {"id": container.id, "name": nome, "reused": True}
         except Exception:  # noqa: BLE001
             _container_cache.pop(payload.session_id, None)
@@ -150,6 +243,7 @@ async def create_sandbox(payload: CreateRequest) -> dict[str, Any]:
         container = existentes[0]
         if container.status != "running":
             container.start()
+        _ensure_bootstrap(container)
         _container_cache[payload.session_id] = str(container.id)
         return {"id": container.id, "name": nome, "reused": True}
 
@@ -229,95 +323,7 @@ async def create_sandbox(payload: CreateRequest) -> dict[str, Any]:
             auto_remove=False,
         )
         _container_cache[payload.session_id] = str(container.id)
-
-        # Injeta bootstrap: 0.0.0.0 socket bind automático e utilitários pkill, fuser, lsof
-        bootstrap_script = r"""
-import os, stat
-os.makedirs('/tmp/sicoobito_bootstrap', exist_ok=True)
-with open('/tmp/sicoobito_bootstrap/sitecustomize.py', 'w') as f:
-    f.write('''import socket
-_orig_bind = socket.socket.bind
-def _sicoobito_bind(self, address):
-    if isinstance(address, tuple) and len(address) >= 2:
-        if address[0] in ('127.0.0.1', 'localhost'):
-            address = ('0.0.0.0', address[1], *address[2:])
-    return _orig_bind(self, address)
-socket.socket.bind = _sicoobito_bind
-''')
-with open('/tmp/sicoobito_bootstrap/pkill', 'w') as f:
-    f.write('''#!/usr/bin/env python3
-import sys, os, signal, glob
-pattern = ""
-sig = signal.SIGTERM
-for arg in sys.argv[1:]:
-    if arg.startswith('-') and not arg.startswith('-f'):
-        if arg in ('-9', '-KILL'): sig = signal.SIGKILL
-    else: pattern = arg
-curr = os.getpid()
-killed = 0
-for p in glob.glob('/proc/[0-9]*'):
-    try:
-        pid = int(os.path.basename(p))
-        if pid in (1, curr): continue
-        with open(f'{p}/cmdline', 'r', errors='ignore') as cf:
-            cmd = cf.read().replace('\\x00', ' ')
-        if pattern and pattern in cmd:
-            os.kill(pid, sig)
-            killed += 1
-    except Exception: pass
-sys.exit(0 if killed > 0 else 1)
-''')
-fuser_code = '''#!/usr/bin/env python3
-import sys, os, signal, glob
-target_port = None
-kill_mode = '-k' in sys.argv or sys.argv[0].endswith('fuser')
-for arg in sys.argv[1:]:
-    for sub in arg.replace(':', ' ').replace('/', ' ').split():
-        if sub.isdigit():
-            target_port = int(sub)
-            break
-hex_port = f"{target_port:04X}" if target_port else None
-inodes = set()
-try:
-    with open('/proc/net/tcp', 'r') as f:
-        for line in f.readlines()[1:]:
-            parts = line.strip().split()
-            if len(parts) >= 10:
-                local_addr, inode = parts[1], parts[9]
-                if hex_port is None or local_addr.endswith(':' + hex_port):
-                    inodes.add(inode)
-except Exception: pass
-pids = set()
-curr = os.getpid()
-for p in glob.glob('/proc/[0-9]*'):
-    try:
-        pid = int(os.path.basename(p))
-        if pid in (1, curr): continue
-        for fd in glob.glob(f'{p}/fd/*'):
-            try:
-                link = os.readlink(fd)
-                for inode in inodes:
-                    if f'[{inode}]' in link: pids.add(pid)
-            except Exception: pass
-    except Exception: pass
-for pid in pids:
-    if kill_mode:
-        try: os.kill(pid, signal.SIGKILL); print(f"Killed process {pid}")
-        except Exception: pass
-    else:
-        print(pid)
-'''
-with open('/tmp/sicoobito_bootstrap/fuser', 'w') as f: f.write(fuser_code)
-with open('/tmp/sicoobito_bootstrap/lsof', 'w') as f: f.write(fuser_code)
-with open('/tmp/sicoobito_bootstrap/netstat', 'w') as f: f.write(fuser_code)
-for name in ('pkill', 'fuser', 'lsof', 'netstat'):
-    path = f'/tmp/sicoobito_bootstrap/{name}'
-    os.chmod(path, os.stat(path).st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
-"""
-        try:
-            container.exec_run(["python", "-c", bootstrap_script])
-        except Exception:  # noqa: BLE001
-            pass
+        _ensure_bootstrap(container)
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY, detail=f"falha ao criar sandbox: {exc}"

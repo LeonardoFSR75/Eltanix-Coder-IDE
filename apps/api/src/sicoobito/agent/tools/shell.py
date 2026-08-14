@@ -64,10 +64,12 @@ def project_venv_prefix(workspace_root: str | Path | None) -> str:
         return ""
 
     paths = (
+        "/tmp/sicoobito_bootstrap:"
         "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:"
         "/workspace/.venv/bin:/workspace/.venv/Scripts:/workspace/node_modules/.bin:$PATH"
     )
     pythonpaths = (
+        "/tmp/sicoobito_bootstrap:"
         "/workspace:"
         "/workspace/.venv/lib/python3.12/site-packages:"
         "/workspace/.venv/lib/python3.11/site-packages:"
