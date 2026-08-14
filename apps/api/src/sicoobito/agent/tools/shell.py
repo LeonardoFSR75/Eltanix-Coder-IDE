@@ -240,12 +240,14 @@ async def run_command(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
 
         # Limpa sufixos de backgrounding adicionados pelo modelo (ex: & sleep 2)
         cmd_limpo = re.sub(r"\s*&\s*sleep\s+\d+", "", comando).strip().rstrip("&").strip()
+        # Escapa aspas simples no comando para envolver em bash -c '...'
+        cmd_escapado = cmd_limpo.replace("'", "'\"'\"'")
         comando = (
             f"fuser -k {porta_alvo}/tcp >/dev/null 2>&1 || true; "
             f"sleep 0.2; "
-            f"nohup {cmd_limpo} > /tmp/sicoobito_server.log 2>&1 & "
-            f"for i in $(seq 1 15); do "
-            f"(echo > /dev/tcp/127.0.0.1/{porta_alvo}) >/dev/null 2>&1 && break || sleep 0.2; "
+            f"nohup bash -c '{cmd_escapado}' > /tmp/sicoobito_server.log 2>&1 & "
+            f"for i in $(seq 1 20); do "
+            f"(echo > /dev/tcp/127.0.0.1/{porta_alvo}) >/dev/null 2>&1 && break || sleep 0.3; "
             f"done; "
             f"sleep 0.3; "
             f"cat /tmp/sicoobito_server.log"
