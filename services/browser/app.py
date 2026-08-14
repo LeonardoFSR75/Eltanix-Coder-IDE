@@ -237,7 +237,7 @@ async def run_action(session_id: str, payload: ActionRequest) -> dict[str, Any]:
             while True:
                 for tentativa_url in urls_to_try:
                     try:
-                        timeout_tentativa = min(payload.timeout_ms, 5000)
+                        timeout_tentativa = min(payload.timeout_ms, 3000)
                         resposta = await page.goto(
                             tentativa_url,
                             timeout=timeout_tentativa,
@@ -267,12 +267,20 @@ async def run_action(session_id: str, payload: ActionRequest) -> dict[str, Any]:
             if ultimo_erro is not None:
                 raise ultimo_erro
 
+            image_b64 = None
+            try:
+                png = await page.screenshot(timeout=min(payload.timeout_ms, 5000))
+                image_b64 = base64.b64encode(png).decode("ascii")
+            except Exception:  # noqa: BLE001
+                pass
+
             return {
                 "ok": True,
                 "url": page.url,
                 "title": await page.title(),
                 "status": resposta.status if resposta else None,
                 "duration_ms": int((time.perf_counter() - inicio) * 1000),
+                "image_base64": image_b64,
                 "console_errors": list(_console_logs.get(session_id, [])),
                 "page_errors": list(_page_errors.get(session_id, [])),
             }

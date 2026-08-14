@@ -276,7 +276,13 @@ class _FakeBrowser:
     async def action(self, payload, *, timeout_ms=15_000):
         self.calls.append(payload)
         if payload["action"] == "navigate":
-            return {"ok": True, "url": payload["url"], "title": "Título", "status": 200}
+            return {
+                "ok": True,
+                "url": payload["url"],
+                "title": "Título",
+                "status": 200,
+                "image_base64": "ZmFrZQ==",
+            }
         if payload["action"] == "screenshot":
             return {"ok": True, "image_base64": "ZmFrZQ==", "url": "http://web:5400"}
         if payload["action"] == "content":
@@ -322,6 +328,7 @@ async def test_browser_action_navigate_reports_title_and_status(ctx):
     assert resultado.ok
     assert "Título" in resultado.content
     assert fake.calls[0]["url"] == "http://web:5400/ide"
+    assert resultado.data["image_base64"] == "ZmFrZQ=="
 
 
 async def test_browser_action_screenshot_returns_base64_in_data(ctx):
