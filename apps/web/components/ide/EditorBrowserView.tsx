@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { browserAction, closeBrowserSession } from "@/lib/api/browser";
+import { getSandboxServerLogs, getSandboxStats, type SandboxStats } from "@/lib/api/sandbox";
 import { useIde } from "@/lib/ide-store";
 
 interface EditorBrowserViewProps {
@@ -27,12 +28,16 @@ export function EditorBrowserView({
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const [clickIndicator, setClickIndicator] = useState<{ x: number; y: number } | null>(null);
-  const [showInspector, setShowInspector] = useState(false);
+  const [showDrawer, setShowDrawer] = useState(false);
+  const [drawerTab, setDrawerTab] = useState<"inspector" | "logs">("logs");
+  const [serverLogs, setServerLogs] = useState("");
+  const [sandboxStats, setSandboxStats] = useState<SandboxStats | null>(null);
   const [selectorInput, setSelectorInput] = useState("");
   const [textInput, setTextInput] = useState("");
 
   const imgRef = useRef<HTMLImageElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const logsPreRef = useRef<HTMLPreElement>(null);
 
   const capturar = useCallback(async () => {
     setLoading(true);
@@ -86,6 +91,48 @@ export function EditorBrowserView({
       void navegar(initialUrl);
     }
   }, [initialUrl, navegar]);
+
+  // Polling de telemetria e stats do container do Sandbox
+  useEffect(() => {
+    let ativo = true;
+    const fetchStats = async () => {
+      if (!activeSessionId) return;
+      try {
+        const data = await getSandboxStats(activeSessionId);
+        if (ativo && data) setSandboxStats(data);
+      } catch {
+        // Ignora erros de polling
+      }
+    };
+    void fetchStats();
+    const timer = setInterval(fetchStats, 4000);
+    return () => {
+      ativo = false;
+      clearInterval(timer);
+    };
+  }, [activeSessionId]);
+
+  // Polling de logs do servidor quando o drawer de logs estiver aberto
+  useEffect(() => {
+    if (!showDrawer || drawerTab !== "logs" || !activeSessionId) return;
+    let ativo = true;
+    const fetchLogs = async () => {
+      try {
+        const data = await getSandboxServerLogs(activeSessionId, 200);
+        if (ativo && data?.logs) {
+          setServerLogs(data.logs);
+        }
+      } catch {
+        // Ignora erros de polling de log
+      }
+    };
+    void fetchLogs();
+    const timer = setInterval(fetchLogs, 2500);
+    return () => {
+      ativo = false;
+      clearInterval(timer);
+    };
+  }, [showDrawer, drawerTab, activeSessionId]);
 
   const clicarNaCaptura = useCallback(
     async (e: React.MouseEvent<HTMLImageElement>) => {
@@ -141,7 +188,8 @@ export function EditorBrowserView({
     try {
       const resultado = await browserAction({ sessionId, action: "content" });
       setContent(resultado.text ?? "");
-      setShowInspector(true);
+      setDrawerTab("inspector");
+      setShowDrawer(true);
     } catch (err) {
       setErro(err instanceof Error ? err.message : String(err));
     }
@@ -160,9 +208,14 @@ export function EditorBrowserView({
     setErro(null);
   }, [sessionId]);
 
+  const portasStr = sandboxStats?.ports?.length
+    ? `Porta ${sandboxStats.ports.join(", ")}`
+    : null;
+  const memMb = sandboxStats?.metrics?.memory_mb;
+
   return (
     <div className="editor-browser-container" ref={containerRef}>
-      {/* Barra de Endereços e Controles */}
+      {/* Barra de Endereços, Status e Telemetria */}
       <div className="editor-browser-header">
         <div className="editor-browser-nav-group">
           <button
@@ -200,6 +253,16 @@ export function EditorBrowserView({
         </div>
 
         <div className="editor-browser-meta-group">
+          {portasStr && (
+            <span className="editor-browser-status-badge status-ok" title="Porta ativa escutando no sandbox">
+              🟢 {portasStr}
+            </span>
+          )}
+          {memMb !== undefined && (
+            <span className="editor-browser-duration-badge" title="Consumo de RAM do sandbox">
+              {memMb}MB RAM
+            </span>
+          )}
           {status && (
             <span className={`editor-browser-status-badge status-${status < 400 ? "ok" : "err"}`}>
               {status} OK
@@ -210,9 +273,31 @@ export function EditorBrowserView({
           )}
           <button
             type="button"
-            className={`editor-browser-tool-btn ${showInspector ? "active" : ""}`}
+            className={`editor-browser-tool-btn ${showDrawer && drawerTab === "logs" ? "active" : ""}`}
+            title="Ver logs do servidor web em tempo real"
+            onClick={() => {
+              if (showDrawer && drawerTab === "logs") {
+                setShowDrawer(false);
+              } else {
+                setDrawerTab("logs");
+                setShowDrawer(true);
+              }
+            }}
+          >
+            📄 Logs Servidor
+          </button>
+          <button
+            type="button"
+            className={`editor-browser-tool-btn ${showDrawer && drawerTab === "inspector" ? "active" : ""}`}
             title="Inspecionar texto e formulários"
-            onClick={() => setShowInspector((p) => !p)}
+            onClick={() => {
+              if (showDrawer && drawerTab === "inspector") {
+                setShowDrawer(false);
+              } else {
+                setDrawerTab("inspector");
+                setShowDrawer(true);
+              }
+            }}
           >
             Inspecionar
           </button>
@@ -269,68 +354,108 @@ export function EditorBrowserView({
           )}
         </div>
 
-        {/* Gaveta de Inspeção / Digitação */}
-        {showInspector && (
+        {/* Gaveta Lateral de Inspeção / Logs do Servidor */}
+        {showDrawer && (
           <div className="editor-browser-inspector-drawer">
             <div className="editor-browser-inspector-header">
-              <span>Painel de Interação & Diagnóstico</span>
+              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <button
+                  type="button"
+                  className={`editor-browser-tool-btn ${drawerTab === "logs" ? "active" : ""}`}
+                  onClick={() => setDrawerTab("logs")}
+                >
+                  Logs do Servidor
+                </button>
+                <button
+                  type="button"
+                  className={`editor-browser-tool-btn ${drawerTab === "inspector" ? "active" : ""}`}
+                  onClick={() => setDrawerTab("inspector")}
+                >
+                  DOM & Digitação
+                </button>
+              </div>
               <button
                 type="button"
                 className="editor-browser-close-btn"
-                onClick={() => setShowInspector(false)}
+                onClick={() => setShowDrawer(false)}
               >
                 ×
               </button>
             </div>
 
             <div className="editor-browser-inspector-body">
-              <div className="editor-browser-type-section">
-                <span className="inspector-section-title">Digitar em Campo / Input:</span>
-                <div className="inspector-type-inputs">
-                  <input
-                    type="text"
-                    placeholder="Seletor CSS (ex.: #nome, input[name='aluno'])"
-                    value={selectorInput}
-                    onChange={(e) => setSelectorInput(e.target.value)}
-                    className="inspector-input"
-                  />
-                  <input
-                    type="text"
-                    placeholder="Texto para digitar..."
-                    value={textInput}
-                    onChange={(e) => setTextInput(e.target.value)}
-                    onKeyDown={(e) => e.key === "Enter" && void enviarTexto()}
-                    className="inspector-input"
-                  />
-                  <button
-                    type="button"
-                    className="theme-btn primary"
-                    onClick={() => void enviarTexto()}
-                    disabled={loading || !selectorInput.trim() || !textInput}
-                  >
-                    Digitar
-                  </button>
+              {drawerTab === "logs" ? (
+                <div className="editor-browser-logs-section">
+                  <div className="inspector-content-bar">
+                    <span className="inspector-section-title">Saída ao vivo (/tmp/sicoobito_server.log):</span>
+                    <button
+                      type="button"
+                      className="theme-btn"
+                      style={{ fontSize: "10.5px", padding: "2px 6px" }}
+                      onClick={async () => {
+                        if (!activeSessionId) return;
+                        const d = await getSandboxServerLogs(activeSessionId, 200);
+                        if (d?.logs) setServerLogs(d.logs);
+                      }}
+                    >
+                      Atualizar
+                    </button>
+                  </div>
+                  <pre className="inspector-logs-pre" ref={logsPreRef}>
+                    {serverLogs || "Nenhum log gerado pelo servidor ainda. Inicie a aplicação no sandbox."}
+                  </pre>
                 </div>
-              </div>
+              ) : (
+                <>
+                  <div className="editor-browser-type-section">
+                    <span className="inspector-section-title">Digitar em Campo / Input:</span>
+                    <div className="inspector-type-inputs">
+                      <input
+                        type="text"
+                        placeholder="Seletor CSS (ex.: #nome, input[name='aluno'])"
+                        value={selectorInput}
+                        onChange={(e) => setSelectorInput(e.target.value)}
+                        className="inspector-input"
+                      />
+                      <input
+                        type="text"
+                        placeholder="Texto para digitar..."
+                        value={textInput}
+                        onChange={(e) => setTextInput(e.target.value)}
+                        onKeyDown={(e) => e.key === "Enter" && void enviarTexto()}
+                        className="inspector-input"
+                      />
+                      <button
+                        type="button"
+                        className="theme-btn primary"
+                        onClick={() => void enviarTexto()}
+                        disabled={loading || !selectorInput.trim() || !textInput}
+                      >
+                        Digitar
+                      </button>
+                    </div>
+                  </div>
 
-              <div className="editor-browser-content-section">
-                <div className="inspector-content-bar">
-                  <span className="inspector-section-title">Texto Extraído da Página:</span>
-                  <button
-                    type="button"
-                    className="theme-btn"
-                    onClick={() => void verConteudo()}
-                    disabled={loading || !currentUrl}
-                  >
-                    Recarregar Texto
-                  </button>
-                </div>
-                {content ? (
-                  <pre className="inspector-content-pre">{content}</pre>
-                ) : (
-                  <p className="inspector-empty-hint">Clique em &quot;Recarregar Texto&quot; para ler o DOM da página.</p>
-                )}
-              </div>
+                  <div className="editor-browser-content-section">
+                    <div className="inspector-content-bar">
+                      <span className="inspector-section-title">Texto Extraído da Página:</span>
+                      <button
+                        type="button"
+                        className="theme-btn"
+                        onClick={() => void verConteudo()}
+                        disabled={loading || !currentUrl}
+                      >
+                        Recarregar Texto
+                      </button>
+                    </div>
+                    {content ? (
+                      <pre className="inspector-content-pre">{content}</pre>
+                    ) : (
+                      <p className="inspector-empty-hint">Clique em &quot;Recarregar Texto&quot; para ler o DOM da página.</p>
+                    )}
+                  </div>
+                </>
+              )}
             </div>
           </div>
         )}

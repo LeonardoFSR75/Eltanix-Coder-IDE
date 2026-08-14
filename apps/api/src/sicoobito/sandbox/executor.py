@@ -11,6 +11,7 @@ import time
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import httpx
 
@@ -273,8 +274,39 @@ class ExecutorSandboxManager:
             except Exception as exc:
                 log.warning("sandbox.reaper.iteration_failed", error=str(exc))
 
+    async def get_stats(self, session_id: str) -> dict[str, Any]:
+        headers = {"Authorization": f"Bearer {self._config.token}"} if self._config.token else {}
+        client = self._get_http_client()
+        try:
+            resposta = await client.get(
+                f"{self._config.base_url}/sandboxes/{session_id}/stats",
+                headers=headers,
+                timeout=10.0,
+            )
+            if resposta.status_code == 200:
+                return resposta.json()
+        except Exception as exc:
+            log.debug("sandbox.stats.failed", session=session_id, error=str(exc))
+        return {"session_id": session_id, "status": "unknown", "ports": [], "metrics": {}}
+
+    async def get_server_logs(self, session_id: str, tail: int = 100) -> dict[str, Any]:
+        headers = {"Authorization": f"Bearer {self._config.token}"} if self._config.token else {}
+        client = self._get_http_client()
+        try:
+            resposta = await client.get(
+                f"{self._config.base_url}/sandboxes/{session_id}/logs/server?tail={tail}",
+                headers=headers,
+                timeout=10.0,
+            )
+            if resposta.status_code == 200:
+                return resposta.json()
+        except Exception as exc:
+            log.debug("sandbox.server_logs.failed", session=session_id, error=str(exc))
+        return {"session_id": session_id, "logs": ""}
+
     async def shutdown(self) -> None:
         for sid in list(self._sandboxes):
             await self.release(sid)
         if self._http_client is not None and not self._http_client.is_closed:
             await self._http_client.aclose()
+

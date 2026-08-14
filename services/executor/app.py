@@ -456,6 +456,96 @@ async def list_sandboxes() -> dict[str, Any]:
     }
 
 
+@app.get("/sandboxes/{session_id}/stats", dependencies=[Auth])
+async def get_sandbox_stats(session_id: str) -> dict[str, Any]:
+    nome = f"sicoobito-{session_id}"
+    cid = _container_cache.get(session_id)
+    container = None
+    if cid:
+        try:
+            container = client().containers.get(cid)
+        except Exception:
+            _container_cache.pop(session_id, None)
+    if container is None:
+        try:
+            container = client().containers.get(nome)
+            _container_cache[session_id] = str(container.id)
+        except docker.errors.NotFound as exc:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail=f"sandbox {session_id} não existe"
+            ) from exc
+
+    ports: list[int] = []
+    try:
+        res = container.exec_run([
+            "python",
+            "-c",
+            "import sys; [print(int(line.split()[1].split(':')[1], 16)) for line in open('/proc/net/tcp').readlines()[1:] if len(line.split())>=4 and line.split()[3]=='0A']",
+        ])
+        if res.exit_code == 0:
+            for p in res.output.decode("utf-8", "ignore").split():
+                if p.isdigit():
+                    p_int = int(p)
+                    if p_int not in ports:
+                        ports.append(p_int)
+    except Exception:
+        pass
+
+    stats_data: dict[str, Any] = {}
+    try:
+        raw_stats = container.stats(stream=False)
+        mem_usage = raw_stats.get("memory_stats", {}).get("usage", 0)
+        mem_limit = raw_stats.get("memory_stats", {}).get("limit", 2 * 1024 * 1024 * 1024)
+        pids = raw_stats.get("pids_stats", {}).get("current", 0)
+        stats_data = {
+            "memory_bytes": mem_usage,
+            "memory_mb": round(mem_usage / (1024 * 1024), 1),
+            "memory_limit_mb": round(mem_limit / (1024 * 1024), 1),
+            "pids_count": pids,
+        }
+    except Exception:
+        pass
+
+    return {
+        "session_id": session_id,
+        "name": nome,
+        "status": container.status,
+        "ports": sorted(ports),
+        "metrics": stats_data,
+    }
+
+
+@app.get("/sandboxes/{session_id}/logs/server", dependencies=[Auth])
+async def get_server_logs(session_id: str, tail: int = 100) -> dict[str, Any]:
+    nome = f"sicoobito-{session_id}"
+    cid = _container_cache.get(session_id)
+    container = None
+    if cid:
+        try:
+            container = client().containers.get(cid)
+        except Exception:
+            _container_cache.pop(session_id, None)
+    if container is None:
+        try:
+            container = client().containers.get(nome)
+            _container_cache[session_id] = str(container.id)
+        except docker.errors.NotFound as exc:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail=f"sandbox {session_id} não existe"
+            ) from exc
+
+    try:
+        res = container.exec_run(["tail", f"-n{tail}", "/tmp/sicoobito_server.log"])
+        log_text = res.output.decode("utf-8", "replace") if res.exit_code == 0 else ""
+    except Exception:
+        log_text = ""
+
+    return {
+        "session_id": session_id,
+        "logs": log_text,
+    }
+
+
 @app.post("/sandboxes/reap", dependencies=[Auth])
 async def reap(keep: list[str] | None = None) -> dict[str, Any]:
     """Remove sandboxes que a API não reconhece mais.

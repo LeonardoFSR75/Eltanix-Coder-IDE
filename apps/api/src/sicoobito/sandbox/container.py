@@ -443,6 +443,12 @@ class SandboxManager:
             except Exception as exc:
                 log.warning("sandbox.reaper.iteration_failed", error=str(exc))
 
+    async def get_stats(self, session_id: str) -> dict[str, Any]:
+        return {"session_id": session_id, "status": "unknown", "ports": [], "metrics": {}}
+
+    async def get_server_logs(self, session_id: str, tail: int = 100) -> dict[str, Any]:
+        return {"session_id": session_id, "logs": ""}
+
     async def shutdown(self) -> None:
         for session in list(self._sandboxes):
             await self.release(session)

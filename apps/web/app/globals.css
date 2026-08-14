@@ -9726,3 +9726,23 @@ button.primary:hover:not(:disabled) {
   border-color: #38bdf8;
   color: #e0f2fe;
 }
+
+.inspector-logs-pre {
+  background: #050811;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 10px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: #38bdf8;
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 420px;
+  overflow-y: auto;
+  line-height: 1.45;
+}
+
+.inspector-logs-pre:empty::before {
+  content: "Aguardando logs...";
+  color: var(--text-dim);
+}

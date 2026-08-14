@@ -1,8 +1,9 @@
 "use client";
 
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { useTheme } from "@/lib/theme";
 import { useIde } from "@/lib/ide-store";
+import { getSandboxStats, type SandboxStats } from "@/lib/api/sandbox";
 import type { LspStatus } from "@/lib/use-lsp";
 
 interface StatusBarProps {
@@ -41,8 +42,46 @@ function Sep() {
   return <span className="statusbar-sep" aria-hidden />;
 }
 
+function SandboxStatusItem({ sessionId }: { sessionId: string }) {
+  const [stats, setStats] = useState<SandboxStats | null>(null);
+
+  useEffect(() => {
+    let ativo = true;
+    const load = async () => {
+      try {
+        const s = await getSandboxStats(sessionId);
+        if (ativo && s) setStats(s);
+      } catch {
+        // Ignora
+      }
+    };
+    void load();
+    const timer = setInterval(load, 4000);
+    return () => {
+      ativo = false;
+      clearInterval(timer);
+    };
+  }, [sessionId]);
+
+  if (!stats || stats.status === "unavailable") return null;
+
+  const portas = stats.ports?.length ? ` :${stats.ports.join(", ")}` : "";
+  const mem = stats.metrics?.memory_mb ? ` · ${stats.metrics.memory_mb}MB` : "";
+
+  return (
+    <span
+      className="statusbar-item"
+      title={`Sandbox Docker (${stats.name || sessionId})\nStatus: ${stats.status}\nPortas: ${stats.ports?.join(", ") || "nenhuma"}\nRAM: ${stats.metrics?.memory_mb ?? 0}MB / ${stats.metrics?.memory_limit_mb ?? 2048}MB`}
+      style={{ color: stats.ports?.length ? "var(--accent-emerald, #34d399)" : "var(--text-dim)" }}
+    >
+      <span className={`pulse-dot ${stats.ports?.length ? "ok" : ""}`} />
+      Sandbox{portas}{mem}
+    </span>
+  );
+}
+
 export function StatusBar({ lspStatus, cursorPosition }: StatusBarProps) {
-  const { project, projects, routerLatency, routerStatus } = useIde();
+  const { project, projects, routerLatency, routerStatus, activeSessionId } = useIde();
   const { theme, toggleTheme } = useTheme();
 
   const activeProjObj = projects.find((p) => p.name === project);
@@ -87,6 +126,13 @@ export function StatusBar({ lspStatus, cursorPosition }: StatusBarProps) {
               <span className={`pulse-dot ${lspStatus.ready ? "ok" : lspStatus.error ? "err" : ""}`} />
               {lspStatus.ready ? `LSP: ${lspStatus.language}` : `LSP (${lspStatus.language}...)`}
             </span>
+          </>
+        )}
+
+        {activeSessionId && (
+          <>
+            <Sep />
+            <SandboxStatusItem sessionId={activeSessionId} />
           </>
         )}
       </div>

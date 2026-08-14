@@ -362,6 +362,24 @@ async def close_session(session_id: str, payload: CloseRequest, request: Request
     return {"session_id": session_id, "closed": True, "branch_kept": payload.keep_branch}
 
 
+@router.get("/sessions/{session_id}/sandbox/stats")
+async def get_session_sandbox_stats(request: Request, session_id: str) -> dict[str, Any]:
+    runner = _runner(request)
+    if runner.sandboxes is None:
+        return {"session_id": session_id, "status": "unavailable", "ports": [], "metrics": {}}
+    return await runner.sandboxes.get_stats(session_id)
+
+
+@router.get("/sessions/{session_id}/sandbox/logs")
+async def get_session_sandbox_logs(
+    request: Request, session_id: str, tail: int = 100
+) -> dict[str, Any]:
+    runner = _runner(request)
+    if runner.sandboxes is None:
+        return {"session_id": session_id, "logs": ""}
+    return await runner.sandboxes.get_server_logs(session_id, tail=tail)
+
+
 def _session_view(sessao: AgentSession) -> dict[str, Any]:
     startup = sessao.context.session_state
     ready_for_search = (
