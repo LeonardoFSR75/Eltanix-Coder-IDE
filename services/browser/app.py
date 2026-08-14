@@ -210,21 +210,18 @@ async def run_action(session_id: str, payload: ActionRequest) -> dict[str, Any]:
             if hostname in {"localhost", "127.0.0.1", "0.0.0.0"}:
                 clean_sid = session_id.removeprefix("panel-")
                 sandbox_host = f"sicoobito-{clean_sid}"
-                sandbox_legacy_host = f"sicoobito-sandbox-{clean_sid}"
                 host_gateway = os.getenv("HOST_GATEWAY_HOST", "host.docker.internal")
 
                 candidatos: list[str] = []
                 if port:
                     candidatos.append(parsed._replace(netloc=f"{sandbox_host}:{port}").geturl())
-                    candidatos.append(
-                        parsed._replace(netloc=f"{sandbox_legacy_host}:{port}").geturl()
-                    )
-                    candidatos.append(parsed._replace(netloc=f"{host_gateway}:{port}").geturl())
+                    if session_id.startswith("panel-"):
+                        candidatos.append(parsed._replace(netloc=f"{host_gateway}:{port}").geturl())
                 else:
                     candidatos.append(parsed._replace(netloc=sandbox_host).geturl())
-                    candidatos.append(parsed._replace(netloc=sandbox_legacy_host).geturl())
-                    candidatos.append(parsed._replace(netloc=host_gateway).geturl())
-                urls_to_try = [*candidatos, alvo_url]
+                    if session_id.startswith("panel-"):
+                        candidatos.append(parsed._replace(netloc=host_gateway).geturl())
+                urls_to_try = candidatos
 
             # Limpa logs da sessão anterior para esta nova navegação
             _console_logs[session_id] = []
@@ -232,12 +229,12 @@ async def run_action(session_id: str, payload: ActionRequest) -> dict[str, Any]:
 
             resposta = None
             ultimo_erro = None
-            limite_tempo = time.perf_counter() + min(payload.timeout_ms / 1000, 15.0)
+            limite_tempo = time.perf_counter() + min(payload.timeout_ms / 1000, 10.0)
 
             while True:
                 for tentativa_url in urls_to_try:
                     try:
-                        timeout_tentativa = min(payload.timeout_ms, 3000)
+                        timeout_tentativa = min(payload.timeout_ms, 2500)
                         resposta = await page.goto(
                             tentativa_url,
                             timeout=timeout_tentativa,
@@ -260,11 +257,20 @@ async def run_action(session_id: str, payload: ActionRequest) -> dict[str, Any]:
                     or "ERR_NAME_NOT_RESOLVED" in err_str
                     or "Timeout" in err_str
                 ):
-                    await asyncio.sleep(0.5)
+                    await asyncio.sleep(0.3)
                 else:
                     break
 
             if ultimo_erro is not None:
+                err_msg = str(ultimo_erro)
+                if "ERR_CONNECTION_REFUSED" in err_msg:
+                    raise HTTPException(
+                        status.HTTP_502_BAD_GATEWAY,
+                        detail=(
+                            f"Conexão recusada ao conectar em {alvo_url} (porta {port or 80}). "
+                            f"O servidor web no sandbox ainda não está pronto ou não está escutando na porta {port or 80}."
+                        ),
+                    )
                 raise ultimo_erro
 
             image_b64 = None

@@ -37,14 +37,12 @@ no `write_todos` sem antes executar e validar com sucesso.
 convenções de nome, mesmos idiomas.
 8. Nos modos de codificação, NUNCA responda apenas com blocos de código em \
 arquivos. Para rodar, servir ou testar aplicações web/interfaces (Flask, FastAPI, Next.js, etc.): \
-NUNCA execute o servidor em primeiro plano (ex.: NUNCA rode `python app.py` ou `npm run dev` \
-sozinhos sem backgrounding). SEMPRE suba o servidor em BACKGROUND escutando em 0.0.0.0 \
-(ex.: `python app.py & sleep 2`, `flask run --host 0.0.0.0 --port 5000 & sleep 2`, \
-`python -m http.server 5000 --bind 0.0.0.0 & sleep 2`, \
-`uvicorn app:app --host 0.0.0.0 --port 5000 & sleep 2` ou \
-`npm run dev -- --host 0.0.0.0 & sleep 3`) e, logo após iniciar o servidor, chame OBRIGATORIAMENTE \
-a ferramenta `browser_action(action='navigate', url='http://localhost:5000')` para abrir a página, \
-inspecionar o console e renderizar a captura visual (screenshot) no chat para o usuário.
+Inicie o servidor via `run_command` (ex.: `run_command(command='python app.py')`). \
+O sistema gerencia portas, libera instâncias antigas e roda em background com health check. \
+Em seguida, chame `browser_action(action='navigate', url='http://localhost:5000')` para abrir \
+a página, inspecionar erros e renderizar a captura visual no chat e no editor para o usuário. \
+Se alguma ação falhar (ex.: erro 500 ao chamar uma rota), examine os arquivos, corrija o \
+código com `edit_file`, reinicie o servidor com `run_command` e reteste com `browser_action`.
 
 
 ## Limites

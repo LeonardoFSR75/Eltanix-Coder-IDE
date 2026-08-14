@@ -146,25 +146,45 @@ import sys, os, signal, glob
 pattern = ""
 sig = signal.SIGTERM
 for arg in sys.argv[1:]:
-    if arg.startswith('-') and not arg.startswith('-f'):
-        if arg in ('-9', '-KILL'): sig = signal.SIGKILL
-    else: pattern = arg
+    if arg in ('-9', '-KILL'):
+        sig = signal.SIGKILL
+    elif not arg.startswith('-'):
+        pattern = arg
 curr = os.getpid()
+parent = os.getppid()
 killed = 0
 for p in glob.glob('/proc/[0-9]*'):
     try:
         pid = int(os.path.basename(p))
-        if pid in (1, curr): continue
+        if pid in (1, curr, parent): continue
         with open(f'{p}/cmdline', 'r', errors='ignore') as cf:
-            cmd = cf.read().replace('\\x00', ' ')
+            cmd = cf.read().replace('\\x00', ' ').strip()
         if pattern and pattern in cmd:
-            os.kill(pid, sig)
-            killed += 1
+            try:
+                os.kill(pid, sig)
+                killed += 1
+            except Exception: pass
     except Exception: pass
-sys.exit(0 if killed > 0 else 1)
+sys.exit(0)
 '''
 with open('/tmp/sicoobito_bootstrap/pkill', 'w') as f: f.write(pkill_code)
 with open('/tmp/sicoobito_bootstrap/killall', 'w') as f: f.write(pkill_code)
+
+ps_code = '''#!/usr/bin/env python3
+import sys, os, glob
+print(f"{'PID':>5} {'COMMAND'}")
+for p in sorted(glob.glob('/proc/[0-9]*'), key=lambda x: int(os.path.basename(x))):
+    try:
+        pid = int(os.path.basename(p))
+        with open(f'{p}/cmdline', 'r', errors='ignore') as cf:
+            cmd = cf.read().replace('\\x00', ' ').strip()
+        if not cmd:
+            with open(f'{p}/comm', 'r', errors='ignore') as cf:
+                cmd = f"[{cf.read().strip()}]"
+        print(f"{pid:>5} {cmd}")
+    except Exception: pass
+'''
+with open('/tmp/sicoobito_bootstrap/ps', 'w') as f: f.write(ps_code)
 
 fuser_code = '''#!/usr/bin/env python3
 import sys, os, signal, glob
@@ -188,10 +208,11 @@ try:
 except Exception: pass
 pids = set()
 curr = os.getpid()
+parent = os.getppid()
 for p in glob.glob('/proc/[0-9]*'):
     try:
         pid = int(os.path.basename(p))
-        if pid in (1, curr): continue
+        if pid in (1, curr, parent): continue
         for fd in glob.glob(f'{p}/fd/*'):
             try:
                 link = os.readlink(fd)
@@ -209,7 +230,7 @@ for pid in pids:
 with open('/tmp/sicoobito_bootstrap/fuser', 'w') as f: f.write(fuser_code)
 with open('/tmp/sicoobito_bootstrap/lsof', 'w') as f: f.write(fuser_code)
 with open('/tmp/sicoobito_bootstrap/netstat', 'w') as f: f.write(fuser_code)
-for name in ('pkill', 'killall', 'fuser', 'lsof', 'netstat'):
+for name in ('pkill', 'killall', 'ps', 'fuser', 'lsof', 'netstat'):
     path = f'/tmp/sicoobito_bootstrap/{name}'
     os.chmod(path, os.stat(path).st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
 """

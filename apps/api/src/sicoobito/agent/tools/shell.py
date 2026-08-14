@@ -178,8 +178,8 @@ async def run_command(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
         )
 
     # Interceptação de servidores contínuos (Flask, Uvicorn, Next.js, etc.):
-    # Servidores bloqueiam o sandbox se executados em foreground. Auto-backgrounding
-    # com '& sleep 2' permite inicializar o servidor em segundo plano e prosseguir.
+    # Servidores bloqueiam o sandbox se executados em foreground. Gerencia liberação
+    # prévia de portas ocupadas, execução em segundo plano e health check do socket.
     eh_servidor_provavel = any(
         srv in cmd_lower
         for srv in [
@@ -194,7 +194,7 @@ async def run_command(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
             "vite",
         ]
     ) or any(
-        cmd_lower.startswith(p)
+        cmd_lower.startswith(p) or f" {p}" in cmd_lower
         for p in [
             "python app.py",
             "python3 app.py",
@@ -225,15 +225,40 @@ async def run_command(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
             "grep ",
         ]
     )
-    tem_background = "&" in comando or "nohup" in comando
 
-    if eh_servidor_provavel and not eh_comando_pontual and not tem_background:
-        comando = f"{comando} & sleep 2"
+    if eh_servidor_provavel and not eh_comando_pontual:
+        # Detecta porta alvo
+        porta_alvo = 5000
+        if "8000" in comando or "uvicorn" in cmd_lower:
+            porta_alvo = 8000
+        elif "3000" in comando or "next" in cmd_lower:
+            porta_alvo = 3000
+        elif "5173" in comando or "vite" in cmd_lower:
+            porta_alvo = 5173
+        elif "8501" in comando or "streamlit" in cmd_lower:
+            porta_alvo = 8501
+
+        # Limpa sufixos de backgrounding adicionados pelo modelo (ex: & sleep 2)
+        cmd_limpo = re.sub(r"\s*&\s*sleep\s+\d+", "", comando).strip().rstrip("&").strip()
+        comando = (
+            f"fuser -k {porta_alvo}/tcp >/dev/null 2>&1 || true; "
+            f"sleep 0.2; "
+            f"nohup {cmd_limpo} > /tmp/sicoobito_server.log 2>&1 & "
+            f"for i in $(seq 1 15); do "
+            f"(echo > /dev/tcp/127.0.0.1/{porta_alvo}) >/dev/null 2>&1 && break || sleep 0.2; "
+            f"done; "
+            f"sleep 0.3; "
+            f"cat /tmp/sicoobito_server.log"
+        )
 
     try:
         resultado = await ctx.sandbox.exec(comando, timeout=args.get("timeout"))
     except SandboxError as exc:
         return ToolResult.failure(str(exc))
+
+    # Normaliza saídas de kill / pkill (código 143 é normal ao encerrar processo)
+    if ("pkill" in cmd_lower or "kill" in cmd_lower) and resultado.exit_code == 143:
+        resultado.exit_code = 0
 
     corpo = summarize_output(resultado.stdout)
     if resultado.stderr.strip():
