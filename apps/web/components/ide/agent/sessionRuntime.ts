@@ -252,15 +252,15 @@ export class AgentSessionRuntime {
     await this.run(approvals);
   }
 
-  async sendMessage(text: string) {
-    if (!this.session || !this.canSubmit || !text.trim()) return;
-    this.append({ kind: "user", text });
+  async sendMessage(text: string, images?: string[]) {
+    if (!this.session || !this.canSubmit || (!text.trim() && (!images || images.length === 0))) return;
+    this.append({ kind: "user", text: text || (images?.length ? `[${images.length} imagem(ns) enviada(s)]` : "") });
     this.beginTurn();
 
     try {
       await streamEvents(
         `/api/agent/sessions/${this.session.session_id}/run`,
-        { message: text },
+        { message: text, images: images ?? [] },
         this.consume,
         this.abortController!.signal,
       );
@@ -287,11 +287,12 @@ export class AgentSessionRuntime {
     profile?: string | null,
     focusFiles?: string[],
     focusFolder?: string | null,
+    images?: string[],
   ): Promise<AgentSessionRuntime> {
     const runtime = new AgentSessionRuntime(opts);
     runtime.task = task;
     // ── Exibe a mensagem do usuário imediatamente, antes de ir ao backend ──
-    runtime.append({ kind: "user", text: task });
+    runtime.append({ kind: "user", text: task || (images?.length ? `[${images.length} imagem(ns) enviada(s)]` : "") });
     const created = await post<Session>("/api/agent/sessions", {
       task,
       mode,
@@ -299,6 +300,7 @@ export class AgentSessionRuntime {
       profile: profile || undefined,
       focus_files: focusFiles ?? [],
       focus_folder: focusFolder ?? undefined,
+      images: images ?? [],
     });
     runtime.session = created;
     runtime.append({

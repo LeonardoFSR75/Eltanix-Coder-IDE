@@ -133,6 +133,7 @@ class AgentSession:
     profile: str | None = None
     focus_files: list[str] = field(default_factory=list)
     focus_folder: str | None = None
+    images: list[str] = field(default_factory=list)
     is_web_app: bool = False
     web_prewarmed: bool = False
 
@@ -333,6 +334,7 @@ class AgentRunner:
         profile: str | None = None,
         focus_files: list[str] | None = None,
         focus_folder: str | None = None,
+        images: list[str] | None = None,
         parent_session_id: str | None = None,
     ) -> AgentSession:
         session_id = session_id or self.sandboxes.new_session_id()
@@ -537,6 +539,7 @@ class AgentRunner:
             profile=profile,
             focus_files=focus_files or [],
             focus_folder=focus_folder,
+            images=images or [],
             is_web_app=is_web,
             web_prewarmed=False,
         )
@@ -766,8 +769,16 @@ class AgentRunner:
             focus_folder=session.focus_folder,
         )
 
+        if session.images:
+            partes_conteudo: list[dict[str, Any]] = [{"type": "text", "text": prompt_text}]
+            for img in session.images:
+                partes_conteudo.append({"type": "image_url", "image_url": {"url": img}})
+            primeira_mensagem = {"role": "user", "content": partes_conteudo}
+        else:
+            primeira_mensagem = {"role": "user", "content": prompt_text}
+
         return {
-            "messages": [{"role": "user", "content": prompt_text}],
+            "messages": [primeira_mensagem],
             "session_id": session.session_id,
             "task": session.task,
             "mode": session.mode,
@@ -793,7 +804,12 @@ class AgentRunner:
             await self._browser_http.aclose()
 
     async def stream_run(
-        self, session: AgentSession, *, resume: Any = None, message: str | None = None
+        self,
+        session: AgentSession,
+        *,
+        resume: Any = None,
+        message: str | None = None,
+        images: list[str] | None = None,
     ):
         """Executa o grafo emitindo eventos. Cede o controle na aprovação."""
         lock = self._session_locks.setdefault(session.session_id, asyncio.Lock())
@@ -832,9 +848,18 @@ class AgentRunner:
                     from langgraph.types import Command
 
                     entrada: Any = Command(resume=resume)
-                elif message:
+                elif images or message:
+                    if images:
+                        partes_msg: list[dict[str, Any]] = [
+                            {"type": "text", "text": message or "Analise a imagem anexada."}
+                        ]
+                        for img in images:
+                            partes_msg.append({"type": "image_url", "image_url": {"url": img}})
+                        user_content: Any = partes_msg
+                    else:
+                        user_content = message
                     entrada = {
-                        "messages": [{"role": "user", "content": message}],
+                        "messages": [{"role": "user", "content": user_content}],
                         "finished": False,
                     }
                 else:

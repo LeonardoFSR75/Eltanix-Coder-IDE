@@ -16,6 +16,8 @@ interface AgentChatInputProps {
   setFocusFiles: React.Dispatch<React.SetStateAction<string[]>>;
   focusFolder: string | null;
   setFocusFolder: (folder: string | null) => void;
+  images?: string[];
+  setImages?: React.Dispatch<React.SetStateAction<string[]>>;
   running: boolean;
   canSubmit: boolean;
   onSubmit: () => void;
@@ -36,12 +38,15 @@ export function AgentChatInput({
   setFocusFiles,
   focusFolder,
   setFocusFolder,
+  images = [],
+  setImages,
   running,
   canSubmit,
   onSubmit,
   sessionStarted,
 }: AgentChatInputProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const { active, files } = useIde();
   const [showSlashHint, setShowSlashHint] = useState(false);
 
@@ -57,6 +62,47 @@ export function AgentChatInput({
   useEffect(() => {
     setShowSlashHint(task.startsWith("/"));
   }, [task]);
+
+  const handlePaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const items = e.clipboardData?.items;
+    if (!items || !setImages) return;
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (item.type.startsWith("image/")) {
+        const file = item.getAsFile();
+        if (file) {
+          e.preventDefault();
+          const reader = new FileReader();
+          reader.onload = (uploadEvt) => {
+            const base64 = uploadEvt.target?.result as string;
+            if (base64) {
+              setImages((prev) => [...prev, base64]);
+            }
+          };
+          reader.readAsDataURL(file);
+        }
+      }
+    }
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const fileList = e.target.files;
+    if (!fileList || !setImages) return;
+    for (let i = 0; i < fileList.length; i++) {
+      const file = fileList[i];
+      if (file.type.startsWith("image/")) {
+        const reader = new FileReader();
+        reader.onload = (uploadEvt) => {
+          const base64 = uploadEvt.target?.result as string;
+          if (base64) {
+            setImages((prev) => [...prev, base64]);
+          }
+        };
+        reader.readAsDataURL(file);
+      }
+    }
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !(e.ctrlKey || e.metaKey)) {
@@ -91,6 +137,10 @@ export function AgentChatInput({
     setFocusFiles((prev) => prev.filter((p) => p !== path));
   };
 
+  const removeImage = (index: number) => {
+    setImages?.((prev) => prev.filter((_, i) => i !== index));
+  };
+
   const [showFolderInput, setShowFolderInput] = useState(false);
   const [folderDraft, setFolderDraft] = useState("");
   const folderInputRef = useRef<HTMLInputElement>(null);
@@ -112,9 +162,23 @@ export function AgentChatInput({
   return (
     <div className="agent-input-container">
       <div className="agent-prompt-card">
-        {/* Context Chips: Arquivos e Pasta anexados */}
-        {(focusFiles.length > 0 || focusFolder) && (
-          <div className="context-chips-row">
+        {/* Context Chips: Imagens anexadas, Arquivos e Pasta */}
+        {(focusFiles.length > 0 || focusFolder || images.length > 0) && (
+          <div className="context-chips-row flex flex-wrap gap-1.5 p-2 border-b border-border/40">
+            {images.map((img, idx) => (
+              <span key={idx} className="relative inline-flex items-center gap-1 bg-surface-2/80 rounded border border-border/60 p-0.5 pr-1.5 text-xs">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={img} alt="Anexo" className="w-6 h-6 object-cover rounded" />
+                <span className="text-[10px] text-muted font-mono">img-{idx + 1}</span>
+                <button
+                  type="button"
+                  className="chip-remove text-muted hover:text-foreground text-xs leading-none"
+                  onClick={() => removeImage(idx)}
+                >
+                  ×
+                </button>
+              </span>
+            ))}
             {focusFolder && (
               <span className="context-chip folder">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -151,8 +215,9 @@ export function AgentChatInput({
           className="agent-prompt-textarea"
           value={task}
           onChange={(e) => setTask(e.target.value)}
+          onPaste={handlePaste}
           onKeyDown={handleKeyDown}
-          placeholder="Pergunte ao Sicoobito Agente ou use / para comandos..."
+          placeholder="Pergunte ao Sicoobito Agente, cole imagens (Ctrl+V) ou use / para comandos..."
           rows={1}
           disabled={running}
         />
@@ -207,6 +272,29 @@ export function AgentChatInput({
 
             {/* Botões de contexto */}
             <div className="context-actions">
+              {/* Botão Anexar Imagem */}
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                multiple
+                className="hidden"
+                style={{ display: "none" }}
+                onChange={handleFileChange}
+              />
+              <button
+                type="button"
+                className="context-add-btn"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={running}
+                title="Anexar imagem (ou cole com Ctrl+V)"
+              >
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                  <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                  <circle cx="8.5" cy="8.5" r="1.5" />
+                  <polyline points="21 15 16 10 5 21" />
+                </svg>
+              </button>
               {active && !focusFiles.includes(active) && (
                 <button
                   type="button"

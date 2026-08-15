@@ -81,6 +81,9 @@ class CreateSessionRequest(BaseModel):
         default_factory=list, description="Lista de arquivos para focar/editar"
     )
     focus_folder: str | None = Field(default=None, description="Pasta do projeto para focar")
+    images: list[str] = Field(
+        default_factory=list, description="Lista de imagens em base64 ou URLs para visão multimodal"
+    )
 
 
 @router.post("/sessions")
@@ -117,6 +120,7 @@ async def create_session(
         profile=payload.profile,
         focus_files=payload.focus_files,
         focus_folder=payload.focus_folder,
+        images=payload.images,
     )
     return _session_view(sessao)
 
@@ -214,6 +218,9 @@ class RunRequest(BaseModel):
     approvals: dict[str, ApprovalDecision] | None = None
     # Mensagem de acompanhamento enviada pelo usuário para continuar a mesma sessão
     message: str | None = None
+    images: list[str] = Field(
+        default_factory=list, description="Lista de imagens em base64 ou URLs"
+    )
 
 
 @router.post("/sessions/{session_id}/run")
@@ -230,7 +237,9 @@ async def run_session(session_id: str, payload: RunRequest, request: Request):
 
     async def eventos() -> AsyncIterator[str]:
         try:
-            async for evento in runner.stream_run(sessao, resume=resume, message=payload.message):
+            async for evento in runner.stream_run(
+                sessao, resume=resume, message=payload.message, images=payload.images
+            ):
                 yield f"data: {json.dumps(evento, default=str, ensure_ascii=False)}\n\n"
         except Exception as exc:
             log.error("agent.run.failed", session=session_id, error=str(exc))

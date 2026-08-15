@@ -51,7 +51,14 @@ export function useAgentSessions({
   const notify = useCallback(() => bump(), []);
 
   const startSession = useCallback(
-    (task: string, mode: Mode, profile?: string | null, focusFiles?: string[], focusFolder?: string | null) => {
+    (
+      task: string,
+      mode: Mode,
+      profile?: string | null,
+      focusFiles?: string[],
+      focusFolder?: string | null,
+      images?: string[],
+    ) => {
       if (!project) return;
 
       const pendingId = `pending-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -62,7 +69,10 @@ export function useAgentSessions({
         onNotify,
       });
       runtime.task = task;
-      runtime.append({ kind: "user", text: task });
+      runtime.append({
+        kind: "user",
+        text: task || (images?.length ? `[${images.length} imagem(ns) enviada(s)]` : ""),
+      });
 
       runtimesRef.current.set(pendingId, runtime);
       activeIdRef.current = pendingId;
@@ -77,6 +87,7 @@ export function useAgentSessions({
             profile: profile || undefined,
             focus_files: focusFiles ?? [],
             focus_folder: focusFolder ?? undefined,
+            images: images ?? [],
           });
 
           runtime.session = created;

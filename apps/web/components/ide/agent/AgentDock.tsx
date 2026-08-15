@@ -53,6 +53,7 @@ export function AgentDock({
   } = useAgentSessions({ project, onFileTouched, onNotify: handleAgentNotify });
 
   const [task, setTask] = useState("");
+  const [images, setImages] = useState<string[]>([]);
   const [mode, setMode] = useState<Mode>("auto");
   const [profile, setProfile] = useState<string | null>(null);
   const [focusFiles, setFocusFiles] = useState<string[]>([]);
@@ -93,16 +94,17 @@ export function AgentDock({
 
   const submitWithPrompt = (promptToRun?: string) => {
     const promptValue = promptToRun ?? task;
-    if (!promptValue.trim() || !canSubmitActivePrompt || awaitingApproval) return;
+    if ((!promptValue.trim() && images.length === 0) || !canSubmitActivePrompt || awaitingApproval) return;
     if (active && active.session && !active.readOnly) {
-      void active.sendMessage(promptValue);
+      void active.sendMessage(promptValue, images);
     } else {
       const activeTabs = groups[activeGroupId]?.tabs ?? [];
       const filesToPass = focusFiles.length > 0 ? focusFiles : activeTabs;
-      startSession(promptValue, mode, profile, filesToPass, focusFolder);
+      startSession(promptValue, mode, profile, filesToPass, focusFolder, images);
       setSessionsVersion((v) => v + 1);
     }
     setTask("");
+    setImages([]);
   };
 
 
@@ -217,9 +219,11 @@ export function AgentDock({
             setFocusFiles={setFocusFiles}
             focusFolder={focusFolder}
             setFocusFolder={setFocusFolder}
+            images={images}
+            setImages={setImages}
             running={running || awaitingApproval}
             canSubmit={Boolean(
-              task.trim() &&
+              (task.trim() || images.length > 0) &&
                 project &&
                 !active?.readOnly &&
                 !awaitingApproval &&

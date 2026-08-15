@@ -242,6 +242,25 @@ def build_graph(engine: RouterEngine, context: ToolContext):
         if not tool_calls:
             atualizacao["finished"] = True
             atualizacao["result"] = mensagem.get("content") or ""
+            if context.notes is not None and context.project_slug and state.get("files_changed"):
+                try:
+                    task_title = state.get("task", "Tarefa do Agente")[:50]
+                    resumo_tarefa = mensagem.get("content") or "Alterações realizadas pelo agente."
+                    arquivos_mod = ", ".join(state.get("files_changed", []))
+                    corpo_nota = (
+                        f"## Decisões e Alterações - {task_title}\n\n"
+                        f"**Arquivos Modificados:** {arquivos_mod}\n\n"
+                        f"**Resumo da Execução:**\n{resumo_tarefa}\n"
+                    )
+                    await context.notes.upsert_by_title(
+                        title=f"Arquitetura: {task_title}",
+                        content=corpo_nota,
+                        tags=["architecture", "agent-sync", context.project_slug],
+                        project_slug=context.project_slug,
+                    )
+                    log.info("agent.second_brain.auto_synced", project=context.project_slug)
+                except Exception as exc:
+                    log.debug("agent.second_brain.sync_failed", error=str(exc)[:200])
             return atualizacao
 
         limite = state.get("max_iterations", DEFAULT_MAX_ITERATIONS)
