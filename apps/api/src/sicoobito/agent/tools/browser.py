@@ -85,8 +85,31 @@ async def browser_action(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
     if acao not in _ACTIONS:
         return ToolResult.failure(f"Ação desconhecida: {acao!r}. Use uma de {sorted(_ACTIONS)}.")
 
-    if acao == "navigate" and not str(args.get("url", "")).startswith(("http://", "https://")):
-        return ToolResult.failure("`navigate` exige `url` começando com http:// ou https://.")
+    if acao == "navigate":
+        url_raw = str(args.get("url", ""))
+        if not url_raw.startswith(("http://", "https://")):
+            return ToolResult.failure("`navigate` exige `url` começando com http:// ou https://.")
+        from urllib.parse import urlparse
+
+        parsed = urlparse(url_raw)
+        hostname = (parsed.hostname or "").lower()
+        if (
+            hostname not in {"localhost", "127.0.0.1", "0.0.0.0"}
+            and not hostname.startswith("sicoobito-")
+        ):
+            return ToolResult(
+                ok=True,
+                content=(
+                    "AVISO DE AMBIENTE: O navegador do SicoobitoCode é isolado da rede pública e "
+                    "é destinado EXCLUSIVAMENTE para testar e inspecionar a aplicação web local "
+                    "no sandbox (ex.: http://localhost:5000).\n"
+                    f"Ele não navega em sites externos da internet como '{hostname}'.\n"
+                    "Para consultar extensões, convenções ou templates do ecossistema (como Vue, "
+                    "React, etc.), utilize as ferramentas `list_skills` e `load_skill` ou consulte "
+                    "os arquivos locais do projeto."
+                ),
+                data={"url": url_raw, "blocked": True},
+            )
     if acao == "click" and not args.get("selector") and args.get("x") is None:
         return ToolResult.failure("`click` exige `selector` ou `x`/`y`.")
     if acao == "type" and (not args.get("selector") or args.get("text") is None):

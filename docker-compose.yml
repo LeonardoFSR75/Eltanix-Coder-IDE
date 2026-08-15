@@ -269,6 +269,7 @@ services:
       # e credenciais (.env) direto do container — precisa poder escrever de volta.
       - ./config:/app/config
       - ./.env:/app/.env
+      - ./.agents:/app/.agents:ro
       - ./apps/api/src:/app/src:ro
       # Cache de modelos do HuggingFace (SecureBERT ~500 MB) persistido entre reinícios
       - hfcache:/root/.cache/huggingface

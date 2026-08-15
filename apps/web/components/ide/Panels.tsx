@@ -99,7 +99,7 @@ export function Explorer() {
   // definição", Quick Open etc. não passa pelo clique na árvore, então sem
   // isto o arquivo abriria sem a árvore acompanhar).
   useEffect(() => {
-    if (!active) return;
+    if (!active || active.startsWith("browser:")) return;
     const partes = active.split("/");
     partes.pop();
     let acumulado = "";
