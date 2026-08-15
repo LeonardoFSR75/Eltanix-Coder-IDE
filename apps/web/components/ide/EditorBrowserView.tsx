@@ -95,10 +95,11 @@ export function EditorBrowserView({
   // Polling de telemetria e stats do container do Sandbox
   useEffect(() => {
     let ativo = true;
+    const targetSid = sessionId || activeSessionId;
+    if (!targetSid) return;
     const fetchStats = async () => {
-      if (!activeSessionId) return;
       try {
-        const data = await getSandboxStats(activeSessionId);
+        const data = await getSandboxStats(targetSid);
         if (ativo && data) setSandboxStats(data);
       } catch {
         // Ignora erros de polling
@@ -110,15 +111,16 @@ export function EditorBrowserView({
       ativo = false;
       clearInterval(timer);
     };
-  }, [activeSessionId]);
+  }, [sessionId, activeSessionId]);
 
   // Polling de logs do servidor quando o drawer de logs estiver aberto
   useEffect(() => {
-    if (!showDrawer || drawerTab !== "logs" || !activeSessionId) return;
+    const targetSid = sessionId || activeSessionId;
+    if (!showDrawer || drawerTab !== "logs" || !targetSid) return;
     let ativo = true;
     const fetchLogs = async () => {
       try {
-        const data = await getSandboxServerLogs(activeSessionId, 200);
+        const data = await getSandboxServerLogs(targetSid, 200);
         if (ativo && data?.logs) {
           setServerLogs(data.logs);
         }
@@ -132,7 +134,7 @@ export function EditorBrowserView({
       ativo = false;
       clearInterval(timer);
     };
-  }, [showDrawer, drawerTab, activeSessionId]);
+  }, [showDrawer, drawerTab, sessionId, activeSessionId]);
 
   const clicarNaCaptura = useCallback(
     async (e: React.MouseEvent<HTMLImageElement>) => {
