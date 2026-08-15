@@ -229,12 +229,12 @@ async def run_action(session_id: str, payload: ActionRequest) -> dict[str, Any]:
 
             resposta = None
             ultimo_erro = None
-            limite_tempo = time.perf_counter() + min(payload.timeout_ms / 1000, 10.0)
+            limite_tempo = time.perf_counter() + min(payload.timeout_ms / 1000, 15.0)
 
             while True:
                 for tentativa_url in urls_to_try:
                     try:
-                        timeout_tentativa = min(payload.timeout_ms, 2500)
+                        timeout_tentativa = min(payload.timeout_ms, 5000)
                         resposta = await page.goto(
                             tentativa_url,
                             timeout=timeout_tentativa,
