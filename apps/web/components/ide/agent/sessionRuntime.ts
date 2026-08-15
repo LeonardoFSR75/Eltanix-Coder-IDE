@@ -197,7 +197,9 @@ export class AgentSessionRuntime {
           const navUrl = typeof data.url === "string" ? data.url : "";
           if (navUrl && typeof window !== "undefined") {
             window.dispatchEvent(
-              new CustomEvent("sicoobito:browser:open", { detail: { url: navUrl } })
+              new CustomEvent("sicoobito:browser:open", {
+                detail: { url: navUrl, sessionId: this.session?.session_id },
+              })
             );
           }
         }

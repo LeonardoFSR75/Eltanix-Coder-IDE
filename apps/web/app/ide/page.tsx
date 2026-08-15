@@ -115,15 +115,17 @@ function Shell() {
 
   useEffect(() => {
     const handleBrowserOpen = (evt: Event) => {
-      const customEvt = evt as CustomEvent<{ url: string }>;
+      const customEvt = evt as CustomEvent<{ url: string; sessionId?: string }>;
       const url = customEvt.detail?.url;
+      const sid = customEvt.detail?.sessionId || sessionId;
       if (url) {
+        if (sid) ide.setActiveSessionId(sid);
         ide.openFile(`browser:${url}`);
       }
     };
     window.addEventListener("sicoobito:browser:open", handleBrowserOpen);
     return () => window.removeEventListener("sicoobito:browser:open", handleBrowserOpen);
-  }, [ide]);
+  }, [sessionId, ide]);
 
   const handleCreateProject = async () => {
     const nome = window.prompt("Nome da pasta do projeto (será criada ou vinculada dentro do PROJECTS_ROOT):");

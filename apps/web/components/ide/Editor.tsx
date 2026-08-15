@@ -116,7 +116,7 @@ export function Editor({
 
   if (path && path.startsWith("browser:")) {
     const browserUrl = path.slice("browser:".length);
-    return <EditorBrowserView initialUrl={browserUrl} />;
+    return <EditorBrowserView initialUrl={browserUrl} sessionId={activeSessionId || undefined} />;
   }
 
   const reveal = globalReveal?.path === path ? globalReveal : null;
