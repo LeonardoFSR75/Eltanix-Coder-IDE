@@ -269,7 +269,7 @@ class AgentRunner:
         # um filho parado — precisam de referência viva (senão o GC cancela a
         # task no meio) e de rastreamento pra `aclose()` conseguir esperar/
         # cancelar no shutdown. Mesmo idioma de `telemetry/tracer.py::TraceRecorder`.
-        self._background_tasks: set[asyncio.Task[None]] = set()
+        self._background_tasks: set[asyncio.Task[Any]] = set()
         self._checkpointer: Any | None = None
         # `AsyncPostgresSaver.from_conn_string` é um @asynccontextmanager: a
         # conexão só existe dentro do `async with` que ele abre internamente.
