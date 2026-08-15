@@ -1,4 +1,4 @@
-import { get } from "@/lib/client";
+import { get, post } from "@/lib/client";
 
 export interface SandboxMetrics {
   memory_bytes?: number;
@@ -20,6 +20,12 @@ export interface SandboxServerLogs {
   logs: string;
 }
 
+export interface WebAppToggleResponse {
+  session_id: string;
+  is_web_app: boolean;
+  web_prewarmed: boolean;
+}
+
 export async function getSandboxStats(sessionId: string): Promise<SandboxStats> {
   return get<SandboxStats>(`/api/agent/sessions/${encodeURIComponent(sessionId)}/sandbox/stats`);
 }
@@ -32,3 +38,14 @@ export async function getSandboxServerLogs(
     `/api/agent/sessions/${encodeURIComponent(sessionId)}/sandbox/logs?tail=${tail}`,
   );
 }
+
+export async function toggleWebApp(
+  sessionId: string,
+  enabled: boolean,
+): Promise<WebAppToggleResponse> {
+  return post<WebAppToggleResponse>(
+    `/api/agent/sessions/${encodeURIComponent(sessionId)}/web-app`,
+    { enabled },
+  );
+}
+

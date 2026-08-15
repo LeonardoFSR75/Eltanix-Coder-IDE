@@ -133,6 +133,75 @@ class AgentSession:
     profile: str | None = None
     focus_files: list[str] = field(default_factory=list)
     focus_folder: str | None = None
+    is_web_app: bool = False
+    web_prewarmed: bool = False
+
+
+def _detect_web_app(workspace_path: Path) -> bool:
+    """Detecta se o projeto possui características de aplicação web para auto-aquecimento."""
+    indicadores_arquivos = {
+        "app.py",
+        "server.py",
+        "main.py",
+        "index.html",
+        "package.json",
+        "requirements.txt",
+        "vite.config.ts",
+        "vite.config.js",
+        "next.config.js",
+        "next.config.mjs",
+        "next.config.ts",
+    }
+    indicadores_pastas = {"templates", "static", "pages", "src/pages", "src/app", "public"}
+    try:
+        if not workspace_path.exists():
+            return False
+        nomes = {p.name.lower() for p in workspace_path.iterdir() if not p.name.startswith(".")}
+        if any(ind in nomes for ind in indicadores_arquivos):
+            req = workspace_path / "requirements.txt"
+            if req.exists():
+                conteudo = req.read_text("utf-8", "ignore").lower()
+                if any(
+                    w in conteudo
+                    for w in (
+                        "flask",
+                        "fastapi",
+                        "django",
+                        "tornado",
+                        "bottle",
+                        "uvicorn",
+                        "gunicorn",
+                        "streamlit",
+                        "gradio",
+                    )
+                ):
+                    return True
+            pkg = workspace_path / "package.json"
+            if pkg.exists():
+                conteudo = pkg.read_text("utf-8", "ignore").lower()
+                if any(
+                    w in conteudo
+                    for w in (
+                        "express",
+                        "next",
+                        "vite",
+                        "react",
+                        "vue",
+                        "svelte",
+                        "fastify",
+                        "koa",
+                        "hono",
+                    )
+                ):
+                    return True
+            if (workspace_path / "app.py").exists() or (workspace_path / "index.html").exists():
+                return True
+        for pasta in indicadores_pastas:
+            if (workspace_path / pasta).exists():
+                return True
+    except Exception:
+        pass
+    return False
 
 
 def _session_summary(
@@ -452,6 +521,7 @@ class AgentRunner:
         contexto.session_state.packages_checked = bool(runtime_validation["project_ok"])
         contexto.session_state.git_ready = bool(runtime_validation.get("git_ready", True))
 
+        is_web = _detect_web_app(workspace_root)
         sessao = AgentSession(
             session_id=session_id,
             workspace_root=workspace_root,
@@ -467,8 +537,18 @@ class AgentRunner:
             profile=profile,
             focus_files=focus_files or [],
             focus_folder=focus_folder,
+            is_web_app=is_web,
+            web_prewarmed=False,
         )
         self._sessions[session_id] = sessao
+
+        # Se for detectado como Web App, dispara o pré-aquecimento em background sem bloquear
+        if is_web:
+            prewarm_task = asyncio.get_running_loop().create_task(
+                self.prewarm_web_app(session_id)
+            )
+            self._background_tasks.add(prewarm_task)
+            prewarm_task.add_done_callback(self._background_tasks.discard)
 
         if self.coordinator is not None:
             # Registrada mesmo sendo raiz (parent_id=None, depth=0) — assim
@@ -511,8 +591,34 @@ class AgentRunner:
             branch=branch or "(sem branch)",
             sandbox=sessao.sandbox_available,
             github=github is not None,
+            is_web_app=is_web,
         )
         return sessao
+
+    async def prewarm_web_app(self, session_id: str, *, force: bool = False) -> bool:
+        """Pré-aquece o sandbox e o browser Playwright em background para a sessão."""
+        sessao = self._sessions.get(session_id)
+        if sessao is None:
+            return False
+        if not force and not sessao.is_web_app:
+            return False
+
+        sessao.is_web_app = True
+        try:
+            # 1. Pré-aquecimento do sandbox container no executor
+            if self.sandboxes is not None:
+                sb = await self.sandboxes.acquire(session_id, sessao.workspace_root)
+                sessao.context.sandbox = sb
+                sessao.sandbox_available = True
+            # 2. Pré-aquecimento da página Playwright no browser service
+            if sessao.context.browser is not None:
+                await sessao.context.browser.create_session()
+            sessao.web_prewarmed = True
+            log.info("agent.web_app.prewarmed", session=session_id)
+            return True
+        except Exception as exc:
+            log.warning("agent.web_app.prewarm_failed", session=session_id, error=str(exc))
+            return False
 
     async def update_session_summary(
         self,

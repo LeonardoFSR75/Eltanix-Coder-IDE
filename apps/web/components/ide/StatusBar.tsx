@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from "react";
 import { useTheme } from "@/lib/theme";
 import { useIde } from "@/lib/ide-store";
-import { getSandboxStats, type SandboxStats } from "@/lib/api/sandbox";
+import { getSandboxStats, toggleWebApp, type SandboxStats } from "@/lib/api/sandbox";
 import type { LspStatus } from "@/lib/use-lsp";
 
 interface StatusBarProps {
@@ -44,6 +44,8 @@ function Sep() {
 
 function SandboxStatusItem({ sessionId }: { sessionId: string }) {
   const [stats, setStats] = useState<SandboxStats | null>(null);
+  const [isPrewarming, setIsPrewarming] = useState(false);
+  const { openFile } = useIde();
 
   useEffect(() => {
     let ativo = true;
@@ -63,20 +65,67 @@ function SandboxStatusItem({ sessionId }: { sessionId: string }) {
     };
   }, [sessionId]);
 
-  if (!stats || stats.status === "unavailable") return null;
+  const handleTogglePrewarm = async () => {
+    setIsPrewarming(true);
+    try {
+      await toggleWebApp(sessionId, true);
+      const s = await getSandboxStats(sessionId);
+      if (s) setStats(s);
+    } catch {
+      // Ignora
+    } finally {
+      setIsPrewarming(false);
+    }
+  };
 
+  if (!stats || stats.status === "unavailable") {
+    return (
+      <button
+        type="button"
+        className="statusbar-item"
+        onClick={() => void handleTogglePrewarm()}
+        title="Clique para aquecer o Sandbox e o Navegador em segundo plano"
+        style={{ cursor: "pointer", background: "none", border: "none", color: "inherit" }}
+      >
+        🌐 Web App: {isPrewarming ? "Aquecendo..." : "Ligar Pre-warm"}
+      </button>
+    );
+  }
+
+  const primeiraPorta = stats.ports?.[0];
   const portas = stats.ports?.length ? ` :${stats.ports.join(", ")}` : "";
   const mem = stats.metrics?.memory_mb ? ` · ${stats.metrics.memory_mb}MB` : "";
 
   return (
-    <span
-      className="statusbar-item"
-      title={`Sandbox Docker (${stats.name || sessionId})\nStatus: ${stats.status}\nPortas: ${stats.ports?.join(", ") || "nenhuma"}\nRAM: ${stats.metrics?.memory_mb ?? 0}MB / ${stats.metrics?.memory_limit_mb ?? 2048}MB`}
-      style={{ color: stats.ports?.length ? "var(--accent-emerald, #34d399)" : "var(--text-dim)" }}
-    >
-      <span className={`pulse-dot ${stats.ports?.length ? "ok" : ""}`} />
-      Sandbox{portas}{mem}
-    </span>
+    <div style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+      <span
+        className="statusbar-item"
+        title={`Sandbox Docker (${stats.name || sessionId})\nStatus: ${stats.status}\nPortas: ${stats.ports?.join(", ") || "nenhuma"}\nRAM: ${stats.metrics?.memory_mb ?? 0}MB / ${stats.metrics?.memory_limit_mb ?? 2048}MB`}
+        style={{ color: stats.ports?.length ? "var(--accent-emerald, #34d399)" : "var(--text-dim)" }}
+      >
+        <span className={`pulse-dot ${stats.ports?.length ? "ok" : ""}`} />
+        Sandbox{portas}{mem}
+      </span>
+      {primeiraPorta && (
+        <button
+          type="button"
+          className="statusbar-item"
+          title={`Abrir http://localhost:${primeiraPorta} no Navegador Central`}
+          onClick={() => openFile(`browser:http://localhost:${primeiraPorta}`)}
+          style={{
+            cursor: "pointer",
+            background: "rgba(56, 189, 248, 0.12)",
+            color: "#38bdf8",
+            border: "1px solid rgba(56, 189, 248, 0.3)",
+            borderRadius: 3,
+            padding: "1px 5px",
+            fontSize: "10.5px",
+          }}
+        >
+          🌐 Abrir :{primeiraPorta} ↗
+        </button>
+      )}
+    </div>
   );
 }
 

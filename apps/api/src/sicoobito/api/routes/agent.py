@@ -380,6 +380,28 @@ async def get_session_sandbox_logs(
     return await runner.sandboxes.get_server_logs(session_id, tail=tail)
 
 
+class WebAppToggleRequest(BaseModel):
+    enabled: bool = True
+
+
+@router.post("/sessions/{session_id}/web-app")
+async def toggle_session_web_app(
+    request: Request, session_id: str, payload: WebAppToggleRequest
+) -> dict[str, Any]:
+    sessao = await _session(request, session_id)
+    sessao.is_web_app = payload.enabled
+    prewarmed = False
+    if payload.enabled:
+        prewarmed = await _runner(request).prewarm_web_app(session_id, force=True)
+    else:
+        sessao.web_prewarmed = False
+    return {
+        "session_id": session_id,
+        "is_web_app": sessao.is_web_app,
+        "web_prewarmed": prewarmed or sessao.web_prewarmed,
+    }
+
+
 def _session_view(sessao: AgentSession) -> dict[str, Any]:
     startup = sessao.context.session_state
     ready_for_search = (
@@ -406,6 +428,8 @@ def _session_view(sessao: AgentSession) -> dict[str, Any]:
         "sandbox_available": sessao.sandbox_available,
         "sandbox_error": sessao.sandbox_error,
         "github_available": sessao.context.github is not None,
+        "is_web_app": getattr(sessao, "is_web_app", False),
+        "web_prewarmed": getattr(sessao, "web_prewarmed", False),
         "warnings": sessao.warnings,
         "startup_guard": {
             "project_verified": startup.project_verified,
