@@ -409,6 +409,30 @@ export function IdeProvider({ children }: { children: ReactNode }) {
     void reloadFiles();
   }, [reloadFiles, revision]);
 
+  // Pré-aquecimento automático do projeto, sandbox e browser na inicialização
+  useEffect(() => {
+    if (!project) return;
+    let cancel = false;
+    void (async () => {
+      try {
+        const res = await post<{
+          session_id?: string;
+          sandbox_ready?: boolean;
+          is_web_app?: boolean;
+          web_prewarmed?: boolean;
+        }>(`/api/projects/${encodeURIComponent(project)}/prewarm`);
+        if (!cancel && res.session_id) {
+          setActiveSessionId(res.session_id);
+        }
+      } catch {
+        // Pré-aquecimento em segundo plano silencioso
+      }
+    })();
+    return () => {
+      cancel = true;
+    };
+  }, [project]);
+
   const openFile = useCallback(
     (path: string, posicao?: { line: number; column: number }, groupId?: string) => {
       const gid = groupId ?? activeGroupId;

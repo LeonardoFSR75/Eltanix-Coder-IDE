@@ -488,3 +488,62 @@ async def delete_project(slug: str, request: Request, delete_files: bool = False
             log.warning("projects.audit.failed", error=str(exc))
 
     return {"status": "ok", "slug": slug_valido, "files_deleted": delete_files}
+
+
+@router.post("/{slug}/prewarm")
+async def prewarm_project(slug: str, request: Request) -> dict[str, Any]:
+    """Pré-aquece o sandbox e o ecossistema do projeto (ambiente, container e Playwright)."""
+    projects_root = _projects_root(request)
+    try:
+        slug_valido = validate_name(slug)
+        workspace_root = resolve(projects_root, slug_valido)
+    except ProjectError as err:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(err)) from err
+
+    # 1. Garante o ambiente de pacotes do projeto (.venv, etc.)
+    try:
+        from sicoobito.api.routes.packages import ensure_project_env
+
+        await ensure_project_env(workspace_root)
+    except Exception as exc:
+        log.warning("projects.prewarm.env_failed", slug=slug_valido, error=str(exc))
+
+    runner = getattr(request.app.state, "agent_runner", None)
+    if runner is None:
+        return {"status": "ok", "slug": slug_valido, "sandbox_ready": False}
+
+    # 2. Reutiliza ou cria uma sessão pré-aquecida para a IDE
+    sessao_ativa = None
+    for s in runner._sessions.values():
+        if s.workspace_root == workspace_root and s.sandbox_available:
+            sessao_ativa = s
+            break
+
+    if sessao_ativa is None:
+        try:
+            sessao_ativa = await runner.create_session(
+                task="Sessão Pré-aquecida da IDE",
+                workspace_root=workspace_root,
+                mode="auto",
+            )
+        except Exception as exc:
+            log.warning("projects.prewarm.session_failed", slug=slug_valido, error=str(exc))
+
+    is_web = getattr(sessao_ativa, "is_web_app", False) if sessao_ativa else False
+    web_prewarmed = getattr(sessao_ativa, "web_prewarmed", False) if sessao_ativa else False
+    session_id = sessao_ativa.session_id if sessao_ativa else None
+
+    if sessao_ativa and is_web and not web_prewarmed:
+        try:
+            web_prewarmed = await runner.prewarm_web_app(sessao_ativa.session_id, force=True)
+        except Exception as exc:
+            log.warning("projects.prewarm.web_failed", session=session_id, error=str(exc))
+
+    return {
+        "status": "ok",
+        "slug": slug_valido,
+        "session_id": session_id,
+        "sandbox_ready": bool(sessao_ativa and sessao_ativa.sandbox_available),
+        "is_web_app": is_web,
+        "web_prewarmed": web_prewarmed,
+    }
