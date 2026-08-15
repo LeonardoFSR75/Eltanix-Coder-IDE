@@ -50,43 +50,61 @@ class BrowserClient:
     def _headers(self) -> dict[str, str]:
         return {"Authorization": f"Bearer {self.config.token}"} if self.config.token else {}
 
-    async def start(self) -> None:
-        try:
-            resposta = await self._client.post(
-                f"{self.config.base_url}/sessions",
-                json={"session_id": self.session_id},
-                headers=self._headers(),
-            )
-        except httpx.HTTPError as exc:
-            raise BrowserUnavailableError(
-                f"serviço de navegador inacessível em {self.config.base_url}: {exc}"
-            ) from exc
-        if resposta.status_code >= 400:
-            raise BrowserError(
-                f"serviço de navegador recusou criar a sessão: {resposta.text[:300]}"
-            )
-        self._started = True
+    async def start(self, *, retries: int = 3) -> None:
+        ultimo_erro = None
+        for tentativa in range(retries + 1):
+            try:
+                resposta = await self._client.post(
+                    f"{self.config.base_url}/sessions",
+                    json={"session_id": self.session_id},
+                    headers=self._headers(),
+                    timeout=10.0,
+                )
+                if resposta.status_code >= 400:
+                    raise BrowserError(
+                        f"serviço de navegador recusou criar a sessão: {resposta.text[:300]}"
+                    )
+                self._started = True
+                return
+            except httpx.HTTPError as exc:
+                ultimo_erro = exc
+                if tentativa < retries:
+                    import asyncio
+
+                    await asyncio.sleep(0.5 * (tentativa + 1))
+        raise BrowserUnavailableError(
+            f"serviço de navegador inacessível em {self.config.base_url}: {ultimo_erro}"
+        ) from ultimo_erro
+
+    create_session = start
 
     async def action(self, payload: dict[str, Any], *, timeout_ms: int = 15_000) -> dict[str, Any]:
         if not self._started:
             await self.start()
 
         timeout = (timeout_ms / 1000) + _TIMEOUT_MARGEM
-        try:
-            resposta = await self._client.post(
-                f"{self.config.base_url}/sessions/{self.session_id}/action",
-                json={**payload, "timeout_ms": timeout_ms},
-                headers=self._headers(),
-                timeout=timeout,
-            )
-        except httpx.TimeoutException as exc:
-            raise BrowserError(f"ação excedeu {timeout_ms}ms") from exc
-        except httpx.HTTPError as exc:
-            raise BrowserError(f"falha ao falar com o serviço de navegador: {exc}") from exc
+        ultimo_erro = None
+        for tentativa in range(3):
+            try:
+                resposta = await self._client.post(
+                    f"{self.config.base_url}/sessions/{self.session_id}/action",
+                    json={**payload, "timeout_ms": timeout_ms},
+                    headers=self._headers(),
+                    timeout=timeout,
+                )
+                if resposta.status_code >= 400:
+                    raise BrowserError(f"serviço de navegador retornou erro: {resposta.text[:300]}")
+                return resposta.json()
+            except httpx.TimeoutException as exc:
+                raise BrowserError(f"ação excedeu {timeout_ms}ms") from exc
+            except httpx.HTTPError as exc:
+                ultimo_erro = exc
+                if tentativa < 2:
+                    import asyncio
 
-        if resposta.status_code >= 400:
-            raise BrowserError(f"serviço de navegador retornou erro: {resposta.text[:300]}")
-        return resposta.json()
+                    await asyncio.sleep(0.4)
+        msg_erro = f"falha ao falar com o serviço de navegador: {ultimo_erro}"
+        raise BrowserError(msg_erro) from ultimo_erro
 
     async def stop(self, *, force: bool = False) -> None:
         """`force=True` ignora `_started`: o painel manual do IDE cria uma
