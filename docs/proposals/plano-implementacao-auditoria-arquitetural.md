@@ -81,10 +81,25 @@ o núcleo de todo o roadmap abaixo.
   unificando `tool_span`, `request_log` e `audit_log` — hoje reconstruir "o que o agente
   fez" exige juntar as três sem chave de ordenação compartilhada. Ver `telemetry/tracer.py`,
   `router/telemetry.py`, `audit/`.
-- [ ] **Espelho Postgres durável do `AgentCoordinator`.** Tabela `agent_edge(parent_id,
-  child_id, status, updated_at)` atualizada em paralelo ao Redis em `agent/coordinator.py`
-  — Redis continua o caminho rápido (BLPOP), Postgres vira a fonte de verdade para
-  auditoria e recuperação pós-restart.
+- [x] **Espelho Postgres durável do `AgentCoordinator`.** Desviado da proposta literal do
+  plano: uma tabela `agent_edge` nova duplicaria dado que `agent_session` (`AgentSessionRecord`,
+  já criado no item "Reclamar sessões zumbi" deste horizonte) já persiste — `parent_session_id`
+  é a mesma lineage que `agent_edge` propunha guardar separada, e mantê-la em dois lugares
+  arriscaria os dois divergirem. Implementado como fallback de leitura em vez de espelho de
+  escrita: `session_store.graph_snapshot` (`agent/session_store.py`) reconstrói a árvore
+  pai/filho via BFS em `agent_session`; `AgentCoordinator.graph_snapshot`
+  (`agent/coordinator.py`) tenta o Redis primeiro (`_graph_snapshot_from_redis`, caminho
+  rápido inalterado) e só recorre ao Postgres (`_graph_snapshot_from_db`) quando o Redis
+  devolve árvore vazia — indisponível ou TTL expirado após um restart. A árvore reconstruída
+  do banco tem vocabulário de status mais grosso (open/closed/abandoned em vez de
+  running/waiting_approval/...), suficiente para auditoria/recuperação, não para o
+  caminho ao vivo. Testado: suíte unitária (`test_agent_coordinator.py`,
+  `test_session_store.py`) sem regressão; dois testes de integração novos contra Postgres
+  real (`pg_session`) cobrindo o fallback (árvore com filho, raiz inexistente). Validado ao
+  vivo contra a stack real: `GET /api/agent/sessions/{id}/graph` numa sessão-pai com
+  filho, ambas horas fora do TTL do Redis (confirmado `EXISTS` = 0 nas duas chaves Redis),
+  devolveu a árvore correta (`depth`, `parent_id`, `children` certos) inteiramente a partir
+  do Postgres.
 - [ ] **RBAC com enforcement.** Papéis leitura/escrita/admin por projeto sobre a tabela
   `project_member` do Horizonte 1. Precisa passar por todo `AuthDep`/`require_session`
   (`api/deps.py`) e pela filtragem de rotas por `project_slug`.
@@ -142,3 +157,13 @@ o núcleo de todo o roadmap abaixo.
   `graphify/api/router.py`) endurece a escrita nas quatro fontes de RAG sem precisar de
   FK de banco nem migração de backfill — a FK de verdade fica para quando o custo de uma
   migração de backfill valer a pena, não é mais um bloqueador do horizonte.
+- [x] Horizonte 2, item 2 — espelho Postgres durável do `AgentCoordinator`
+  (`agent/coordinator.py`, `agent/session_store.py`) — validado ao vivo via
+  `GET /api/agent/sessions/{id}/graph` numa árvore real fora do TTL do Redis; ver
+  detalhe no item do horizonte acima. Horizonte 2, item 4 (marcação de obsolescência
+  em `Note`/`GraphNode`) investigado e **deliberadamente não implementado nesta
+  sessão**: a premissa do plano (estender `CodeChunk.content_hash`) não se sustenta —
+  `GraphNode` não guarda hash de conteúdo nem caminho de arquivo, e `GraphChunkMapping`
+  (que poderia ligar os dois) é código morto, sem nada escrevendo nela. Precisa de uma
+  decisão de design (o que é "o arquivo que um nó do grafo referencia" para nó de
+  ADR/import/tag) antes de virar implementação — não forçado sobre premissa errada.

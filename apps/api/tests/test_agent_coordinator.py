@@ -6,10 +6,17 @@ recusar orquestração sem Redis — ver ADR 0004.
 from __future__ import annotations
 
 import asyncio
+import uuid
+from contextlib import asynccontextmanager
 
 import pytest
 
+from sicoobito.agent import session_store
 from sicoobito.agent.coordinator import AgentCoordinator
+
+
+def _session_id() -> str:
+    return uuid.uuid4().hex[:12]
 
 
 class _FakePipeline:
@@ -181,6 +188,74 @@ async def test_graph_snapshot_walks_the_whole_tree(coordinator):
 
 async def test_graph_snapshot_unknown_root_is_empty(coordinator):
     assert await coordinator.graph_snapshot("nao-existe") == []
+
+
+# ── Espelho Postgres (fallback quando o Redis está vazio) ──────────────────────
+#
+# Integração real — usa a fixture `pg_session` (`conftest.py`), pulada por
+# padrão sem `DATABASE_URL_TEST`. Mesmo espírito de `test_session_store.py`:
+# exercita a reconstrução da árvore a partir de `agent_session` de verdade,
+# não de um fake.
+
+
+async def test_graph_snapshot_falls_back_to_db_when_redis_is_empty(pg_session, monkeypatch):
+    raiz_id = _session_id()
+    filho_id = _session_id()
+    await session_store.create(
+        pg_session,
+        session_id=raiz_id,
+        project="proj",
+        task="tarefa raiz",
+        mode="agent",
+        profile=None,
+        branch=None,
+        base_branch=None,
+    )
+    await session_store.create(
+        pg_session,
+        session_id=filho_id,
+        project="proj",
+        task="tarefa filho",
+        mode="agent",
+        profile=None,
+        branch=None,
+        base_branch=None,
+        parent_session_id=raiz_id,
+    )
+    await pg_session.flush()
+
+    @asynccontextmanager
+    async def fake_session_scope():
+        yield pg_session
+
+    monkeypatch.setattr("sicoobito.agent.coordinator.session_scope", fake_session_scope)
+
+    coordinator_sem_redis = AgentCoordinator(None)
+    nos = await coordinator_sem_redis.graph_snapshot(raiz_id)
+
+    ids = {n.session_id for n in nos}
+    assert ids == {raiz_id, filho_id}
+
+    raiz = next(n for n in nos if n.session_id == raiz_id)
+    assert raiz.children == [filho_id]
+    assert raiz.depth == 0
+    assert raiz.parent_id is None
+
+    filho = next(n for n in nos if n.session_id == filho_id)
+    assert filho.depth == 1
+    assert filho.parent_id == raiz_id
+    assert filho.children == []
+
+
+async def test_graph_snapshot_db_fallback_unknown_root_is_empty(pg_session, monkeypatch):
+    @asynccontextmanager
+    async def fake_session_scope():
+        yield pg_session
+
+    monkeypatch.setattr("sicoobito.agent.coordinator.session_scope", fake_session_scope)
+
+    coordinator_sem_redis = AgentCoordinator(None)
+    assert await coordinator_sem_redis.graph_snapshot("nao-existe") == []
 
 
 # ── Status ───────────────────────────────────────────────────────────────────

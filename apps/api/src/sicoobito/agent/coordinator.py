@@ -23,6 +23,9 @@ from typing import Any, Literal
 
 from redis.asyncio import Redis
 
+from sicoobito.agent import session_store
+from sicoobito.db.models import AgentSessionRecord
+from sicoobito.db.session import session_scope
 from sicoobito.logging_setup import get_logger
 
 log = get_logger(__name__)
@@ -130,8 +133,20 @@ class AgentCoordinator:
             return 0
 
     async def graph_snapshot(self, root_session_id: str) -> list[AgentNode]:
-        """Percorre a árvore a partir de `root_session_id` (BFS). Devolve []
-        se o Redis está indisponível ou a raiz é desconhecida."""
+        """Percorre a árvore a partir de `root_session_id` (BFS). Se o Redis
+        não devolve nada — indisponível, ou TTL expirado depois de um restart,
+        já que o `_ttl` desliza mas não sobrevive ao processo cair — recorre
+        ao espelho durável em `agent_session` (`_graph_snapshot_from_db`), que
+        `AgentRunner` já mantém atualizado independente deste coordenador.
+        A árvore reconstruída daí tem um vocabulário de status mais grosso
+        (open/closed/abandoned em vez de running/waiting_approval/...), mas é
+        o que sobra para auditoria/recuperação sem o Redis."""
+        nodes = await self._graph_snapshot_from_redis(root_session_id)
+        if nodes:
+            return nodes
+        return await self._graph_snapshot_from_db(root_session_id)
+
+    async def _graph_snapshot_from_redis(self, root_session_id: str) -> list[AgentNode]:
         if self._redis is None:
             return []
         nodes: list[AgentNode] = []
@@ -168,6 +183,63 @@ class AgentCoordinator:
             log.warning("agent_coordinator.redis.unavailable", error=str(exc)[:200])
             return nodes
         return nodes
+
+    async def _root_depth_from_db(self, session: Any, root_session_id: str) -> int:
+        """Sobe a cadeia `parent_session_id` a partir da raiz para saber sua
+        profundidade real — `agent_session` não guarda `depth` (o Redis guarda,
+        mas não sobrevive a um restart), então recalcular é mais barato que
+        duplicar a coluna."""
+        profundidade = 0
+        atual = root_session_id
+        visitados = {atual}
+        while True:
+            registro = await session.get(AgentSessionRecord, atual)
+            if registro is None or not registro.parent_session_id:
+                break
+            pai = registro.parent_session_id
+            if pai in visitados:  # ciclo defensivo — nunca deveria acontecer
+                break
+            profundidade += 1
+            atual = pai
+            visitados.add(atual)
+        return profundidade
+
+    async def _graph_snapshot_from_db(self, root_session_id: str) -> list[AgentNode]:
+        try:
+            async with session_scope() as session:
+                registros = await session_store.graph_snapshot(
+                    session, root_session_id=root_session_id
+                )
+                if not registros:
+                    return []
+                profundidade_raiz = await self._root_depth_from_db(session, root_session_id)
+
+                por_pai: dict[str | None, list[str]] = {}
+                for rec in registros:
+                    por_pai.setdefault(rec.parent_session_id, []).append(rec.session_id)
+
+                profundidades = {root_session_id: profundidade_raiz}
+                fila = [root_session_id]
+                while fila:
+                    atual = fila.pop(0)
+                    for filho in por_pai.get(atual, []):
+                        profundidades[filho] = profundidades[atual] + 1
+                        fila.append(filho)
+
+                return [
+                    AgentNode(
+                        session_id=rec.session_id,
+                        display_name=(rec.task or rec.session_id)[:80],
+                        status=rec.status,  # type: ignore[arg-type]
+                        parent_id=rec.parent_session_id,
+                        depth=profundidades.get(rec.session_id, 0),
+                        children=sorted(por_pai.get(rec.session_id, [])),
+                    )
+                    for rec in registros
+                ]
+        except Exception as exc:
+            log.warning("agent_coordinator.db_fallback.failed", error=str(exc)[:200])
+            return []
 
     # ── Status ───────────────────────────────────────────────────────────────
 

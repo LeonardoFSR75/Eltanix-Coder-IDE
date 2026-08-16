@@ -126,6 +126,33 @@ async def mark_abandoned(session: AsyncSession, *, older_than: datetime) -> int:
     return resultado.rowcount or 0
 
 
+async def graph_snapshot(
+    session: AsyncSession, *, root_session_id: str
+) -> Sequence[AgentSessionRecord]:
+    """Reconstrói a árvore pai/filho (BFS) a partir do espelho durável nesta
+    tabela — usado por `AgentCoordinator.graph_snapshot` como fallback quando
+    o Redis está vazio (indisponível, ou TTL expirado depois de um restart:
+    a árvore ao vivo mora só lá, ver `agent/coordinator.py`). `[]` se a raiz
+    não existe aqui — pode ser uma sessão nova demais para ter sido persistida
+    ainda, ou um `session_id` inválido."""
+    raiz = await session.get(AgentSessionRecord, root_session_id)
+    if raiz is None:
+        return []
+    registros = [raiz]
+    fila = [root_session_id]
+    visitados = {root_session_id}
+    while fila:
+        atual = fila.pop(0)
+        filhos = await list_sessions(session, parent_session_id=atual, limit=1000)
+        for filho in filhos:
+            if filho.session_id in visitados:
+                continue
+            visitados.add(filho.session_id)
+            registros.append(filho)
+            fila.append(filho.session_id)
+    return registros
+
+
 async def list_sessions(
     session: AsyncSession,
     *,
