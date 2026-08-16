@@ -77,10 +77,33 @@ o núcleo de todo o roadmap abaixo.
 
 ## Horizonte 2 — Governança (3–6 meses)
 
-- [ ] **Agent Flight Recorder v1.** Linha do tempo única, append-only, por `session_id`,
-  unificando `tool_span`, `request_log` e `audit_log` — hoje reconstruir "o que o agente
-  fez" exige juntar as três sem chave de ordenação compartilhada. Ver `telemetry/tracer.py`,
-  `router/telemetry.py`, `audit/`.
+- [x] **Agent Flight Recorder v1.** Investigação prévia (ver `telemetry/tracer.py`,
+  `router/telemetry.py`, `audit/`) achou dois problemas, não um: as três fontes já
+  compartilhavam `created_at` comparável (mesmo tipo, mesmo relógio Postgres), mas só
+  `tool_span`/`audit_log` tinham `session_id` — `request_log` não tinha a coluna nem
+  qualquer substituto, e `RouterEngine.complete/stream/embed` não aceitava `session_id`
+  como parâmetro (mesmo com a sessão disponível no chamador, `agent/graph.py`, nunca
+  atravessava a fronteira do router). Implementado: migração `0020` adiciona
+  `request_log.session_id` (nulável, índice composto com `created_at`, mesmo padrão da
+  `0019`/`actor`); `session_id` roteado por `RouterEngine.complete/stream/embed` via
+  closure local (mesmo mecanismo já usado para `actor`) e passado pelos dois pontos reais
+  de chamada dentro do fluxo do agente — `agent/graph.py::think()` e
+  `agent/review_common.py::request_review_verdict()` (segunda opinião, chamada tanto de
+  `graph.py::_attach_review_notes` quanto da tool `request_code_review`). Desviado da
+  proposta literal do plano (tabela append-only nova): as três fontes têm payload
+  genuinamente heterogêneo (não é duplicação), mas `tool_span`/`request_log` são
+  fire-and-forget por design (perder uma linha é aceitável) e `audit_log` é síncrona —
+  espelhar as três num quarto ponto de escrita herdaria o mesmo risco de perda sem
+  eliminar a necessidade de nenhuma das três. `telemetry/flight_recorder.py::session_timeline`
+  compõe as três por leitura (uma query cada, mescla e ordena por `created_at`), exposto em
+  `GET /api/agent/sessions/{id}/timeline`. Testado: 4 testes de integração novos contra
+  Postgres real (`test_flight_recorder.py`, `test_router_telemetry.py`) cobrindo
+  merge/ordenação e persistência de `session_id`; suíte completa sem regressão (3 fakes de
+  `RouterEngine` em testes existentes precisaram aceitar o novo kwarg `session_id`).
+  Validado ao vivo: `GET /api/agent/sessions/{id}/timeline` numa sessão real com atividade
+  em `tool_span` e `audit_log` devolveu os 47 eventos mesclados e corretamente ordenados
+  por `created_at` (sessão anterior a esta mudança, por isso sem eventos `request_log` —
+  esperado, a coluna é nova).
 - [x] **Espelho Postgres durável do `AgentCoordinator`.** Desviado da proposta literal do
   plano: uma tabela `agent_edge` nova duplicaria dado que `agent_session` (`AgentSessionRecord`,
   já criado no item "Reclamar sessões zumbi" deste horizonte) já persiste — `parent_session_id`

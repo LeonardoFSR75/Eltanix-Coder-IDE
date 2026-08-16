@@ -304,12 +304,15 @@ class RouterEngine:
         source: str = "unknown",
         project_slug: str | None = None,
         actor: str | None = None,
+        session_id: str | None = None,
     ) -> CompletionResult:
         # Sombra local do import de módulo: cada `TelemetryEntry` construído
         # abaixo passa por aqui sem precisar editar os ~7 pontos de chamada
-        # individualmente — `actor` fica fechado (closure) neste `record`.
+        # individualmente — `actor`/`session_id` ficam fechados (closure) neste
+        # `record`.
         async def record(entry: TelemetryEntry) -> None:
             entry.actor = actor
+            entry.session_id = session_id
             await _record_telemetry(entry)
 
         await self.budget.check()
@@ -640,6 +643,7 @@ class RouterEngine:
         source: str = "unknown",
         project_slug: str | None = None,
         actor: str | None = None,
+        session_id: str | None = None,
     ) -> AsyncIterator[dict[str, Any]]:
         """Streaming com fallback antes do primeiro chunk.
 
@@ -712,6 +716,7 @@ class RouterEngine:
                 verdict=verdict,
                 project_slug=project_slug,
                 actor=actor,
+                session_id=session_id,
             ):
                 yield event
             return
@@ -738,9 +743,11 @@ class RouterEngine:
         verdict: Any = None,
         project_slug: str | None = None,
         actor: str | None = None,
+        session_id: str | None = None,
     ) -> AsyncIterator[dict[str, Any]]:
         async def record(entry: TelemetryEntry) -> None:
             entry.actor = actor
+            entry.session_id = session_id
             await _record_telemetry(entry)
 
         ttft_ms: int | None = None
@@ -840,9 +847,11 @@ class RouterEngine:
         source: str = "unknown",
         project_slug: str | None = None,
         actor: str | None = None,
+        session_id: str | None = None,
     ) -> CompletionResult:
         async def record(entry: TelemetryEntry) -> None:
             entry.actor = actor
+            entry.session_id = session_id
             await _record_telemetry(entry)
 
         await self.budget.check()

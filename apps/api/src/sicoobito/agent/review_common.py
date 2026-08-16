@@ -47,7 +47,7 @@ class ReviewVerdict:
 
 
 async def request_review_verdict(
-    engine: RouterEngine, *, summary: str, diff: str, source: str
+    engine: RouterEngine, *, summary: str, diff: str, source: str, session_id: str | None = None
 ) -> ReviewVerdict:
     """Uma chamada isolada ao router — não recebe nem contamina o histórico
     da sessão principal. Levanta só se `engine.complete()` levantar (falha de
@@ -64,6 +64,7 @@ async def request_review_verdict(
             "temperature": 0,
         },
         source=source,
+        session_id=session_id,
     )
 
     escolha = (resultado.payload.get("choices") or [{}])[0]

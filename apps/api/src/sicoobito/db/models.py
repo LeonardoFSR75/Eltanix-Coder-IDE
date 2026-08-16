@@ -69,6 +69,13 @@ class RequestLog(Base):
     # como atribuir custo de LLM a um usuário específico, só a `source`
     # (ferramenta) e `project_slug` (projeto).
     actor: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    # Sessão de agente que disparou esta chamada — nulo para chamadas fora do
+    # fluxo do agente (ex: `/v1/chat/completions` direto) e para linhas
+    # anteriores a esta coluna. Junto com `ToolSpan.session_id` e
+    # `AuditLogEntry.session_id`, é a chave que permite reconstruir a linha do
+    # tempo de uma sessão sem juntar as três tabelas às cegas por horário
+    # (ver `telemetry/flight_recorder.py`).
+    session_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
 
     # ── Roteamento ──────────────────────────────────────────────────────────
     requested_model: Mapped[str] = mapped_column(String(128), nullable=False)
@@ -117,6 +124,7 @@ class RequestLog(Base):
         Index("ix_request_log_created_at", "created_at"),
         Index("ix_request_log_model_created", "resolved_model", "created_at"),
         Index("ix_request_log_source_created", "source", "created_at"),
+        Index("ix_request_log_session_created", "session_id", "created_at"),
     )
 
     def __repr__(self) -> str:  # pragma: no cover - conveniência de debug

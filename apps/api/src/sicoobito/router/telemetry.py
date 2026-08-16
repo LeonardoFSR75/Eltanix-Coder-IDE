@@ -47,6 +47,7 @@ class TelemetryEntry:
     complexity: str | None = None
     project_slug: str | None = None
     actor: str | None = None
+    session_id: str | None = None
 
 
 async def record(entry: TelemetryEntry) -> None:
@@ -58,6 +59,7 @@ async def record(entry: TelemetryEntry) -> None:
                     endpoint=entry.endpoint[:64],
                     project_slug=entry.project_slug[:128] if entry.project_slug else None,
                     actor=entry.actor[:64] if entry.actor else None,
+                    session_id=entry.session_id[:32] if entry.session_id else None,
                     requested_model=entry.requested_model[:128],
                     profile=entry.profile[:64] if entry.profile else None,
                     resolved_model=entry.resolved_model[:128] if entry.resolved_model else None,

@@ -69,7 +69,7 @@ class FakeRouterEngine:
         self._respostas = list(respostas)
         self.chamadas = 0
 
-    async def complete(self, *, requested_model, params, source, project_slug=None):
+    async def complete(self, *, requested_model, params, source, project_slug=None, session_id=None):
         self.chamadas += 1
         payload = self._respostas.pop(0)
         return _FakeResult(payload=payload)
@@ -347,7 +347,7 @@ async def test_second_opinion_failure_marks_unavailable_not_approved(ctx, tmp_pa
     ctx.approval_policy = ApprovalPolicy(second_opinion=True)
 
     class _FailingReviewEngine(FakeRouterEngine):
-        async def complete(self, *, requested_model, params, source, project_slug=None):
+        async def complete(self, *, requested_model, params, source, project_slug=None, session_id=None):
             if source == "agent:pre_approval_review":
                 raise RuntimeError("modelo de revisão fora do ar")
             return await super().complete(

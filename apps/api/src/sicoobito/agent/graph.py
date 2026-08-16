@@ -124,6 +124,7 @@ async def _attach_review_notes(
                 summary=pendente["summary"],
                 diff=proposto.diff,
                 source="agent:pre_approval_review",
+                session_id=context.session_id,
             )
         except Exception as exc:
             log.warning("agent.pre_approval_review.failed", error=str(exc)[:200])
@@ -226,6 +227,7 @@ def build_graph(engine: RouterEngine, context: ToolContext):
             },
             source=f"agent:{state.get('mode', 'agent')}",
             project_slug=context.project_slug or None,
+            session_id=state.get("session_id") or None,
         )
 
         escolha = (resultado.payload.get("choices") or [{}])[0]

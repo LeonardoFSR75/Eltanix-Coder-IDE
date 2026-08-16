@@ -54,7 +54,8 @@ async def request_code_review(ctx: ToolContext, args: dict[str, Any]) -> ToolRes
     resumo = args.get("summary", "")
     try:
         veredito = await request_review_verdict(
-            ctx.engine, summary=resumo, diff=diff, source="agent:code_review"
+            ctx.engine, summary=resumo, diff=diff, source="agent:code_review",
+            session_id=ctx.session_id,
         )
     except Exception as exc:
         return ToolResult.failure(f"Falha ao chamar o revisor: {exc}")

@@ -21,7 +21,7 @@ class _FakeEngine:
         self.resposta = resposta
         self.chamadas: list[dict[str, Any]] = []
 
-    async def complete(self, *, requested_model, params, source):
+    async def complete(self, *, requested_model, params, source, session_id=None):
         self.chamadas.append(
             {"requested_model": requested_model, "params": params, "source": source}
         )

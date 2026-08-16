@@ -17,6 +17,7 @@ from sicoobito.agent.state import AgentMode
 from sicoobito.agent.tools import registry
 from sicoobito.api.deps import AuthDep, DbSessionDep, EngineDep, SettingsDep
 from sicoobito.logging_setup import get_logger
+from sicoobito.telemetry import flight_recorder
 from sicoobito.workspace import git as git_ops
 from sicoobito.workspace import projects as project_ops
 from sicoobito.workspace.fs import PathEscapeError
@@ -204,6 +205,30 @@ async def get_session_graph(session_id: str, request: Request) -> dict[str, Any]
             }
             for n in nos
         ]
+    }
+
+
+@router.get("/sessions/{session_id}/timeline")
+async def get_session_timeline(session_id: str, db: DbSessionDep) -> dict[str, Any]:
+    """Linha do tempo unificada da sessão — Agent Flight Recorder v1: mescla
+    `tool_span` (ferramentas/RAG), `request_log` (chamadas de LLM) e
+    `audit_log` (decisões de risco/aprovação) por `created_at`, sem exigir
+    três consultas manuais separadas (`GET /api/telemetry/history`,
+    `GET /api/metrics/recent`, `GET /api/audit`) para reconstruir "o que o
+    agente fez" nesta sessão. Ver `telemetry/flight_recorder.py`."""
+    eventos = await flight_recorder.session_timeline(db, session_id=session_id)
+    return {
+        "session_id": session_id,
+        "events": [
+            {
+                "ts": e.ts.isoformat(),
+                "kind": e.kind,
+                "summary": e.summary,
+                "status": e.status,
+                "detail": e.detail,
+            }
+            for e in eventos
+        ],
     }
 
 
