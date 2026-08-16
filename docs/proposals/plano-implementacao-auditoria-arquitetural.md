@@ -181,9 +181,9 @@ o núcleo de todo o roadmap abaixo.
   **deliberadamente não implementado**: a premissa do plano (estender
   `CodeChunk.content_hash`) não se sustenta — `GraphNode` não guarda hash de conteúdo nem
   caminho de arquivo, e `GraphChunkMapping` (que poderia ligar os dois) é código morto,
-  sem nada escrevendo nela. Precisa de uma decisão de design (o que é "o arquivo que um
-  nó do grafo referencia" para nó de ADR/import/tag) antes de virar implementação — não
-  forçado sobre premissa errada.
+  sem nada escrevendo nela. **Reavaliar quando:** houver uma decisão de design sobre o que
+  é "o arquivo que um nó do grafo referencia" para cada tipo de nó (ADR, import, tag — cada
+  um aponta para algo diferente) — sem isso não há o que marcar como obsoleto.
 
 ## Horizonte 3 — Escala (6–12 meses)
 
@@ -233,6 +233,10 @@ o núcleo de todo o roadmap abaixo.
   trocaria segundos de `docker run` por gestão de TTL/claim/release e risco real de estado
   residual (arquivo temporário, processo, variável de ambiente) vazando de uma sessão para
   a próxima que reivindicar o mesmo container — pior troca que o problema que resolveria.
+  **Reavaliar se:** o `docker run` deixar de ser da ordem de segundos (imagem base muito
+  maior, storage driver mais lento) ou uma medição real em produção mostrar que a criação
+  de container — não a instalação de dependências, já resolvida — é gargalo de latência
+  percebido pelo usuário.
 - [x] **Teste de carga formal** contra o alvo de 1.000 projetos / 500 usuários / 5.000
   sessões-dia / 50.000 execuções-dia definido na auditoria — escopo reduzido via
   pergunta ao usuário: o alvo da auditoria pressupõe infraestrutura multi-tenant que o
@@ -279,6 +283,10 @@ o núcleo de todo o roadmap abaixo.
   sessão de agente do produto atravessa — reestruturá-lo por uma motivação que já não se
   sustenta é risco alto sem contrapartida. Mesmo raciocínio dos itens 2 e 3 do
   Horizonte 3: premissa do item não resistiu à investigação, fechado sem código novo.
+  **Reavaliar se:** surgir uma necessidade concreta que a chamada de ferramenta atual não
+  suporte — ex. replanejamento automático a meio de sessão, aprovação humana do plano em si
+  (não só de ações `WRITE`/`EXEC` individuais), ou um modo que precise pausar
+  deterministicamente logo após `write_todos` em vez de só filtrar o schema de ferramentas.
 - [x] **Promoção de padrões repetidos e bem-sucedidos a skills duráveis** (`skills/service.py`) —
   ao contrário dos itens 1 e 2 do Horizonte 3 e do item 1 deste Horizonte, aqui a premissa do
   plano se sustentou: o único mecanismo existente (`agent/tools/skills.py::propose_skill`) é
@@ -323,8 +331,12 @@ o núcleo de todo o roadmap abaixo.
   uma sessão) exigiria esse quarto log com garantia de ordem e sem perda, contradizendo o
   design que já existe pelas mesmas razões documentadas em `flight_recorder.py` — redesenho
   maior, não um item deste Horizonte. Não implementado, por decisão de escopo (via pergunta ao
-  usuário). Já "especialização" era uma lacuna real: `spawn_agent` (`agent/tools/agents_graph.py`)
-  cria um filho completo mas sempre genérico — nada permitia o pai dizer *que tipo* de agente
+  usuário). **Reavaliar quando:** surgir necessidade real de reconstruir/rejogar
+  deterministicamente as decisões de uma sessão passada — ex. depurar por que um agente tomou
+  uma decisão específica, ou uma trilha de auditoria que precise mais que a visão read-time
+  que `session_timeline()` já entrega hoje — o que justificaria o quarto log append-only que
+  hoje o design deliberadamente evita. Já "especialização" era uma lacuna real:
+  `spawn_agent` (`agent/tools/agents_graph.py`) cria um filho completo mas sempre genérico — nada permitia o pai dizer *que tipo* de agente
   aquele filho deveria ser, ao contrário de `custom_instructions` (`.sicoobito/instructions.md`),
   que já concatena ao `SYSTEM_PROMPT` de toda sessão do projeto. Escopo reduzido por decisão do
   usuário: protótipo mínimo — parâmetro opcional `skill_name` em `spawn_agent`, que carrega o
