@@ -227,8 +227,32 @@ o núcleo de todo o roadmap abaixo.
   trocaria segundos de `docker run` por gestão de TTL/claim/release e risco real de estado
   residual (arquivo temporário, processo, variável de ambiente) vazando de uma sessão para
   a próxima que reivindicar o mesmo container — pior troca que o problema que resolveria.
-- [ ] **Teste de carga formal** contra o alvo de 1.000 projetos / 500 usuários / 5.000
-  sessões-dia / 50.000 execuções-dia definido na auditoria.
+- [x] **Teste de carga formal** contra o alvo de 1.000 projetos / 500 usuários / 5.000
+  sessões-dia / 50.000 execuções-dia definido na auditoria — escopo reduzido via
+  pergunta ao usuário: o alvo da auditoria pressupõe infraestrutura multi-tenant que o
+  produto não opera hoje (local-first, single-machine), então não faz sentido tentar
+  provar esse número especificamente. Implementado em vez disso um smoke de
+  concorrência (`apps/api/scripts/load_test_sandbox_queue.py`) que valida o gate do
+  item 1 sob carga real, concorrente, contra a stack `docker compose` — não a escala do
+  alvo, mas o comportamento sob contenção que o gate promete. Script abre N sessões de
+  agente concorrentes (`POST /api/agent/sessions`) contra um projeto real, faz *polling*
+  de `GET /api/agent/sandboxes/queue` em paralelo, fecha cada sessão assim que a criação
+  responde, e verifica ao final que a fila volta a `active=0`/`waiting=[]` sem exceção
+  em nenhuma chamada. Autentica pelo canal de serviço (`SICOOBITO_API_KEY`, ADR 0005) —
+  é ferramenta externa, não sessão de browser. Rodado ao vivo contra a stack real (modo
+  executor): com 10 sessões concorrentes, pico de `active` observado bateu exatamente no
+  teto (`max_concurrent=6`), houve fila (`waiting` chegou a 1) e o estado final voltou
+  limpo, zero falhas; repetido com 15 sessões, mesmo resultado (pico de `active=6`, zero
+  falhas). `docker ps` confirmou nenhum container `sicoobito-*` órfão depois — nenhuma
+  vaga do gate vazou sob concorrência real. Achado incidental durante a primeira
+  tentativa (timeout de 10s no polling): sob 6+ criações de sessão concorrentes o
+  servidor de dev demora a responder a outras requisições por alguns segundos —
+  provavelmente algum trabalho síncrono/bloqueante em `create_session` (worktree, git)
+  não passa por `asyncio.to_thread`. Não investigado a fundo nem corrigido aqui —
+  fora do escopo deste item (é sobre o gate de concorrência, não sobre a latência de
+  criação de sessão em si); registrado para eventual investigação futura, não bloqueia
+  o resultado do smoke (timeouts generosos no script absorvem isso, e a fila em si nunca
+  vazou vaga nem devolveu estado inconsistente).
 
 ## Horizonte 4 — Inteligência (12–24 meses)
 
