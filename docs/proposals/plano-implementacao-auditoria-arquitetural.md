@@ -256,9 +256,23 @@ o núcleo de todo o roadmap abaixo.
 
 ## Horizonte 4 — Inteligência (12–24 meses)
 
-- [ ] **Planejamento como nó de primeira classe** em `agent/graph.py::build_graph` — hoje
-  é uma chamada de ferramenta dentro de `think`, sem estado próprio que a UI possa
-  renderizar de forma estável.
+- [x] **Planejamento como nó de primeira classe** em `agent/graph.py::build_graph` —
+  investigado e **deliberadamente não implementado** (via pergunta ao usuário): a
+  motivação declarada no item não se sustenta mais. `write_todos` já popula
+  `AgentState.todos` (`agent/state.py:59`) como campo próprio, não-acumulativo
+  (substituído por inteiro a cada chamada, não somado como `messages`), e o frontend já
+  tem um painel dedicado e sempre visível — `TodoCard.tsx` — renderizando essa lista como
+  "Plano" com progresso (`N/total` completos), alimentado por `resultado.data["todos"]`
+  que `act()` já extrai e expõe. O objetivo que o item persegue (UI com onde mostrar o
+  plano de forma estável) já está atingido; o que sobraria é puramente uma reestruturação
+  interna — mover `write_todos` de "chamada de ferramenta dentro de `act`" para um nó
+  dedicado do LangGraph — sem benefício concreto identificado hoje (o gate de
+  `_tool_schemas` por `has_plan` já impede os modos `plan`/`orchestra` de escrever/
+  executar antes do primeiro `write_todos`, o que é o comportamento que "planejamento
+  antes de agir" pede). `build_graph` é o loop `think → approve/act → think` que toda
+  sessão de agente do produto atravessa — reestruturá-lo por uma motivação que já não se
+  sustenta é risco alto sem contrapartida. Mesmo raciocínio dos itens 2 e 3 do
+  Horizonte 3: premissa do item não resistiu à investigação, fechado sem código novo.
 - [ ] **Promoção de padrões repetidos e bem-sucedidos a skills duráveis** (`skills/service.py`).
 - [ ] **Especialização mais profunda de subagentes**, com replay via Flight Recorder.
 
