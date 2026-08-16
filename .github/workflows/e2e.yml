@@ -3,12 +3,27 @@ name: E2E (Playwright)
 # Golden paths de browser real contra a stack inteira (apps/web/e2e — ver
 # apps/web/CLAUDE.md). Fora do `ci.yml` de propósito: orquestrar
 # Postgres+Redis+MinIO+executor+browser+api+web num runner custa minutos, não
-# segundos, então não roda em todo push/PR — só sob demanda e uma vez por
-# noite, pra pegar regressão sem inflar o tempo de cada PR.
+# segundos — e esse custo é o de SUBIR a stack, não o de quantos testes rodam
+# nela, então "rodar só o smoke leve" não reduziria o tempo real. Em vez
+# disso, o gatilho de PR é filtrado por caminho: só dispara quando o que os
+# golden paths cobrem de fato muda (o app web, as rotas que os testes batem,
+# ou a própria stack). PR fora desses caminhos e todo push direto continuam
+# cobertos só pelo agendamento noturno.
 on:
   workflow_dispatch: {}
   schedule:
     - cron: "0 6 * * *" # 06:00 UTC
+  pull_request:
+    branches: [main]
+    paths:
+      - "apps/web/**"
+      - "apps/api/src/sicoobito/api/routes/projects.py"
+      - "apps/api/src/sicoobito/api/routes/browser.py"
+      - "apps/api/src/sicoobito/browser/**"
+      - "apps/api/src/sicoobito/auth/**"
+      - "apps/api/src/sicoobito/api/deps.py"
+      - "docker-compose.yml"
+      - ".github/workflows/e2e.yml"
 
 jobs:
   e2e:

@@ -62,6 +62,12 @@ Gere as duas chaves (`SICOOBITO_API_KEY` e `EXECUTOR_TOKEN`):
 python -c "import secrets;print(secrets.token_urlsafe(32))"
 ```
 
+**Fixe também `SICOOBITO_ADMIN_USERNAME`/`SICOOBITO_ADMIN_PASSWORD` no `.env`** — é a
+credencial de login do browser (`/ide`, ADR 0005), separada das duas chaves acima. Sem
+isso, a API gera uma senha aleatória na primeira subida e só a mostra uma vez, no log
+(`docker compose logs api | grep auth.seed_user`) — fácil de perder, e sem jeito de
+recuperar depois sem redefinir a senha diretamente no banco.
+
 ```bash
 docker compose up -d --build
 ```
@@ -70,7 +76,8 @@ docker compose up -d --build
 docker compose exec api alembic upgrade head
 ```
 
-Pronto:
+Pronto — abra `http://localhost:5400/ide` e entre com o usuário/senha que você fixou
+acima:
 
 | Serviço | Porta | URL |
 |---|---|---|
