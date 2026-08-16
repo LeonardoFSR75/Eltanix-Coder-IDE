@@ -194,6 +194,35 @@ class AuthService:
         except Exception as exc:
             log.error("auth.seed_user.failed", error=str(exc)[:200])
 
+    async def create_user(
+        self,
+        *,
+        username: str,
+        password: str,
+        display_name: str | None = None,
+        is_admin: bool = False,
+    ) -> AppUser | None:
+        """Cria um usuário novo, chamada só pela rota admin-only `POST
+        /api/auth/users` (`api/routes/auth.py`) — ao contrário de
+        `ensure_seed_user`, não é idempotente-silenciosa: `None` sinaliza
+        username já em uso, para a rota devolver 409 em vez de mascarar."""
+        async with session_scope() as session:
+            if await store.get_user_by_username(session, username) is not None:
+                return None
+            user = await store.create_user(
+                session,
+                username=username,
+                password_hash=_hash_password(password),
+                display_name=display_name or username,
+            )
+            user.is_admin = is_admin
+            await session.flush()
+        return user
+
+    async def list_users(self) -> list[AppUser]:
+        async with session_scope() as session:
+            return await store.list_users(session)
+
     async def authenticate(self, *, username: str, password: str) -> AppUser | None:
         async with session_scope() as session:
             user = await store.get_user_by_username(session, username)

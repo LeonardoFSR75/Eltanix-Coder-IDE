@@ -9,6 +9,7 @@ from fastapi import APIRouter, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field
 
 from sicoobito.api.deps import AuthDep, SettingsDep
+from sicoobito.auth.rbac import require_role_by_slug
 from sicoobito.context import store as context_store
 from sicoobito.context.indexer import ContextIndexer
 from sicoobito.context.repomap import DEFAULT_TOKEN_BUDGET, build_repo_map
@@ -52,6 +53,11 @@ def _resolve_root(settings: SettingsDep, project: str | None) -> Path:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
 
+async def _check_project_access(request: Request, project: str, min_role: str) -> None:
+    async with session_scope() as session:
+        await require_role_by_slug(session, request, project_slug=project, min_role=min_role)
+
+
 class IndexRequest(BaseModel):
     project: str
     # `force` reindexa tudo, ignorando o hash. Útil depois de trocar o modelo de
@@ -63,6 +69,7 @@ class IndexRequest(BaseModel):
 async def index_workspace(
     payload: IndexRequest, request: Request, settings: SettingsDep
 ) -> dict[str, Any]:
+    await _check_project_access(request, payload.project, min_role="editor")
     root = _resolve_root(settings, payload.project)
     report = await _indexer(request).index_workspace(root, force=payload.force)
     return {
@@ -91,6 +98,7 @@ class SearchRequest(BaseModel):
 
 @router.post("/search")
 async def search(payload: SearchRequest, request: Request, settings: SettingsDep) -> dict[str, Any]:
+    await _check_project_access(request, payload.project, min_role="viewer")
     root = _resolve_root(settings, payload.project)
     hits = await _indexer(request).search(
         root=root, query=payload.query, limit=payload.limit, path_prefix=payload.path_prefix
@@ -120,6 +128,7 @@ async def search(payload: SearchRequest, request: Request, settings: SettingsDep
 
 @router.get("/status")
 async def status_(request: Request, settings: SettingsDep, project: str) -> dict[str, Any]:
+    await _check_project_access(request, project, min_role="viewer")
     root = _resolve_root(settings, project)
     stats = await _indexer(request).stats(root)
     return {"workspace": str(root), **stats}
@@ -132,6 +141,7 @@ async def repomap(
     project: str,
     token_budget: int = Query(default=DEFAULT_TOKEN_BUDGET, ge=200, le=32000),
 ) -> dict[str, Any]:
+    await _check_project_access(request, project, min_role="viewer")
     root = _resolve_root(settings, project)
     workspace = _indexer(request).workspace_key(root)
     return await build_repo_map(workspace, token_budget=token_budget)
@@ -156,6 +166,7 @@ async def graph(
     workspace = _indexer(request).workspace_key(root)
 
     async with session_scope() as session:
+        await require_role_by_slug(session, request, project_slug=project, min_role="viewer")
         result = await context_store.code_graph(
             session, workspace=workspace, path=path, symbol=symbol, line=line
         )

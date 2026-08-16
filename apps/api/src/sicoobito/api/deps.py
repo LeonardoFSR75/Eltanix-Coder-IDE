@@ -77,6 +77,12 @@ async def require_session(
             # Guardado para `identify_actor` — ver seu comentário sobre por que
             # isto vive em `request.state` em vez de o retorno desta função.
             request.state.actor = "api_key"
+            # Canal de serviço (CI/cline/cursor/aider) — sempre acesso
+            # irrestrito, nunca "membro" de projeto nenhum. Ver
+            # `auth/rbac.py::_actor_bypasses`.
+            request.state.is_service = True
+            request.state.user_id = None
+            request.state.is_admin = False
             return
 
     session_token = sicoobito_session
@@ -93,6 +99,11 @@ async def require_session(
             user = await auth.validate_session(session_token)
             if user is not None:
                 request.state.actor = user.username
+                # Consumido por `auth/rbac.py` (RBAC por projeto) e por
+                # `require_admin` abaixo (gestão de usuário/instância).
+                request.state.is_service = False
+                request.state.user_id = user.id
+                request.state.is_admin = user.is_admin
                 return
 
     raise HTTPException(
@@ -159,6 +170,20 @@ def identify_actor(request: Request) -> str:
     return getattr(request.state, "actor", "unknown")
 
 
+def require_admin(request: Request) -> None:
+    """Dono da instância ou canal de serviço — únicos que podem gerenciar
+    usuário (`POST /api/auth/users`) ou membro de qualquer projeto
+    (`auth/rbac.py` cobre o resto, por projeto). Mesmo contrato de
+    `identify_actor`: depende de `AuthDep` já ter rodado antes na mesma
+    requisição, por isso toda rota que usa `AdminDep` também lista `AuthDep`.
+    """
+    if getattr(request.state, "is_service", False) or getattr(request.state, "is_admin", False):
+        return
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN, detail="Requer administrador da instância."
+    )
+
+
 EngineDep = Annotated[RouterEngine, Depends(get_engine)]
 SettingsDep = Annotated[Settings, Depends(get_settings)]
 SourceDep = Annotated[str, Depends(identify_source)]
@@ -166,3 +191,4 @@ ProjectDep = Annotated[str | None, Depends(identify_project)]
 ActorDep = Annotated[str, Depends(identify_actor)]
 DbSessionDep = Annotated[AsyncSession, Depends(get_session)]
 AuthDep = Depends(require_session)
+AdminDep = Depends(require_admin)

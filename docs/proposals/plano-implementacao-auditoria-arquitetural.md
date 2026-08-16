@@ -123,9 +123,58 @@ o núcleo de todo o roadmap abaixo.
   filho, ambas horas fora do TTL do Redis (confirmado `EXISTS` = 0 nas duas chaves Redis),
   devolveu a árvore correta (`depth`, `parent_id`, `children` certos) inteiramente a partir
   do Postgres.
-- [ ] **RBAC com enforcement.** Papéis leitura/escrita/admin por projeto sobre a tabela
-  `project_member` do Horizonte 1. Precisa passar por todo `AuthDep`/`require_session`
-  (`api/deps.py`) e pela filtragem de rotas por `project_slug`.
+- [x] **RBAC com enforcement.** Três papéis, rank crescente (`auth/rbac.py::ROLE_RANK`):
+  `viewer` (leitura) < `editor` (escrita) < `owner` (admin do projeto — atualiza, apaga,
+  gerencia membro) sobre a tabela `project_member` do Horizonte 1. Decisão de produto (via
+  pergunta ao usuário, já que o sistema era single-user/seed-only): admin cria usuário
+  via API — `POST /api/auth/users` (`AdminDep`, `api/deps.py::require_admin`), sem
+  self-signup nem convite por e-mail. Migração `0021_app_user_is_admin.py` adiciona
+  `AppUser.is_admin` e promove o usuário mais antigo (o seed original) a admin da
+  instância — dono da instância e canal de serviço (`SICOOBITO_API_KEY`, ADR 0005) sempre
+  passam sem consultar `project_member` (`auth/rbac.py::_actor_bypasses`), o mesmo espírito
+  de "canal de serviço não é usuário de browser" que já rege `require_session`.
+  Enforcement por rota, não por um dependency FastAPI único: `project_slug` chega por
+  caminho diferente em cada arquivo (path param em `projects.py`, query/body em
+  `context.py`/`documents.py`/`notes.py`, campo derivado de um `ProjectRecord` já
+  carregado em outros) — mesma razão pela qual RAG já mantém fontes independentes em vez
+  de um helper compartilhado. `require_role_by_slug` é tolerante por desenho: `None` (nota/
+  documento/busca global) e slug que não bate com nenhum `ProjectRecord` (projeto ad-hoc)
+  não fazem nada, preservando o comportamento de hoje — RBAC só existe *por projeto*, não
+  há papel "global". Cobertura: lifecycle completo de `projects.py` (create/update/delete/
+  summary/prewarm/open-absolute-path) mais as novas rotas `GET|POST /{slug}/members` e
+  `DELETE /{slug}/members/{user_id}`; `context.py` inteiro (projeto é sempre obrigatório
+  ali); `documents.py`/`notes.py` só quando um projeto é de fato passado (skip no
+  conteúdo global, mesmo raciocínio tolerante); `POST /api/agent/sessions` (criação, com
+  o mesmo skip tolerante já que `payload.project` é nome de pasta em `PROJECTS_ROOT`, não
+  garantidamente um slug registrado). Fora de escopo, deliberadamente: `graphify/api/
+  router.py` — seu `workspace` não é de forma confiável o mesmo identificador que
+  `ProjectRecord.slug`, e `/query/multi` é documentado como busca cross-workspace por
+  desenho, então mapear para RBAC por projeto precisa de desenho próprio, não um bolt-on;
+  as subrotas `/api/agent/sessions/{id}/*` (além da criação) — não existe hoje nenhum
+  conceito de "quem pode agir na sessão X" (qualquer chamador autenticado que saiba o
+  `session_id` age nela), lacuna pré-existente mais ampla que este item de RBAC. Bug de
+  privilégio encontrado e corrigido no caminho: `POST /api/projects` agia como upsert por
+  slug sem checagem nenhuma no ramo de atualização — qualquer chamador autenticado podia
+  reescrever metadado de projeto já existente sem ser dono, contornando por completo o
+  `editor` exigido por `PATCH /{slug}`; fechado com `require_role_by_slug(min_role="editor")`
+  antes da mutação. Armadilha revisitada duas vezes: `except Exception` largo em
+  `create_project`/`get_summary` (degrada-e-segue, ver seção de Segurança do `CLAUDE.md`
+  raiz) engoliria silenciosamente o `HTTPException(403)` do RBAC e devolveria 200 pelo
+  fallback — corrigido com `except HTTPException: raise` antes do `except Exception`
+  genérico em `create_project`, e evitado em `get_summary` colocando a checagem num bloco
+  `session_scope()` próprio, fisicamente fora do `try/except`. Testado: 13 testes de
+  integração novos contra Postgres real (`test_rbac.py`, fixture `pg_session`) cobrindo
+  rank de papel, os dois bypasses, tolerância a slug `None`/não-registrado, e CRUD de
+  `project_member` (`add_member` como upsert, `remove_member`, `list_member_project_ids`);
+  suíte completa (573 testes) sem regressão — 2 falhas pré-existentes e não relacionadas
+  (encoding de console Windows em `test_agent_tools.py`, comportamento de
+  `agent_finish` em `test_agent_tools_agents_graph.py`), confirmadas por não estarem no
+  diff desta mudança. Validado ao vivo contra a stack real via `docker compose`: criado
+  usuário não-admin via `POST /api/auth/users`, adicionado como `viewer` a um projeto de
+  teste — confirmado que lê `GET /{slug}/summary` (200) mas `PATCH`/`DELETE`/adicionar
+  membro/criar nota no projeto devolvem 403; promovido a `editor` — criar nota passa a
+  200, `DELETE` do projeto continua 403 (precisa `owner`); removido da membership —
+  `GET /{slug}/summary` volta a 403. Projeto e sessão de teste removidos ao final.
 - [ ] **Marcação de obsolescência em `Note`/`GraphNode`.** Estender o princípio que
   `CodeChunk.content_hash` já resolve para reindexação incremental — ligar nota/nó do
   grafo ao hash do arquivo que referenciam, sinalizar quando diverge.

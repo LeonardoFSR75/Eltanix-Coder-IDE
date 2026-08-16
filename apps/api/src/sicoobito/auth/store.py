@@ -1,6 +1,7 @@
-"""Persistência de usuário e sessão. Mesmo padrão de `documents/store.py` e
-`notes/store.py`: funções que só pedem um `AsyncSession`, sem `session_scope()`
-próprio — é o que permite testá-las direto contra a fixture `pg_session`."""
+"""Persistência de usuário, sessão e papel por projeto (`project_member`).
+Mesmo padrão de `documents/store.py` e `notes/store.py`: funções que só pedem
+um `AsyncSession`, sem `session_scope()` próprio — é o que permite testá-las
+direto contra a fixture `pg_session`."""
 
 from __future__ import annotations
 
@@ -10,11 +11,15 @@ from datetime import datetime
 from sqlalchemy import delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from sicoobito.db.models import AppUser, AuthSession
+from sicoobito.db.models import AppUser, AuthSession, ProjectMember
 
 
 async def count_users(session: AsyncSession) -> int:
     return (await session.execute(select(func.count(AppUser.id)))).scalar() or 0
+
+
+async def list_users(session: AsyncSession) -> list[AppUser]:
+    return list((await session.execute(select(AppUser).order_by(AppUser.username))).scalars())
 
 
 async def create_user(
@@ -106,3 +111,54 @@ async def purge_expired_sessions(session: AsyncSession, *, now: datetime) -> int
     )
     result = await session.execute(stmt)
     return result.rowcount or 0
+
+
+# --- project_member: papel de usuário por projeto (RBAC, ver auth/rbac.py) ---
+
+
+async def get_member(
+    session: AsyncSession, *, project_id: uuid.UUID, user_id: uuid.UUID
+) -> ProjectMember | None:
+    return await session.scalar(
+        select(ProjectMember).where(
+            ProjectMember.project_id == project_id, ProjectMember.user_id == user_id
+        )
+    )
+
+
+async def list_members(session: AsyncSession, *, project_id: uuid.UUID) -> list[ProjectMember]:
+    stmt = select(ProjectMember).where(ProjectMember.project_id == project_id)
+    return list((await session.execute(stmt)).scalars())
+
+
+async def list_member_project_ids(session: AsyncSession, *, user_id: uuid.UUID) -> list[uuid.UUID]:
+    stmt = select(ProjectMember.project_id).where(ProjectMember.user_id == user_id)
+    return list((await session.execute(stmt)).scalars())
+
+
+async def add_member(
+    session: AsyncSession, *, project_id: uuid.UUID, user_id: uuid.UUID, role: str
+) -> ProjectMember:
+    """`upsert` manual em vez de `ON CONFLICT`: o volume aqui (convites) não
+    justifica SQL específico do Postgres — ver `uq_project_member_project_user`
+    (`db/models.py`) para a constraint que este caminho respeita na prática."""
+    existing = await get_member(session, project_id=project_id, user_id=user_id)
+    if existing is not None:
+        existing.role = role
+        await session.flush()
+        return existing
+    member = ProjectMember(project_id=project_id, user_id=user_id, role=role)
+    session.add(member)
+    await session.flush()
+    return member
+
+
+async def remove_member(
+    session: AsyncSession, *, project_id: uuid.UUID, user_id: uuid.UUID
+) -> bool:
+    member = await get_member(session, project_id=project_id, user_id=user_id)
+    if member is None:
+        return False
+    await session.delete(member)
+    await session.flush()
+    return True

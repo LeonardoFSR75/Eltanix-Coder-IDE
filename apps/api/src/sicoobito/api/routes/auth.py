@@ -8,7 +8,7 @@ from typing import Any
 from fastapi import APIRouter, Cookie, Header, HTTPException, Request, status
 from pydantic import BaseModel, Field
 
-from sicoobito.api.deps import AuthDep
+from sicoobito.api.deps import AdminDep, AuthDep
 from sicoobito.auth.service import AuthService
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -31,6 +31,15 @@ class LoginRequest(BaseModel):
 class ChangePasswordRequest(BaseModel):
     old_password: str = Field(min_length=1)
     new_password: str = Field(min_length=6, max_length=128)
+
+
+class CreateUserRequest(BaseModel):
+    username: str = Field(min_length=1, max_length=64)
+    password: str = Field(min_length=6, max_length=128)
+    display_name: str | None = Field(default=None, max_length=255)
+    is_admin: bool = Field(
+        default=False, description="Concede acesso irrestrito a todo projeto — ver auth/rbac.py"
+    )
 
 
 def _client_ip(request: Request) -> str:
@@ -122,3 +131,38 @@ async def change_password(
             detail="Senha atual incorreta.",
         )
     return {"status": "ok", "message": "Senha alterada com sucesso."}
+
+
+def _user_view(user: Any) -> dict[str, Any]:
+    return {
+        "id": str(user.id),
+        "username": user.username,
+        "display_name": user.display_name,
+        "is_admin": user.is_admin,
+        "is_active": user.is_active,
+        "created_at": user.created_at.isoformat(),
+    }
+
+
+@router.post("/users", dependencies=[AuthDep, AdminDep])
+async def create_user(payload: CreateUserRequest, request: Request) -> dict[str, Any]:
+    """Único jeito de criar usuário além do seed (`ensure_seed_user`, lifespan)
+    — só o dono da instância ou o canal de serviço convida gente nova, não há
+    self-signup (ver Horizonte 2 do plano de auditoria)."""
+    user = await _service(request).create_user(
+        username=payload.username,
+        password=payload.password,
+        display_name=payload.display_name,
+        is_admin=payload.is_admin,
+    )
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="Username já está em uso."
+        )
+    return _user_view(user)
+
+
+@router.get("/users", dependencies=[AuthDep, AdminDep])
+async def list_users(request: Request) -> dict[str, Any]:
+    users = await _service(request).list_users()
+    return {"users": [_user_view(u) for u in users]}

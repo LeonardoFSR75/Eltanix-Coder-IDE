@@ -10,6 +10,8 @@ from pydantic import BaseModel, Field
 
 from sicoobito.api.deps import AuthDep
 from sicoobito.audit.service import AuditService
+from sicoobito.auth.rbac import require_role_by_slug
+from sicoobito.db.session import session_scope
 from sicoobito.notes.service import NoteService
 from sicoobito.workspace.projects import ProjectError
 
@@ -51,12 +53,18 @@ class NoteIn(BaseModel):
 
 @router.get("")
 async def list_notes(request: Request, project: str | None = Query(default=None)) -> dict[str, Any]:
+    async with session_scope() as session:
+        await require_role_by_slug(session, request, project_slug=project, min_role="viewer")
     notes = await _service(request).list_all(project_slug=project)
     return {"notes": [_view(n) for n in notes]}
 
 
 @router.post("")
 async def create_note(payload: NoteIn, request: Request) -> dict[str, Any]:
+    async with session_scope() as session:
+        await require_role_by_slug(
+            session, request, project_slug=payload.project, min_role="editor"
+        )
     try:
         note = await _service(request).create(
             title=payload.title,
@@ -78,11 +86,22 @@ async def get_note(note_id: uuid.UUID, request: Request) -> dict[str, Any]:
     note = await _service(request).get(note_id)
     if note is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Nota não encontrada.")
+    async with session_scope() as session:
+        await require_role_by_slug(
+            session, request, project_slug=note.project_slug, min_role="viewer"
+        )
     return _view(note)
 
 
 @router.put("/{note_id}")
 async def update_note(note_id: uuid.UUID, payload: NoteIn, request: Request) -> dict[str, Any]:
+    existente = await _service(request).get(note_id)
+    if existente is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Nota não encontrada.")
+    async with session_scope() as session:
+        await require_role_by_slug(
+            session, request, project_slug=existente.project_slug, min_role="editor"
+        )
     note = await _service(request).update(
         note_id, title=payload.title, content=payload.content, tags=payload.tags
     )
@@ -94,6 +113,11 @@ async def update_note(note_id: uuid.UUID, payload: NoteIn, request: Request) -> 
 @router.delete("/{note_id}")
 async def delete_note(note_id: uuid.UUID, request: Request) -> dict[str, Any]:
     note = await _service(request).get(note_id)
+    if note is not None:
+        async with session_scope() as session:
+            await require_role_by_slug(
+                session, request, project_slug=note.project_slug, min_role="editor"
+            )
     deleted = await _service(request).delete(note_id)
     if not deleted:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Nota não encontrada.")
@@ -116,6 +140,10 @@ class SearchRequest(BaseModel):
 
 @router.post("/search")
 async def search_notes(payload: SearchRequest, request: Request) -> dict[str, Any]:
+    async with session_scope() as session:
+        await require_role_by_slug(
+            session, request, project_slug=payload.project, min_role="viewer"
+        )
     hits = await _service(request).search(
         payload.query, limit=payload.limit, project_slug=payload.project
     )

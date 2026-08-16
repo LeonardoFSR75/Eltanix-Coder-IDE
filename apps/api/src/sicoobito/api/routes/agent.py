@@ -16,6 +16,8 @@ from sicoobito.agent.runner import AgentRunner, AgentSession
 from sicoobito.agent.state import AgentMode
 from sicoobito.agent.tools import registry
 from sicoobito.api.deps import AuthDep, DbSessionDep, EngineDep, SettingsDep
+from sicoobito.auth.rbac import require_role_by_slug
+from sicoobito.db.session import session_scope
 from sicoobito.logging_setup import get_logger
 from sicoobito.telemetry import flight_recorder
 from sicoobito.workspace import git as git_ops
@@ -113,6 +115,15 @@ async def create_session(
         root = project_ops.resolve(Path(raiz), payload.project)
     except ProjectError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    # `payload.project` é nome de pasta em PROJECTS_ROOT, não necessariamente um
+    # slug registrado em `ProjectRecord` — `require_role_by_slug` já não faz nada
+    # quando o slug não bate com nenhum projeto (mesmo comportamento tolerante
+    # usado em documents.py/notes.py para projeto ainda não registrado).
+    async with session_scope() as session:
+        await require_role_by_slug(
+            session, request, project_slug=payload.project, min_role="editor"
+        )
 
     sessao = await _runner(request).create_session(
         task=payload.task,

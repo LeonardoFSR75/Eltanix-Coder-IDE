@@ -5,15 +5,19 @@ from __future__ import annotations
 import asyncio
 import re
 import shutil
+import uuid
 from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request, status
 from pydantic import BaseModel, Field
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from sicoobito.api.deps import AuthDep
 from sicoobito.audit.service import AuditService
+from sicoobito.auth import store as auth_store
+from sicoobito.auth.rbac import ROLE_RANK, require_role_by_slug
 from sicoobito.config import get_settings
 from sicoobito.db.models import ProjectRecord
 from sicoobito.db.session import session_scope
@@ -100,6 +104,20 @@ async def list_projects(request: Request) -> dict[str, Any]:
     try:
         async with session_scope() as session:
             records = await sync_projects_db(session, projects_root)
+            # Canal de serviço e admin da instância veem tudo (mesmo bypass de
+            # `auth/rbac.py`); um usuário convidado comum só vê projeto onde é
+            # `project_member` — sem isso, RBAC restringiria escrita mas
+            # continuaria vazando a existência de todo projeto na listagem.
+            if not (
+                getattr(request.state, "is_service", False)
+                or getattr(request.state, "is_admin", False)
+            ):
+                user_id = getattr(request.state, "user_id", None)
+                if user_id is not None:
+                    member_ids = set(
+                        await auth_store.list_member_project_ids(session, user_id=user_id)
+                    )
+                    records = [r for r in records if r.id in member_ids]
             items = [
                 {
                     "id": str(r.id),
@@ -213,6 +231,7 @@ async def create_project(payload: ProjectCreateIn, request: Request) -> dict[str
         async with session_scope() as session:
             stmt = select(ProjectRecord).where(ProjectRecord.slug == slug)
             rec = (await session.execute(stmt)).scalar_one_or_none()
+            user_id = getattr(request.state, "user_id", None)
             if not rec:
                 rec = ProjectRecord(
                     slug=slug,
@@ -224,7 +243,23 @@ async def create_project(payload: ProjectCreateIn, request: Request) -> dict[str
                     settings=payload.settings,
                 )
                 session.add(rec)
+                await session.flush()
+                # Quem cria vira dono — sem isto, o próprio criador ficaria
+                # sem `project_member` e cairia no "sem acesso" do enforcement
+                # (`require_role_by_slug`) na primeira operação de escrita.
+                # Ausente para o canal de serviço (`user_id is None`): não é
+                # "membro" de projeto nenhum, já tem bypass total.
+                if user_id is not None:
+                    await auth_store.add_member(
+                        session, project_id=rec.id, user_id=user_id, role="owner"
+                    )
             else:
+                # POST é upsert-por-slug: sem esta checagem, um `editor` (ou
+                # qualquer autenticado, hoje) reenviando o mesmo nome
+                # reescreveria metadado de um projeto que não é dono — e essa
+                # rota fica fora do PATCH normal (`update_project` abaixo), que
+                # já teria barrado o mesmo autor.
+                await require_role_by_slug(session, request, project_slug=slug, min_role="editor")
                 rec.name = payload.name
                 rec.description = payload.description
                 rec.git_url = effective_git_url
@@ -245,6 +280,12 @@ async def create_project(payload: ProjectCreateIn, request: Request) -> dict[str
                 "budget_limit_usd": budget_limit,
                 "settings": rec.settings,
             }
+    except HTTPException:
+        # `require_role_by_slug` levanta 403 acima — sem este re-raise, o
+        # `except Exception` genérico logo abaixo (pensado só para Postgres
+        # fora do ar) a engoliria e devolveria 200 com o fallback em disco,
+        # deixando RBAC sem efeito nenhum aqui.
+        raise
     except Exception as exc:
         log.warning("projects.db.unavailable", error=str(exc))
         res = {
@@ -324,6 +365,12 @@ async def open_absolute_path(payload: OpenPathIn, request: Request) -> dict[str,
                 default_branch="main",
             )
             session.add(rec)
+            await session.flush()
+            user_id = getattr(request.state, "user_id", None)
+            if user_id is not None:
+                await auth_store.add_member(
+                    session, project_id=rec.id, user_id=user_id, role="owner"
+                )
         else:
             rec.name = sig.name
             rec.local_path = str(alvo)
@@ -360,6 +407,12 @@ async def open_absolute_path(payload: OpenPathIn, request: Request) -> dict[str,
 @router.get("/{slug}/summary")
 async def get_summary(slug: str, request: Request) -> dict[str, Any]:
     """Retorna a visão geral 360° do projeto (IDE, Git, Custos, Notas, Graphify, etc.)."""
+    # Fora do `try/except Exception` logo abaixo de propósito: esse bloco tem
+    # fallback para leitura direta em disco quando o Postgres está fora do ar,
+    # e um `except Exception` genérico ali engoliria o 403 do RBAC junto.
+    async with session_scope() as session:
+        await require_role_by_slug(session, request, project_slug=slug, min_role="viewer")
+
     projects_root = _projects_root(request)
     try:
         async with session_scope() as session:
@@ -423,6 +476,7 @@ async def update_project(slug: str, payload: ProjectUpdateIn, request: Request) 
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(err)) from err
 
     async with session_scope() as session:
+        await require_role_by_slug(session, request, project_slug=slug_valido, min_role="editor")
         stmt = select(ProjectRecord).where(ProjectRecord.slug == slug_valido)
         rec = (await session.execute(stmt)).scalar_one_or_none()
         if not rec:
@@ -481,6 +535,7 @@ async def delete_project(slug: str, request: Request, delete_files: bool = False
     projects_root = _projects_root(request)
 
     async with session_scope() as session:
+        await require_role_by_slug(session, request, project_slug=slug_valido, min_role="owner")
         rec = (
             await session.execute(select(ProjectRecord).where(ProjectRecord.slug == slug_valido))
         ).scalar_one_or_none()
@@ -519,6 +574,9 @@ async def prewarm_project(slug: str, request: Request) -> dict[str, Any]:
         workspace_root = resolve(projects_root, slug_valido)
     except ProjectError as err:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(err)) from err
+
+    async with session_scope() as session:
+        await require_role_by_slug(session, request, project_slug=slug_valido, min_role="viewer")
 
     # 1. Garante o ambiente de pacotes do projeto (.venv, etc.)
     try:
@@ -567,3 +625,91 @@ async def prewarm_project(slug: str, request: Request) -> dict[str, Any]:
         "is_web_app": is_web,
         "web_prewarmed": web_prewarmed,
     }
+
+
+class MemberIn(BaseModel):
+    user_id: uuid.UUID
+    role: str = Field(default="viewer", description="viewer, editor ou owner")
+
+
+async def _get_project_record_or_404(session: AsyncSession, slug: str) -> ProjectRecord:
+    stmt = select(ProjectRecord).where(ProjectRecord.slug == slug)
+    rec = (await session.execute(stmt)).scalar_one_or_none()
+    if not rec:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=f"Projeto {slug} não encontrado."
+        )
+    return rec
+
+
+@router.get("/{slug}/members")
+async def list_members(slug: str, request: Request) -> dict[str, Any]:
+    async with session_scope() as session:
+        await require_role_by_slug(session, request, project_slug=slug, min_role="viewer")
+        rec = await _get_project_record_or_404(session, slug)
+        members = await auth_store.list_members(session, project_id=rec.id)
+        return {
+            "members": [
+                {"user_id": str(m.user_id), "role": m.role, "created_at": m.created_at.isoformat()}
+                for m in members
+            ]
+        }
+
+
+@router.post("/{slug}/members")
+async def add_member(slug: str, payload: MemberIn, request: Request) -> dict[str, Any]:
+    """Convite/mudança de papel — só `owner` do projeto (ou admin da instância)
+    gerencia quem mais tem acesso, mesma fronteira de `delete_project`."""
+    if payload.role not in ROLE_RANK:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=f"Papel inválido: {payload.role!r}"
+        )
+    async with session_scope() as session:
+        await require_role_by_slug(session, request, project_slug=slug, min_role="owner")
+        rec = await _get_project_record_or_404(session, slug)
+        member = await auth_store.add_member(
+            session, project_id=rec.id, user_id=payload.user_id, role=payload.role
+        )
+
+    if audit := _audit(request):
+        try:
+            await audit.record(
+                actor="user",
+                module="projects",
+                action="member_add",
+                details=f"{payload.user_id} -> {payload.role}",
+                metadata={"slug": slug, "user_id": str(payload.user_id), "role": payload.role},
+                project_slug=slug,
+                risk_level="medium",
+            )
+        except Exception as exc:
+            log.warning("projects.audit.failed", error=str(exc))
+
+    return {"user_id": str(member.user_id), "role": member.role}
+
+
+@router.delete("/{slug}/members/{user_id}")
+async def remove_member(slug: str, user_id: uuid.UUID, request: Request) -> dict[str, Any]:
+    async with session_scope() as session:
+        await require_role_by_slug(session, request, project_slug=slug, min_role="owner")
+        rec = await _get_project_record_or_404(session, slug)
+        removed = await auth_store.remove_member(session, project_id=rec.id, user_id=user_id)
+
+    if not removed:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Membro não encontrado.")
+
+    if audit := _audit(request):
+        try:
+            await audit.record(
+                actor="user",
+                module="projects",
+                action="member_remove",
+                details=str(user_id),
+                metadata={"slug": slug, "user_id": str(user_id)},
+                project_slug=slug,
+                risk_level="medium",
+            )
+        except Exception as exc:
+            log.warning("projects.audit.failed", error=str(exc))
+
+    return {"removed": True}

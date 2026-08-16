@@ -212,7 +212,7 @@ async def test_require_session_rejects_an_invalid_session_cookie():
 
 
 async def _always_valid_user(_token: str) -> object:
-    return SimpleNamespace(id=uuid.uuid4(), username="teste")
+    return SimpleNamespace(id=uuid.uuid4(), username="teste", is_admin=False)
 
 
 async def _always_invalid_user(_token: str) -> None:

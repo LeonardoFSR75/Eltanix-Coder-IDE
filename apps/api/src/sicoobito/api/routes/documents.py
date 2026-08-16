@@ -18,6 +18,7 @@ from pydantic import BaseModel, Field
 
 from sicoobito.api.deps import AuthDep, SettingsDep
 from sicoobito.audit.service import AuditService
+from sicoobito.auth.rbac import require_role_by_slug
 from sicoobito.db.session import session_scope
 from sicoobito.documents import store
 from sicoobito.documents.service import DocumentService
@@ -92,6 +93,9 @@ async def request_upload_url(
     object_key = f"{uuid.uuid4()}/{_safe_object_name(payload.filename)}"
 
     async with session_scope() as session:
+        await require_role_by_slug(
+            session, request, project_slug=payload.project, min_role="editor"
+        )
         if payload.project:
             try:
                 await ensure_project_slug_exists(session, payload.project)
@@ -130,6 +134,9 @@ async def confirm_upload(
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail="Documento não encontrado."
             )
+        await require_role_by_slug(
+            session, request, project_slug=document.project_slug, min_role="editor"
+        )
         object_key = document.minio_object
 
     if not await blob.object_exists(object_key):
@@ -181,8 +188,11 @@ async def confirm_upload(
 
 
 @router.get("")
-async def list_documents(project: str | None = Query(default=None)) -> dict[str, Any]:
+async def list_documents(
+    request: Request, project: str | None = Query(default=None)
+) -> dict[str, Any]:
     async with session_scope() as session:
+        await require_role_by_slug(session, request, project_slug=project, min_role="viewer")
         documents = await store.list_documents(session, project_slug=project)
 
     return {
@@ -206,9 +216,13 @@ async def list_documents(project: str | None = Query(default=None)) -> dict[str,
 
 
 @router.get("/{document_id}")
-async def get_document(document_id: uuid.UUID) -> dict[str, Any]:
+async def get_document(document_id: uuid.UUID, request: Request) -> dict[str, Any]:
     async with session_scope() as session:
         document = await store.get_document(session, document_id)
+        if document is not None:
+            await require_role_by_slug(
+                session, request, project_slug=document.project_slug, min_role="viewer"
+            )
 
     if document is None:
         raise HTTPException(
@@ -240,6 +254,9 @@ async def delete_document(document_id: uuid.UUID, request: Request) -> dict[str,
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail="Documento não encontrado."
             )
+        await require_role_by_slug(
+            session, request, project_slug=document.project_slug, min_role="editor"
+        )
         object_key = document.minio_object
         filename = document.filename
         await store.delete_document(session, document_id)
@@ -272,6 +289,10 @@ class SearchRequest(BaseModel):
 
 @router.post("/search")
 async def search_documents(payload: SearchRequest, request: Request) -> dict[str, Any]:
+    async with session_scope() as session:
+        await require_role_by_slug(
+            session, request, project_slug=payload.project, min_role="viewer"
+        )
     hits = await _service(request).search(
         payload.query, limit=payload.limit, project_slug=payload.project
     )

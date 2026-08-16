@@ -712,10 +712,8 @@ class ProjectRecord(Base):
 
 
 class AppUser(Base):
-    """Usuário da plataforma. Etapa 1 do login (ver `auth/service.py`): um só
-    usuário seed por enquanto, sem RBAC — a tabela existe separada de qualquer
-    outra coisa exatamente para que multiusuário/permissão por projeto seja uma
-    tabela de associação nova (`project_member`) no futuro, não uma reescrita."""
+    """Usuário da plataforma (ver `auth/service.py`). `is_admin` é o dono da
+    instância; papel por projeto vive em `ProjectMember`, ver `auth/rbac.py`."""
 
     __tablename__ = "app_user"
 
@@ -724,6 +722,11 @@ class AppUser(Base):
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     display_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    # Dono da instância — pode criar outros usuários e gerencia membro de
+    # qualquer projeto, não só os que integra via `ProjectMember`. O usuário
+    # seed (`AuthService.ensure_seed_user`) é sempre o primeiro admin (ver
+    # migração 0021); qualquer usuário criado depois começa `False`.
+    is_admin: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -736,13 +739,11 @@ class AppUser(Base):
 
 
 class ProjectMember(Base):
-    """Papel de um usuário num projeto — etapa 2 do login (ver docstring de
-    `AppUser`). Só a tabela por enquanto: nenhuma rota ainda filtra por ela nem
-    a preenche automaticamente (isso é o próximo passo, quando `require_session`
-    passar a checar associação por projeto, não só sessão válida). `role` é
-    string livre (`owner`/`editor`/`viewer`), sem enum nativo do Postgres —
-    mesmo padrão de `Skill.category`/`AuditLogEntry.risk_level`: adicionar um
-    papel novo não deve exigir migração."""
+    """Papel de um usuário num projeto — lido/escrito por `auth/rbac.py` e
+    `auth/store.py`, aplicado por rota em `api/routes/*.py`. `role` é string
+    livre (`owner`/`editor`/`viewer`), sem enum nativo do Postgres — mesmo
+    padrão de `Skill.category`/`AuditLogEntry.risk_level`: adicionar um papel
+    novo não deve exigir migração."""
 
     __tablename__ = "project_member"
 
