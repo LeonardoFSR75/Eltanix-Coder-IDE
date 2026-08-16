@@ -40,9 +40,13 @@ o núcleo de todo o roadmap abaixo.
   sessões `"open"` órfãs desde 08/08 nesta base de dev local.
 - [ ] **`actor`/`user_id` em `RequestLog`.** Coluna nova, aditiva, sem quebra — pré-requisito
   para faturamento por usuário quando o RBAC entrar em vigor. `db/models.py::RequestLog`.
-- [ ] **Elevar `_SCRYPT_N`** em `auth/service.py` de `2**14` para `2**17`, com rehash
-  preguiçoso: versionar o prefixo de `password_hash` e recalcular no próximo login
-  bem-sucedido, sem migração de dados.
+- [x] **Elevar `_SCRYPT_N`** em `auth/service.py`. `2**17` (o teto da OWASP) mediu ~2,7s
+  por hash neste hardware — trocado por `2**16` (~1s, ainda 4x mais caro que o valor
+  antigo). Formato do hash agora carrega os próprios parâmetros (`n$r$p$salt$hash`);
+  rehash automático no próximo login bem-sucedido, sem migração de dados. A validação ao
+  vivo pegou um bug real que os testes não cobriam: `_verify_password` comparava a string
+  formatada inteira em vez dos bytes derivados, o que faria todo hash legado falhar
+  sempre — corrigido no mesmo commit.
 - [ ] **Promover o E2E golden-path para gate de PR.** Hoje `.github/workflows/e2e.yml` só
   roda manual/noturno. Extrair o smoke mínimo (login + Monaco carrega) para um job leve
   em `ci.yml` — o custo de orquestrar a stack inteira já foi pago no design do workflow
@@ -108,6 +112,7 @@ o núcleo de todo o roadmap abaixo.
 - [x] Schema `project_member` criado e migrado (`db/models.py`, `alembic/versions/
   0018_project_member.py`) — maior alavancador do dossiê, pré-requisito para RBAC no
   Horizonte 2.
+- [x] `_SCRYPT_N` elevado com rehash automático (`auth/service.py`) — validação ao vivo
+  pegou e corrigiu um bug real de comparação de hash legado, não coberto pelos testes.
 - [ ] Restam no Horizonte 1: FK real em `workspace`/`project_slug`, `actor`/`user_id` em
-  `RequestLog`, elevar `_SCRYPT_N`, promover E2E para gate de PR, documentar senha admin
-  no primeiro boot.
+  `RequestLog`, promover E2E para gate de PR, documentar senha admin no primeiro boot.
