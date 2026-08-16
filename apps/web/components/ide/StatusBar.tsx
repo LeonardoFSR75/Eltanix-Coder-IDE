@@ -92,8 +92,6 @@ function SandboxStatusItem({ sessionId }: { sessionId: string }) {
     );
   }
 
-  const primeiraPorta = stats.ports?.[0];
-  const portas = stats.ports?.length ? ` :${stats.ports.join(", ")}` : "";
   const mem = stats.metrics?.memory_mb ? ` · ${stats.metrics.memory_mb}MB` : "";
 
   return (
@@ -101,30 +99,32 @@ function SandboxStatusItem({ sessionId }: { sessionId: string }) {
       <span
         className="statusbar-item"
         title={`Sandbox Docker (${stats.name || sessionId})\nStatus: ${stats.status}\nPortas: ${stats.ports?.join(", ") || "nenhuma"}\nRAM: ${stats.metrics?.memory_mb ?? 0}MB / ${stats.metrics?.memory_limit_mb ?? 2048}MB`}
-        style={{ color: stats.ports?.length ? "var(--accent-emerald, #34d399)" : "var(--text-dim)" }}
+        style={{ color: stats.status === "running" ? "var(--accent-emerald, #34d399)" : "var(--text-dim)" }}
       >
-        <span className={`pulse-dot ${stats.ports?.length ? "ok" : ""}`} />
-        Sandbox{portas}{mem}
+        <span className={`pulse-dot ${stats.status === "running" ? "ok" : ""}`} />
+        Sandbox {stats.status === "running" ? "Online" : stats.status}{mem}
       </span>
-      {primeiraPorta && (
+      {stats.ports?.map((porta) => (
         <button
+          key={porta}
           type="button"
           className="statusbar-item"
-          title={`Abrir http://localhost:${primeiraPorta} no Navegador Central`}
-          onClick={() => openFile(`browser:http://localhost:${primeiraPorta}`)}
+          title={`Abrir http://localhost:${porta} no Navegador Central`}
+          onClick={() => openFile(`browser:http://localhost:${porta}`)}
           style={{
             cursor: "pointer",
-            background: "rgba(56, 189, 248, 0.12)",
+            background: "rgba(56, 189, 248, 0.15)",
             color: "#38bdf8",
-            border: "1px solid rgba(56, 189, 248, 0.3)",
+            border: "1px solid rgba(56, 189, 248, 0.4)",
             borderRadius: 3,
-            padding: "1px 5px",
+            padding: "1px 6px",
             fontSize: "10.5px",
+            fontWeight: 500,
           }}
         >
-          🌐 Abrir :{primeiraPorta} ↗
+          🌐 :{porta} ↗
         </button>
-      )}
+      ))}
     </div>
   );
 }
