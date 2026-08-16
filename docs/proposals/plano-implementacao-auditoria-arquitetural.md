@@ -29,10 +29,13 @@ o núcleo de todo o roadmap abaixo.
   usam `workspace` como string solta e `Document`/`Note` usam `project_slug` nulável, sem
   FK para `ProjectRecord`. Endurecer a escrita (validar contra `ProjectRecord.slug`) antes
   de qualquer FK de banco, para não quebrar dado existente sem migração de backfill.
-- [ ] **Reclamar sessões zumbi.** `AgentSessionRecord.status` fica `"open"` para sempre
-  quando uma aba fecha sem `close_session` explícito. Sweep periódico (mesmo padrão do
-  `run_reaper` em `sandbox/executor.py`) que marca como `"abandoned"` após N horas sem
-  `updated_at` avançar.
+- [x] **Reclamar sessões zumbi.** `AgentSessionRecord.status` ficava `"open"` para sempre
+  quando uma aba fechava sem `close_session` explícito. Implementado:
+  `AgentRunner.run_zombie_session_reaper` (`agent/runner.py`) + `session_store.
+  mark_abandoned` (`agent/session_store.py`), mesmo padrão de `SandboxManager.run_reaper`
+  e `AuthService.run_session_purge_reaper`, laço horário, limiar configurável via
+  `AGENT_SESSION_ABANDON_AFTER_HOURS` (default 24h). Validado ao vivo: reclamou 192
+  sessões `"open"` órfãs desde 08/08 nesta base de dev local.
 - [ ] **`actor`/`user_id` em `RequestLog`.** Coluna nova, aditiva, sem quebra — pré-requisito
   para faturamento por usuário quando o RBAC entrar em vigor. `db/models.py::RequestLog`.
 - [ ] **Elevar `_SCRYPT_N`** em `auth/service.py` de `2**14` para `2**17`, com rehash
@@ -96,7 +99,10 @@ o núcleo de todo o roadmap abaixo.
 
 - [x] Dossiê publicado e revisado (2026-08-16).
 - [x] Grafo de conhecimento (Graphify) e vault Obsidian atualizados para incluir este plano.
-- [x] Primeira melhoria implementada e validada ao vivo: criação de projeto não bloqueia
-  mais em provisionamento de ambiente (`api/routes/projects.py`).
-- [ ] Próximo item recomendado do Horizonte 1: schema `project_member` ou reclamação de
-  sessões zumbi — ambos aditivos, baixo risco, sem dependência do item acima.
+- [x] Criação de projeto não bloqueia mais em provisionamento de ambiente
+  (`api/routes/projects.py`) — validado ao vivo.
+- [x] Sessões de agente abandonadas são reclamadas periodicamente (`agent/runner.py`,
+  `agent/session_store.py`) — validado ao vivo, 192 sessões reclamadas nesta base local.
+- [ ] Próximo item recomendado do Horizonte 1: schema `project_member` (maior alavancador
+  do dossiê, pré-requisito para RBAC no Horizonte 2) ou FK real em `workspace`/
+  `project_slug`.
