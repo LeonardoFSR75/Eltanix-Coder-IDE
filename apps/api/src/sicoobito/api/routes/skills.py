@@ -8,8 +8,9 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Request, status
 from pydantic import BaseModel, Field
 
-from sicoobito.api.deps import AuthDep
+from sicoobito.api.deps import AuthDep, DbSessionDep, EngineDep
 from sicoobito.audit.service import AuditService
+from sicoobito.skills.promotion import analyze_recent_sessions
 from sicoobito.skills.service import SkillService
 
 router = APIRouter(prefix="/api/skills", tags=["skills"], dependencies=[AuthDep])
@@ -107,6 +108,37 @@ async def update_skill(skill_id: uuid.UUID, payload: SkillIn, request: Request) 
     if skill is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Skill não encontrada.")
     return _view(skill)
+
+
+@router.post("/analyze")
+async def analyze_skill_candidates(
+    request: Request,
+    db: DbSessionDep,
+    engine: EngineDep,
+    project: str | None = None,
+    limit: int = 20,
+) -> dict[str, Any]:
+    """Horizonte 4, item 2 — protótipo mínimo de promoção de padrões a skills
+    (ver `skills/promotion.py`). Sob demanda, nunca cron: só analisa quando
+    chamado. Só sugere — nunca cria skill sozinho, quem decide é o humano via
+    `POST /api/skills` com o que aprovar destas sugestões."""
+    analise = await analyze_recent_sessions(
+        db, engine, _service(request), project=project, limit=limit
+    )
+    return {
+        "sessions_analyzed": analise.sessions_analyzed,
+        "unparseable": analise.unparseable,
+        "candidates": [
+            {
+                "name": c.name,
+                "description": c.description,
+                "category": c.category,
+                "rationale": c.rationale,
+                "system_prompt_suggestion": c.system_prompt_suggestion,
+            }
+            for c in analise.candidates
+        ],
+    }
 
 
 @router.post("/{skill_id}/toggle")

@@ -273,7 +273,42 @@ o núcleo de todo o roadmap abaixo.
   sessão de agente do produto atravessa — reestruturá-lo por uma motivação que já não se
   sustenta é risco alto sem contrapartida. Mesmo raciocínio dos itens 2 e 3 do
   Horizonte 3: premissa do item não resistiu à investigação, fechado sem código novo.
-- [ ] **Promoção de padrões repetidos e bem-sucedidos a skills duráveis** (`skills/service.py`).
+- [x] **Promoção de padrões repetidos e bem-sucedidos a skills duráveis** (`skills/service.py`) —
+  ao contrário dos itens 1 e 2 do Horizonte 3 e do item 1 deste Horizonte, aqui a premissa do
+  plano se sustentou: o único mecanismo existente (`agent/tools/skills.py::propose_skill`) é
+  manual e de uma única sessão — o próprio modelo decide, no meio de uma conversa, salvar um
+  padrão que acabou de usar; nada olhava padrões que se repetem ENTRE sessões diferentes.
+  Escopo reduzido por decisão do usuário (via pergunta ao usuário, entre "deixar para depois" —
+  a moldura de 12-24 meses do próprio plano — e um "protótipo mínimo"): implementado o
+  protótipo mínimo — `POST /api/skills/analyze` (`api/routes/skills.py`), sob demanda (nunca
+  cron), que lê as sessões `status="closed"` recentes (`session_store.list_sessions`), usa o
+  LLM (via `RouterEngine.complete()`, único ponto de saída sancionado pelo ADR 0001 — mesmo
+  padrão isolado de `agent/review_common.py::request_review_verdict`, sem tocar o histórico de
+  nenhuma sessão de agente) para sugerir candidatos a skill repetidos, e SÓ sugere — nunca
+  chama `SkillService.propose_and_save` sozinho; quem decide criar a skill de verdade é o
+  humano, pelas rotas normais (`POST /api/skills`).
+  Decisão de design que não estava óbvia de antemão: a fonte de dado não é
+  `AgentSessionRecord.summary` (parecia o candidato natural, mas na prática é só um status de
+  UI curto — "Executando", "Sessão encerrada em `<branch>`", ver
+  `agent/runner.py::_session_summary`/`close_session` — sem conteúdo pra detectar padrão
+  nenhum). A fonte real é `AgentSessionRecord.task`, o pedido em texto livre que criou a sessão,
+  sempre presente (`nullable=False`) e barato de ler. "Sucesso" é uma heurística deliberadamente
+  simples para um protótipo — sem reconstruir o checkpointer do LangGraph, fora de escopo aqui:
+  `status == "closed"` (encerrada explicitamente, não abandonada) e `last_failed_call_count == 0`
+  (sem falha repetida de ferramenta registrada). Novo módulo `skills/promotion.py`
+  (`analyze_recent_sessions`) com 8 testes unitários novos (`tests/test_skills_promotion.py`,
+  engine e `SkillService` dublês, sem Postgres real — mesmo padrão de
+  `tests/test_review_common.py`), cobrindo: filtro de sessões com poucas amostras, exclusão de
+  sessões com falha ou task vazia, parse de JSON válido (com e sem cerca de código
+  ```` ```json ```` que o modelo às vezes adiciona mesmo instruído a não fazer isso), fallback de
+  categoria desconhecida para `"automation"`, resposta não-parseável mapeada para lista vazia
+  (falha fechada, mesmo espírito de `review_common.py`) preservando o texto bruto, e que o
+  prompt inclui as skills já existentes (evita sugestão duplicada) e as tasks das sessões.
+  Validado ao vivo contra a stack real: `POST /api/skills/analyze?project=e2e-smoke-test`
+  detectou corretamente o padrão repetido das sessões do smoke de carga do Horizonte 3, item 3
+  (`"smoke de carga #N"`), sugerindo um candidato plausível sem duplicar skill nenhuma. Lint
+  (`ruff check src`) limpo; suíte completa sem regressão (575 passed, 47 skipped, os mesmos 2
+  falhos pré-existentes e não relacionados de sempre — encoding de console no Windows).
 - [ ] **Especialização mais profunda de subagentes**, com replay via Flight Recorder.
 
 ## Horizonte 5 — Diferenciação (24–36 meses)
