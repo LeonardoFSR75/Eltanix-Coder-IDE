@@ -34,9 +34,26 @@ log = get_logger(__name__)
 
 router = APIRouter(prefix="/api/projects", tags=["projects"], dependencies=[AuthDep])
 
+# Referências fortes para as tasks de provisionamento de ambiente disparadas em
+# segundo plano por `create_project` — sem isto, `asyncio` pode coletar a task
+# antes dela terminar (mesmo padrão de `telemetry/tracer.py::TraceRecorder`).
+_env_provision_tasks: set[asyncio.Task[None]] = set()
+
 
 def _audit(request: Request) -> AuditService | None:
     return getattr(request.app.state, "audit", None)
+
+
+async def _provision_env_background(target_path: Path, language: str | None, slug: str) -> None:
+    """Provisiona `.venv`/`node_modules`/etc. sem bloquear `POST /projects` — ver
+    o comentário no chamador. Falha aqui é sempre não-fatal: o pior caso é o
+    ambiente ficar pendente até o próximo prewarm ou até a IDE ser aberta."""
+    try:
+        from sicoobito.api.routes.packages import ensure_project_env
+
+        await ensure_project_env(target_path, language)
+    except Exception as exc:
+        log.warning("projects.auto_env.failed", slug=slug, error=str(exc)[:200])
 
 
 def _projects_root(request: Request) -> Path:
@@ -139,6 +156,16 @@ async def create_project(payload: ProjectCreateIn, request: Request) -> dict[str
     if not target_path.exists():
         target_path.mkdir(parents=True, exist_ok=True)
 
+    # Disparado em segundo plano, não aguardado: criar o venv/ambiente pode levar
+    # dezenas de segundos (mount de bind do Windows é lento para muitos arquivos
+    # pequenos), e `POST /{slug}/prewarm` já refaz esta mesma chamada quando o
+    # usuário abre o projeto na IDE — bloquear a criação do projeto nisso é
+    # latência pura sem ganho duradouro. `ensure_venv`/`ensure_node_env` etc. já
+    # são idempotentes (checam se o ambiente existe antes de recriar).
+    _task = asyncio.create_task(_provision_env_background(target_path, payload.language, slug))
+    _env_provision_tasks.add(_task)
+    _task.add_done_callback(_env_provision_tasks.discard)
+
     effective_git_url = payload.git_url
 
     if payload.init_git and not (target_path / ".git").exists():
@@ -181,13 +208,6 @@ async def create_project(payload: ProjectCreateIn, request: Request) -> dict[str
                     log.warning("git.remote.create_failed", path=str(target_path), error=str(exc))
         except Exception as exc:
             log.warning("git.init.failed", path=str(target_path), error=str(exc))
-
-    try:
-        from sicoobito.api.routes.packages import ensure_project_env
-
-        await ensure_project_env(target_path, payload.language)
-    except Exception as exc:
-        log.warning("projects.auto_env.failed", slug=slug, error=str(exc))
 
     try:
         async with session_scope() as session:
