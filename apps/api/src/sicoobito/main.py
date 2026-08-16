@@ -266,6 +266,9 @@ async def lifespan(app: FastAPI):
     # ninguém mais conhece.
     reaper = asyncio.create_task(sandboxes.run_reaper())
     session_purge_reaper = asyncio.create_task(auth.run_session_purge_reaper())
+    zombie_session_reaper = asyncio.create_task(
+        app.state.agent_runner.run_zombie_session_reaper()
+    )
 
     log.info(
         "app.started",
@@ -282,6 +285,9 @@ async def lifespan(app: FastAPI):
         session_purge_reaper.cancel()
         with suppress(asyncio.CancelledError):
             await session_purge_reaper
+        zombie_session_reaper.cancel()
+        with suppress(asyncio.CancelledError):
+            await zombie_session_reaper
         # Containers da sessão não podem sobreviver ao processo que os criou:
         # ficariam órfãos consumindo memória até alguém notar.
         await sandboxes.shutdown()

@@ -12,7 +12,10 @@ export interface AgentSessionRecord {
   mode: string;
   profile: string | null;
   branch: string | null;
-  status: "open" | "closed";
+  // "abandoned": aba fechada sem `close_session` explícito, reclamada pela
+  // varredura periódica (`AGENT_SESSION_ABANDON_AFTER_HOURS`) — nunca setado
+  // pelo usuário, só pela varredura.
+  status: "open" | "closed" | "abandoned";
   // Preenchido só para sessões criadas via `spawn_agent` (orquestração
   // multiagente, ver ADR 0004) — `null` para qualquer sessão raiz.
   parent_session_id: string | null;

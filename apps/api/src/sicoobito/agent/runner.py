@@ -793,6 +793,32 @@ class AgentRunner:
             "total_tokens": 0,
         }
 
+    async def run_zombie_session_reaper(self, interval_seconds: int = 3600) -> None:
+        """Laço de limpeza periódica, mesmo padrão de `SandboxManager.run_reaper`
+        e `AuthService.run_session_purge_reaper`.
+
+        Uma aba fechada sem `close_session` explícito deixa `AgentSessionRecord.
+        status` em `"open"` para sempre (comentário do próprio modelo, `db/
+        models.py`) — sem esta varredura, a listagem de "sessões ativas" acumula
+        ruído indefinidamente. Marca como `"abandoned"`, nunca deleta: o
+        histórico continua auditável, só sai do filtro padrão de "ativas"."""
+        from datetime import UTC, datetime, timedelta
+
+        while True:
+            try:
+                await asyncio.sleep(interval_seconds)
+                limite = datetime.now(UTC) - timedelta(
+                    hours=self.settings.agent_session_abandon_after_hours
+                )
+                async with session_scope() as session:
+                    marcadas = await session_store.mark_abandoned(session, older_than=limite)
+                if marcadas:
+                    log.info("agent.sessions.abandoned_reaped", count=marcadas)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                log.warning("agent.sessions.abandon_reaper_iteration_failed", error=str(exc)[:200])
+
     async def aclose(self) -> None:
         """Fecha o cliente HTTP compartilhado do navegador e espera/cancela
         bursts headless pendentes, no desligamento do processo."""

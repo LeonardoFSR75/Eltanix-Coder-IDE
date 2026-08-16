@@ -7,8 +7,9 @@ grafo em si (isso é o checkpointer). Ver `db.models.AgentSessionRecord`.
 from __future__ import annotations
 
 from collections.abc import Sequence
+from datetime import datetime
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from sicoobito.db.models import AgentSessionRecord
@@ -107,6 +108,22 @@ async def mark_closed(
     if summary is not None:
         registro.summary = summary
     await session.flush()
+
+
+async def mark_abandoned(session: AsyncSession, *, older_than: datetime) -> int:
+    """Marca como `"abandoned"` toda sessão `"open"` sem atividade desde
+    `older_than`. Nunca toca `"closed"`: uma aba fechada sem `close_session`
+    explícito é o único jeito de uma sessão travar em `"open"` para sempre —
+    ver `AgentSessionRecord.status` em `db/models.py`."""
+    stmt = (
+        update(AgentSessionRecord)
+        .where(AgentSessionRecord.status == "open")
+        .where(AgentSessionRecord.updated_at < older_than)
+        .values(status="abandoned")
+    )
+    resultado = await session.execute(stmt)
+    await session.flush()
+    return resultado.rowcount or 0
 
 
 async def list_sessions(

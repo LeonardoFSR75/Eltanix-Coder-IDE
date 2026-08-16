@@ -153,6 +153,13 @@ class Settings(BaseSettings):
     agent_coordination_ttl_seconds: int = Field(
         default=21_600, alias="AGENT_COORDINATION_TTL_SECONDS"
     )
+    # Uma aba fechada sem `close_session` explícito deixa `AgentSessionRecord.
+    # status` em "open" para sempre — sem essa varredura periódica a listagem
+    # de "sessões ativas" acumula ruído indefinidamente (achado na auditoria
+    # arquitetural, ver docs/proposals/plano-implementacao-auditoria-arquitetural.md).
+    agent_session_abandon_after_hours: int = Field(
+        default=24, alias="AGENT_SESSION_ABANDON_AFTER_HOURS"
+    )
 
     # ── Navegador para verificação visual (Fase 7) ──────────────────────────
     # Serviço à parte, numa rede restrita própria (ver docker-compose.yml,
