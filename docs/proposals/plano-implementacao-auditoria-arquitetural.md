@@ -348,6 +348,18 @@ o núcleo de todo o roadmap abaixo.
 
 ## Horizonte 5 — Diferenciação (24–36 meses)
 
+**Deliberadamente não iniciado nesta sessão** — por decisão explícita do usuário, fora do
+escopo de execução dos Horizontes 3 e 4 acima (concluídos). A moldura de 24–36 meses do
+próprio dossiê já sinalizava isso: os três itens abaixo pressupõem terreno que ainda não
+existe neste código — RBAC maduro com múltiplos papéis em produção real (Horizonte 2 deu
+o schema `project_member` e o enforcement básico, não anos de uso), uma base de clientes
+hospedados para justificar SSO empresarial, e um Flight Recorder cuja natureza read-time
+(ver item 3 do Horizonte 4 acima e a docstring de `telemetry/flight_recorder.py`)
+provavelmente precisa evoluir antes de sustentar exportação de trilha de auditoria com
+garantias de compliance. Não foi feito nenhum trabalho de design ou código para os três
+itens — ficam registrados aqui como estavam no dossiê original, para retomada quando o
+produto e o time decidirem que é hora.
+
 - [ ] **Exportação de auditoria pronta para compliance** (trilhas estilo SOC2) a partir do
   Flight Recorder e do `audit_log` já existente.
 - [ ] **SSO empresarial** sobre a base de RBAC madura do Horizonte 2.
