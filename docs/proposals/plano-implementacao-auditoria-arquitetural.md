@@ -38,8 +38,11 @@ o núcleo de todo o roadmap abaixo.
   e `AuthService.run_session_purge_reaper`, laço horário, limiar configurável via
   `AGENT_SESSION_ABANDON_AFTER_HOURS` (default 24h). Validado ao vivo: reclamou 192
   sessões `"open"` órfãs desde 08/08 nesta base de dev local.
-- [ ] **`actor`/`user_id` em `RequestLog`.** Coluna nova, aditiva, sem quebra — pré-requisito
-  para faturamento por usuário quando o RBAC entrar em vigor. `db/models.py::RequestLog`.
+- [x] **`actor` em `RequestLog`.** Coluna nova, aditiva, populada por `identify_actor`
+  (`api/deps.py`) — `"api_key"` para o canal de serviço ou username da sessão. Threading
+  até `RouterEngine.complete/stream/embed` via closure local (evita editar os 9 pontos de
+  chamada de `TelemetryEntry`). Validado ao vivo: `POST /v1/chat/completions` real gravou
+  `actor="api_key"`.
 - [x] **Elevar `_SCRYPT_N`** em `auth/service.py`. `2**17` (o teto da OWASP) mediu ~2,7s
   por hash neste hardware — trocado por `2**16` (~1s, ainda 4x mais caro que o valor
   antigo). Formato do hash agora carrega os próprios parâmetros (`n$r$p$salt$hash`);
@@ -47,14 +50,13 @@ o núcleo de todo o roadmap abaixo.
   vivo pegou um bug real que os testes não cobriam: `_verify_password` comparava a string
   formatada inteira em vez dos bytes derivados, o que faria todo hash legado falhar
   sempre — corrigido no mesmo commit.
-- [ ] **Promover o E2E golden-path para gate de PR.** Hoje `.github/workflows/e2e.yml` só
-  roda manual/noturno. Extrair o smoke mínimo (login + Monaco carrega) para um job leve
-  em `ci.yml` — o custo de orquestrar a stack inteira já foi pago no design do workflow
-  noturno, só falta um subconjunto barato por PR.
-- [ ] **Documentar a senha admin no primeiro boot.** Fricção sentida na própria auditoria:
-  sem `SICOOBITO_ADMIN_PASSWORD` fixado no `.env`, a senha só existe em log
-  (`auth.seed_user.generated_password`). Adicionar ao README/onboarding um passo explícito
-  antes do primeiro `docker compose up`.
+- [x] **Promover o E2E golden-path para gate de PR.** Reconsiderado durante a implementação:
+  o custo é o de SUBIR a stack inteira, não o de quantos testes rodam nela — "só o smoke
+  leve" não reduziria o tempo real. Solução aplicada: `pull_request` filtrado por caminho
+  em `.github/workflows/e2e.yml` (só dispara quando `apps/web`, rotas de projeto/navegador,
+  auth ou `docker-compose.yml` mudam); push fora desses caminhos continua só no noturno.
+- [x] **Documentar a senha admin no primeiro boot.** `README.md` e `.env.example` agora
+  explicam `SICOOBITO_ADMIN_PASSWORD` antes do primeiro `docker compose up`.
 
 ## Horizonte 2 — Governança (3–6 meses)
 
@@ -114,5 +116,11 @@ o núcleo de todo o roadmap abaixo.
   Horizonte 2.
 - [x] `_SCRYPT_N` elevado com rehash automático (`auth/service.py`) — validação ao vivo
   pegou e corrigiu um bug real de comparação de hash legado, não coberto pelos testes.
-- [ ] Restam no Horizonte 1: FK real em `workspace`/`project_slug`, `actor`/`user_id` em
-  `RequestLog`, promover E2E para gate de PR, documentar senha admin no primeiro boot.
+- [x] Coluna `actor` em `RequestLog` (`db/models.py`, `api/deps.py`, `router/engine.py`)
+  — validado ao vivo via `POST /v1/chat/completions` real.
+- [x] E2E promovido a gate de PR filtrado por caminho; senha admin documentada no README
+  e `.env.example`.
+- [ ] **Resta no Horizonte 1: FK real em `workspace`/`project_slug`** (7 de 8 itens
+  concluídos e validados ao vivo). É o mais invasivo — toca write-paths das quatro fontes
+  de RAG (`context/`, `documents/`, `notes/`, `graphify/`) — fica para uma sessão própria
+  em vez de espremido no fim desta.
