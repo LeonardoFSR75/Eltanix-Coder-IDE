@@ -22,9 +22,11 @@ o núcleo de todo o roadmap abaixo.
   provisionamento agora dispara como task em segundo plano (`asyncio.create_task`), sem
   bloquear a resposta. Validado ao vivo: resposta caiu para ~1,9s, com `.venv` sendo
   criado de fato em segundo plano (confirmado via log `packages.venv.creating`).
-- [ ] **Schema `project_member`** (sem enforcement ainda — só a tabela). Nova migração
-  Alembic em `apps/api/src/sicoobito/db/alembic/versions/`, modelo em `db/models.py` ao
-  lado de `AppUser`/`ProjectRecord` (o docstring de `AppUser` já reserva esse espaço).
+- [x] **Schema `project_member`** (sem enforcement ainda — só a tabela). Implementado:
+  migração `alembic/versions/0018_project_member.py` + modelo `ProjectMember` em
+  `db/models.py`, exatamente no nome que o docstring de `AppUser`/`0012_auth.py` já
+  reservava. `role` string livre (owner/editor/viewer). Validado ao vivo: migração
+  aplicada contra o Postgres real, round-trip via SQLAlchemy confirmado.
 - [ ] **FK real em `workspace`/`project_slug`.** Hoje `IndexedFile`/`CodeChunk`/`GraphNode`
   usam `workspace` como string solta e `Document`/`Note` usam `project_slug` nulável, sem
   FK para `ProjectRecord`. Endurecer a escrita (validar contra `ProjectRecord.slug`) antes
@@ -103,6 +105,9 @@ o núcleo de todo o roadmap abaixo.
   (`api/routes/projects.py`) — validado ao vivo.
 - [x] Sessões de agente abandonadas são reclamadas periodicamente (`agent/runner.py`,
   `agent/session_store.py`) — validado ao vivo, 192 sessões reclamadas nesta base local.
-- [ ] Próximo item recomendado do Horizonte 1: schema `project_member` (maior alavancador
-  do dossiê, pré-requisito para RBAC no Horizonte 2) ou FK real em `workspace`/
-  `project_slug`.
+- [x] Schema `project_member` criado e migrado (`db/models.py`, `alembic/versions/
+  0018_project_member.py`) — maior alavancador do dossiê, pré-requisito para RBAC no
+  Horizonte 2.
+- [ ] Restam no Horizonte 1: FK real em `workspace`/`project_slug`, `actor`/`user_id` em
+  `RequestLog`, elevar `_SCRYPT_N`, promover E2E para gate de PR, documentar senha admin
+  no primeiro boot.
