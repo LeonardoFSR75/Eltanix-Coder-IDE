@@ -181,9 +181,35 @@ o núcleo de todo o roadmap abaixo.
 
 ## Horizonte 3 — Escala (6–12 meses)
 
-- [ ] **Pool de executores com fila e cota real de CPU/densidade por host.** Hoje
-  `services/executor` é um único host (ADR 0002) sem réplicas; `SANDBOX_MEMORY` é o único
-  teto exposto, sem CPU shares nem limite de sessões concorrentes.
+- [x] **Pool de executores com fila e cota real de CPU/densidade por host.** Escopo
+  reduzido deliberadamente (via pergunta ao usuário): o texto original do item mirava
+  o alvo de escala da auditoria (500 usuários / 5.000 sessões-dia), que pede pool
+  multi-host com broker — infraestrutura que o produto, local-first e efetivamente
+  single-machine hoje, não opera nesse nível. Investigação encontrou que
+  `mem_limit`/`cpu_quota`/`pids_limit` por sandbox já existiam (`services/executor/
+  app.py`, `sandbox/container.py`) — a lacuna real era ausência de teto no *número* de
+  sandboxes simultâneos e de qualquer mecanismo de fila. Implementado:
+  `sandbox/concurrency.py::SandboxConcurrencyGate`, fila FIFO em processo (sem broker,
+  sem réplica) — `asyncio.Event` por esperador, `acquire(session_id)` bloqueia até
+  haver vaga (idempotente: sessão já ativa retorna na hora, cobrindo reconexão sem
+  competir de novo), `release(session_id)` promove o próximo da fila, cancelamento
+  durante a espera (`CancelledError`) remove o esperador sem vazar vaga. Cabeçalho novo
+  `SANDBOX_MAX_CONCURRENT` (default 6, `config.py`) plugado em ambos os gerenciadores —
+  `SandboxManager.acquire`/`.release` (`sandbox/container.py`, modo dev local) e
+  `ExecutorSandboxManager.acquire`/`.release` (`sandbox/executor.py`, modo produção via
+  ADR 0002) — só a criação de sandbox *novo* passa pela fila; reaproveitar o sandbox já
+  ativo de uma sessão (cache hit) não consome vaga de novo. Posição na fila exposta via
+  `GET /api/agent/sandboxes/queue` (`api/routes/agent.py`) — endpoint de polling em vez
+  de reestruturar `create_session` num fluxo assíncrono explícito, já que o loop de
+  eventos do uvicorn continua servindo outras requisições enquanto uma corrotina espera
+  vaga. Testado: 7 testes novos unitários do gate (`test_sandbox_concurrency.py`,
+  cobrindo limite, FIFO, idempotência, no-op de `release` sem `acquire` prévio,
+  cancelamento sem vazamento de vaga, piso de `max_concurrent=1`); suíte completa (574
+  testes) sem regressão nova — mesmas 2 falhas pré-existentes de antes. Validado ao vivo
+  contra a stack real (modo executor, `sandbox.mode=executor`): `GET /sandboxes/queue`
+  antes de criar sessão devolveu `active=0`; `POST /api/agent/sessions` num projeto real
+  (`e2e-smoke-test`) fez `active` subir para `1`; `POST /sessions/{id}/close` devolveu
+  para `active=0` — ciclo completo de aquisição/liberação confirmado ponta a ponta.
 - [ ] **Reuso de sandbox aquecido entre sessões do mesmo projeto**, em vez de container
   novo por sessão — as sementes já existem em `sandbox/executor.py` (`env_mounts` reusando
   `.venv`/`node_modules`/`vendor`).

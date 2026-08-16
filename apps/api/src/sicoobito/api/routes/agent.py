@@ -425,6 +425,18 @@ async def get_session_sandbox_logs(
     return await runner.sandboxes.get_server_logs(session_id, tail=tail)
 
 
+@router.get("/sandboxes/queue")
+async def get_sandbox_queue_status(request: Request) -> dict[str, Any]:
+    """Estado da fila de concorrência de sandbox (Horizonte 3 — ver
+    sandbox/concurrency.py). Endpoint de polling: a UI usa isto para mostrar
+    posição na fila em vez de a criação de sessão virar um fluxo assíncrono.
+    """
+    runner = _runner(request)
+    if runner.sandboxes is None:
+        return {"active": 0, "max_concurrent": 0, "waiting": []}
+    return runner.sandboxes.queue_status()
+
+
 class WebAppToggleRequest(BaseModel):
     enabled: bool = True
 

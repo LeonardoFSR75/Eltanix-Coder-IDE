@@ -199,6 +199,7 @@ async def lifespan(app: FastAPI):
                 base_url=settings.executor_url.rstrip("/"),
                 token=settings.executor_token,
                 timeout_seconds=settings.sandbox_timeout_seconds,
+                max_concurrent=settings.sandbox_max_concurrent,
             )
         )
         log.info("sandbox.mode", mode="executor", url=settings.executor_url)
@@ -209,6 +210,7 @@ async def lifespan(app: FastAPI):
                 memory_limit=settings.sandbox_memory,
                 network_enabled=settings.sandbox_network,
                 timeout_seconds=settings.sandbox_timeout_seconds,
+                max_concurrent=settings.sandbox_max_concurrent,
             )
         )
         log.info("sandbox.mode", mode="local")

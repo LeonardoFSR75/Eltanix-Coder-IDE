@@ -16,6 +16,7 @@ from typing import Any
 import httpx
 
 from sicoobito.logging_setup import get_logger
+from sicoobito.sandbox.concurrency import SandboxConcurrencyGate
 from sicoobito.sandbox.container import ExecResult, SandboxError, SandboxUnavailableError
 
 log = get_logger(__name__)
@@ -34,6 +35,8 @@ class ExecutorConfig:
     # `sandbox/container.py`). Em produção (`EXECUTOR_URL` setado, ADR 0002)
     # o valor da env var não tinha efeito nenhum sobre o timeout real.
     timeout_seconds: int = 300
+    # Teto de sandboxes ativos ao mesmo tempo neste executor (ver sandbox/concurrency.py).
+    max_concurrent: int = 6
 
 
 class RemoteSandbox:
@@ -199,6 +202,7 @@ class ExecutorSandboxManager:
         self._config = config
         self._sandboxes: dict[str, RemoteSandbox] = {}
         self._http_client: httpx.AsyncClient | None = None
+        self._gate = SandboxConcurrencyGate(config.max_concurrent)
 
     def _get_http_client(self) -> httpx.AsyncClient:
         if self._http_client is None or self._http_client.is_closed:
@@ -213,12 +217,23 @@ class ExecutorSandboxManager:
 
     async def acquire(self, session_id: str, workspace: Path) -> RemoteSandbox:
         sandbox = self._sandboxes.get(session_id)
-        if sandbox is None:
-            sandbox = RemoteSandbox(
-                session_id, workspace, self._config, client=self._get_http_client()
-            )
-            self._sandboxes[session_id] = sandbox
-        await sandbox.start()
+        if sandbox is not None:
+            await sandbox.start()
+            return sandbox
+
+        # Sessão nova de verdade: passa pela fila antes de pedir ao executor
+        # para criar container — reconexão (branch acima) não compete de novo.
+        await self._gate.acquire(session_id)
+        sandbox = RemoteSandbox(
+            session_id, workspace, self._config, client=self._get_http_client()
+        )
+        self._sandboxes[session_id] = sandbox
+        try:
+            await sandbox.start()
+        except Exception:
+            self._sandboxes.pop(session_id, None)
+            await self._gate.release(session_id)
+            raise
         return sandbox
 
     def get(self, session_id: str) -> RemoteSandbox | None:
@@ -228,6 +243,10 @@ class ExecutorSandboxManager:
         sandbox = self._sandboxes.pop(session_id, None)
         if sandbox is not None:
             await sandbox.stop()
+        await self._gate.release(session_id)
+
+    def queue_status(self) -> dict[str, Any]:
+        return self._gate.snapshot()
 
     async def reap_expired(self) -> int:
         agora = time.time()

@@ -131,6 +131,12 @@ class Settings(BaseSettings):
     # executar algo de origem desconhecida. Ligue só quando precisar instalar
     # dependências, e prefira fazê-lo por uma imagem preparada.
     sandbox_network: bool = Field(default=False, alias="SANDBOX_NETWORK")
+    # Teto de sandboxes ativos ao mesmo tempo neste host/executor (Horizonte 3
+    # da auditoria arquitetural — fila local, sem infraestrutura nova; ver
+    # sandbox/concurrency.py). Sessão além do teto espera na fila em vez de
+    # competir por CPU/memória com as já ativas. Default generoso o bastante
+    # para não travar o fluxo de dev atual, que hoje roda efetivamente sem teto.
+    sandbox_max_concurrent: int = Field(default=6, alias="SANDBOX_MAX_CONCURRENT")
     # Quando definido, a execução vai pelo serviço executor em vez do daemon
     # local. É o modo usado quando a própria API roda em container: só o
     # executor tem acesso ao socket do Docker (ver ADR 0002).

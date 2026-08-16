@@ -29,6 +29,7 @@ from pathlib import Path
 from typing import Any
 
 from sicoobito.logging_setup import get_logger
+from sicoobito.sandbox.concurrency import SandboxConcurrencyGate
 
 log = get_logger(__name__)
 
@@ -56,6 +57,8 @@ class SandboxConfig:
     # TTL do container ocioso; o reaper derruba o que passar disso.
     ttl_seconds: int = 3600
     env: dict[str, str] = field(default_factory=dict)
+    # Teto de sandboxes ativos ao mesmo tempo neste host (ver sandbox/concurrency.py).
+    max_concurrent: int = 6
 
 
 @dataclass(slots=True)
@@ -363,16 +366,28 @@ class SandboxManager:
     def __init__(self, config: SandboxConfig | None = None) -> None:
         self._config = config or SandboxConfig()
         self._sandboxes: dict[str, Sandbox] = {}
+        self._gate = SandboxConcurrencyGate(self._config.max_concurrent)
 
     def new_session_id(self) -> str:
         return uuid.uuid4().hex[:12]
 
     async def acquire(self, session_id: str, workspace: Path) -> Sandbox:
         sandbox = self._sandboxes.get(session_id)
-        if sandbox is None:
-            sandbox = Sandbox(session_id, workspace, self._config)
-            self._sandboxes[session_id] = sandbox
-        await sandbox.start()
+        if sandbox is not None:
+            await sandbox.start()
+            return sandbox
+
+        # Sessão nova de verdade: passa pela fila antes de criar container —
+        # reconexão (branch acima) não compete por vaga de novo.
+        await self._gate.acquire(session_id)
+        sandbox = Sandbox(session_id, workspace, self._config)
+        self._sandboxes[session_id] = sandbox
+        try:
+            await sandbox.start()
+        except Exception:
+            self._sandboxes.pop(session_id, None)
+            await self._gate.release(session_id)
+            raise
         return sandbox
 
     def get(self, session_id: str) -> Sandbox | None:
@@ -382,6 +397,10 @@ class SandboxManager:
         sandbox = self._sandboxes.pop(session_id, None)
         if sandbox is not None:
             await sandbox.stop()
+        await self._gate.release(session_id)
+
+    def queue_status(self) -> dict[str, Any]:
+        return self._gate.snapshot()
 
     async def reap_expired(self) -> int:
         """Derruba containers ociosos além do TTL."""
