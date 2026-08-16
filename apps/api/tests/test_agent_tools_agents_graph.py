@@ -193,15 +193,85 @@ async def test_spawn_agent_requires_task(ctx):
 async def test_spawn_agent_calls_closure_and_returns_child_id(ctx):
     chamadas = []
 
-    async def _spawn(*, task, display_name):
-        chamadas.append((task, display_name))
+    async def _spawn(*, task, display_name, specialization_prompt=None):
+        chamadas.append((task, display_name, specialization_prompt))
         return "filho-123"
 
     ctx.spawn_child_agent = _spawn
     resultado = await spawn_agent(ctx, {"task": "investigar bug X"})
     assert resultado.ok is True
     assert resultado.data["child_session_id"] == "filho-123"
-    assert chamadas == [("investigar bug X", "investigar bug X")]
+    assert chamadas == [("investigar bug X", "investigar bug X", None)]
+
+
+class _FakeSkill:
+    def __init__(self, *, system_prompt: str, enabled: bool = True) -> None:
+        self.system_prompt = system_prompt
+        self.enabled = enabled
+
+
+class _FakeSkillsService:
+    def __init__(self, skills: dict[str, _FakeSkill]) -> None:
+        self._skills = skills
+
+    async def get_by_name(self, name: str) -> _FakeSkill | None:
+        return self._skills.get(name)
+
+
+async def test_spawn_agent_with_skill_name_passes_specialization_prompt(ctx):
+    ctx.skills = _FakeSkillsService(
+        {"revisor-python": _FakeSkill(system_prompt="Você revisa código Python com rigor.")}
+    )
+    chamadas = []
+
+    async def _spawn(*, task, display_name, specialization_prompt=None):
+        chamadas.append(specialization_prompt)
+        return "filho-123"
+
+    ctx.spawn_child_agent = _spawn
+    resultado = await spawn_agent(
+        ctx, {"task": "revisar PR #42", "skill_name": "revisor-python"}
+    )
+    assert resultado.ok is True
+    assert chamadas == ["Você revisa código Python com rigor."]
+
+
+async def test_spawn_agent_fails_for_unknown_skill_name(ctx):
+    ctx.skills = _FakeSkillsService({})
+
+    async def _spawn(**kwargs):
+        raise AssertionError("não deveria ser chamado — skill desconhecida")
+
+    ctx.spawn_child_agent = _spawn
+    resultado = await spawn_agent(ctx, {"task": "x", "skill_name": "nao-existe"})
+    assert resultado.ok is False
+    assert "desconhecida" in resultado.content.lower()
+
+
+async def test_spawn_agent_fails_for_disabled_skill(ctx):
+    ctx.skills = _FakeSkillsService(
+        {"skill-desabilitada": _FakeSkill(system_prompt="x", enabled=False)}
+    )
+
+    async def _spawn(**kwargs):
+        raise AssertionError("não deveria ser chamado — skill desabilitada")
+
+    ctx.spawn_child_agent = _spawn
+    resultado = await spawn_agent(ctx, {"task": "x", "skill_name": "skill-desabilitada"})
+    assert resultado.ok is False
+    assert "desabilitada" in resultado.content.lower()
+
+
+async def test_spawn_agent_fails_when_skills_service_unavailable(ctx):
+    ctx.skills = None
+
+    async def _spawn(**kwargs):
+        raise AssertionError("não deveria ser chamado — skills indisponíveis")
+
+    ctx.spawn_child_agent = _spawn
+    resultado = await spawn_agent(ctx, {"task": "x", "skill_name": "qualquer"})
+    assert resultado.ok is False
+    assert "indisponíveis" in resultado.content.lower()
 
 
 async def test_spawn_agent_refuses_beyond_max_depth(ctx):

@@ -36,6 +36,14 @@ async def get_skill(session: AsyncSession, skill_id: uuid.UUID) -> Skill | None:
     return await session.get(Skill, skill_id)
 
 
+async def get_skill_by_name(session: AsyncSession, name: str) -> Skill | None:
+    """Usado por `spawn_agent` (Horizonte 4, item 3) para carregar o
+    `system_prompt` de uma skill existente como especialização de um agente
+    filho — o nome é o identificador que o chamador (LLM) conhece, não o UUID."""
+    stmt = select(Skill).where(Skill.name == name)
+    return (await session.execute(stmt)).scalar_one_or_none()
+
+
 async def list_skills(session: AsyncSession, *, only_enabled: bool = False) -> list[Skill]:
     stmt = select(Skill).order_by(Skill.created_at.desc())
     if only_enabled:

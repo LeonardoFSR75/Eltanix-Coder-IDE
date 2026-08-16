@@ -309,7 +309,42 @@ o núcleo de todo o roadmap abaixo.
   (`"smoke de carga #N"`), sugerindo um candidato plausível sem duplicar skill nenhuma. Lint
   (`ruff check src`) limpo; suíte completa sem regressão (575 passed, 47 skipped, os mesmos 2
   falhos pré-existentes e não relacionados de sempre — encoding de console no Windows).
-- [ ] **Especialização mais profunda de subagentes**, com replay via Flight Recorder.
+- [x] **Especialização mais profunda de subagentes**, com replay via Flight Recorder — premissa
+  mista, como o item 1 deste Horizonte: a metade "replay via Flight Recorder" não se sustentou,
+  a metade "especialização" era real. `telemetry/flight_recorder.py::session_timeline()` é
+  deliberadamente *read-time*, não write-time — a própria docstring do módulo já rejeita virar
+  um quarto log append-only (ver Horizonte 2). Fazer "replay" de verdade (rejogar as decisões de
+  uma sessão) exigiria esse quarto log com garantia de ordem e sem perda, contradizendo o
+  design que já existe pelas mesmas razões documentadas em `flight_recorder.py` — redesenho
+  maior, não um item deste Horizonte. Não implementado, por decisão de escopo (via pergunta ao
+  usuário). Já "especialização" era uma lacuna real: `spawn_agent` (`agent/tools/agents_graph.py`)
+  cria um filho completo mas sempre genérico — nada permitia o pai dizer *que tipo* de agente
+  aquele filho deveria ser, ao contrário de `custom_instructions` (`.sicoobito/instructions.md`),
+  que já concatena ao `SYSTEM_PROMPT` de toda sessão do projeto. Escopo reduzido por decisão do
+  usuário: protótipo mínimo — parâmetro opcional `skill_name` em `spawn_agent`, que carrega o
+  `system_prompt` de uma Skill já existente (mesmo `SkillService` do item 2 deste Horizonte) como
+  adendo ao prompt do filho, fechando o loop com a promoção de skills recém-implementada.
+  Novo campo `ToolContext.specialization_prompt` (`agent/tools/base.py`); `graph.py::think()`
+  agora compõe o `SYSTEM_PROMPT` somando as seções `## Instruções do projeto` e
+  `## Especialização deste agente` como extras independentes (nunca uma sobrescrevendo a outra —
+  um filho spawnado com `skill_name` num projeto que também tem `instructions.md` recebe as
+  duas); `AgentRunner.create_session`/`_spawn_child_agent` (`agent/runner.py`) passam o parâmetro
+  adiante; `spawn_agent` resolve o nome via `SkillService.get_by_name` (novo, `skills/service.py`
+  + `skills/store.py::get_skill_by_name`) e falha fechado (`ToolResult.failure`) se a skill não
+  existir ou estiver desabilitada. 7 testes novos: 4 em `test_agent_tools_agents_graph.py`
+  (resolve e passa `specialization_prompt`; skill desconhecida falha; skill desabilitada falha;
+  `ctx.skills is None` falha), 2 em `test_propose_skill_tool.py` (`SkillService.get_by_name`
+  achado/não achado, mesmo padrão de dublê de `session_scope`/`store` que os testes de
+  `propose_and_save` já usam), 1 em `test_graph_integration.py` (grafo compilado de verdade,
+  `custom_instructions` e `specialization_prompt` juntos no mesmo system prompt enviado ao
+  `RouterEngine.complete()`, confirmando que a composição não se apaga). Validado ao vivo contra
+  a stack real (Postgres real, não dublê): criada uma skill de smoke
+  (`smoke-especializacao-h4-3`), `spawn_agent(skill_name=...)` resolveu o `system_prompt` da
+  skill via `SkillService` real e passou adiante corretamente; skill inexistente e skill
+  desabilitada (via `SkillService.toggle`) falharam como esperado; skill removida ao final. Lint
+  (`ruff check src`) limpo; suíte completa sem regressão (582 passed — 7 a mais que a rodada
+  anterior, exatamente os testes novos —, 47 skipped, os mesmos 2 falhos pré-existentes e não
+  relacionados de sempre — encoding de console no Windows).
 
 ## Horizonte 5 — Diferenciação (24–36 meses)
 

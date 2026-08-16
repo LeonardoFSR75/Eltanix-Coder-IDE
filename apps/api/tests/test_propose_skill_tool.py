@@ -119,3 +119,55 @@ async def test_skill_service_propose_and_save_writes_file(tmp_path: Path, monkey
     assert "name: padrao-teste" in conteudo
     assert "Diretriz de teste" in conteudo
 
+
+@pytest.mark.asyncio
+async def test_skill_service_get_by_name_found(monkeypatch):
+    @asynccontextmanager
+    async def _fake_session_scope():
+        yield None
+
+    esperada = Skill(
+        id=MagicMock(),
+        name="revisor-python",
+        description="Revisa código Python",
+        category="learned",
+        system_prompt="Você revisa código Python com rigor.",
+        parameters_json="{}",
+    )
+
+    async def _fake_get_skill_by_name(session, name):
+        assert name == "revisor-python"
+        return esperada
+
+    from sicoobito.skills import service as skills_service_module
+
+    monkeypatch.setattr(skills_service_module, "session_scope", _fake_session_scope)
+    monkeypatch.setattr(
+        skills_service_module.store, "get_skill_by_name", _fake_get_skill_by_name
+    )
+
+    service = SkillService()
+    resultado = await service.get_by_name("revisor-python")
+    assert resultado is esperada
+
+
+@pytest.mark.asyncio
+async def test_skill_service_get_by_name_not_found(monkeypatch):
+    @asynccontextmanager
+    async def _fake_session_scope():
+        yield None
+
+    async def _fake_get_skill_by_name(session, name):
+        return None
+
+    from sicoobito.skills import service as skills_service_module
+
+    monkeypatch.setattr(skills_service_module, "session_scope", _fake_session_scope)
+    monkeypatch.setattr(
+        skills_service_module.store, "get_skill_by_name", _fake_get_skill_by_name
+    )
+
+    service = SkillService()
+    resultado = await service.get_by_name("nao-existe")
+    assert resultado is None
+

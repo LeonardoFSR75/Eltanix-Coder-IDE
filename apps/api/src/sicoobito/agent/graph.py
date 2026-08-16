@@ -195,11 +195,16 @@ def build_graph(engine: RouterEngine, context: ToolContext):
     # mudam no meio de uma sessão, e manter o prefixo do system prompt estável
     # entre turnos é o que permite o cache de prompt (ver docstring de
     # SYSTEM_PROMPT em prompts.py).
+    # Duas fontes independentes de adendo ao prompt base — projeto e
+    # especialização (Horizonte 4, item 3) — compostas como seções extras
+    # em vez de sobrescritas sucessivas, para nenhuma apagar a outra quando
+    # ambas estão presentes (ex: agente filho spawnado com skill_name num
+    # projeto que também tem instructions.md).
     system_prompt = SYSTEM_PROMPT
     if context.custom_instructions:
-        system_prompt = (
-            f"{SYSTEM_PROMPT}\n\n## Instruções do projeto\n\n{context.custom_instructions}"
-        )
+        system_prompt += f"\n\n## Instruções do projeto\n\n{context.custom_instructions}"
+    if context.specialization_prompt:
+        system_prompt += f"\n\n## Especialização deste agente\n\n{context.specialization_prompt}"
 
     async def think(state: AgentState) -> dict[str, Any]:
         if context.on_activity is not None:

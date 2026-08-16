@@ -336,6 +336,7 @@ class AgentRunner:
         focus_folder: str | None = None,
         images: list[str] | None = None,
         parent_session_id: str | None = None,
+        specialization_prompt: str | None = None,
     ) -> AgentSession:
         session_id = session_id or self.sandboxes.new_session_id()
         workspace_root = workspace_root.resolve()  # noqa: ASYNC240
@@ -451,13 +452,16 @@ class AgentRunner:
         if parent_session_id is not None and self.coordinator is not None:
             depth = await self.coordinator.depth_of(parent_session_id) + 1
 
-        async def _spawn_child_agent(*, task: str, display_name: str) -> str:
+        async def _spawn_child_agent(
+            *, task: str, display_name: str, specialization_prompt: str | None = None
+        ) -> str:
             assert self.coordinator is not None
             filho = await self.create_session(
                 task=task,
                 workspace_root=workspace_root,
                 mode="agent",
                 parent_session_id=session_id,
+                specialization_prompt=specialization_prompt,
             )
             burst = asyncio.get_running_loop().create_task(
                 run_headless_burst(self, self.coordinator, filho)
@@ -509,6 +513,7 @@ class AgentRunner:
             trace_recorder=self.trace_recorder,
             engine=self.engine,
             custom_instructions=_load_custom_instructions(workspace_root),
+            specialization_prompt=specialization_prompt,
             approval_policy=load_approval_policy(workspace_root),
             coordinator=self.coordinator,
             spawn_child_agent=_spawn_child_agent if self.coordinator is not None else None,

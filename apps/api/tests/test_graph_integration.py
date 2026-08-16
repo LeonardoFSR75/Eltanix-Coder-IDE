@@ -98,6 +98,56 @@ def _initial_state(session_id: str) -> dict:
     }
 
 
+class _CapturingRouterEngine(FakeRouterEngine):
+    """Além de responder, guarda o `params` de cada chamada — usado para
+    inspecionar o system prompt efetivamente montado por `build_graph`."""
+
+    def __init__(self, respostas: list[dict]) -> None:
+        super().__init__(respostas)
+        self.chamadas_params: list[dict] = []
+
+    async def complete(
+        self, *, requested_model, params, source, project_slug=None, session_id=None
+    ):
+        self.chamadas_params.append(params)
+        return await super().complete(
+            requested_model=requested_model,
+            params=params,
+            source=source,
+            project_slug=project_slug,
+            session_id=session_id,
+        )
+
+
+async def test_specialization_prompt_e_custom_instructions_compoem_sem_se_apagar(tmp_path):
+    """Horizonte 4, item 3: `spawn_agent(skill_name=...)` guarda o `system_prompt`
+    da skill em `ToolContext.specialization_prompt`, e este teste garante que
+    `build_graph` soma essa seção ao system prompt junto de `custom_instructions`
+    — nenhuma sobrescreve a outra quando as duas estão presentes."""
+    ctx = ToolContext(
+        session_id="teste-especializacao",
+        workspace_root=tmp_path,
+        fs=WorkspaceFS(tmp_path),
+        custom_instructions="Sempre use APIRouter com prefixo /api.",
+        specialization_prompt="Você é um especialista em revisão de segurança.",
+    )
+    engine = _CapturingRouterEngine([_FINISHED_RESPONSE])
+    compilado = build_graph(engine, ctx).compile(checkpointer=MemorySaver())
+    config = {"configurable": {"thread_id": "t-especializacao"}}
+
+    entrada = _initial_state("t-especializacao")
+    async for _ in compilado.astream(entrada, config=config, stream_mode="updates"):
+        pass
+
+    assert len(engine.chamadas_params) == 1
+    system_msg = engine.chamadas_params[0]["messages"][0]
+    assert system_msg["role"] == "system"
+    assert "APIRouter com prefixo /api" in system_msg["content"]
+    assert "especialista em revisão de segurança" in system_msg["content"]
+    assert "## Especialização deste agente" in system_msg["content"]
+    assert "## Instruções do projeto" in system_msg["content"]
+
+
 async def test_read_tool_runs_direto_sem_passar_por_approve(ctx, tmp_path):
     (tmp_path / "foo.py").write_text("print(1)\n", encoding="utf-8")
 

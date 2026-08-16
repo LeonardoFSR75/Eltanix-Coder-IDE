@@ -78,6 +78,12 @@ class ToolContext:
     # sessão) — texto livre que o usuário escreveu na aba "Instruções" do
     # popover, concatenado ao SYSTEM_PROMPT em `agent/graph.py::think()`.
     custom_instructions: str | None = None
+    # Especialização deste agente (Horizonte 4, item 3 da auditoria
+    # arquitetural) — `system_prompt` de uma Skill existente, escolhida pelo
+    # pai ao chamar `spawn_agent(skill_name=...)`, concatenado ao SYSTEM_PROMPT
+    # em `agent/graph.py::think()`. `None` para toda sessão raiz e todo filho
+    # spawnado sem `skill_name` — não muda o comportamento de hoje.
+    specialization_prompt: str | None = None
     # Política de auto-aprovação (`agent/approval_policy.py::ApprovalPolicy`)
     # carregada de `.sicoobito/approval_policy.yaml` no projeto — consultada
     # pelo nó `approve` em `agent/graph.py` antes do `interrupt()`. `None`

@@ -35,6 +35,10 @@ class SkillService:
         async with session_scope() as session:
             return await store.get_skill(session, skill_id)
 
+    async def get_by_name(self, name: str) -> Skill | None:
+        async with session_scope() as session:
+            return await store.get_skill_by_name(session, name)
+
     async def list_all(self, *, only_enabled: bool = False) -> list[Skill]:
         async with session_scope() as session:
             return await store.list_skills(session, only_enabled=only_enabled)

@@ -49,6 +49,12 @@ def _sem_coordenador() -> ToolResult:
                 "description": "Nome curto pro agente (aparece em view_agent_graph); "
                 "padrão é um recorte da própria task.",
             },
+            "skill_name": {
+                "type": "string",
+                "description": "Nome de uma Skill existente (ver `list_skills`/`get_skill`) "
+                "cujo `system_prompt` vira especialização do filho — some ao prompt dele "
+                "junto do resto, não substitui a task. Omitir cria um filho genérico.",
+            },
         },
         "required": ["task"],
     },
@@ -75,7 +81,21 @@ async def spawn_agent(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
         return ToolResult.failure("Informe `task` — o objetivo do agente filho.")
     nome = (args.get("display_name") or tarefa[:60]).strip()
 
-    child_session_id = await ctx.spawn_child_agent(task=tarefa, display_name=nome)
+    especializacao: str | None = None
+    skill_name = (args.get("skill_name") or "").strip()
+    if skill_name:
+        if ctx.skills is None:
+            return ToolResult.failure("Skills indisponíveis nesta sessão.")
+        skill = await ctx.skills.get_by_name(skill_name)
+        if skill is None:
+            return ToolResult.failure(f"Skill desconhecida: {skill_name}")
+        if not skill.enabled:
+            return ToolResult.failure(f"Skill desabilitada: {skill_name}")
+        especializacao = skill.system_prompt
+
+    child_session_id = await ctx.spawn_child_agent(
+        task=tarefa, display_name=nome, specialization_prompt=especializacao
+    )
     return ToolResult(
         ok=True,
         content=f"Agente filho '{nome}' criado: {child_session_id}",
