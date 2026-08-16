@@ -25,27 +25,85 @@ from sicoobito.logging_setup import get_logger
 log = get_logger(__name__)
 
 SESSION_TTL = timedelta(days=14)
-_SCRYPT_N = 2**14
+# N=2**17 é o teto que a OWASP recomenda para scrypt isolado (sem pepper), mas
+# custou ~2,7s por hash medido neste hardware — inaceitável num endpoint de
+# login síncrono. N=2**16 (a alternativa mais leve que a própria OWASP lista)
+# fica em ~1s: 4x mais caro que o valor antigo (2**14) sem tornar o login
+# perceptivelmente travado. O formato do hash carrega os próprios parâmetros
+# (`n$r$p$salt$hash`) — nunca fixos pelas constantes abaixo — para que bumpar
+# N aqui no futuro não quebre a verificação de hashes antigos: cada senha é
+# verificada com os parâmetros com que foi de fato gravada, e re-hasheada com
+# os atuais só depois de uma autenticação bem-sucedida (ver `AuthService.
+# authenticate`).
+_SCRYPT_N = 2**16
 _SCRYPT_R = 8
 _SCRYPT_P = 1
+# Formato legado (`salt$hash`, sem parâmetros embutidos) de antes desta
+# migração — todo hash nesse formato foi gerado com estes valores.
+_LEGACY_SCRYPT_N = 2**14
+_LEGACY_SCRYPT_R = 8
+_LEGACY_SCRYPT_P = 1
 
 
-def _hash_password(password: str, *, salt: bytes | None = None) -> str:
+def _hash_password(
+    password: str,
+    *,
+    salt: bytes | None = None,
+    n: int = _SCRYPT_N,
+    r: int = _SCRYPT_R,
+    p: int = _SCRYPT_P,
+) -> str:
     salt = salt or secrets.token_bytes(16)
-    derived = hashlib.scrypt(
-        password.encode("utf-8"), salt=salt, n=_SCRYPT_N, r=_SCRYPT_R, p=_SCRYPT_P
-    )
-    return f"{salt.hex()}${derived.hex()}"
+    # scrypt usa ~128*n*r bytes de memória (~128 MiB em n=2**17, r=8) — acima
+    # do teto default de 32 MiB do OpenSSL (`maxmem`), que faria N=2**17
+    # explodir com "memory limit exceeded". Dobrar a estimativa cobre a folga
+    # interna do algoritmo sem precisar recalcular a cada bump futuro de N.
+    maxmem = 128 * n * r * 2
+    derived = hashlib.scrypt(password.encode("utf-8"), salt=salt, n=n, r=r, p=p, maxmem=maxmem)
+    return f"{n}${r}${p}${salt.hex()}${derived.hex()}"
+
+
+def _parse_password_hash(password_hash: str) -> tuple[int, int, int, bytes, str]:
+    """Aceita os dois formatos: `n$r$p$salt$hash` (atual) e `salt$hash`
+    (legado, sempre `_LEGACY_SCRYPT_*`) — ver comentário acima de `_SCRYPT_N`."""
+    partes = password_hash.split("$")
+    if len(partes) == 5:
+        n_str, r_str, p_str, salt_hex, hash_hex = partes
+        return int(n_str), int(r_str), int(p_str), bytes.fromhex(salt_hex), hash_hex
+    if len(partes) == 2:
+        salt_hex, hash_hex = partes
+        return (
+            _LEGACY_SCRYPT_N,
+            _LEGACY_SCRYPT_R,
+            _LEGACY_SCRYPT_P,
+            bytes.fromhex(salt_hex),
+            hash_hex,
+        )
+    raise ValueError(f"formato de password_hash desconhecido ({len(partes)} partes)")
 
 
 def _verify_password(password: str, password_hash: str) -> bool:
+    """Compara só os bytes derivados, nunca a string formatada inteira: um
+    hash legado (2 partes) e um recém-gerado (5 partes) têm o mesmo salt e o
+    mesmo derived-hash quando a senha bate, mas formatos de string diferentes
+    — comparar a string inteira faria todo hash legado falhar sempre."""
     try:
-        salt_hex, _ = password_hash.split("$", 1)
-    except ValueError:
+        n, r, p, salt, stored_hash_hex = _parse_password_hash(password_hash)
+    except (ValueError, TypeError):
         return False
-    salt = bytes.fromhex(salt_hex)
-    candidate = _hash_password(password, salt=salt)
-    return hmac.compare_digest(candidate, password_hash)
+    maxmem = 128 * n * r * 2
+    derived = hashlib.scrypt(password.encode("utf-8"), salt=salt, n=n, r=r, p=p, maxmem=maxmem)
+    return hmac.compare_digest(derived.hex(), stored_hash_hex)
+
+
+def _needs_rehash(password_hash: str) -> bool:
+    """True se o hash não foi gerado com os parâmetros atuais — inclui todo
+    hash no formato legado, que é sempre mais fraco que `_SCRYPT_N` atual."""
+    try:
+        n, r, p, _, _ = _parse_password_hash(password_hash)
+    except (ValueError, TypeError):
+        return False
+    return (n, r, p) != (_SCRYPT_N, _SCRYPT_R, _SCRYPT_P)
 
 
 def _hash_token(token: str) -> str:
@@ -146,6 +204,20 @@ class AuthService:
         valid = _verify_password(password, password_hash)
         if user is None or not valid:
             return None
+        if _needs_rehash(user.password_hash):
+            # Best-effort: um soluço aqui não pode derrubar um login que já
+            # foi validado — o hash antigo continua verificável (`_parse_
+            # password_hash` entende os dois formatos) até a próxima tentativa.
+            try:
+                async with session_scope() as session:
+                    fresh = await store.get_user(session, user.id)
+                    if fresh is not None:
+                        await store.update_user_password(
+                            session, fresh, password_hash=_hash_password(password)
+                        )
+                log.info("auth.password.rehashed", user_id=str(user.id))
+            except Exception as exc:
+                log.warning("auth.password.rehash_failed", error=str(exc)[:200])
         return user
 
     async def change_password(
