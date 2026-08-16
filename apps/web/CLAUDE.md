@@ -18,6 +18,27 @@ não numa pasta `__tests__` separada. `vitest.config.ts` espelha o alias `@/*` d
 polyfill de `localStorage` (o do jsdom não fica disponível de forma confiável sob o Vitest
 4 — ver comentário no arquivo) — não remover achando redundante.
 
+## Testes E2E (Playwright)
+
+`e2e/` cobre golden paths reais de browser — login, IDE abrindo o Monaco, painel de
+navegador manual — que `npm run test` (Vitest/jsdom) não alcança porque não há DOM real
+nem servidor de verdade por trás. Ao contrário do Vitest, **não** roda no CI a cada PR: são
+testes contra a stack inteira (`docker compose up -d`), então rodam via workflow separado
+(`.github/workflows/e2e.yml`, manual ou noturno — ver o motivo no próprio arquivo).
+
+```bash
+npx playwright install --with-deps chromium   # uma vez, baixa o Chromium do Playwright
+docker compose up -d --build                  # a stack precisa estar de pé
+E2E_PASSWORD=<mesma senha de SICOOBITO_ADMIN_PASSWORD no .env> npm run test:e2e
+```
+
+Sem `SICOOBITO_ADMIN_PASSWORD` fixado no `.env`, a API gera uma senha aleatória por
+processo (só visível no log `auth.seed_user.generated_password`) — fixe a variável antes de
+rodar E2E, senão o setup de login (`e2e/setup/auth.setup.ts`) falha cedo com uma mensagem
+explicando isso. `e2e/setup/project.setup.ts` cria (ou reaproveita, se já existir) um projeto
+fixo `e2e-smoke-test` que as specs abrem no IDE — não commitar um projeto de verdade com
+esse nome.
+
 **`node_modules` não é bind-mounted** (só `app/`, `components/`, `lib/` são — ver
 `docker-compose.yml`): mudar `package.json` exige `docker compose build web` e
 `docker compose up -d web` para o container pegar a mudança. Editar código dentro de

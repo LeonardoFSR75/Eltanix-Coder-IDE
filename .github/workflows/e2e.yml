@@ -1,0 +1,82 @@
+name: E2E (Playwright)
+
+# Golden paths de browser real contra a stack inteira (apps/web/e2e — ver
+# apps/web/CLAUDE.md). Fora do `ci.yml` de propósito: orquestrar
+# Postgres+Redis+MinIO+executor+browser+api+web num runner custa minutos, não
+# segundos, então não roda em todo push/PR — só sob demanda e uma vez por
+# noite, pra pegar regressão sem inflar o tempo de cada PR.
+on:
+  workflow_dispatch: {}
+  schedule:
+    - cron: "0 6 * * *" # 06:00 UTC
+
+jobs:
+  e2e:
+    name: E2E — stack completa
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Gerar .env descartável para a stack de CI
+        run: |
+          cat > .env <<'EOF'
+          SICOOBITO_API_KEY=e2e-ci-key
+          SICOOBITO_ADMIN_USERNAME=admin
+          SICOOBITO_ADMIN_PASSWORD=e2e-ci-password
+          EOF
+
+      - name: Subir a stack (sem o profile ollama — os golden paths não chamam LLM)
+        run: docker compose up -d --build postgres redis minio executor browser api web
+
+      - name: Esperar api e web responderem
+        run: |
+          for servico_url in "http://localhost:5401/api/health" "http://localhost:5400/login"; do
+            echo "Aguardando $servico_url"
+            for tentativa in $(seq 1 60); do
+              codigo=$(curl -s -o /dev/null -w "%{http_code}" "$servico_url" || echo "000")
+              if [ "$codigo" != "000" ]; then
+                echo "$servico_url respondeu $codigo"
+                break
+              fi
+              sleep 2
+            done
+          done
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: apps/web/package-lock.json
+
+      - name: Instalar dependências
+        working-directory: apps/web
+        run: npm ci
+
+      - name: Instalar Chromium do Playwright
+        working-directory: apps/web
+        run: npx playwright install --with-deps chromium
+
+      - name: Rodar testes E2E
+        working-directory: apps/web
+        env:
+          E2E_BASE_URL: http://localhost:5400
+          E2E_USERNAME: admin
+          E2E_PASSWORD: e2e-ci-password
+        run: npm run test:e2e
+
+      - name: Publicar relatório do Playwright
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: apps/web/playwright-report/
+          retention-days: 14
+
+      - name: Logs dos serviços (em caso de falha)
+        if: failure()
+        run: docker compose logs api web browser --tail 200
+
+      - name: Derrubar a stack
+        if: always()
+        run: docker compose down -v

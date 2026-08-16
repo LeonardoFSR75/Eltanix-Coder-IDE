@@ -18,6 +18,12 @@ out/
 # Assets do Monaco copiados pelo postinstall (apps/web/scripts/copy-monaco.mjs)
 apps/web/public/vs/
 
+# Playwright E2E (apps/web/e2e) — cookie de sessão salvo, relatórios e traces
+apps/web/e2e/.auth/
+apps/web/playwright-report/
+apps/web/test-results/
+apps/web/blob-report/
+
 # Ambiente / segredos
 .env
 .env.local
