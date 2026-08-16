@@ -7,6 +7,7 @@ ordenação sem chamar nenhum modelo.
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 from decimal import Decimal
 
@@ -132,7 +133,14 @@ class RoutingPolicy:
         else:
             pool = [s for s in pool if not s.is_embedding]
 
-        built = [await self._build_candidate(s, estimated_prompt_tokens) for s in pool]
+        # Cada candidato consulta o Redis (is_available + latency_p95) de forma
+        # independente dos demais — sequencial pagaria N round-trips em série
+        # em toda requisição, no caminho mais quente da plataforma (ADR 0001).
+        built = list(
+            await asyncio.gather(
+                *(self._build_candidate(s, estimated_prompt_tokens) for s in pool)
+            )
+        )
         usable = [c for c in built if c.excluded_reason is None]
         excluded = [c for c in built if c.excluded_reason is not None]
 

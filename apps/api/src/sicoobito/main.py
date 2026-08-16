@@ -243,6 +243,11 @@ async def lifespan(app: FastAPI):
     app.state.browser_http = httpx.AsyncClient(
         limits=httpx.Limits(max_keepalive_connections=10, max_connections=30)
     )
+    # Uma instância de `BrowserClient` por sessão de painel, reaproveitada entre
+    # requisições HTTP (ver `api/routes/browser.py::_client`) — sem isto, cada
+    # clique no painel manual pagava um `POST /sessions` extra antes da própria
+    # ação, porque uma instância nova sempre nasce com `_started=False`.
+    app.state.browser_panel_clients = {}
     app.state.agent_runner = AgentRunner(
         settings=settings,
         engine=engine,

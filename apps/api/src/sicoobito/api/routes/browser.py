@@ -27,14 +27,28 @@ router = APIRouter(prefix="/api/browser", tags=["browser"], dependencies=[AuthDe
 
 
 def _client(request: Request, session_id: str) -> BrowserClient:
+    """Uma instância por sessão, cacheada em `app.state.browser_panel_clients`.
+
+    Antes, cada requisição HTTP criava uma instância nova — `_started` nascia
+    sempre `False`, e todo clique/digitação do painel pagava um `POST
+    /sessions` extra (idempotente do lado do serviço, mas um round-trip
+    inteiro) antes da própria ação. Cacheando por sessão, `_started` passa a
+    refletir de verdade se esta sessão já chamou `start()`, no mesmo padrão
+    que o `AgentRunner` já usa para o navegador do agente.
+    """
     config: BrowserConfig | None = getattr(request.app.state, "browser_config", None)
     if config is None:
         raise HTTPException(
             status.HTTP_503_SERVICE_UNAVAILABLE,
             "Serviço de navegador não configurado (BROWSER_URL vazio nesta instância).",
         )
-    http = request.app.state.browser_http
-    return BrowserClient(f"panel-{session_id}", config, http)
+    clients: dict[str, BrowserClient] = request.app.state.browser_panel_clients
+    key = f"panel-{session_id}"
+    client = clients.get(key)
+    if client is None:
+        client = BrowserClient(key, config, request.app.state.browser_http)
+        clients[key] = client
+    return client
 
 
 class BrowserActionRequest(BaseModel):
@@ -78,10 +92,11 @@ async def browser_action(payload: BrowserActionRequest, request: Request) -> dic
 
 @router.delete("/sessions/{session_id}")
 async def close_browser_session(session_id: str, request: Request) -> dict[str, bool]:
-    client = _client(request, session_id)
-    # `force=True`: esta instância de `BrowserClient` acabou de ser criada
-    # para esta requisição, então `_started` está sempre False aqui mesmo
-    # quando a sessão existe de verdade do lado do serviço — ver docstring de
-    # `BrowserClient.stop()`.
-    await client.stop(force=True)
+    clients: dict[str, BrowserClient] = request.app.state.browser_panel_clients
+    client = clients.pop(f"panel-{session_id}", None)
+    if client is None:
+        # Nenhuma ação foi feita nesta sessão — nada existe do lado do
+        # serviço para fechar, então nem vale o DELETE.
+        return {"closed": False}
+    await client.stop()
     return {"closed": True}
