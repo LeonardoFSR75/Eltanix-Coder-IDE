@@ -210,9 +210,23 @@ o núcleo de todo o roadmap abaixo.
   antes de criar sessão devolveu `active=0`; `POST /api/agent/sessions` num projeto real
   (`e2e-smoke-test`) fez `active` subir para `1`; `POST /sessions/{id}/close` devolveu
   para `active=0` — ciclo completo de aquisição/liberação confirmado ponta a ponta.
-- [ ] **Reuso de sandbox aquecido entre sessões do mesmo projeto**, em vez de container
-  novo por sessão — as sementes já existem em `sandbox/executor.py` (`env_mounts` reusando
-  `.venv`/`node_modules`/`vendor`).
+- [x] **Reuso de sandbox aquecido entre sessões do mesmo projeto** — investigado e
+  **deliberadamente não implementado** (via pergunta ao usuário): a premissa do item não
+  se sustenta na forma como está escrita. A parte cara de "aquecer" um sandbox é instalar
+  dependências, e isso **já é compartilhado** entre sessões do mesmo projeto hoje —
+  `env_mounts` resolve `.venv`/`node_modules`/`vendor` por caminho canônico do projeto
+  (subindo por `.sicoobito/worktrees/` até a raiz) tanto em `sandbox/executor.py::
+  RemoteSandbox.start` quanto em `sandbox/container.py::Sandbox.start`, e o executor
+  (`services/executor/app.py::create_sandbox`) monta os mesmos diretórios de host para
+  qualquer sessão do projeto. O que sobra — o próprio `docker run` — já é rápido (segundos,
+  não minutos) porque a imagem já está local e o volume é bind mount, não cópia. Container
+  em si é hoje reaproveitado só por `session_id` exato (`_container_cache`/nome do
+  container em `services/executor/app.py:248` e `sandbox/container.py::Sandbox.start`),
+  cobrindo reconexão após reload, não sessão nova do mesmo projeto — e essa é uma escolha
+  correta, não uma lacuna: um pool de containers ociosos por projeto (opção descartada)
+  trocaria segundos de `docker run` por gestão de TTL/claim/release e risco real de estado
+  residual (arquivo temporário, processo, variável de ambiente) vazando de uma sessão para
+  a próxima que reivindicar o mesmo container — pior troca que o problema que resolveria.
 - [ ] **Teste de carga formal** contra o alvo de 1.000 projetos / 500 usuários / 5.000
   sessões-dia / 50.000 execuções-dia definido na auditoria.
 
