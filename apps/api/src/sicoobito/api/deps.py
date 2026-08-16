@@ -74,6 +74,9 @@ async def require_session(
             scheme, _, token = authorization.partition(" ")
             presented = token.strip() if scheme.lower() == "bearer" else authorization.strip()
         if presented and hmac.compare_digest(presented, settings.api_key):
+            # Guardado para `identify_actor` — ver seu comentário sobre por que
+            # isto vive em `request.state` em vez de o retorno desta função.
+            request.state.actor = "api_key"
             return
 
     session_token = sicoobito_session
@@ -86,8 +89,11 @@ async def require_session(
 
     if session_token:
         auth: AuthService | None = getattr(request.app.state, "auth", None)
-        if auth is not None and await auth.validate_session(session_token) is not None:
-            return
+        if auth is not None:
+            user = await auth.validate_session(session_token)
+            if user is not None:
+                request.state.actor = user.username
+                return
 
     raise HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -139,9 +145,24 @@ def identify_project(
     return x_sicoobito_project[:128] if x_sicoobito_project else None
 
 
+def identify_actor(request: Request) -> str:
+    """Quem autenticou esta requisição, para o dashboard atribuir custo de LLM
+    por usuário (não só por ferramenta/projeto) — ver `RequestLog.actor`.
+
+    Lê `request.state.actor`, gravado por `require_session` (`AuthDep`) no
+    momento em que valida a credencial: "api_key" para o canal de serviço
+    (ADR 0005) ou o username da sessão de browser. Depende de `AuthDep` já ter
+    rodado antes desta dependency na mesma requisição — verdade em toda rota
+    que declara as duas, porque FastAPI resolve dependências na ordem dos
+    parâmetros da função, e todo handler que usa `ActorDep` já tem `AuthDep`
+    na lista de `dependencies` do router (ver `openai_compat.py`)."""
+    return getattr(request.state, "actor", "unknown")
+
+
 EngineDep = Annotated[RouterEngine, Depends(get_engine)]
 SettingsDep = Annotated[Settings, Depends(get_settings)]
 SourceDep = Annotated[str, Depends(identify_source)]
 ProjectDep = Annotated[str | None, Depends(identify_project)]
+ActorDep = Annotated[str, Depends(identify_actor)]
 DbSessionDep = Annotated[AsyncSession, Depends(get_session)]
 AuthDep = Depends(require_session)

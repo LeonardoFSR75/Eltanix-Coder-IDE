@@ -48,7 +48,8 @@ from sicoobito.router.errors import (
 from sicoobito.router.health import HealthTracker
 from sicoobito.router.policy import RoutingPolicy
 from sicoobito.router.pricing import PriceTable, Usage
-from sicoobito.router.telemetry import TelemetryEntry, record
+from sicoobito.router.telemetry import TelemetryEntry
+from sicoobito.router.telemetry import record as _record_telemetry
 
 log = get_logger(__name__)
 
@@ -302,7 +303,15 @@ class RouterEngine:
         params: dict[str, Any],
         source: str = "unknown",
         project_slug: str | None = None,
+        actor: str | None = None,
     ) -> CompletionResult:
+        # Sombra local do import de módulo: cada `TelemetryEntry` construído
+        # abaixo passa por aqui sem precisar editar os ~7 pontos de chamada
+        # individualmente — `actor` fica fechado (closure) neste `record`.
+        async def record(entry: TelemetryEntry) -> None:
+            entry.actor = actor
+            await _record_telemetry(entry)
+
         await self.budget.check()
 
         params, compression, verdict = await self._optimize(params, source)
@@ -630,6 +639,7 @@ class RouterEngine:
         params: dict[str, Any],
         source: str = "unknown",
         project_slug: str | None = None,
+        actor: str | None = None,
     ) -> AsyncIterator[dict[str, Any]]:
         """Streaming com fallback antes do primeiro chunk.
 
@@ -701,6 +711,7 @@ class RouterEngine:
                 compression=compression,
                 verdict=verdict,
                 project_slug=project_slug,
+                actor=actor,
             ):
                 yield event
             return
@@ -726,7 +737,12 @@ class RouterEngine:
         compression: Any = None,
         verdict: Any = None,
         project_slug: str | None = None,
+        actor: str | None = None,
     ) -> AsyncIterator[dict[str, Any]]:
+        async def record(entry: TelemetryEntry) -> None:
+            entry.actor = actor
+            await _record_telemetry(entry)
+
         ttft_ms: int | None = None
         usage = Usage()
         text_parts: list[str] = []
@@ -823,7 +839,12 @@ class RouterEngine:
         inputs: list[str],
         source: str = "unknown",
         project_slug: str | None = None,
+        actor: str | None = None,
     ) -> CompletionResult:
+        async def record(entry: TelemetryEntry) -> None:
+            entry.actor = actor
+            await _record_telemetry(entry)
+
         await self.budget.check()
 
         estimated = sum(count_text(text) for text in inputs)

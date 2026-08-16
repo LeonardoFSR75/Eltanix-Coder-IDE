@@ -122,7 +122,12 @@ def _settings_with_key(key: str):
 
 
 def _fake_request(auth_service: object | None) -> SimpleNamespace:
-    return SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace(auth=auth_service)))
+    # `request.state` (não `request.app.state`) é onde `require_session` grava
+    # `actor` para `identify_actor` ler depois — ver `api/deps.py`.
+    return SimpleNamespace(
+        app=SimpleNamespace(state=SimpleNamespace(auth=auth_service)),
+        state=SimpleNamespace(),
+    )
 
 
 async def test_require_session_rejects_without_any_credential():

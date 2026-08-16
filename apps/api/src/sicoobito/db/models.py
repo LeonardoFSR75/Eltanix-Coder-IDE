@@ -62,6 +62,13 @@ class RequestLog(Base):
     source: Mapped[str] = mapped_column(String(64), default="unknown", nullable=False)
     endpoint: Mapped[str] = mapped_column(String(64), default="chat", nullable=False)
     project_slug: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
+    # "api_key" para o canal de serviço (ADR 0005), ou o username de quem
+    # autenticou via sessão de browser — nulo para chamadas de antes desta
+    # coluna existir e para qualquer caminho que ainda não popula `identify_actor`
+    # (ver `api/deps.py`). Achado na auditoria arquitetural: sem isto não havia
+    # como atribuir custo de LLM a um usuário específico, só a `source`
+    # (ferramenta) e `project_slug` (projeto).
+    actor: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
 
     # ── Roteamento ──────────────────────────────────────────────────────────
     requested_model: Mapped[str] = mapped_column(String(128), nullable=False)
