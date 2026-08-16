@@ -15,6 +15,7 @@ from sicoobito.logging_setup import get_logger
 from sicoobito.notes import store
 from sicoobito.notes.store import NoteSearchHit
 from sicoobito.router.engine import RouterEngine
+from sicoobito.workspace.projects import ensure_project_slug_exists
 
 log = get_logger(__name__)
 
@@ -74,6 +75,8 @@ class NoteService:
         self, *, title: str, content: str, tags: list[str], project_slug: str | None = None
     ) -> Note:
         async with session_scope() as session:
+            if project_slug:
+                await ensure_project_slug_exists(session, project_slug)
             links = await self._resolve_links(session, content, project_slug=project_slug)
             note = await store.create_note(
                 session, title=title, content=content, tags=tags, project_slug=project_slug

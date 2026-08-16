@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 from sicoobito.api.deps import AuthDep
 from sicoobito.audit.service import AuditService
 from sicoobito.notes.service import NoteService
+from sicoobito.workspace.projects import ProjectError
 
 router = APIRouter(prefix="/api/notes", tags=["notes"], dependencies=[AuthDep])
 
@@ -56,12 +57,15 @@ async def list_notes(request: Request, project: str | None = Query(default=None)
 
 @router.post("")
 async def create_note(payload: NoteIn, request: Request) -> dict[str, Any]:
-    note = await _service(request).create(
-        title=payload.title,
-        content=payload.content,
-        tags=payload.tags,
-        project_slug=payload.project,
-    )
+    try:
+        note = await _service(request).create(
+            title=payload.title,
+            content=payload.content,
+            tags=payload.tags,
+            project_slug=payload.project,
+        )
+    except ProjectError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     if audit := _audit(request):
         await audit.record(
             actor="usuário", module="SecondBrain", action="Nota criada", details=note.title

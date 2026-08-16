@@ -23,7 +23,7 @@ from sicoobito.graphify.schema import (
 )
 from sicoobito.graphify.store import GraphStore
 from sicoobito.workspace import projects as project_ops
-from sicoobito.workspace.projects import ProjectError
+from sicoobito.workspace.projects import ProjectError, ensure_project_slug_exists
 
 router = APIRouter(prefix="/api/graphify", tags=["graphify"], dependencies=[AuthDep])
 
@@ -90,6 +90,16 @@ async def index_content(
             result = await indexer.index_directory(target_path, workspace=workspace_name)
             await db.commit()
             return result
+
+    # Chegou aqui sem varredura de diretório — `workspace` não passou pelo
+    # `resolve()` de `_resolve_scan_target` (que garante que aponta para uma
+    # pasta real dentro de uma raiz conhecida). Sem esta checagem, um
+    # `project` inventado no payload gravaria `GraphNode`/`GraphEdge` numa
+    # partição de workspace fantasma, sem relação com nenhum projeto real.
+    try:
+        await ensure_project_slug_exists(db, workspace_name)
+    except ProjectError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
     source_type = payload.get("source_type", "note")
     result = await indexer.run_pipeline(source_type, payload)

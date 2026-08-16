@@ -23,6 +23,7 @@ from sicoobito.documents import store
 from sicoobito.documents.service import DocumentService
 from sicoobito.logging_setup import get_logger
 from sicoobito.storage.blob import BlobStore
+from sicoobito.workspace.projects import ProjectError, ensure_project_slug_exists
 
 router = APIRouter(prefix="/api/documents", tags=["documents"], dependencies=[AuthDep])
 
@@ -91,6 +92,13 @@ async def request_upload_url(
     object_key = f"{uuid.uuid4()}/{_safe_object_name(payload.filename)}"
 
     async with session_scope() as session:
+        if payload.project:
+            try:
+                await ensure_project_slug_exists(session, payload.project)
+            except ProjectError as exc:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
+                ) from exc
         document = await store.create_document(
             session,
             filename=payload.filename,

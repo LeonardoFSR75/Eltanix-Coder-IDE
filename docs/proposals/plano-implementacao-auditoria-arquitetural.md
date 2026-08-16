@@ -27,10 +27,27 @@ o núcleo de todo o roadmap abaixo.
   `db/models.py`, exatamente no nome que o docstring de `AppUser`/`0012_auth.py` já
   reservava. `role` string livre (owner/editor/viewer). Validado ao vivo: migração
   aplicada contra o Postgres real, round-trip via SQLAlchemy confirmado.
-- [ ] **FK real em `workspace`/`project_slug`.** Hoje `IndexedFile`/`CodeChunk`/`GraphNode`
-  usam `workspace` como string solta e `Document`/`Note` usam `project_slug` nulável, sem
-  FK para `ProjectRecord`. Endurecer a escrita (validar contra `ProjectRecord.slug`) antes
-  de qualquer FK de banco, para não quebrar dado existente sem migração de backfill.
+- [x] **Endurecer a escrita de `workspace`/`project_slug` (passo pré-FK).** Mapeados todos
+  os pontos de escrita das quatro fontes de RAG: `context/` e a varredura de diretório do
+  `graphify/` já eram seguros (workspace = caminho absoluto resolvido por
+  `workspace/projects.py::resolve`, com proteção de path traversal). Os gaps reais eram
+  `documents.py::request_upload_url`, `notes/service.py::create` e o ramo de indexação de
+  conteúdo avulso do `graphify/api/router.py::index_content` (nota/documento/arquivo único,
+  fora da varredura de diretório) — todos aceitavam `project`/`project_slug` como string
+  livre do request body, sem checar contra nenhum projeto real. Adicionado
+  `ensure_project_slug_exists` em `workspace/projects.py` (não é uma das quatro stores, não
+  fere a regra de não abstrair a duplicação) e conectado nos três pontos, convertendo
+  `ProjectError` em 400; `project_slug=None`/`project` vazio continua permitido (nota/
+  documento "global"). FK de banco de verdade com migração de backfill fica para quando
+  fizer sentido — este endurecimento já fecha o buraco de escrita sem mexer em schema.
+  Validado ao vivo contra a stack real: slug inexistente → 400 em `/api/documents/upload-url`,
+  `/api/notes` e `/api/graphify/index`; slug real (`Mestrado`) e projeto vazio (global) → 200.
+  Suíte completa (562 testes) sem regressão — as 2 falhas encontradas (mojibake de encoding
+  num teste de browser, um teste de `agent_finish` desalinhado) são pré-existentes e
+  não relacionadas, confirmado rodando-as contra o código sem esta mudança via `git stash`.
+  Durante a validação ao vivo, achado um bug real e não relacionado (mismatch de dimensão
+  de embedding, 768 vs 1024, quebrando toda criação de nota/documento) — não corrigido aqui
+  por estar fora de escopo, encaminhado como task separada.
 - [x] **Reclamar sessões zumbi.** `AgentSessionRecord.status` ficava `"open"` para sempre
   quando uma aba fechava sem `close_session` explícito. Implementado:
   `AgentRunner.run_zombie_session_reaper` (`agent/runner.py`) + `session_store.
@@ -120,7 +137,8 @@ o núcleo de todo o roadmap abaixo.
   — validado ao vivo via `POST /v1/chat/completions` real.
 - [x] E2E promovido a gate de PR filtrado por caminho; senha admin documentada no README
   e `.env.example`.
-- [ ] **Resta no Horizonte 1: FK real em `workspace`/`project_slug`** (7 de 8 itens
-  concluídos e validados ao vivo). É o mais invasivo — toca write-paths das quatro fontes
-  de RAG (`context/`, `documents/`, `notes/`, `graphify/`) — fica para uma sessão própria
-  em vez de espremido no fim desta.
+- [x] **Horizonte 1 completo — 8 de 8 itens**, todos validados ao vivo contra a stack real.
+  O último (`ensure_project_slug_exists` em `documents.py`/`notes/service.py`/
+  `graphify/api/router.py`) endurece a escrita nas quatro fontes de RAG sem precisar de
+  FK de banco nem migração de backfill — a FK de verdade fica para quando o custo de uma
+  migração de backfill valer a pena, não é mais um bloqueador do horizonte.

@@ -217,6 +217,24 @@ async def sync_projects_db(session: AsyncSession, projects_root: Path) -> list[P
     return list(res.scalars().all())
 
 
+async def ensure_project_slug_exists(session: AsyncSession, slug: str) -> None:
+    """Levanta `ProjectError` se `slug` não corresponde a nenhum `ProjectRecord`.
+
+    Endurecimento pré-FK: `documents`/`notes` (`project_slug`) e `graphify`
+    (`workspace`, na indexação de conteúdo avulso — a varredura de diretório já
+    passa por `resolve()`) hoje gravam qualquer string vinda do request sem
+    checar se aponta para um projeto real, deixando a porta aberta para erro de
+    digitação virar uma partição fantasma numa das quatro fontes de RAG. Uma FK
+    de banco de verdade exigiria migração de backfill para não quebrar dado
+    existente (ver plano de implementação); esta checagem é o passo seguro que
+    já vale sozinho, sem mexer no schema.
+    """
+    stmt = select(ProjectRecord.id).where(ProjectRecord.slug == slug)
+    encontrado = (await session.execute(stmt)).scalar_one_or_none()
+    if encontrado is None:
+        raise ProjectError(f"Projeto não cadastrado: {slug!r}")
+
+
 async def get_project_summary(
     session: AsyncSession, slug: str, projects_root: Path
 ) -> ProjectSummary:
