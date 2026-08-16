@@ -175,9 +175,15 @@ o núcleo de todo o roadmap abaixo.
   membro/criar nota no projeto devolvem 403; promovido a `editor` — criar nota passa a
   200, `DELETE` do projeto continua 403 (precisa `owner`); removido da membership —
   `GET /{slug}/summary` volta a 403. Projeto e sessão de teste removidos ao final.
-- [ ] **Marcação de obsolescência em `Note`/`GraphNode`.** Estender o princípio que
+- [x] **Marcação de obsolescência em `Note`/`GraphNode`.** Estender o princípio que
   `CodeChunk.content_hash` já resolve para reindexação incremental — ligar nota/nó do
-  grafo ao hash do arquivo que referenciam, sinalizar quando diverge.
+  grafo ao hash do arquivo que referenciam, sinalizar quando diverge. Investigado e
+  **deliberadamente não implementado**: a premissa do plano (estender
+  `CodeChunk.content_hash`) não se sustenta — `GraphNode` não guarda hash de conteúdo nem
+  caminho de arquivo, e `GraphChunkMapping` (que poderia ligar os dois) é código morto,
+  sem nada escrevendo nela. Precisa de uma decisão de design (o que é "o arquivo que um
+  nó do grafo referencia" para nó de ADR/import/tag) antes de virar implementação — não
+  forçado sobre premissa errada.
 
 ## Horizonte 3 — Escala (6–12 meses)
 
@@ -392,10 +398,6 @@ produto e o time decidirem que é hora.
 - [x] Horizonte 2, item 2 — espelho Postgres durável do `AgentCoordinator`
   (`agent/coordinator.py`, `agent/session_store.py`) — validado ao vivo via
   `GET /api/agent/sessions/{id}/graph` numa árvore real fora do TTL do Redis; ver
-  detalhe no item do horizonte acima. Horizonte 2, item 4 (marcação de obsolescência
-  em `Note`/`GraphNode`) investigado e **deliberadamente não implementado nesta
-  sessão**: a premissa do plano (estender `CodeChunk.content_hash`) não se sustenta —
-  `GraphNode` não guarda hash de conteúdo nem caminho de arquivo, e `GraphChunkMapping`
-  (que poderia ligar os dois) é código morto, sem nada escrevendo nela. Precisa de uma
-  decisão de design (o que é "o arquivo que um nó do grafo referencia" para nó de
-  ADR/import/tag) antes de virar implementação — não forçado sobre premissa errada.
+  detalhe no item do horizonte acima. Horizonte 2, item 4 (marcação de obsolescência em
+  `Note`/`GraphNode`) investigado e deliberadamente não implementado — ver rationale no
+  próprio item do horizonte acima.
