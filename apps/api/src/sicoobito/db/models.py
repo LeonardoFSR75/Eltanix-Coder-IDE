@@ -720,6 +720,41 @@ class AppUser(Base):
         return f"<AppUser {self.username}>"
 
 
+class ProjectMember(Base):
+    """Papel de um usuário num projeto — etapa 2 do login (ver docstring de
+    `AppUser`). Só a tabela por enquanto: nenhuma rota ainda filtra por ela nem
+    a preenche automaticamente (isso é o próximo passo, quando `require_session`
+    passar a checar associação por projeto, não só sessão válida). `role` é
+    string livre (`owner`/`editor`/`viewer`), sem enum nativo do Postgres —
+    mesmo padrão de `Skill.category`/`AuditLogEntry.risk_level`: adicionar um
+    papel novo não deve exigir migração."""
+
+    __tablename__ = "project_member"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("project_record.id", ondelete="CASCADE"), nullable=False
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("app_user.id", ondelete="CASCADE"), nullable=False
+    )
+    role: Mapped[str] = mapped_column(String(32), default="owner", nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+    __table_args__ = (
+        Index("uq_project_member_project_user", "project_id", "user_id", unique=True),
+        Index("ix_project_member_user", "user_id"),
+    )
+
+    def __repr__(self) -> str:  # pragma: no cover
+        return f"<ProjectMember project={self.project_id} user={self.user_id} role={self.role!r}>"
+
+
 class AuthSession(Base):
     """Sessão de login ativa. Guarda o hash do token, nunca o token em claro —
     mesmo princípio de `hmac.compare_digest` que `require_api_key` já usa para a
