@@ -1,0 +1,4 @@
+# Bibliotecas de skills/agentes de terceiros, vendored fora do controle do
+# repositório (não são código do SicoobitoCode) — mantém o grafo focado no
+# produto em vez de inflar com corpora inteiros de outros projetos.
+.agents/
