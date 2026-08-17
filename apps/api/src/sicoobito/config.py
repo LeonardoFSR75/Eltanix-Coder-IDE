@@ -226,6 +226,12 @@ class Settings(BaseSettings):
 
     github_token: str = Field(default="", alias="GITHUB_TOKEN")
 
+    # ── Firecrawl (Web Scraping / Crawling / Search para RAG e Agente) ───────
+    firecrawl_api_key: str = Field(default="", alias="FIRECRAWL_API_KEY")
+    firecrawl_api_url: str = Field(
+        default="https://api.firecrawl.dev", alias="FIRECRAWL_API_URL"
+    )
+
     # ── Observabilidade (Langfuse) ─────────────────────────────────────────
     langfuse_public_key: str = Field(default="", alias="LANGFUSE_PUBLIC_KEY")
     langfuse_secret_key: str = Field(default="", alias="LANGFUSE_SECRET_KEY")

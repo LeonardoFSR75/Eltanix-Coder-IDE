@@ -25,6 +25,7 @@ Guias específicos: [apps/api/CLAUDE.md](apps/api/CLAUDE.md), [apps/web/CLAUDE.m
    - `ADR 0003 — Grafo de Conhecimento e Graph RAG (Graphify)`
    - `ADR 0004 — Orquestração Multiagente`
    - `ADR 0005 — Login Obrigatório com Sessão por Cookie`
+   - `ADR 0006 — Integração Firecrawl para Web Scraping, Search e Ingestão de Docs no RAG`
 3. **Histórico de Fases & Roadmap (`01 - 📑 Documentos & ADRs/Notas de Projeto (Roadmap & Fases)/`)**:
    - 20 notas sequenciais (`00-MOC.md` a `19-robustez-agente-router-orquestracao-multiagente.md`).
 4. **Ferramenta `graph_search` (em tempo de execução)**:

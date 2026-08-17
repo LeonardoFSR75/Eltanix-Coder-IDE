@@ -69,6 +69,7 @@ class ToolContext:
     notes: Any | None = None  # NoteService
     skills: Any | None = None  # SkillService
     audit: Any | None = None  # AuditService
+    firecrawl: Any | None = None  # FirecrawlService
     security: Any | None = None  # SecureBertService
     trace_recorder: Any | None = None  # TraceRecorder
     # RouterEngine — ferramentas que fazem uma segunda chamada de LLM isolada

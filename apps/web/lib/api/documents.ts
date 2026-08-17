@@ -50,7 +50,7 @@ export async function requestUploadUrl(
 ): Promise<{ document_id: string; upload_url: string }> {
   return post<{ document_id: string; upload_url: string }>("/api/documents/upload-url", {
     filename: file.name,
-    content_type: file.type || "application/pdf",
+    content_type: file.type || "application/octet-stream",
     size_bytes: file.size,
     project: project || undefined,
   });
@@ -59,7 +59,7 @@ export async function requestUploadUrl(
 export async function uploadToPresignedUrl(uploadUrl: string, file: File): Promise<void> {
   const response = await fetch(uploadUrl, {
     method: "PUT",
-    headers: { "content-type": file.type || "application/pdf" },
+    headers: { "content-type": file.type || "application/octet-stream" },
     body: file,
   });
   if (!response.ok) {

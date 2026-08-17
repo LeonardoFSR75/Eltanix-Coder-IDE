@@ -30,7 +30,54 @@ router = APIRouter(prefix="/api/documents", tags=["documents"], dependencies=[Au
 
 log = get_logger(__name__)
 
-_ALLOWED_CONTENT_TYPES = {"application/pdf"}
+_ALLOWED_EXTENSIONS = {
+    ".pdf",
+    ".docx",
+    ".doc",
+    ".docm",
+    ".xlsx",
+    ".xls",
+    ".xlsm",
+    ".xlsb",
+    ".pptx",
+    ".ppt",
+    ".ppsx",
+    ".odt",
+    ".ods",
+    ".odp",
+    ".rtf",
+    ".epub",
+    ".csv",
+    ".tsv",
+    ".txt",
+    ".md",
+    ".markdown",
+}
+
+_ALLOWED_CONTENT_TYPES = {
+    "application/pdf",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/msword",
+    "application/vnd.ms-word.document.macroEnabled.12",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "application/vnd.ms-excel",
+    "application/vnd.ms-excel.sheet.macroEnabled.12",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    "application/vnd.ms-powerpoint",
+    "application/vnd.openxmlformats-officedocument.presentationml.slideshow",
+    "application/vnd.oasis.opendocument.text",
+    "application/vnd.oasis.opendocument.spreadsheet",
+    "application/vnd.oasis.opendocument.presentation",
+    "application/rtf",
+    "text/rtf",
+    "application/epub+zip",
+    "text/csv",
+    "application/csv",
+    "text/tab-separated-values",
+    "text/plain",
+    "text/markdown",
+    "application/octet-stream",
+}
 _UNSAFE_OBJECT_KEY_CHARS = re.compile(r"[^A-Za-z0-9._-]")
 
 
@@ -77,10 +124,16 @@ class UploadUrlRequest(BaseModel):
 async def request_upload_url(
     payload: UploadUrlRequest, request: Request, settings: SettingsDep
 ) -> dict[str, Any]:
-    if payload.content_type not in _ALLOWED_CONTENT_TYPES:
+    ext = ("." + payload.filename.rsplit(".", 1)[-1].lower()) if "." in payload.filename else ""
+    is_valid = payload.content_type in _ALLOWED_CONTENT_TYPES or ext in _ALLOWED_EXTENSIONS
+    if not is_valid:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Tipo não suportado: {payload.content_type}. Aceito: PDF.",
+            detail=(
+                f"Formato não suportado: '{payload.filename}' ({payload.content_type}). "
+                "Formatos aceitos: PDF, Word (DOCX/DOC), Excel (XLSX/CSV), PowerPoint (PPTX), "
+                "OpenDocument (ODT/ODS/ODP), RTF, EPUB e Markdown/Texto."
+            ),
         )
     max_bytes = settings.documents_max_upload_mb * 1024 * 1024
     if payload.size_bytes > max_bytes:

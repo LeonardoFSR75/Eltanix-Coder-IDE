@@ -23,9 +23,11 @@ from sicoobito.api.routes import (
     audit_router,
     auth_router,
     browser_router,
+    browser_ws_router,
     containers_router,
     context_router,
     documents_router,
+    firecrawl_router,
     git_router,
     graphify_router,
     health_router,
@@ -52,6 +54,7 @@ from sicoobito.config import get_settings
 from sicoobito.context.indexer import ContextIndexer
 from sicoobito.db.session import init_engine, shutdown_engine
 from sicoobito.documents.service import DocumentService
+from sicoobito.firecrawl.service import FirecrawlService
 from sicoobito.logging_setup import get_logger, setup_logging
 from sicoobito.mcp.manager import MCPManager
 from sicoobito.notes.service import NoteService
@@ -156,6 +159,7 @@ async def lifespan(app: FastAPI):
         settings=settings, engine=engine, blob=blob, trace_recorder=trace_recorder
     )
     notes = NoteService(settings=settings, engine=engine, trace_recorder=trace_recorder)
+    firecrawl = FirecrawlService(settings=settings, engine=engine)
     skills = SkillService()
     try:
         imported_skills = await seed_agent_skills(Path(".agents"))
@@ -231,6 +235,7 @@ async def lifespan(app: FastAPI):
     app.state.blob = blob
     app.state.documents = documents
     app.state.notes = notes
+    app.state.firecrawl = firecrawl
     app.state.skills = skills
     app.state.audit = audit
     app.state.auth = auth
@@ -260,6 +265,7 @@ async def lifespan(app: FastAPI):
         notes=notes,
         skills=skills,
         audit=audit,
+        firecrawl=firecrawl,
         trace_recorder=trace_recorder,
         coordinator=agent_coordinator,
     )
@@ -327,10 +333,12 @@ def create_app() -> FastAPI:
     app.include_router(openai_router)
     app.include_router(auth_router)
     app.include_router(browser_router)
+    app.include_router(browser_ws_router)
     app.include_router(health_router)
     app.include_router(metrics_router)
     app.include_router(context_router)
     app.include_router(documents_router)
+    app.include_router(firecrawl_router)
     app.include_router(notes_router)
     app.include_router(graphify_router)
     app.include_router(skills_router)

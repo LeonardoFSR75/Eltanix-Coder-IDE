@@ -9,6 +9,7 @@ from sicoobito.agent.tools import (  # noqa: F401
     browser,
     documents,
     files,
+    firecrawl,
     graph,
     graphify,
     notes,

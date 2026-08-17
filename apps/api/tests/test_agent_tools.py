@@ -59,6 +59,8 @@ def test_read_tools_do_not_require_approval():
         "read_issue",
         "write_todos",
         "request_code_review",
+        "web_scrape",
+        "web_search",
     ):
         ferramenta = _tool(nome)
         assert ferramenta.risk is RiskClass.READ
@@ -66,7 +68,7 @@ def test_read_tools_do_not_require_approval():
 
 
 def test_mutating_tools_require_approval():
-    for nome in ("write_file", "edit_file", "git_commit", "open_pull_request"):
+    for nome in ("write_file", "edit_file", "git_commit", "open_pull_request", "crawl_and_index_docs"):
         ferramenta = _tool(nome)
         assert ferramenta.risk is RiskClass.WRITE
         assert ferramenta.risk.requires_approval is True

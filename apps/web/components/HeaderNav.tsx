@@ -37,7 +37,7 @@ export function HeaderNav() {
   // Grupos cujo destino sabe filtrar por projeto (ver `?project=` em cada
   // página) — trocar de projeto aqui já leva a navegação seguinte filtrada,
   // fechando o ciclo "entro pelo Hub, tudo que abro dali já sabe do projeto".
-  const PROJECT_AWARE_PATHS = new Set(["/ide", "/trello", "/rag", "/graphify", "/second-brain", "/requests"]);
+  const PROJECT_AWARE_PATHS = new Set(["/ide", "/browser", "/trello", "/rag", "/graphify", "/second-brain", "/requests"]);
   const projectHref = (href: string) =>
     currentProject && PROJECT_AWARE_PATHS.has(href)
       ? `${href}?project=${encodeURIComponent(currentProject)}`
@@ -67,6 +67,7 @@ export function HeaderNav() {
       icon: "📁",
       items: [
         { href: "/ide", label: "IDE Agêntica", icon: "💻", description: "Editor Monaco + Terminal + Agente" },
+        { href: "/browser", label: "Navegador Interno", icon: "🌐", description: "Browser Live + Headless com Tela Cheia e DevTools" },
         { href: "/trello", label: "Quadro Trello (Kanban)", icon: "📋", description: "Quadro de tarefas, sprints e cartões do projeto" },
         { href: "/graphify", label: "Graphify Engine", icon: "🕸️", description: "Knowledge Graph & GraphRAG do projeto" },
         { href: "/second-brain", label: "Segundo Cérebro", icon: "📓", description: "Notas Obsidian & Wikilinks do projeto" },

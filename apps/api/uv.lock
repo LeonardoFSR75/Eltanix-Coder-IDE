@@ -489,6 +489,21 @@ wheels = [
 ]
 
 [[package]]
+name = "firecrawl-anydoc"
+version = "0.1.9"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/aa/16/e37d4f284482a4f30e0502ce439a9fd8ccf013e6ae4438b4dfa209e48750/firecrawl_anydoc-0.1.9.tar.gz", hash = "sha256:0dfc64b82b4e971143dd6f0e4f39f8152fcc38be6523663682a241d8f3301b14", size = 197914, upload-time = "2026-08-13T21:48:27.989Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/42/37/866bf6270ad8552eaf6edf3b8e1a360acf3e8764140641361ae7b440514e/firecrawl_anydoc-0.1.9-cp310-abi3-macosx_10_12_x86_64.whl", hash = "sha256:ebd956831822d3ea1831253406736e0e4d9b217e3471eb68c9bf2eba9302ce73", size = 3469321, upload-time = "2026-08-13T21:48:16.775Z" },
+    { url = "https://files.pythonhosted.org/packages/b1/9a/8fbe0726cdf69154e1eb05c119332b1fdfd8200eeafcfd1675741ac5f03d/firecrawl_anydoc-0.1.9-cp310-abi3-macosx_11_0_arm64.whl", hash = "sha256:a2372d97826e8e7e68fd28cd415d08815f6aa66dcc09c6b423ac33dd2dfa91cf", size = 3287520, upload-time = "2026-08-13T21:48:18.37Z" },
+    { url = "https://files.pythonhosted.org/packages/b0/ce/86a626224c365d8de65699d6ac8f4626ac05e7e75c3ae76c82f4904a07d2/firecrawl_anydoc-0.1.9-cp310-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:ba1c19bdaa97f4850daf3fb4ca2855cefa146b5621ce7b22a71d158d3b84e54e", size = 3331094, upload-time = "2026-08-13T21:48:19.961Z" },
+    { url = "https://files.pythonhosted.org/packages/0e/28/00d1d48fe205ab66eda4a2a22cce44aadf586ef1495e703349b791c8de32/firecrawl_anydoc-0.1.9-cp310-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:deea7a270fccda9be29c73235e938ca32e0f703e1ae120f08bf0fdb39301c6b4", size = 3555945, upload-time = "2026-08-13T21:48:21.822Z" },
+    { url = "https://files.pythonhosted.org/packages/c8/25/ac52d98c5d082ef92396b2fcb398745a3b054816c67a12d19de86c1ba535/firecrawl_anydoc-0.1.9-cp310-abi3-musllinux_1_2_aarch64.whl", hash = "sha256:de0858decd18188b0b88545689544fb3703ec08ade37f63c2857e4414e99bdf1", size = 3510861, upload-time = "2026-08-13T21:48:23.369Z" },
+    { url = "https://files.pythonhosted.org/packages/ca/d3/e80314b5746c4ca85150f3ab2a527b2167012c16e706e148733211cb88b3/firecrawl_anydoc-0.1.9-cp310-abi3-musllinux_1_2_x86_64.whl", hash = "sha256:e4e1765ed5574fa502931f8bfaec1f87af913afa5bb432aaaf5f9c094efc7f43", size = 3797896, upload-time = "2026-08-13T21:48:25.061Z" },
+    { url = "https://files.pythonhosted.org/packages/8e/d0/e7b35c2365498d5e9f1bdb4b3ded78571b6dafbaba1880538490d27b71c9/firecrawl_anydoc-0.1.9-cp310-abi3-win_amd64.whl", hash = "sha256:aa6a5ca2e10939a87c9bd21c918ef8b146ad0061fedae661d4483ef5a5bbdf60", size = 3642084, upload-time = "2026-08-13T21:48:26.702Z" },
+]
+
+[[package]]
 name = "frozenlist"
 version = "1.8.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1542,6 +1557,19 @@ wheels = [
 ]
 
 [[package]]
+name = "pdf-inspector"
+version = "1.14.2"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/bd/ba/6ef1dddc4151ed262bffd452d2289d59ddcb0525b64b62b36f34350c22a4/pdf_inspector-1.14.2.tar.gz", hash = "sha256:a0956ce5491112dbcbfeb8cefd1eaf0ef3409c0e008c434d74de1397cec447c7", size = 1576409, upload-time = "2026-08-13T21:19:08.486Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/3f/66/992ab5293bc5713eec671aca1c69bcd9dbbda3e16721d5f024ab21a91cbe/pdf_inspector-1.14.2-cp38-abi3-macosx_10_12_x86_64.whl", hash = "sha256:9689427e4d8643355052acf2b837c6466f4f019a60ad59bdb5b96332c2b0e8c2", size = 2870693, upload-time = "2026-08-13T21:19:00.604Z" },
+    { url = "https://files.pythonhosted.org/packages/94/02/15ae2baf2b19de2e53d874b5177d5ce7982ef8f6dd60c643bc51f113be48/pdf_inspector-1.14.2-cp38-abi3-macosx_11_0_arm64.whl", hash = "sha256:54fa3ae38c340c51b9e507bde91c94b77ac2338327c710f50147c22303d3cf38", size = 2785049, upload-time = "2026-08-13T21:19:02.582Z" },
+    { url = "https://files.pythonhosted.org/packages/36/b3/965bfec69b0bad2430d4603d14a5bc17386849fdca37c439c3c03c03fa9f/pdf_inspector-1.14.2-cp38-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:99a1edd232855bdb69b7f35add87987c8e3d40c8240638b2cd159987d3e29513", size = 2958709, upload-time = "2026-08-13T21:19:04.099Z" },
+    { url = "https://files.pythonhosted.org/packages/ae/51/49b486a78dfd8ec27be56004443b4bf9be27c0aa23430074d9a6e29b8190/pdf_inspector-1.14.2-cp38-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:8bf3536ddbc7756d6c60b2e8e023bc21366370ad6efb1a910f959206bcadf023", size = 3059332, upload-time = "2026-08-13T21:19:05.435Z" },
+    { url = "https://files.pythonhosted.org/packages/3d/23/a2896789cc1e3c078f46dd3f25eec90b854099ae797ff1eca9df0a4d401e/pdf_inspector-1.14.2-cp38-abi3-win_amd64.whl", hash = "sha256:1f3638b6f2e54afbc1940c0bfd83740713d4fde6c44bcb75f1328254801f0ff4", size = 2702638, upload-time = "2026-08-13T21:19:07.008Z" },
+]
+
+[[package]]
 name = "pgvector"
 version = "0.5.0"
 source = { registry = "https://pypi.org/simple" }
@@ -2068,6 +2096,7 @@ dependencies = [
     { name = "asyncpg" },
     { name = "docker" },
     { name = "fastapi" },
+    { name = "firecrawl-anydoc" },
     { name = "gitpython" },
     { name = "httpx" },
     { name = "langfuse" },
@@ -2077,6 +2106,7 @@ dependencies = [
     { name = "mcp" },
     { name = "minio" },
     { name = "pathspec" },
+    { name = "pdf-inspector" },
     { name = "pgvector" },
     { name = "psycopg", extra = ["binary", "pool"] },
     { name = "pydantic" },
@@ -2093,6 +2123,7 @@ dependencies = [
     { name = "tree-sitter-language-pack" },
     { name = "uvicorn", extra = ["standard"] },
     { name = "watchfiles" },
+    { name = "websockets" },
 ]
 
 [package.optional-dependencies]
@@ -2122,6 +2153,7 @@ requires-dist = [
     { name = "azure-identity", marker = "extra == 'azure'", specifier = ">=1.19" },
     { name = "docker", specifier = ">=7.1" },
     { name = "fastapi", specifier = ">=0.115" },
+    { name = "firecrawl-anydoc", specifier = ">=0.1.9" },
     { name = "gitpython", specifier = ">=3.1" },
     { name = "httpx", specifier = ">=0.27" },
     { name = "langfuse", specifier = ">=2.50.0" },
@@ -2131,6 +2163,7 @@ requires-dist = [
     { name = "mcp", specifier = ">=2.0" },
     { name = "minio", specifier = ">=7.2" },
     { name = "pathspec", specifier = ">=0.12" },
+    { name = "pdf-inspector", specifier = ">=1.14.0" },
     { name = "pgvector", specifier = ">=0.3" },
     { name = "psycopg", extras = ["binary", "pool"], specifier = ">=3.2" },
     { name = "pydantic", specifier = ">=2.9" },
@@ -2150,6 +2183,7 @@ requires-dist = [
     { name = "tree-sitter-language-pack", specifier = ">=0.7" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.32" },
     { name = "watchfiles", specifier = ">=0.24" },
+    { name = "websockets", specifier = ">=13" },
 ]
 provides-extras = ["azure", "securebert"]
 

@@ -18,6 +18,8 @@ const EMPTY_CREDENTIALS: CredentialsView = {
   anthropic_api_key: EMPTY_CREDENTIAL,
   groq_api_key: EMPTY_CREDENTIAL,
   github_token: EMPTY_CREDENTIAL,
+  firecrawl_api_key: EMPTY_CREDENTIAL,
+  firecrawl_api_url: EMPTY_CREDENTIAL,
 };
 const EMPTY_CATALOG: CatalogResponse = { models: [], profiles: [] };
 

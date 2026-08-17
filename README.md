@@ -30,6 +30,7 @@ conhecimento completa em torno do mesmo agente:
 | MCP | Cliente real (stdio/HTTP), catálogo de conectores prontos (GitHub, filesystem, Postgres, Slack) | validada |
 | Observabilidade | `TraceRecorder` (spans de tool/RAG), correlation ID ponta a ponta, avaliação hit@k/MRR de RAG | validada |
 | Modo Orquestra | Ciclo TDD forçado por item de plano, revisão de código por chamada de LLM isolada, commit por etapa | validada |
+| Web Scraping & Crawl (Firecrawl) | Web scrape/search em Markdown, crawling recursivo de docs e auto-ingestão no RAG pgvector | validada |
 
 Exercitado de ponta a ponta: as migrações contra Postgres real (pgvector,
 índices HNSW/tsvector); indexação deste próprio repositório; sessão de agente

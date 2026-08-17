@@ -12,7 +12,9 @@ type FieldKey =
   | "openai_api_key"
   | "anthropic_api_key"
   | "groq_api_key"
-  | "github_token";
+  | "github_token"
+  | "firecrawl_api_key"
+  | "firecrawl_api_url";
 
 interface CredentialsFormProps {
   initial: CredentialsView;
@@ -31,6 +33,8 @@ function buildValues(view: CredentialsView): Record<FieldKey, string> {
     anthropic_api_key: "",
     groq_api_key: "",
     github_token: "",
+    firecrawl_api_key: "",
+    firecrawl_api_url: view.firecrawl_api_url?.value ?? "https://api.firecrawl.dev",
   };
 }
 
@@ -180,6 +184,28 @@ export function CredentialsForm({ initial, onSaved, onError }: CredentialsFormPr
           />
           <div className="hint" style={{ marginTop: 8 }}>
             Se vazio, o backend tenta obter o token do <code>gh auth token</code>.
+          </div>
+        </div>
+
+        <div className="card">
+          <h3>🔥 Firecrawl (Web Scraping / Crawling)</h3>
+          <label style={labelStyle}>API URL</label>
+          <input
+            className="studio-input"
+            value={values.firecrawl_api_url}
+            placeholder="https://api.firecrawl.dev"
+            onChange={(e) => setField("firecrawl_api_url", e.target.value)}
+          />
+          <label style={labelStyleSpaced}>API Key Firecrawl</label>
+          <input
+            type="password"
+            className="studio-input"
+            value={values.firecrawl_api_key}
+            placeholder={secretPlaceholder("firecrawl_api_key")}
+            onChange={(e) => setField("firecrawl_api_key", e.target.value)}
+          />
+          <div className="hint" style={{ marginTop: 8 }}>
+            Nuvem (<code>firecrawl.dev</code>) ou instância local/self-hosted.
           </div>
         </div>
       </div>

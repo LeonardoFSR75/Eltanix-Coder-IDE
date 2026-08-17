@@ -27,7 +27,7 @@ import time
 from contextlib import asynccontextmanager, suppress
 from typing import Annotated, Any, Literal
 
-from fastapi import Depends, FastAPI, Header, HTTPException, status
+from fastapi import Depends, FastAPI, Header, HTTPException, WebSocket, WebSocketDisconnect, status
 from pydantic import BaseModel, Field
 
 from urllib.parse import urlparse
@@ -402,6 +402,58 @@ async def run_action(session_id: str, payload: ActionRequest) -> dict[str, Any]:
 @app.get("/sessions/{session_id}/network", dependencies=[Auth])
 async def get_network_log(session_id: str) -> dict[str, Any]:
     return {"requests": list(_network_logs.get(session_id, []))}
+
+
+@app.websocket("/sessions/{session_id}/stream", dependencies=[Auth])
+async def stream_screencast(websocket: WebSocket, session_id: str) -> None:
+    """Screencast CDP ao vivo — só a API fala com isto, nunca o browser do
+    usuário direto (mesma garantia de `require_token`, que já validou o
+    handshake via `dependencies=[Auth]` antes deste corpo rodar).
+
+    `Page.startScreencast` é uma chamada CDP crua (não faz parte da API alta
+    do Playwright) — cada frame chega via evento `Page.screencastFrame` e
+    precisa ser confirmado (`Page.screencastFrameAck`) ou o Chromium para de
+    mandar frames novos, achando que o consumidor travou.
+    """
+    await websocket.accept()
+    page = await _get_page(session_id)
+    cdp = await page.context.new_cdp_session(page)
+
+    def _on_frame(params: dict[str, Any]) -> None:
+        async def _forward() -> None:
+            try:
+                await websocket.send_json(
+                    {"type": "frame", "data": params.get("data"), "ts": time.time()}
+                )
+            except Exception:
+                return
+            with suppress(Exception):
+                await cdp.send(
+                    "Page.screencastFrameAck", {"sessionId": params["sessionId"]}
+                )
+
+        asyncio.create_task(_forward())
+
+    cdp.on("Page.screencastFrame", _on_frame)
+
+    try:
+        await cdp.send(
+            "Page.startScreencast",
+            {"format": "jpeg", "quality": 70, "maxWidth": 1280, "maxHeight": 800, "everyNthFrame": 1},
+        )
+        while True:
+            # A conexão só serve para enviar frames; qualquer mensagem do lado
+            # da API (inclusive desconexão) é o sinal para encerrar o laço.
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        pass
+    except Exception:
+        pass
+    finally:
+        with suppress(Exception):
+            await cdp.send("Page.stopScreencast")
+        with suppress(Exception):
+            await cdp.detach()
 
 
 @app.delete("/sessions/{session_id}", dependencies=[Auth])

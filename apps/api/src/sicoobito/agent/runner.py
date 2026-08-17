@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING, Any, cast
 if TYPE_CHECKING:
     from sicoobito.audit.service import AuditService
     from sicoobito.documents.service import DocumentService
+    from sicoobito.firecrawl.service import FirecrawlService
     from sicoobito.notes.service import NoteService
     from sicoobito.skills.service import SkillService
     from sicoobito.telemetry.tracer import TraceRecorder
@@ -239,6 +240,7 @@ class AgentRunner:
         notes: NoteService | None = None,
         skills: SkillService | None = None,
         audit: AuditService | None = None,
+        firecrawl: FirecrawlService | None = None,
         trace_recorder: TraceRecorder | None = None,
         coordinator: AgentCoordinator | None = None,
     ) -> None:
@@ -251,6 +253,7 @@ class AgentRunner:
         self.notes = notes
         self.skills = skills
         self.audit = audit
+        self.firecrawl = firecrawl
         self.trace_recorder = trace_recorder
         # None quando o Redis não está configurado — orquestração multiagente
         # fica indisponível (`spawn_agent` falha fechado), mas sessões normais
@@ -509,6 +512,7 @@ class AgentRunner:
             notes=self.notes,
             skills=self.skills,
             audit=self.audit,
+            firecrawl=self.firecrawl,
             security=SecureBertService(),
             trace_recorder=self.trace_recorder,
             engine=self.engine,

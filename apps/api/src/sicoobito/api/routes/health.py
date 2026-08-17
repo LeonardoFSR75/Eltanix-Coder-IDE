@@ -40,6 +40,8 @@ _CREDENTIAL_FIELDS: list[tuple[str, str, str, bool]] = [
     ("anthropic_api_key", "anthropic_api_key", "ANTHROPIC_API_KEY", True),
     ("groq_api_key", "groq_api_key", "GROQ_API_KEY", True),
     ("github_token", "github_token", "GITHUB_TOKEN", True),
+    ("firecrawl_api_key", "firecrawl_api_key", "FIRECRAWL_API_KEY", True),
+    ("firecrawl_api_url", "firecrawl_api_url", "FIRECRAWL_API_URL", False),
 ]
 
 # `azure_api_base`/`databricks_host` viajam JUNTO com uma api_key/token real em
@@ -393,6 +395,8 @@ class UpdateCredentialsRequest(BaseModel):
     anthropic_api_key: str | None = None
     groq_api_key: str | None = None
     github_token: str | None = None
+    firecrawl_api_key: str | None = None
+    firecrawl_api_url: str | None = None
 
     @field_validator(
         "ollama_base_url",
@@ -404,6 +408,8 @@ class UpdateCredentialsRequest(BaseModel):
         "anthropic_api_key",
         "groq_api_key",
         "github_token",
+        "firecrawl_api_key",
+        "firecrawl_api_url",
     )
     @classmethod
     def _sem_quebra_de_linha(cls, value: str | None) -> str | None:
@@ -422,14 +428,14 @@ class UpdateCredentialsRequest(BaseModel):
             )
         return value
 
-    @field_validator("ollama_base_url")
+    @field_validator("ollama_base_url", "firecrawl_api_url")
     @classmethod
     def _validar_ollama_base_url(cls, value: str | None) -> str | None:
         # Sem segredo pareado, mas ainda assim não pode virar uma rota para
         # sondar outros serviços internos do compose ou o metadata endpoint.
         if value:
             _validate_provider_host_url(
-                "ollama_base_url", value, require_https=False, allow_private=True
+                "base_url", value, require_https=False, allow_private=True
             )
         return value
 

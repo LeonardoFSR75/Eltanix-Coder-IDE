@@ -53,6 +53,8 @@ export interface CredentialsView {
   anthropic_api_key: CredentialField;
   groq_api_key: CredentialField;
   github_token: CredentialField;
+  firecrawl_api_key: CredentialField;
+  firecrawl_api_url: CredentialField;
 }
 
 /** Um modelo visto na API de listagem do provedor, ainda fora do catálogo. */

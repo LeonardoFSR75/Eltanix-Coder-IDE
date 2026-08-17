@@ -94,7 +94,7 @@ async def browser_action(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
         parsed = urlparse(url_raw)
         hostname = (parsed.hostname or "").lower()
         if (
-            hostname not in {"localhost", "127.0.0.1", "0.0.0.0"}
+            hostname not in {"localhost", "127.0.0.1", "0.0.0.0", "web", "api"}
             and not hostname.startswith("sicoobito-")
         ):
             return ToolResult(

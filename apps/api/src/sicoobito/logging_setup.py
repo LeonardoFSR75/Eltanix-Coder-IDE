@@ -23,6 +23,7 @@ _SECRET_KEYS = {
     "anthropic_api_key",
     "groq_api_key",
     "github_token",
+    "firecrawl_api_key",
 }
 
 _BEARER_RE = re.compile(r"(Bearer\s+)[A-Za-z0-9._\-]+", re.IGNORECASE)
