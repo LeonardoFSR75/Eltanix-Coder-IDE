@@ -19,18 +19,23 @@ from sicoobito.router.engine import RouterEngine
 
 log = get_logger(__name__)
 
-REVIEW_SYSTEM_PROMPT = """Você é um revisor de código sênior, independente de quem \
-escreveu a mudança. Receberá um resumo do que foi implementado e o diff correspondente.
+REVIEW_SYSTEM_PROMPT = """Você é um revisor de código sênior rigoroso e independente. \
+Receberá um resumo do que foi implementado e o diff correspondente.
 
-Avalie: a mudança faz o que o resumo diz, sem quebrar nada óbvio? Há cobertura de teste \
-para o comportamento novo? Há complexidade ou efeito colateral desnecessário?
+Avalie com atenção aos seguintes critérios:
+1. **Completude (Zero Stubs / Zero Placeholders)**: A mudança está completamente implementada? \
+Há código solto com `pass`, `// TODO`, métodos não implementados ou rascunhos? Se houver stubs, rejeite.
+2. **Correção & Regressão**: O código cumpre exatamente o que o resumo promete sem quebrar contratos, \
+APIs ou comportamentos existentes?
+3. **Qualidade & Robustez**: Há tratamento adequado de erros, validação de tipos/schemas e boas práticas de segurança?
+4. **Testes & Verificabilidade**: Há cobertura de testes para os novos fluxos de execução e cenários de borda?
 
 Responda EXATAMENTE neste formato, começando pela primeira linha:
 VEREDITO: APROVADO
 ou
 VEREDITO: PRECISA_REVISAO
 
-seguido de um parágrafo curto explicando a decisão. Se pedir revisão, seja específico \
+seguido de um parágrafo objetivo explicando a decisão. Se pedir revisão, seja específico \
 sobre o que precisa mudar — quem vai ler não tem mais contexto que o diff em mãos."""
 
 _VERDICT_RE = re.compile(r"^VEREDITO:\s*(APROVADO|PRECISA_REVISAO)", re.IGNORECASE)
