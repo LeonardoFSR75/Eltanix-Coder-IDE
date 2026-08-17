@@ -189,6 +189,15 @@ function Shell() {
       { id: "browser", title: "Mostrar navegador", run: () => ide.setPanel("browser") },
 
       { id: "agent", title: "Mostrar agente", run: () => ide.setAgentDockOpen(true) },
+      {
+        id: "mission-control",
+        title: "Abrir Mission Control",
+        shortcut: "Ctrl+Shift+M",
+        run: () => {
+          ide.setAgentDockOpen(true);
+          ide.setMissionControlOpen(true);
+        },
+      },
       { id: "toggle-sidebar", title: "Alternar barra lateral", shortcut: "Ctrl+B", run: () => ide.toggleSidebar() },
       {
         id: "toggle-agent-dock",
@@ -236,6 +245,10 @@ function Shell() {
       } else if (event.shiftKey && event.key.toLowerCase() === "a") {
         event.preventDefault();
         ide.toggleAgentDock();
+      } else if (event.shiftKey && event.key.toLowerCase() === "m") {
+        event.preventDefault();
+        ide.setAgentDockOpen(true);
+        ide.setMissionControlOpen(true);
       } else if (event.key.toLowerCase() === "o" && !event.shiftKey) {
         event.preventDefault();
         void handleOpenAbsolutePath();

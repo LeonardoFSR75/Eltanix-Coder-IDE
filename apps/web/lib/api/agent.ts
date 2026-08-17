@@ -85,3 +85,19 @@ export async function acceptFile(sessionId: string, path: string): Promise<void>
   await post(`/api/agent/sessions/${sessionId}/files/accept`, { path });
 }
 
+export interface SessionDiffFile {
+  path: string;
+  status: string;
+}
+
+export interface SessionDiff {
+  branch: string;
+  dirty: boolean;
+  files: SessionDiffFile[];
+  diff: string;
+}
+
+export async function getSessionDiff(sessionId: string): Promise<SessionDiff> {
+  return get<SessionDiff>(`/api/agent/sessions/${encodeURIComponent(sessionId)}/diff`);
+}
+

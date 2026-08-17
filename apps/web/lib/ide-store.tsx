@@ -177,6 +177,11 @@ interface IdeState {
   setAgentDockOpen: (open: boolean) => void;
   toggleAgentDock: () => void;
 
+  // Mission Control (Fase 7) — overlay de orquestração, nunca persistido,
+  // segue o mesmo padrão dos outros flags de painel abaixo.
+  missionControlOpen: boolean;
+  setMissionControlOpen: (open: boolean) => void;
+
   // Resizing e Layout
   sidebarWidth: number;
   setSidebarWidth: (width: number) => void;
@@ -255,6 +260,7 @@ export function IdeProvider({ children }: { children: ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [terminalOpen, setTerminalOpen] = useState(false);
   const [agentDockOpen, setAgentDockOpen] = useState(true);
+  const [missionControlOpen, setMissionControlOpen] = useState(false);
   const [sidebarWidth, setSidebarWidth] = useState(260);
   const [agentDockWidth, setAgentDockWidth] = useState(360);
   const [terminalHeight, setTerminalHeight] = useState(220);
@@ -687,6 +693,8 @@ export function IdeProvider({ children }: { children: ReactNode }) {
       agentDockOpen,
       setAgentDockOpen,
       toggleAgentDock,
+      missionControlOpen,
+      setMissionControlOpen,
       sidebarWidth,
       setSidebarWidth,
       agentDockWidth,
@@ -714,7 +722,7 @@ export function IdeProvider({ children }: { children: ReactNode }) {
       reveal, clearReveal, revealFolderPath, revealFolder, clearRevealFolder, closeTab, setActiveTab, markDirty,
       groups, activeGroupId, layout, setActiveGroup, paneSplitRatios, setPaneSplitRatio, splitGroup, moveTabToGroup, closeGroup,
       panel, setPanel, sidebarOpen, toggleSidebar, terminalOpen,
-      agentDockOpen, toggleAgentDock, sidebarWidth, agentDockWidth, terminalHeight,
+      agentDockOpen, toggleAgentDock, missionControlOpen, sidebarWidth, agentDockWidth, terminalHeight,
       codeToInsert, insertCode, clearInsertedCode,
       routerLatency, routerStatus, checkRouterHealth, files, reloadFiles, revision, bumpRevision,
       fileSyncVersion, notifyFileChanged, activeSessionId, setActiveSessionId,

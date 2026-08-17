@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AgentPanel } from "@/components/ide/AgentPanel";
+import { MissionControl } from "@/components/ide/MissionControl";
 import { useToast } from "@/components/Toast";
 import { useIde } from "@/lib/ide-store";
 import { loadHookPrefs } from "@/lib/hook-prefs";
@@ -22,7 +23,15 @@ export function AgentDock({
   onFileTouched?: (path: string) => void;
   onSession?: (sessionId: string | null) => void;
 }) {
-  const { project, toggleAgentDock, groups, activeGroupId, setPanel } = useIde();
+  const {
+    project,
+    toggleAgentDock,
+    groups,
+    activeGroupId,
+    setPanel,
+    missionControlOpen,
+    setMissionControlOpen,
+  } = useIde();
   const { addToast } = useToast();
 
 
@@ -142,7 +151,18 @@ export function AgentDock({
   // é reaproveitar `getAgentGraph`, a mesma chamada que `AgentManager.tsx` já
   // faz sob demanda ao abrir a árvore — aqui em polling, e só gastando a
   // chamada por sessão-raiz quando ela de fato tem filhos.
+  //
+  // Fase 7 — o mesmo poll também decide quando abrir o Mission Control
+  // sozinho (sem estado novo de backend, per o plano): mais de uma raiz com
+  // filhos ativos (orquestração de verdade), uma aprovação parada há mais de
+  // 30s, ou um nó que acabou de virar "completed". Dispara só na borda de
+  // subida (`autoOpenTriggeringRef`) pra não reabrir a cada 45s se o usuário
+  // fechar o painel manualmente enquanto a condição continua valendo.
+  const APPROVAL_STALE_MS = 30_000;
   const notifiedApprovalsRef = useRef<Set<string>>(new Set());
+  const pendingSinceRef = useRef<Map<string, number>>(new Map());
+  const prevStatusRef = useRef<Map<string, string>>(new Map());
+  const autoOpenTriggeringRef = useRef(false);
   useEffect(() => {
     if (!project) return;
     let cancelado = false;
@@ -153,6 +173,10 @@ export function AgentDock({
         const raizesComFilhos = registros.filter(
           (r) => !r.parent_session_id && registros.some((f) => f.parent_session_id === r.session_id),
         );
+
+        let temAprovacaoParada = false;
+        let temConclusaoRecente = false;
+
         for (const raiz of raizesComFilhos) {
           if (cancelado) return;
           const grafo = await getAgentGraph(raiz.session_id);
@@ -166,7 +190,29 @@ export function AgentDock({
               // aprovação e depois voltar a esperar (ex.: segundo turno).
               notifiedApprovalsRef.current.delete(no.session_id);
             }
+
+            if (no.status === "waiting_approval") {
+              const desde = pendingSinceRef.current.get(no.session_id) ?? Date.now();
+              pendingSinceRef.current.set(no.session_id, desde);
+              if (Date.now() - desde > APPROVAL_STALE_MS) temAprovacaoParada = true;
+            } else {
+              pendingSinceRef.current.delete(no.session_id);
+            }
+
+            const statusAnterior = prevStatusRef.current.get(no.session_id);
+            if (no.status === "completed" && statusAnterior && statusAnterior !== "completed") {
+              temConclusaoRecente = true;
+            }
+            prevStatusRef.current.set(no.session_id, no.status);
           }
+        }
+
+        const deveAbrir = raizesComFilhos.length > 1 || temAprovacaoParada || temConclusaoRecente;
+        if (deveAbrir && !autoOpenTriggeringRef.current) {
+          autoOpenTriggeringRef.current = true;
+          setMissionControlOpen(true);
+        } else if (!deveAbrir) {
+          autoOpenTriggeringRef.current = false;
         }
       } catch {
         // Falha de rede aqui não deve virar toast de erro sobre a própria
@@ -180,7 +226,7 @@ export function AgentDock({
       cancelado = true;
       clearInterval(timer);
     };
-  }, [project, handleAgentNotify]);
+  }, [project, handleAgentNotify, setMissionControlOpen]);
 
   return (
     <div className="agent-dock-layout">
@@ -301,6 +347,19 @@ export function AgentDock({
             sessionStarted={Boolean(active?.session)}
           />
         </div>
+      )}
+
+      {missionControlOpen && (
+        <MissionControl
+          project={project}
+          sessions={sessions}
+          activeId={activeId}
+          active={active}
+          sessionsVersion={sessionsVersion}
+          switchTo={switchTo}
+          openClosedSession={openClosedSession}
+          onClose={() => setMissionControlOpen(false)}
+        />
       )}
     </div>
   );

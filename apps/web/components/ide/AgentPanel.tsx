@@ -189,7 +189,7 @@ function getToolMeta(tool?: string, stage?: string) {
   }
 }
 
-function AgentLiveActivity({
+export function AgentLiveActivity({
   activity,
   recentActivities,
 }: {
@@ -350,7 +350,7 @@ function reviewVerdictLabel(verdict: "approved" | "needs_revision" | "unavailabl
   }
 }
 
-function ApprovalCard({
+export function ApprovalCard({
   pending,
   decisions,
   running,
