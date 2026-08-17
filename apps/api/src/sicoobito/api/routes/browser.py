@@ -90,6 +90,17 @@ async def browser_action(payload: BrowserActionRequest, request: Request) -> dic
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(exc)) from exc
 
 
+@router.get("/sessions/{session_id}/network")
+async def browser_network_log(session_id: str, request: Request) -> dict[str, Any]:
+    client = _client(request, session_id)
+    try:
+        return {"requests": await client.network_log()}
+    except BrowserUnavailableError as exc:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc)) from exc
+    except BrowserError as exc:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(exc)) from exc
+
+
 @router.delete("/sessions/{session_id}")
 async def close_browser_session(session_id: str, request: Request) -> dict[str, bool]:
     clients: dict[str, BrowserClient] = request.app.state.browser_panel_clients

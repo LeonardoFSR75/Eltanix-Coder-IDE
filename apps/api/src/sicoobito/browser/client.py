@@ -106,6 +106,22 @@ class BrowserClient:
         msg_erro = f"falha ao falar com o serviço de navegador: {ultimo_erro}"
         raise BrowserError(msg_erro) from ultimo_erro
 
+    async def network_log(self) -> list[dict[str, Any]]:
+        """Só faz sentido depois de `start()` — sessão sem página não tem log."""
+        if not self._started:
+            return []
+        try:
+            resposta = await self._client.get(
+                f"{self.config.base_url}/sessions/{self.session_id}/network",
+                headers=self._headers(),
+                timeout=10.0,
+            )
+            if resposta.status_code >= 400:
+                raise BrowserError(f"serviço de navegador retornou erro: {resposta.text[:300]}")
+            return resposta.json().get("requests", [])
+        except httpx.HTTPError as exc:
+            raise BrowserError(f"falha ao ler log de rede: {exc}") from exc
+
     async def stop(self, *, force: bool = False) -> None:
         """Por padrão (`force=False`), não faz nada se `_started` for `False`
         — evita um DELETE inútil para sessões que nunca chegaram a usar o

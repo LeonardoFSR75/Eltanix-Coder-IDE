@@ -42,6 +42,8 @@ _pages: dict[str, Any] = {}
 _last_used: dict[str, float] = {}
 _console_logs: dict[str, list[str]] = {}
 _page_errors: dict[str, list[str]] = {}
+_network_logs: dict[str, list[dict[str, Any]]] = {}
+_pending_requests: dict[str, dict[Any, float]] = {}
 
 
 async def _reap_loop() -> None:
@@ -56,6 +58,8 @@ async def _reap_loop() -> None:
             _last_used.pop(sid, None)
             _console_logs.pop(sid, None)
             _page_errors.pop(sid, None)
+            _network_logs.pop(sid, None)
+            _pending_requests.pop(sid, None)
             if page is not None and not page.is_closed():
                 await page.close()
 
@@ -119,6 +123,8 @@ async def _get_page(session_id: str) -> Any:
     _last_used[session_id] = time.time()
     _console_logs.setdefault(session_id, [])
     _page_errors.setdefault(session_id, [])
+    _network_logs.setdefault(session_id, [])
+    _pending_requests.setdefault(session_id, {})
 
     def _on_console(msg: Any) -> None:
         try:
@@ -139,9 +145,52 @@ async def _get_page(session_id: str) -> Any:
         except Exception:
             pass
 
+    def _on_request(req: Any) -> None:
+        try:
+            _pending_requests[session_id][req] = time.perf_counter()
+        except Exception:
+            pass
+
+    def _record_response(req: Any, status_code: int | None, tamanho: int | None) -> None:
+        inicio = _pending_requests[session_id].pop(req, None)
+        duracao_ms = int((time.perf_counter() - inicio) * 1000) if inicio is not None else None
+        entradas = _network_logs[session_id]
+        entradas.append(
+            {
+                "method": getattr(req, "method", "?"),
+                "url": getattr(req, "url", ""),
+                "resource_type": getattr(req, "resource_type", None),
+                "status": status_code,
+                "duration_ms": duracao_ms,
+                "size_bytes": tamanho,
+            }
+        )
+        if len(entradas) > 50:
+            entradas.pop(0)
+
+    def _on_response(resp: Any) -> None:
+        try:
+            tamanho = None
+            with suppress(Exception):
+                headers = resp.headers
+                comprimento = headers.get("content-length") if headers else None
+                tamanho = int(comprimento) if comprimento is not None else None
+            _record_response(resp.request, getattr(resp, "status", None), tamanho)
+        except Exception:
+            pass
+
+    def _on_requestfailed(req: Any) -> None:
+        try:
+            _record_response(req, None, None)
+        except Exception:
+            pass
+
     try:
         page.on("console", _on_console)
         page.on("pageerror", _on_pageerror)
+        page.on("request", _on_request)
+        page.on("response", _on_response)
+        page.on("requestfailed", _on_requestfailed)
     except Exception:
         pass
 
@@ -226,6 +275,8 @@ async def run_action(session_id: str, payload: ActionRequest) -> dict[str, Any]:
             # Limpa logs da sessão anterior para esta nova navegação
             _console_logs[session_id] = []
             _page_errors[session_id] = []
+            _network_logs[session_id] = []
+            _pending_requests[session_id] = {}
 
             resposta = None
             ultimo_erro = None
@@ -348,12 +399,19 @@ async def run_action(session_id: str, payload: ActionRequest) -> dict[str, Any]:
     raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=f"ação desconhecida: {payload.action}")
 
 
+@app.get("/sessions/{session_id}/network", dependencies=[Auth])
+async def get_network_log(session_id: str) -> dict[str, Any]:
+    return {"requests": list(_network_logs.get(session_id, []))}
+
+
 @app.delete("/sessions/{session_id}", dependencies=[Auth])
 async def close_session(session_id: str) -> dict[str, Any]:
     page = _pages.pop(session_id, None)
     _last_used.pop(session_id, None)
     _console_logs.pop(session_id, None)
     _page_errors.pop(session_id, None)
+    _network_logs.pop(session_id, None)
+    _pending_requests.pop(session_id, None)
     closed = False
     if page is not None and not page.is_closed():
         await page.close()

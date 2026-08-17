@@ -1,7 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { browserAction, closeBrowserSession } from "@/lib/api/browser";
+import {
+  browserAction,
+  closeBrowserSession,
+  getBrowserNetworkLog,
+  type NetworkLogEntry,
+} from "@/lib/api/browser";
 import { getSandboxServerLogs, getSandboxStats, type SandboxStats } from "@/lib/api/sandbox";
 import { useIde } from "@/lib/ide-store";
 
@@ -31,8 +36,9 @@ export function EditorBrowserView({
   const [pageErrors, setPageErrors] = useState<string[]>([]);
   const [clickIndicator, setClickIndicator] = useState<{ x: number; y: number } | null>(null);
   const [showDrawer, setShowDrawer] = useState(false);
-  const [drawerTab, setDrawerTab] = useState<"inspector" | "logs">("logs");
+  const [drawerTab, setDrawerTab] = useState<"inspector" | "logs" | "network">("logs");
   const [serverLogs, setServerLogs] = useState("");
+  const [networkLog, setNetworkLog] = useState<NetworkLogEntry[]>([]);
   const [sandboxStats, setSandboxStats] = useState<SandboxStats | null>(null);
   const [selectorInput, setSelectorInput] = useState("");
   const [textInput, setTextInput] = useState("");
@@ -142,6 +148,26 @@ export function EditorBrowserView({
     };
   }, [showDrawer, drawerTab, sessionId, activeSessionId]);
 
+  // Polling do log de rede quando o drawer estiver na aba "Rede"
+  useEffect(() => {
+    if (!showDrawer || drawerTab !== "network") return;
+    let ativo = true;
+    const fetchNetwork = async () => {
+      try {
+        const data = await getBrowserNetworkLog(sessionId);
+        if (ativo) setNetworkLog(data.requests ?? []);
+      } catch {
+        // Ignora erros de polling de rede
+      }
+    };
+    void fetchNetwork();
+    const timer = setInterval(fetchNetwork, 2000);
+    return () => {
+      ativo = false;
+      clearInterval(timer);
+    };
+  }, [showDrawer, drawerTab, sessionId]);
+
   const clicarNaCaptura = useCallback(
     async (e: React.MouseEvent<HTMLImageElement>) => {
       if (!imgRef.current || loading) return;
@@ -216,6 +242,7 @@ export function EditorBrowserView({
     setErro(null);
     setConsoleErrors([]);
     setPageErrors([]);
+    setNetworkLog([]);
   }, [sessionId]);
 
   const portasStr = sandboxStats?.ports?.length
@@ -295,6 +322,21 @@ export function EditorBrowserView({
             }}
           >
             📄 Logs Servidor
+          </button>
+          <button
+            type="button"
+            className={`editor-browser-tool-btn ${showDrawer && drawerTab === "network" ? "active" : ""}`}
+            title="Ver requisições de rede da página"
+            onClick={() => {
+              if (showDrawer && drawerTab === "network") {
+                setShowDrawer(false);
+              } else {
+                setDrawerTab("network");
+                setShowDrawer(true);
+              }
+            }}
+          >
+            🌐 Rede
           </button>
           <button
             type="button"
@@ -392,6 +434,13 @@ export function EditorBrowserView({
                 </button>
                 <button
                   type="button"
+                  className={`editor-browser-tool-btn ${drawerTab === "network" ? "active" : ""}`}
+                  onClick={() => setDrawerTab("network")}
+                >
+                  Rede
+                </button>
+                <button
+                  type="button"
                   className={`editor-browser-tool-btn ${drawerTab === "inspector" ? "active" : ""}`}
                   onClick={() => setDrawerTab("inspector")}
                 >
@@ -428,6 +477,54 @@ export function EditorBrowserView({
                   <pre className="inspector-logs-pre" ref={logsPreRef}>
                     {serverLogs || "Nenhum log gerado pelo servidor ainda. Inicie a aplicação no sandbox."}
                   </pre>
+                </div>
+              ) : drawerTab === "network" ? (
+                <div className="editor-browser-network-section">
+                  <div className="inspector-content-bar">
+                    <span className="inspector-section-title">
+                      Requisições da página atual ({networkLog.length}):
+                    </span>
+                    <button
+                      type="button"
+                      className="theme-btn"
+                      style={{ fontSize: "10.5px", padding: "2px 6px" }}
+                      onClick={() => void getBrowserNetworkLog(sessionId).then((d) => setNetworkLog(d.requests ?? []))}
+                    >
+                      Atualizar
+                    </button>
+                  </div>
+                  {networkLog.length > 0 ? (
+                    <div className="table-wrap">
+                      <table>
+                        <thead>
+                          <tr>
+                            <th>Método</th>
+                            <th>Status</th>
+                            <th>URL</th>
+                            <th>Duração</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {networkLog.map((req, i) => (
+                            <tr key={`${req.url}-${i}`}>
+                              <td>{req.method}</td>
+                              <td className={req.status && req.status >= 400 ? "status-err" : req.status ? "status-ok" : ""}>
+                                {req.status ?? "falhou"}
+                              </td>
+                              <td title={req.url} style={{ maxWidth: 360, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                {req.url}
+                              </td>
+                              <td>{req.duration_ms !== null ? `${req.duration_ms}ms` : "—"}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <p className="inspector-empty-hint">
+                      Nenhuma requisição registrada ainda. Navegue para uma página para ver a rede.
+                    </p>
+                  )}
                 </div>
               ) : (
                 <>

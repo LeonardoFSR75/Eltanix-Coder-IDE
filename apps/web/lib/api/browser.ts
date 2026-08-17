@@ -1,4 +1,4 @@
-import { del, post } from "@/lib/client";
+import { del, get, post } from "@/lib/client";
 
 export type BrowserAction = "navigate" | "click" | "type" | "screenshot" | "content";
 
@@ -46,4 +46,19 @@ export function browserAction({
 
 export function closeBrowserSession(sessionId: string): Promise<{ closed: boolean }> {
   return del<{ closed: boolean }>(`/api/browser/sessions/${encodeURIComponent(sessionId)}`);
+}
+
+export interface NetworkLogEntry {
+  method: string;
+  url: string;
+  resource_type?: string | null;
+  status: number | null;
+  duration_ms: number | null;
+  size_bytes: number | null;
+}
+
+export function getBrowserNetworkLog(sessionId: string): Promise<{ requests: NetworkLogEntry[] }> {
+  return get<{ requests: NetworkLogEntry[] }>(
+    `/api/browser/sessions/${encodeURIComponent(sessionId)}/network`,
+  );
 }
