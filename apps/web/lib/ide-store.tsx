@@ -68,7 +68,7 @@ export interface EditorGroup {
 
 export type PaneNode =
   | { type: "leaf"; groupId: string }
-  | { type: "split"; direction: "row" | "column"; children: PaneNode[] };
+  | { type: "split"; id: string; direction: "row" | "column"; children: PaneNode[] };
 
 export const DEFAULT_GROUP_ID = "main";
 
@@ -84,7 +84,9 @@ function insertSplit(
 ): PaneNode {
   if (node.type === "leaf") {
     if (node.groupId !== targetGroupId) return node;
-    return { type: "split", direction, children: [node, { type: "leaf", groupId: newGroupId }] };
+    // O id do split reaproveita o id do grupo novo (1:1, sempre criados
+    // juntos aqui) — evita mais um gerador de id só pra isto.
+    return { type: "split", id: newGroupId, direction, children: [node, { type: "leaf", groupId: newGroupId }] };
   }
   return { ...node, children: node.children.map((c) => insertSplit(c, targetGroupId, newGroupId, direction)) };
 }
@@ -132,10 +134,22 @@ interface IdeState {
   reveal: Reveal | null;
   clearReveal: () => void;
 
+  /** Pasta pendente de revelação na árvore do Explorer (breadcrumb clicável
+   * etc.) — mesmo padrão de `reveal`/`clearReveal`: o Explorer consome e
+   * chama `clearRevealFolder` depois de expandir/rolar até ela. */
+  revealFolderPath: string | null;
+  revealFolder: (path: string) => void;
+  clearRevealFolder: () => void;
+
   groups: Record<string, EditorGroup>;
   activeGroupId: string;
   layout: PaneNode;
   setActiveGroup: (groupId: string) => void;
+  /** Proporção (0-100) de cada split arrastado, por `PaneNode.id` — vive só
+   * na sessão, igual `layout` (ver comentário na hidratação): um reload
+   * sempre volta a um único painel, então não há split pra reaplicar. */
+  paneSplitRatios: Record<string, number>;
+  setPaneSplitRatio: (splitId: string, ratio: number) => void;
   /** Cria um novo grupo na posição de `targetGroupId`, movendo `path` para
    * ele — de `sourceGroupId` (padrão: o próprio `targetGroupId`, o caso do
    * botão "Dividir" no editor) ou de outro grupo (arrastar uma aba até a
@@ -236,6 +250,7 @@ export function IdeProvider({ children }: { children: ReactNode }) {
   }));
   const [activeGroupId, setActiveGroupIdState] = useState(DEFAULT_GROUP_ID);
   const [layout, setLayout] = useState<PaneNode>({ type: "leaf", groupId: DEFAULT_GROUP_ID });
+  const [paneSplitRatios, setPaneSplitRatios] = useState<Record<string, number>>({});
   const [panel, setPanelState] = useState<PanelId>("explorer");
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [terminalOpen, setTerminalOpen] = useState(false);
@@ -251,6 +266,7 @@ export function IdeProvider({ children }: { children: ReactNode }) {
   const [fileSyncVersion, setFileSyncVersion] = useState<Record<string, number>>({});
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [reveal, setReveal] = useState<Reveal | null>(null);
+  const [revealFolderPath, setRevealFolderPathState] = useState<string | null>(null);
   const [hydrated, setHydrated] = useState(false);
 
 
@@ -495,6 +511,8 @@ export function IdeProvider({ children }: { children: ReactNode }) {
   );
 
   const clearReveal = useCallback(() => setReveal(null), []);
+  const revealFolder = useCallback((path: string) => setRevealFolderPathState(path), []);
+  const clearRevealFolder = useCallback(() => setRevealFolderPathState(null), []);
 
   const closeTab = useCallback(
     (path: string, groupId?: string) => {
@@ -540,6 +558,10 @@ export function IdeProvider({ children }: { children: ReactNode }) {
   );
 
   const setActiveGroup = useCallback((groupId: string) => setActiveGroupIdState(groupId), []);
+
+  const setPaneSplitRatio = useCallback((splitId: string, ratio: number) => {
+    setPaneSplitRatios((prev) => ({ ...prev, [splitId]: ratio }));
+  }, []);
 
   const splitGroup = useCallback(
     (
@@ -640,6 +662,9 @@ export function IdeProvider({ children }: { children: ReactNode }) {
       reorderTabs,
       reveal,
       clearReveal,
+      revealFolderPath,
+      revealFolder,
+      clearRevealFolder,
       closeTab,
       setActive: setActiveTab,
       markDirty,
@@ -647,6 +672,8 @@ export function IdeProvider({ children }: { children: ReactNode }) {
       activeGroupId,
       layout,
       setActiveGroup,
+      paneSplitRatios,
+      setPaneSplitRatio,
       splitGroup,
       moveTabToGroup,
       closeGroup,
@@ -684,8 +711,8 @@ export function IdeProvider({ children }: { children: ReactNode }) {
     [
       project, projects, projectsError, setProject, reloadProjects, createProject,
       activeGroup, openFile, previewFile, pinTab, reorderTabs,
-      reveal, clearReveal, closeTab, setActiveTab, markDirty,
-      groups, activeGroupId, layout, setActiveGroup, splitGroup, moveTabToGroup, closeGroup,
+      reveal, clearReveal, revealFolderPath, revealFolder, clearRevealFolder, closeTab, setActiveTab, markDirty,
+      groups, activeGroupId, layout, setActiveGroup, paneSplitRatios, setPaneSplitRatio, splitGroup, moveTabToGroup, closeGroup,
       panel, setPanel, sidebarOpen, toggleSidebar, terminalOpen,
       agentDockOpen, toggleAgentDock, sidebarWidth, agentDockWidth, terminalHeight,
       codeToInsert, insertCode, clearInsertedCode,

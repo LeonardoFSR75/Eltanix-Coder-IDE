@@ -40,7 +40,8 @@ function SplitView({
   node: Extract<PaneNode, { type: "split" }>;
   onCursorPositionChange?: (pos: { line: number; column: number }) => void;
 }) {
-  const [ratio, setRatio] = useState(50);
+  const { paneSplitRatios, setPaneSplitRatio } = useIde();
+  const ratio = paneSplitRatios[node.id] ?? 50;
   const [resizing, setResizing] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -54,7 +55,7 @@ function SplitView({
         node.direction === "row"
           ? ((e.clientX - rect.left) / rect.width) * 100
           : ((e.clientY - rect.top) / rect.height) * 100;
-      setRatio(Math.min(80, Math.max(20, pct)));
+      setPaneSplitRatio(node.id, Math.min(80, Math.max(20, pct)));
     };
     const onUp = () => setResizing(false);
     window.addEventListener("mousemove", onMove);
@@ -63,7 +64,7 @@ function SplitView({
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
     };
-  }, [resizing, node.direction]);
+  }, [resizing, node.direction, node.id, setPaneSplitRatio]);
 
   const [first, second] = node.children;
 

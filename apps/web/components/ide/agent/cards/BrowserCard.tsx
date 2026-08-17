@@ -51,10 +51,10 @@ export function BrowserCard({ tool, content, data, ok }: ToolCardProps) {
         </div>
       )}
       {hasErrors && (
-        <div className="p-2 my-2 rounded bg-amber-950/40 border border-amber-800/60 text-xs text-amber-200 font-mono space-y-1">
-          <div className="font-semibold text-amber-400">⚠️ Erros no Console/Página:</div>
+        <div className="tool-card-error-banner">
+          <div className="tool-card-error-banner-title">⚠️ Erros no Console/Página:</div>
           {pageErrors.map((err, i) => (
-            <div key={`p-${i}`} className="text-red-400">
+            <div key={`p-${i}`} className="tool-card-error-banner-page">
               [PAGE ERROR] {err}
             </div>
           ))}

@@ -4,7 +4,12 @@ import { useIde } from "@/lib/ide-store";
 import { FileIcon } from "@/components/ide/FileIcons";
 
 export function Breadcrumbs({ activePath }: { activePath?: string | null }) {
-  const { project, openFile } = useIde();
+  const { project, setPanel, revealFolder } = useIde();
+
+  const abrirNoExplorer = (path: string) => {
+    setPanel("explorer");
+    revealFolder(path);
+  };
 
   if (!activePath) {
     return (
@@ -26,7 +31,14 @@ export function Breadcrumbs({ activePath }: { activePath?: string | null }) {
         return (
           <span key={subPath} className="breadcrumb-item">
             <span className="breadcrumb-sep">/</span>
-            <span className="breadcrumb-segment folder">{part}</span>
+            <button
+              type="button"
+              className="breadcrumb-segment folder breadcrumb-link"
+              onClick={() => abrirNoExplorer(subPath)}
+              title={`Mostrar "${part}" no Explorer`}
+            >
+              {part}
+            </button>
           </span>
         );
       })}

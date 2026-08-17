@@ -3045,6 +3045,28 @@ textarea:focus-visible,
   color: var(--text-dim);
 }
 
+.tool-card-error-banner {
+  margin: 8px;
+  padding: 8px 10px;
+  border-radius: 4px;
+  background: var(--warn-dim);
+  border: 1px solid color-mix(in srgb, var(--warn) 35%, transparent);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--warn);
+}
+
+.tool-card-error-banner-title {
+  font-weight: 700;
+  color: var(--warn);
+  margin-bottom: 4px;
+}
+
+.tool-card-error-banner-page {
+  color: var(--danger);
+}
+
 .tool-card-terminal {
   color: var(--text);
   background: var(--bg-dark);
@@ -7577,6 +7599,21 @@ button.primary:hover:not(:disabled) {
 .breadcrumb-segment.file.active {
   color: var(--text, #f8fafc);
   font-weight: 500;
+}
+
+.breadcrumb-link {
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  cursor: pointer;
+  border-radius: 3px;
+}
+
+.breadcrumb-link:hover {
+  color: var(--text, #f8fafc);
+  text-decoration: underline;
 }
 
 .breadcrumb-icon {

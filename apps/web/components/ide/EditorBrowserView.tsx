@@ -27,6 +27,8 @@ export function EditorBrowserView({
   const [content, setContent] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
+  const [consoleErrors, setConsoleErrors] = useState<string[]>([]);
+  const [pageErrors, setPageErrors] = useState<string[]>([]);
   const [clickIndicator, setClickIndicator] = useState<{ x: number; y: number } | null>(null);
   const [showDrawer, setShowDrawer] = useState(false);
   const [drawerTab, setDrawerTab] = useState<"inspector" | "logs">("logs");
@@ -49,6 +51,8 @@ export function EditorBrowserView({
       }
       if (shot.url) setCurrentUrl(shot.url);
       if (shot.title) setTitle(shot.title);
+      setConsoleErrors(shot.console_errors ?? []);
+      setPageErrors(shot.page_errors ?? []);
     } catch (err) {
       setErro(err instanceof Error ? err.message : String(err));
     } finally {
@@ -72,6 +76,8 @@ export function EditorBrowserView({
         setTitle(resultado.title ?? null);
         setStatus(resultado.status ?? 200);
         setDurationMs(resultado.duration_ms ?? null);
+        setConsoleErrors(resultado.console_errors ?? []);
+        setPageErrors(resultado.page_errors ?? []);
         if (resultado.image_base64) {
           setImage(resultado.image_base64);
         } else {
@@ -208,6 +214,8 @@ export function EditorBrowserView({
     setTitle(null);
     setStatus(null);
     setErro(null);
+    setConsoleErrors([]);
+    setPageErrors([]);
   }, [sessionId]);
 
   const portasStr = sandboxStats?.ports?.length
@@ -317,6 +325,20 @@ export function EditorBrowserView({
       {erro && (
         <div className="editor-browser-error-banner">
           <span>⚠️ {erro}</span>
+        </div>
+      )}
+
+      {(consoleErrors.length > 0 || pageErrors.length > 0) && (
+        <div className="tool-card-error-banner" style={{ margin: "8px 14px" }}>
+          <div className="tool-card-error-banner-title">⚠️ Erros no Console/Página:</div>
+          {pageErrors.map((err, i) => (
+            <div key={`p-${i}`} className="tool-card-error-banner-page">
+              [PAGE ERROR] {err}
+            </div>
+          ))}
+          {consoleErrors.map((err, i) => (
+            <div key={`c-${i}`}>{err}</div>
+          ))}
         </div>
       )}
 

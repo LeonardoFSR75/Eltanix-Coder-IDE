@@ -10,6 +10,8 @@ export interface BrowserActionResult {
   duration_ms?: number;
   image_base64?: string;
   text?: string;
+  console_errors?: string[];
+  page_errors?: string[];
 }
 
 export interface BrowserActionParams {

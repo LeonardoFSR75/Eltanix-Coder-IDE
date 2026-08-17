@@ -57,11 +57,15 @@ import { FileIcon } from "@/components/ide/FileIcons";
 // ── Explorer ────────────────────────────────────────────────────────────────
 
 export function Explorer() {
-  const { project, openFile, previewFile, pinTab, active, bumpRevision, revision, closeTab, tabs } = useIde();
+  const {
+    project, openFile, previewFile, pinTab, active, bumpRevision, revision, closeTab, tabs,
+    revealFolderPath, clearRevealFolder,
+  } = useIde();
   const [levels, setLevels] = useState<Record<string, Entry[]>>({});
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [lastClicked, setLastClicked] = useState<string | null>(null);
+  const [scrollTarget, setScrollTarget] = useState<string | null>(null);
   const [dragOverPath, setDragOverPath] = useState<string | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [filterText, setFilterText] = useState("");
@@ -95,6 +99,30 @@ export function Explorer() {
     for (const dir of expanded) void carregar(dir);
   }, [project, carregar, revision]);
 
+  // Expande um conjunto de pastas (já carregando o conteúdo das que ainda
+  // não foram lidas) — compartilhado entre "revelar arquivo ativo" e
+  // "revelar pasta" (clique num segmento do breadcrumb).
+  const expandirPastas = useCallback(
+    (caminhos: string[]) => {
+      if (caminhos.length === 0) return;
+      setExpanded((prev) => {
+        const next = new Set(prev);
+        let mudou = false;
+        for (const dir of caminhos) {
+          if (!next.has(dir)) {
+            next.add(dir);
+            mudou = true;
+          }
+        }
+        return mudou ? next : prev;
+      });
+      for (const dir of caminhos) {
+        if (!levels[dir]) void carregar(dir);
+      }
+    },
+    [levels, carregar],
+  );
+
   // Revela o arquivo ativo: expande as pastas-pai (navegação por "ir para
   // definição", Quick Open etc. não passa pelo clique na árvore, então sem
   // isto o arquivo abriria sem a árvore acompanhar).
@@ -108,24 +136,9 @@ export function Explorer() {
       acumulado = acumulado ? `${acumulado}/${parte}` : parte;
       paraExpandir.push(acumulado);
     }
-    if (paraExpandir.length === 0) return;
-
-    setExpanded((prev) => {
-      const next = new Set(prev);
-      let mudou = false;
-      for (const dir of paraExpandir) {
-        if (!next.has(dir)) {
-          next.add(dir);
-          mudou = true;
-        }
-      }
-      return mudou ? next : prev;
-    });
-    for (const dir of paraExpandir) {
-      if (!levels[dir]) void carregar(dir);
-    }
-    // Só reage à troca do arquivo ativo — `levels`/`carregar` mudando não
-    // deve reexpandir tudo de novo.
+    expandirPastas(paraExpandir);
+    // Só reage à troca do arquivo ativo — `expandirPastas` mudando (porque
+    // `levels`/`carregar` mudam) não deve reexpandir tudo de novo.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active]);
 
@@ -134,6 +147,36 @@ export function Explorer() {
     const seletor = `[data-path="${CSS.escape(active)}"]`;
     treeRef.current.querySelector(seletor)?.scrollIntoView({ block: "nearest" });
   }, [active, levels, expanded]);
+
+  // Revela uma pasta pedida de fora (clique num segmento do breadcrumb) —
+  // expande a cadeia inteira, incluindo a própria pasta, seleciona e rola
+  // até ela assim que aparecer na árvore (pode depender de `carregar`
+  // assíncrono, daí o `scrollTarget` separado em vez de rolar na hora).
+  useEffect(() => {
+    if (!revealFolderPath) return;
+    const partes = revealFolderPath.split("/");
+    let acumulado = "";
+    const paraExpandir: string[] = [];
+    for (const parte of partes) {
+      acumulado = acumulado ? `${acumulado}/${parte}` : parte;
+      paraExpandir.push(acumulado);
+    }
+    expandirPastas(paraExpandir);
+    setSelected(new Set([revealFolderPath]));
+    setScrollTarget(revealFolderPath);
+    clearRevealFolder();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [revealFolderPath]);
+
+  useEffect(() => {
+    if (!scrollTarget || !treeRef.current) return;
+    const seletor = `[data-path="${CSS.escape(scrollTarget)}"]`;
+    const el = treeRef.current.querySelector(seletor);
+    if (el) {
+      el.scrollIntoView({ block: "nearest" });
+      setScrollTarget(null);
+    }
+  }, [scrollTarget, levels, expanded]);
 
   // Ordem visual atual (mesmos filtros de `renderar`), usada só para
   // resolver o intervalo de um shift-click — não vale a pena manter em

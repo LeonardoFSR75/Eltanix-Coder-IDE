@@ -112,18 +112,35 @@ export function AgentDock({
     submitWithPrompt(presetPrompt);
   };
 
+  const handleNewSession = useCallback(() => {
+    newSessionSlot();
+    setTask("");
+    setFocusFiles([]);
+    setFocusFolder(null);
+    setManagerOpen(false);
+  }, [newSessionSlot]);
+
+  // Ctrl+Shift+N — atalho anunciado no tooltip do botão "Nova Sessão"
+  // (AgentDockHeader.tsx), registrado aqui porque é este componente que
+  // possui a lógica real de criar uma sessão nova.
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const mod = event.ctrlKey || event.metaKey;
+      if (mod && event.shiftKey && event.key.toLowerCase() === "n") {
+        event.preventDefault();
+        handleNewSession();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [handleNewSession]);
+
   return (
     <div className="agent-dock-layout">
       <AgentDockHeader
         historyOpen={managerOpen}
         onToggleHistory={() => setManagerOpen((v) => !v)}
-        onNewSession={() => {
-          newSessionSlot();
-          setTask("");
-          setFocusFiles([]);
-          setFocusFolder(null);
-          setManagerOpen(false);
-        }}
+        onNewSession={handleNewSession}
         onOpenSettings={() => setSettingsOpen((v) => !v)}
         onCollapse={() => toggleAgentDock()}
         settingsRef={settingsRef}

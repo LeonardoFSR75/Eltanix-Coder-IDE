@@ -8,7 +8,8 @@ import { BrowserPanel, ContainersPanel, DebugPanel, Explorer, ExtensionsPanel, G
 import { StatusBar } from "@/components/ide/StatusBar";
 import { TopMenuBar } from "@/components/ide/TopMenuBar";
 import { IdeProvider, useIde, type PanelId } from "@/lib/ide-store";
-import type { Command } from "@/components/ide/Overlays";
+import { ConfirmDialog, PromptDialog, type Command } from "@/components/ide/Overlays";
+import { useToast } from "@/components/Toast";
 
 // Cada um destes é um bundle pesado (Monaco, xterm, dock do agente, overlays)
 // que só é útil depois que o usuário interage — carregá-los estaticamente
@@ -87,12 +88,23 @@ function EditorSplash({ project }: { project: string | null }) {
 function Shell() {
   const ide = useIde();
   const router = useRouter();
+  const { addToast } = useToast();
   const [overlay, setOverlay] = useState<"quick" | "palette" | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [cursorPos, setCursorPos] = useState<{ line: number; column: number }>({ line: 1, column: 1 });
   const [isResizingSidebar, setIsResizingSidebar] = useState(false);
   const [isResizingAgent, setIsResizingAgent] = useState(false);
   const [isResizingTerminal, setIsResizingTerminal] = useState(false);
+  const [dialogo, setDialogo] = useState<
+    | { tipo: "criar-projeto" }
+    | { tipo: "confirmar-git"; nome: string }
+    | { tipo: "abrir-pasta" }
+    | null
+  >(null);
+  // ConfirmDialog chama onConfirm() e depois onClose() em sequência no botão
+  // "confirmar" (Overlays.tsx) — este ref é o único jeito de onClose (que
+  // também roda sozinho no "cancelar"/backdrop) saber se foi um confirm.
+  const gitInitRef = useRef(false);
 
   useEffect(() => {
     ide.setActiveSessionId(sessionId);
@@ -127,20 +139,23 @@ function Shell() {
     return () => window.removeEventListener("sicoobito:browser:open", handleBrowserOpen);
   }, [sessionId, ide]);
 
-  const handleCreateProject = async () => {
-    const nome = window.prompt("Nome da pasta do projeto (será criada ou vinculada dentro do PROJECTS_ROOT):");
-    if (!nome || !nome.trim()) return;
-    const gitInit = window.confirm("Deseja inicializar um repositório Git nesta pasta?");
+  const handleCreateProject = () => {
+    setDialogo({ tipo: "criar-projeto" });
+  };
+
+  const finalizarCriarProjeto = async (nome: string, gitInit: boolean) => {
     try {
-      await ide.createProject(nome.trim(), gitInit);
+      await ide.createProject(nome, gitInit);
     } catch (err) {
-      alert(`Falha ao criar/vincular projeto: ${err instanceof Error ? err.message : String(err)}`);
+      addToast(`Falha ao criar/vincular projeto: ${err instanceof Error ? err.message : String(err)}`, "error");
     }
   };
 
-  const handleOpenAbsolutePath = async () => {
-    const caminho = window.prompt("Digite ou cole o caminho absoluto de QUALQUER pasta do computador (ex: C:\\Projetos\\ERP ou /home/user/app):");
-    if (!caminho || !caminho.trim()) return;
+  const handleOpenAbsolutePath = () => {
+    setDialogo({ tipo: "abrir-pasta" });
+  };
+
+  const finalizarAbrirPasta = async (caminho: string) => {
     try {
       // Usa o gateway proxy autenticado — nunca chame a API diretamente do browser.
       const res = await fetch("/api/gateway/api/projects/open-path", {
@@ -155,9 +170,9 @@ function Shell() {
       const data = await res.json();
       await ide.reloadProjects();
       ide.setProject(data.name);
-      alert(`✅ Projeto '${data.name}' aberto!\n\n${data.summary ?? ""}`);
+      addToast(`Projeto '${data.name}' aberto! ${data.summary ?? ""}`, "success");
     } catch (err) {
-      alert(`❌ Falha ao abrir pasta: ${err instanceof Error ? err.message : String(err)}`);
+      addToast(`Falha ao abrir pasta: ${err instanceof Error ? err.message : String(err)}`, "error");
     }
   };
 
@@ -652,6 +667,46 @@ function Shell() {
         {overlay === "quick" && <QuickOpen onClose={() => setOverlay(null)} />}
         {overlay === "palette" && (
           <CommandPalette commands={comandos} onClose={() => setOverlay(null)} />
+        )}
+
+        {dialogo?.tipo === "criar-projeto" && (
+          <PromptDialog
+            title="Nome da pasta do projeto (será criada ou vinculada dentro do PROJECTS_ROOT):"
+            confirmLabel="próximo"
+            onConfirm={(nome) => {
+              gitInitRef.current = false;
+              setDialogo({ tipo: "confirmar-git", nome });
+            }}
+            onClose={() => setDialogo((d) => (d?.tipo === "criar-projeto" ? null : d))}
+          />
+        )}
+        {dialogo?.tipo === "confirmar-git" && (
+          <ConfirmDialog
+            message={
+              <>
+                Deseja inicializar um repositório Git nesta pasta?
+                <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 6 }}>
+                  &quot;confirmar&quot; cria o projeto com Git; &quot;cancelar&quot; cria sem Git.
+                </div>
+              </>
+            }
+            onConfirm={() => { gitInitRef.current = true; }}
+            onClose={() => {
+              const nome = dialogo.nome;
+              const gitInit = gitInitRef.current;
+              gitInitRef.current = false;
+              setDialogo(null);
+              void finalizarCriarProjeto(nome, gitInit);
+            }}
+          />
+        )}
+        {dialogo?.tipo === "abrir-pasta" && (
+          <PromptDialog
+            title="Digite ou cole o caminho absoluto de QUALQUER pasta do computador (ex: C:\Projetos\ERP ou /home/user/app):"
+            confirmLabel="abrir"
+            onConfirm={(caminho) => void finalizarAbrirPasta(caminho)}
+            onClose={() => setDialogo(null)}
+          />
         )}
       </div>
 
