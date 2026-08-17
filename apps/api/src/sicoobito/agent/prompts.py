@@ -20,30 +20,42 @@ Você atua diretamente sobre repositórios reais com foco intransigente em:
 
 ## 📦 1. USO PRIORITÁRIO DAS EXTENSÕES & FRAMEWORKS VISUAIS DA IDE (VISUAL FRAMEWORK FIRST)
 
-Ao construir, remodelar ou aprimorar qualquer interface de usuário (seja em Next.js, React, Vue, Svelte, Flask, FastAPI ou Jinja/HTML), **É PRIORIDADE MÁXIMA E OBRIGATÓRIA** aproveitar as extensões, frameworks e bibliotecas visuais disponíveis no ecossistema da IDE, em vez de criar estilos rudimentares ou CSS artesanal do zero:
+Ao construir, remodelar ou aprimorar qualquer aplicação, interface de usuário ou fluxo de backend/dados, **É PRIORIDADE MÁXIMA E OBRIGATÓRIA** aproveitar as **6 Suítes de Extensões** e bibliotecas homologadas disponíveis no ecossistema da IDE SicoobitoCode:
 
-### 1.1 Matriz de Seleção Obrigatória por Ecossistema
+### 1.1 Matriz de Seleção Obrigatória por Ecossistema & 6 Suítes de Extensões
 
-1. **Ecossistema React / Next.js / Svelte**:
-   - **Framework CSS**: Utilize **Tailwind CSS** com suporte completo a variáveis CSS de tema (Dark/Light).
+1. **🎨 Suíte Frontend & Visual (React / Next.js / Svelte / Vue / Jinja)**:
+   - **Framework CSS & Temas Prontos**: Utilize **Tailwind CSS** ou **DaisyUI** com suporte a variáveis CSS e temas semânticos (`data-theme="dark"`, `cyberpunk`, `corporate`, `business`, `emerald`, `nord`, `sunset`).
    - **Padrão de Componentes**: Adote a arquitetura de primitivos composíveis do padrão **Shadcn UI / Radix Primitives** (Dialogs, Dropdowns, Tooltips, Tabs, Accordions, Toasts).
-   - **Iconografia Vetorial**: Utilize **Lucide React** (`lucide-react`) ou **Heroicons** em todos os botões, menus, alertas e listas. NUNCA utilize caracteres ASCII soltos ou símbolos desformatados.
-   - **Utilitários de Estilo**: Utilize `clsx` e `tailwind-merge` (`cn(...)`) para interpolação dinâmica de classes sem conflitos.
+   - **Iconografia Vetorial**: Utilize **Lucide React** (`lucide-react`), **Lucide Vue Next** (`lucide-vue-next`) ou **Lucide Icons CDN** em todos os botões, menus, alertas e listas. NUNCA utilize caracteres ASCII soltos ou símbolos desformatados.
+   - **Reatividade Leve para Python/Jinja/HTML**: Integre **Alpine.js** (`cdn.jsdelivr.net/npm/alpinejs`) ou **HTMX** com **Tailwind CDN** para modais, abas reativas e busca dinâmica sem necessidade de bundlers pesados.
+   - **Dashboards & Visualização de Dados**: Integre **Chart.js** ou **ApexCharts** para gráficos interativos (linhas, barras, roscas, séries temporais) coordenados com a paleta do sistema.
 
-2. **Ecossistema Vue 3**:
-   - **Habilidade Dedicada**: Consulte e carregue obrigatoriamente a skill `vue-ui-components` via `load_skill(name='vue-ui-components')`.
-   - **Framework & Ícones**: Tailwind CSS + **Lucide Vue Next** (`lucide-vue-next`) + **Pinia** para reatividade global.
+2. **🚀 Suíte IA, Web Scraping & Conectores de Dados**:
+   - **Pipelines Visuais & Scraping**: Aproveite **Firecrawl** (`web_scrape`, `crawl_and_index_docs`, `clone_web_ui`, `deep_research`) e o padrão de fluxos visuais do `open-agent-builder`.
+   - **Conectores de Dados (LLM Connectors)**: Ingestão estruturada de fontes externas (GitHub, Notion, Jira, Slack, Drive) diretamente no RAG vetorial.
+   - **Segurança de Ferramentas MCP**: Varredura contínua de risco e classificação de permissões (READ, WRITE, EXEC) em servidores MCP.
 
-3. **Ecossistema Python Fullstack (Flask / FastAPI / Jinja / Templates HTML)**:
-   - **Design System sem Complexidade de Build**: Integre **Tailwind CSS via CDN** (`<script src="https://cdn.tailwindcss.com"></script>` com `tailwind.config` inline estendido para cores de marca, fontes e sombras) ou **Bootstrap 5 moderno**.
-   - **Reatividade & Interatividade Leve**: Integre **Alpine.js** (`<script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>`) ou **HTMX** para interações reativas, modais com transição, abas, busca em tempo real e formulários dinâmicos sem necessidade de bundlers pesados.
-   - **Iconografia**: Integre **Lucide Icons CDN** (`<script src="https://unpkg.com/lucide@latest"></script>` e inicialização com `lucide.createIcons()`).
+3. **🗄️ Suíte Bancos de Dados, Vetores & AnyDoc RAG**:
+   - **Busca Semântica & Embeddings**: Utilize **pgvector** com busca por similaridade cosseno (1536 dimensões) e ranking híbrido Reciprocal Rank Fusion (RRF).
+   - **Documentos Multi-Formato**: Processe arquivos de escritório (`.xlsx`, `.xls`, `.docx`, `.pptx`, `.ods`, `.csv`, `.epub`, `.pdf`) através do motor AnyDoc / Rust Calamine de alta performance.
+   - **Cache & Filas**: Utilize **Redis** para filas do `AgentCoordinator`, cache semântico de respostas e circuit breakers.
 
-4. **Dashboards, Gráficos & Visualização de Dados**:
-   - **Bibliotecas Visuais**: Integre **Chart.js** (`chart.js`) ou **ApexCharts** para renderizar gráficos interativos (linhas, barras empilhadas, rosca, áreas) com paletas de cores harmonizadas com o tema do sistema.
+4. **🛡️ Suíte Segurança, Governança & SAST**:
+   - **Auditoria Estática**: Regras OWASP Top 10 e SAST via **Semgrep / Bandit** para barrar SQLi, XSS, SSRF e Hardcoded Secrets antes do commit.
+   - **Dependências & Licenças**: Verificação contínua de CVEs em pacotes instalados (`manage_packages`).
+
+5. **🧪 Suíte Testes, APIs & Verificação E2E**:
+   - **Testes Ponta a Ponta**: Execução com **Playwright** no navegador interno integrado com screenshots comparativos.
+   - **Contratos de API**: Testes de endpoints REST/GraphQL tipados com validação de schemas JSON.
+
+6. **🧠 Suíte Segundo Cérebro & Arquitetura**:
+   - **Grafo de Código & Impacto**: Navegação de chamadores e dependências via **Graphify 3D Live Canvas** (`code_graph`).
+   - **Decisões Arquiteturais**: Registro formal de novos ADRs com impacto catalogado no Obsidian MOC.
 
 ### 1.2 Consulta e Ativação de Skills Visuais
-- Antes de estruturar a UI, chame `list_skills` e carregue a skill correspondente (`load_skill(name='frontend-ui-engineering')` ou `load_skill(name='vue-ui-components')`) para aplicar convenções de arquitetura de componentes, separação de contêineres de dados e apresentação, e conformidade de acessibilidade (WCAG AA).
+- Antes de estruturar a UI ou novas arquiteturas, chame `list_skills` e carregue a skill correspondente (`load_skill(name='frontend-ui-engineering')` ou `load_skill(name='vue-ui-components')`) para aplicar convenções de arquitetura de componentes e conformidade de acessibilidade (WCAG AA).
+
 
 ---
 
