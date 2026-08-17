@@ -1,187 +1,130 @@
 # SicoobitoCode
 
-Plataforma local-first de codificação agêntica: um IDE web estilo VS Code com chat e agente
-autônomo sobre o repositório, integração com Git/GitHub e um **gateway multi-modelo** que
-roteia entre Ollama (local), Azure AI Foundry e Databricks com contabilidade de custo e
-otimização de token.
+Plataforma local-first de codificação agêntica: um IDE web completo estilo VS Code com chat e agente
+autônomo sobre o repositório, integração com Git/GitHub, **Navegador Interno Híbrido com Tela Cheia**,
+**RAG Multi-Formato Universal (AnyDoc + PDF Inspector)**, **Scraping e Deep Research via Firecrawl** e um
+**gateway multi-modelo** que roteia entre Ollama (local), Azure AI Foundry, Databricks, Anthropic e OpenAI
+com contabilidade estrita de custos e otimização de tokens.
 
 O princípio que sustenta tudo: **nenhum módulo fala com um provedor de LLM diretamente**.
-Toda chamada passa pelo router, e cada provedor entra como adaptador plugável — trocar de
-modelo ou de nuvem é mudança de configuração, não de código.
+Toda chamada passa pelo router (`RouterEngine`), e cada provedor entra como adaptador plugável — trocar de
+modelo ou de nuvem é mudança de configuração, não de código (ADR 0001).
 
-## Estado atual
+---
 
-Além do IDE agêntico original (gateway multi-modelo, indexação de código,
-agente LangGraph, editor Monaco), a plataforma cresceu para uma base de
-conhecimento completa em torno do mesmo agente:
+## 🌟 Recursos & Módulos Principais
 
-| Área | Escopo | Status |
+| Módulo | Escopo & Capacidades | Status |
 |---|---|---|
-| Gateway multi-modelo | Roteamento (Ollama, Azure, Databricks, Anthropic, Groq), fallback, custo, cache | validada |
-| Contexto de código | Indexação tree-sitter + pgvector, busca híbrida (RRF) | validada |
-| Agente | LangGraph, sandbox Docker, Git/GitHub, PRs, modos `ask`/`edit`/`agent`/`plan`/`auto`/`orchestra` | validada |
-| IDE web | Monaco (split-pane), explorer com drag-and-drop, terminal, cards estruturados por tool-call, Agent Manager (múltiplas sessões) | validada |
-| Verificação por navegador | Ferramenta `browser_action` (Chromium headless isolado em rede própria) | validada |
-| RAG de documentos | Upload → MinIO + pgvector, busca híbrida, ferramenta do agente | validada |
-| Segundo Cérebro | Notas com `[[wikilinks]]`, busca híbrida, ferramenta do agente | validada |
-| Graph RAG (Graphify) | Base de Conhecimento em Grafo (nós/arestas L1-L3), expansão CTE/GQL, visualização 360° | validada |
-| Skills & Memória | Catálogo de habilidades reutilizáveis (`addyosmani/agent-skills`, `MadsLorentzen/ai-job-search` e hub de memória `TencentCloud/TencentDB-Agent-Memory`), CRUD real e auto-seed | validada |
-| Auditoria | Toda aprovação WRITE/EXEC do agente é registrada no Postgres | validada |
-| MCP | Cliente real (stdio/HTTP), catálogo de conectores prontos (GitHub, filesystem, Postgres, Slack) | validada |
-| Observabilidade | `TraceRecorder` (spans de tool/RAG), correlation ID ponta a ponta, avaliação hit@k/MRR de RAG | validada |
-| Modo Orquestra | Ciclo TDD forçado por item de plano, revisão de código por chamada de LLM isolada, commit por etapa | validada |
-| Web Scraping & Crawl (Firecrawl) | Web scrape/search em Markdown, crawling recursivo de docs e auto-ingestão no RAG pgvector | validada |
+| **Navegador Interno Completo** | Modo **Tela Cheia (`F11`)**, múltiplas abas dinâmicas, histórico completo, emuladores de dispositivos (Desktop, Tablet, Mobile SE, Mobile Max), favoritos rápidos (`:3000`, `:5173`, `:8000/docs`, `:5000`), modo híbrido **Live Iframe** + **Headless CDP** compatível com **Lightpanda** | ✅ Validado |
+| **RAG Multi-Formato Universal** | Extração ultrarrápida em Rust via **AnyDoc** (com motor **Calamine**) para Word (`.docx`, `.odt`), Excel (`.xlsx`, `.xls`, `.xlsb`, `.ods`), PowerPoint (`.pptx`, `.odp`), EPUB, RTF e CSV + classificação inteligente de PDFs via **PDF Inspector** | ✅ Validado |
+| **Web Scraping & Deep Research (Firecrawl)** | Web scrape limpo em Markdown, crawling recursivo de documentações, clonagem de UI React (`clone_web_ui`), pesquisa profunda com citações (`deep_research`) e **proteção anti-SSRF** | ✅ Validado |
+| **Gateway Multi-Modelo** | Roteamento unificado (Ollama, Azure, Databricks, Anthropic, Groq, OpenAI), fallback automático, circuit breaker e contabilidade de tokens/custos | ✅ Validado |
+| **Agente LangGraph** | Loop autônomo (*think → approve → act*), sandbox isolado de execução, ferramentas por classe de risco (`RiskClass`), modos `ask`, `edit`, `agent`, `plan`, `auto` e `orchestra` | ✅ Validado |
+| **IDE Web Agêntica** | Editor Monaco (split-pane), explorador de arquivos com drag-and-drop, terminal integrado, cards de ferramentas estruturados e Agent Dock | ✅ Validado |
+| **Segundo Cérebro & Obsidian** | Base de notas interligadas com `[[wikilinks]]`, busca híbrida vetorial + BM25 e Graph View 2D/3D interativo | ✅ Validado |
+| **GraphRAG (Graphify)** | Base de conhecimento em grafo de código (nós/arestas L1-L3), expansão semântica CTE/GQL e visualização 360° | ✅ Validado |
+| **Catálogo de Agent Skills** | Habilidades declarativas (`SKILL.md`) cobrindo WordPress moderno (Gutenberg, REST API, Performance), FastAPI, Playwright e Firecrawl com auto-aprimoramento | ✅ Validado |
+| **Auditoria & Segurança** | Trilha imutável no Postgres para aprovações `WRITE`/`EXEC`, RBAC por projeto e autenticação segura com cookies httpOnly | ✅ Validado |
+| **MCP (Model Context Protocol)** | Suporte completo a servidores MCP (stdio/HTTP), com scanner de segurança integrado (Cisco MCP Scanner) | ✅ Validado |
 
-Exercitado de ponta a ponta: as migrações contra Postgres real (pgvector,
-índices HNSW/tsvector); indexação deste próprio repositório; sessão de agente
-com worktree Git e sandbox Docker (usuário não-root, escrita barrada fora do
-workspace, rede desabilitada); MCP conectado a um servidor real via `npx`;
-busca híbrida e expansão em Grafo (Graphify) das fontes contra Postgres.
+---
 
-487 testes de backend (+ 27 pulados sem `DATABASE_URL_TEST`) e 26 de frontend.
-Pytest, Vitest, `tsc` e `next build` limpos. CI no GitHub Actions roda tudo
-isso a cada push/PR na `main`, mais auditoria de dependências.
+## 🚀 Início Rápido
 
-## Requisitos
+Toda a stack roda em contêineres Docker isolados — basta um único comando `docker compose up`.
 
-- **Docker** — é o único requisito de execução; toda a stack roda em containers,
-  Ollama e language servers inclusive
-- `uv` e Node só para rodar testes e lint fora dos containers
-## Início rápido
-
-Tudo roda em containers — um único `docker compose up`. Nenhuma parte fica no host.
-
-Copie o `.env` e ajuste `PROJECTS_ROOT` para a pasta que contém seus projetos:
-
+### 1. Configurar Variáveis de Ambiente
+Copie o arquivo de exemplo e configure suas chaves de API:
 ```bash
 cp .env.example .env
 ```
 
-Gere as duas chaves (`SICOOBITO_API_KEY` e `EXECUTOR_TOKEN`):
-
+Gere as chaves de segurança da aplicação:
 ```bash
 python -c "import secrets;print(secrets.token_urlsafe(32))"
 ```
 
-**Fixe também `SICOOBITO_ADMIN_USERNAME`/`SICOOBITO_ADMIN_PASSWORD` no `.env`** — é a
-credencial de login do browser (`/ide`, ADR 0005), separada das duas chaves acima. Sem
-isso, a API gera uma senha aleatória na primeira subida e só a mostra uma vez, no log
-(`docker compose logs api | grep auth.seed_user`) — fácil de perder, e sem jeito de
-recuperar depois sem redefinir a senha diretamente no banco.
+Fixe no `.env`:
+- `SICOOBITO_API_KEY`: Chave para integrações externas (Cline, Continue, Aider).
+- `EXECUTOR_TOKEN`: Chave de comunicação com o sandbox do executor.
+- `SICOOBITO_ADMIN_USERNAME` e `SICOOBITO_ADMIN_PASSWORD`: Credenciais para acesso à interface web.
+- `FIRECRAWL_API_KEY`: (Opcional) Chave da API do Firecrawl para scraping e deep research na web pública.
 
+### 2. Subir a Stack via Docker Compose
 ```bash
 docker compose up -d --build
 ```
 
+Execute as migrações do banco de dados:
 ```bash
 docker compose exec api alembic upgrade head
 ```
 
-Pronto — abra `http://localhost:5400/ide` e entre com o usuário/senha que você fixou
-acima:
+### 3. Acessar os Serviços
 
-| Serviço | Porta | URL |
+| Serviço | Porta Local | URL de Acesso |
 |---|---|---|
-| IDE e dashboard (Next.js Web) | 5400 | http://localhost:5400/ide |
-| IDE Desktop Preview (Svelte 5) | 5409 | http://localhost:5409 |
-| API (gateway OpenAI-compatible) | 5401 | http://localhost:5401/v1 |
-| Executor (interno) | 5402 | — |
-| Postgres | 5403 | — |
-| Redis | 5404 | — |
-| Ollama | 5405 | http://localhost:5405 |
+| **IDE & Dashboard (Next.js Web)** | `5400` | [http://localhost:5400](http://localhost:5400) |
+| **Navegador Interno Dedicado** | `5400` | [http://localhost:5400/browser](http://localhost:5400/browser) |
+| **API & Gateway (FastAPI)** | `5401` | [http://localhost:5401/docs](http://localhost:5401/docs) |
+| **IDE Desktop Preview (Svelte 5)** | `5409` | [http://localhost:5409](http://localhost:5409) |
+| **MinIO Console (Storage)** | `5408` | [http://localhost:5408](http://localhost:5408) |
 
+---
 
-A faixa 5400–5499 foi escolhida para não disputar 3000, 8000 e 5432 com outros
-projetos.
+## 🌐 Navegador Interno & Verificação Visual
 
-### Modelos locais (Ollama opcional)
+O SicoobitoCode conta com um navegador de desenvolvimento integrado completo:
+- **Modo Tela Cheia (`F11`)**: Expande a visualização para 100% da tela do monitor para testes visuais imersivos.
+- **Múltiplas Abas**: Abra e gerencie múltiplas sessões com URLs e históricos independentes.
+- **Emulador de Dispositivos**: Teste em tempo real layouts em **Desktop (1280px)**, **Tablet (768x1024)** e **Mobile (375x667 / 390x844)** com rotação e controle de zoom.
+- **Modo Live (⚡ Live)**: Iframe em sandbox com Hot Module Replacement (HMR) e WebSockets em tempo real.
+- **Modo Headless (🤖 Agente)**: Conexão CDP com motores headless (Playwright / Lightpanda) para screenshots, inspeção do DOM e telemetria de rede.
 
-Por padrão, a plataforma sobe leve usando provedores cloud (**Anthropic** ou **Databricks**, dependendo das chaves no `.env`). O Ollama local roda como um serviço opcional via perfil do Docker Compose — nada precisa ser instalado no host.
+---
 
-Para iniciar a plataforma **com o Ollama local**:
+## 📚 RAG Multi-Formato & Documentos
+
+Faça upload direto de qualquer formato corporativo no painel `/rag`:
+- 📕 **PDFs**: Classificação inteligente via `pdf-inspector` (Rust) com detecção de scans sem OCR.
+- 📘 **Word**: `.docx`, `.doc`, `.docm`, `.odt`.
+- 📊 **Excel & Planilhas**: `.xlsx`, `.xls`, `.xlsb`, `.ods`, `.csv`, `.tsv` (processados pelo motor Rust `calamine`).
+- 📙 **PowerPoint**: `.pptx`, `.ppt`, `.ppsx`, `.odp`.
+- 📗 **E-books & Rich Text**: `.epub`, `.rtf`, `.md`, `.txt`.
+
+---
+
+## 🕷️ Scraping & Deep Research com Firecrawl
+
+O Agente possui ferramentas especializadas para interação com a web pública:
+- `web_scrape`: Extração de Markdown limpo e sem anúncios.
+- `web_search`: Pesquisa rápida na web com sumarização.
+- `crawl_and_index_docs`: Indexação recursiva de árvores completas de documentação técnica.
+- `clone_web_ui`: Blueprint estruturado para recriação de interfaces em React.
+- `deep_research`: Pesquisa autônoma multi-etapa com decomposição de consultas e relatório citado (`[[1]]`, `[[2]]`).
+- **Guardião Anti-SSRF**: Validador rigoroso bloqueando loopback, redes privadas (RFC 1918), metadados de nuvem e hosts de contêineres internos.
+
+---
+
+## 🧪 Testes & Qualidade de Código
+
+Executar a suíte completa de testes:
 ```bash
-docker compose --profile ollama up -d
+# Testes do Backend (FastAPI + RAG + Firecrawl + Tools)
+docker compose exec api uv run pytest -q
+
+# Testes de Tipos e Build do Frontend (Next.js)
+cd apps/web && bun run build
 ```
 
-O serviço `ollama-init` baixa os modelos de `OLLAMA_PULL_MODELS` na primeira subida e sai; os pesos ficam num volume, então recriar containers não rebaixa nada.
+---
 
-```bash
-docker compose --profile ollama logs -f ollama-init
-```
+## 📖 Documentação de Arquitetura
 
-**Sem GPU, o tamanho do modelo é a variável que decide se isto é usável.** Numa
-máquina com gráficos integrados e 8 GB alocados ao Docker, o `qwen2.5-coder:1.5b`
-responde em segundos e o `7b` entra em swap. Os perfis `auto` e `cheap` usam o
-pequeno por isso; `local-first` e `coding` pedem o 7b, e só valem a pena com RAM
-sobrando ou GPU. Para GPU NVIDIA, adicione ao serviço `ollama`:
-
-```yaml
-    deploy: { resources: { reservations: { devices: [{ capabilities: [gpu] }] } } }
-```
-
-O gateway responde em `http://localhost:5401/v1` com a API da OpenAI. Qualquer ferramenta
-compatível (Cline, Continue, Aider, Claude Code) pode apontar para lá:
-
-```bash
-curl -s localhost:5401/v1/chat/completions -H "Authorization: Bearer $SICOOBITO_API_KEY" -H "content-type: application/json" -d '{"model":"auto/cheap","messages":[{"role":"user","content":"ping"}]}'
-```
-
-Estado dos provedores, incluindo o motivo de cada indisponibilidade:
-
-```bash
-curl -s localhost:5401/api/health/providers -H "Authorization: Bearer $SICOOBITO_API_KEY"
-```
-
-Testes:
-
-```bash
-cd apps/api && uv sync --extra azure && uv run pytest
-```
-
-### Se alguma porta da faixa estiver ocupada
-
-Altere o mapeamento no `docker-compose.yml`. No Windows com Docker Desktop, a
-colisão é traiçoeira: em vez de recusar a conexão, **outro serviço responde no
-lugar** — o backend parece no ar mas devolve 404 em todas as rotas.
-
-```bash
-netstat -ano | findstr :5401
-```
-
-## Configuração
-
-Os modelos e as políticas de roteamento são declarativos:
-
-- `config/providers.yaml` — catálogo de modelos por provedor
-- `config/routes.yaml` — perfis (`auto`, `coding`, `cheap`, `fast`, `local-first`)
-- `config/pricing.yaml` — preço por 1M tokens, usado na contabilidade
-
-## Estrutura
-
-```
-apps/api/src/sicoobito/
-  router/     única saída para LLM: catálogo, política, adaptadores, custo
-  optimizer/  cache, estimativa de token, compressão, complexidade
-  context/    indexação, chunking por símbolo, busca híbrida
-  agent/      grafo LangGraph, ferramentas com classe de risco
-  workspace/  fs com fronteira, git, github
-  sandbox/    container efêmero por sessão
-  lsp/        ponte entre o editor e os language servers
-  api/        fachada /v1 e rotas de gestão
-apps/web/     dashboard e IDE (Next.js + Monaco)
-services/executor/  único serviço com acesso ao daemon do Docker (ADR 0002)
-config/       providers.yaml, routes.yaml, pricing.yaml
-```
-
-## Documentação & Segundo Cérebro
-
-- [Arquitetura](docs/architecture.md) — Visão técnica, fluxo de dados e segurança
-- [Decisões Arquiteturais (ADRs)](docs/adr/) — ADRs 0001 a 0005 formais
-- **Segundo Cérebro & Knowledge Graph no Obsidian**: [`graphify-out/obsidian/`](graphify-out/obsidian/)
-  - Mais de **5.400 notas markdown interligadas** por Wikilinks `[[...]]`.
-  - MOCs temáticos (`00 - 🏠 Painel & MOCs/`), Visualizador Canvas e cores por categoria no Graph View.
-  - **Como abrir**: No app Obsidian, clique em *"Abrir outro cofre"* → *"Abrir pasta como cofre"* e aponte para `graphify-out/obsidian`.
-
-> [!IMPORTANT]
-> **Uso Obrigatório por Agentes de IA:**
-> Qualquer agente autônomo (Claude, Gemini, Antigravity ou subagentes) atuando neste repositório **deve obrigatoriamente** consultar o cofre Obsidian (`graphify-out/obsidian/`) e o Grafo de Conhecimento (`graph_search` / `sicoobito.graphify`) antes de planejar e executar modificações estruturais ou de segurança.
+Para mais detalhes sobre as decisões de design, consulte:
+- [Visão Geral de Arquitetura](file:///c:/Users/leona/Documents/Projetos/SicoobitoCode/docs/architecture.md)
+- [ADR 0001: Camada Única de LLM](file:///c:/Users/leona/Documents/Projetos/SicoobitoCode/docs/adr/0001-camada-unica-de-llm.md)
+- [ADR 0006: Integração Firecrawl Web & RAG](file:///c:/Users/leona/Documents/Projetos/SicoobitoCode/docs/adr/0006-integracao-firecrawl-web-rag.md)
+- [ADR 0007: Navegador Interno e Emulação Visual](file:///c:/Users/leona/Documents/Projetos/SicoobitoCode/docs/adr/0007-navegador-interno-e-emulacao-visual.md)
+- [ADR 0008: RAG Multi-Formato Universal com AnyDoc e PDF Inspector](file:///c:/Users/leona/Documents/Projetos/SicoobitoCode/docs/adr/0008-rag-multi-formato-anydoc-e-pdf-inspector.md)

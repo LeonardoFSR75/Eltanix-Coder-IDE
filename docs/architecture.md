@@ -6,6 +6,8 @@
 ┌─────────────────────────────────────────────────────────────────┐
 │  apps/web — Next.js 15                                          │
 │  IDE Monaco · Dashboard · Agent Dock · Second Brain · MCP UI   │
+│  Navegador Interno (Live Iframe + Headless + Fullscreen)        │
+│  RAG Multi-Formato (PDF, Word, Excel, PPT, OpenDoc, EPUB, CSV)  │
 │  Login obrigatório (cookie httpOnly) · Central de Projetos      │
 └───────────────────────────┬─────────────────────────────────────┘
                             │ HTTP/WS/SSE (cookie de sessão do usuário;
@@ -13,9 +15,10 @@
 ┌───────────────────────────▼─────────────────────────────────────┐
 │  apps/api — FastAPI (Python 3.12)                               │
 │                                                                 │
-│  /v1/*   ← fachada OpenAI-compatible (Cline, Continue, Aider)  │
-│  /api/*  ← gestão, métricas, auditoria, IDE, agente            │
-│  toda rota: AuthDep = require_session (API key OU sessão — ADR 0005) │
+│  /v1/*        ← fachada OpenAI-compatible (Cline, Continue)     │
+│  /api/*       ← gestão, métricas, auditoria, IDE, agente        │
+│  /api/firecrawl/* ← scraping, crawling, search & deep research  │
+│  toda rota: AuthDep = require_session (ADR 0005)                │
 │                                                                 │
 │  ┌──── router (ADR 0001: ÚNICA porta de saída para LLM) ──────┐ │
 │  │ catalog → policy → engine → adapters                       │ │
@@ -24,123 +27,80 @@
 │  │           (Redis)                                           │ │
 │  └─────────────────────────────────────────────────────────────┘ │
 │                                                                 │
-│  auth:      AppUser/AuthSession, scrypt, rate limit (ADR 0005) │
-│  optimizer: cache exato + semântico (Redis) · compressor · complexity │
-│  context:   chunker (tree-sitter) · indexer · store (pgvector) │
-│             + edges.py (Code Knowledge Graph: contains/imports) │
-│  agent:     LangGraph (think→approve→act) · tools (RiskClass)  │
-│             + coordinator.py (spawn/inbox/wait — ADR 0004)     │
-│             + approval_policy.py (auto-aprovação opt-in)       │
-│             + review_common.py (segunda opinião consultiva)    │
-│  workspace: WorkspaceFS · git (+ blame/co-change) · github · projects │
-│  mcp:       MCPManager · conexões stdio/HTTP · confiança por tool │
-│  lsp:       ponte WebSocket ↔ language server                  │
-│  rag:       documents + notes + context + graphify (4x RAG / GQL CTE expansion) │
-│  audit:     registro de aprovações WRITE/EXEC                  │
-│  telemetry: TraceRecorder (Redis/memória + Postgres/ToolSpan) + request_log │
-│  browser:   sessão do agente (browser_action) + painel manual do IDE │
+│  auth:       AppUser/AuthSession, scrypt, rate limit (ADR 0005)│
+│  optimizer:  cache exato + semântico (Redis) · compressor      │
+│  context:    chunker (tree-sitter) · indexer · store (pgvector)│
+│  firecrawl:  FirecrawlService · anti-SSRF guard · RAG ingest   │
+│  documents:  AnyDoc (Rust Calamine) + pdf-inspector (Rust)     │
+│  agent:      LangGraph (think→approve→act) · tools (RiskClass) │
+│              + coordinator.py (spawn/inbox/wait — ADR 0004)    │
+│              + tools/firecrawl.py (scrape/clone_ui/research)   │
+│              + tools/skills.py (Self-Improving Skills)         │
+│  workspace:  WorkspaceFS · git (+ blame/co-change) · projects  │
+│  mcp:        MCPManager · conexões stdio/HTTP · scanner cisco  │
+│  lsp:        ponte WebSocket ↔ language server                 │
+│  rag:        4x RAG: documents + notes + context + graphify    │
+│  audit:      registro de aprovações WRITE/EXEC                 │
+│  browser:    sessão CDP / Playwright / Lightpanda isolado      │
 │                                                                 │
 └───┬─────────────┬────────────────────────────────┬─────────────┘
     │             │                                │
 ┌───▼────┐  ┌────▼────────────────────────┐  ┌───▼──────────────┐
 │Postgres│  │  Provedores de LLM          │  │services/executor  │
 │pgvector│  │  Ollama · Azure · Databricks│  │(único c/ docker.  │
-│Redis   │  │  Anthropic · Groq           │  │sock — ADR 0002)   │
+│Redis   │  │  Anthropic · Groq · OpenAI  │  │sock — ADR 0002)   │
 │MinIO   │  └─────────────────────────────┘  └──────────────────┘
 └────────┘                                   services/browser
-                                             (Chromium isolado
+                                             (Chromium/Lightpanda
                                               em browser_net)
 ```
 
-## Fluxo de um Request
+---
 
-1. `POST /v1/chat/completions` chega com `model: "auto/cheap"`.
-2. `AuthDep` (`api/deps.py::require_session`) valida API key **ou** cookie de
-   sessão — nunca fica aberta por omissão (ADR 0005). `deps.identify_source`
-   descobre a ferramenta de origem (header ou User-Agent).
-3. `BudgetGuard.check()` avisa — ou bloqueia, se `BUDGET_HARD_STOP` — quando o orçamento estourou.
-4. `optimizer.tokens` estima o tamanho do prompt (necessário para custo e para descartar modelos cuja janela não comporta o pedido).
-5. `RoutingPolicy.select()` monta a lista ordenada de candidatos, excluindo os sem credencial, com circuito aberto ou janela insuficiente.
-6. Para cada candidato, `RouterEngine`:
-   - consulta o cache exato e, se habilitado, o cache semântico por
-     similaridade de embedding (desligado quando a chamada tem `tools`);
-   - chama `litellm.Router.acompletion`;
-   - classifica a falha (`FATAL` aborta, `SKIP` pula sem punir, `TRANSIENT` alimenta o breaker) e passa ao próximo.
-7. Sucesso: normaliza `usage`, calcula custo, registra saúde, grava o cache e escreve uma linha em `request_log`.
+## Principais Módulos & Responsabilidades
 
-## Decisões que Moldam a Plataforma
+### 1. Roteamento Unificado de IA (RouterEngine)
+- **ADR 0001**: Ponto único de saída para chamadas LLM e Embeddings.
+- Suporte multi-provedor (Ollama, Azure OpenAI, Databricks, Anthropic, Groq, OpenAI).
+- Circuit breaker resiliente baseado em Redis e contabilidade estrita de tokens/custos.
 
-**Uma única porta de saída para LLM** (ADR 0001). Nenhum módulo fora de `router/adapters/` importa SDK de provedor. É o que torna Databricks, Foundry, Anthropic, Groq e Ollama plugáveis de verdade e o que garante que nenhuma chamada escape da contabilidade.
+### 2. Ingestão Multi-Formato RAG (AnyDoc + Calamine + PDF Inspector)
+- **ADR 0008**: Motor de extração em Rust nativo.
+- **`firecrawl-anydoc`**: Conversão de `.docx`, `.xlsx`, `.pptx`, `.odt`, `.ods`, `.odp`, `.rtf`, `.epub`, `.csv` em Markdown em <5ms.
+- **Motor `calamine`**: Leitura ultrarrápida de planilhas Excel e OpenDocument.
+- **`pdf-inspector`**: Classificação de PDFs vetorizados vs escaneados e extração de Markdown.
 
-**Executor isolado em serviço próprio** (ADR 0002). O serviço `services/executor` é o único com `/var/run/docker.sock` montado. A API interage com ele via HTTP (`EXECUTOR_TOKEN`), impedindo que execuções não autorizadas obtenham privilégios no host.
+### 3. Ecossistema Web & Scraping (Firecrawl)
+- **ADR 0006**: Cliente assíncrono para extração limpa de dados da web para RAG.
+- **Guardião Anti-SSRF (`validate_target_url`)**: Bloqueio estrito de redes privadas (RFC 1918), loopback, metadados cloud (`169.254.169.254`) e nomes de contêineres Docker.
+- **Ferramentas do Agente**:
+  - `web_scrape`: Extração de Markdown limpo (`only_main_content=True`).
+  - `web_search`: Pesquisa rápida na web com sumarização.
+  - `crawl_and_index_docs`: Indexação recursiva de árvores de documentação técnica.
+  - `clone_web_ui`: Extração de blueprint visual para recriação de UIs em React.
+  - `deep_research`: Pesquisa autônoma multi-etapa com validação e citações (`[[1]]`, `[[2]]`).
 
-**LiteLLM como biblioteca, não como proxy.** O `litellm.Router` roda dentro do processo FastAPI com `num_retries=0`. Fallback, retry e ordenação são nossos, porque o litellm não conhece o circuit breaker nem o custo estimado de cada candidato.
+### 4. Navegador Interno Híbrido & Fullscreen
+- **ADR 0007**: Ambiente de navegação integrado no IDE e página standalone `/browser`.
+- **Modo Live**: Iframe interativo em sandbox para testes rápidos com HMR e WebSockets.
+- **Modo Headless / Agente**: Comunicação via CDP compatível com **Playwright** e **Lightpanda** (`lightpanda-io/browser`).
+- **Modo Tela Cheia**: Expansão total via `F11` ou botão dedicado `⛶`.
+- **Emulador de Dispositivos**: Presets responsivos com moldura de Desktop, Laptop, Tablet e Mobile.
 
-**Configuração em YAML, telemetria no banco.** `config/*.yaml` é a única fonte de verdade sobre modelos, rotas, MCP e preços. Não existem tabelas `provider`/`model`: duplicá-las criaria sincronização sem ganho. Os agregados são derivados de `request_log` por consulta.
+### 5. Catálogo de Agent Skills & Auto-Aprimoramento
+- Skills declarativas em `.agents/agent-skills/` e `.sicoobito/skills/` com padrão aberto `SKILL.md`.
+- Conhecimento especializado para WordPress moderno (Gutenberg, REST API, Performance), FastAPI, Playwright e Firecrawl.
+- Ferramentas `list_skills`, `get_skill` e `propose_skill` para descoberta e evolução autônoma de convenções técnicas.
 
-**Custo desconhecido nunca vira zero.** Um modelo ausente de `pricing.yaml` produz `cost_known=false`, e o dashboard mostra isso como lacuna explícita. O mesmo vale para tokens: contagem local é marcada como `usage_estimated`.
+---
 
-**Degradação em vez de queda.** Redis fora significa perder cache e circuit breaker, não perder o gateway. MinIO fora desabilita RAG de documentos, mantendo o restante funcional.
+## Trilha de Decisões de Arquitetura (ADRs)
 
-**Login obrigatório, API key vira canal de serviço** (ADR 0005). Toda rota exige
-`require_session`: API key válida (CI, cline, continue, aider, cursor) ou cookie
-de sessão de usuário — nunca aberta por omissão. Etapa 1 de um plano em duas
-etapas: um único usuário seed, sem RBAC ainda.
-
-**Orquestração multiagente sem loop supervisor novo** (ADR 0004). `spawn_agent`
-cria um filho que roda em `stream_run()` — o mesmo burst que já existia —, falha
-fechado (recusa) sem Redis configurado, porque não há como mensagear ou descobrir
-um filho órfão sem coordenador. `RiskClass` nesse caso é `WRITE` mesmo sem tocar
-arquivo: consome orçamento e cria estado durável (worktree, sandbox, checkpoint)
-sem aprovação turno-a-turno.
-
-**Aprovação humana continua sendo o portão, mas com dois assistentes
-consultivos.** `agent/approval_policy.py` deixa um projeto auto-aprovar
-`WRITE`/`EXEC` restrito a regras explícitas em `.sicoobito/approval_policy.yaml`
-(glob de caminho + limite de linhas; prefixo de comando com bloqueio de
-caracteres perigosos), fail-closed em qualquer ambiguidade. `agent/
-review_common.py` roda uma segunda opinião automática antes da aprovação humana
-— puramente consultiva, uma falha vira "unavailable", nunca "approved". Nenhum
-dos dois substitui `interrupt()` no grafo — só decidem se ele dispara ou não.
-
-**Segundo Cérebro, Obsidian & Grafo de Conhecimento (ADR 0003).** O SicoobitoCode integra nativamente um Grafo de Conhecimento (`sicoobito.graphify`) estruturado em 3 camadas de arestas (L1 Sintática: AST/Wikilinks/Tags, L2 Vetorial: similaridade pgvector, L3 Semântica: LLM). Toda a malha de conhecimento do repositório, documentações, decisões de código e 20 notas de fases e roadmap são persistidas e organizadas no cofre **Obsidian** em `graphify-out/obsidian/`, com MOCs temáticos, visualização Canvas e grafo colorido.
-
-**Sincronização de Worktree da Sessão com o Editor Monaco.** As alterações do agente são gravadas isoladamente no seu worktree de sessão (`.sicoobito/worktrees/<session_id>`). O endpoint `GET /api/workspace/file` resolve arquivos cientes do `session_id` ativo com fallback para o workspace principal, permitindo a leitura no editor sem erros de "arquivo não encontrado". O clique em "Aceitar" no `DiffCard` dispara `POST /api/agent/sessions/{session_id}/files/accept`, copiando a alteração para a raiz do workspace do projeto.
-
-**Validação em Malha Fechada (Closed-Loop Execution).** A ferramenta `write_file` executa checagens automáticas de sintaxe AST/JSON e auto-formatação de código HTML no conteúdo gravado, retornando alertas de erro no `ToolResult`. O `SYSTEM_PROMPT` proíbe a emissão de código solto no chat sem a chamada de ferramenta correspondente e veda a marcação prévia de tarefas como concluídas sem verificação real no sandbox.
-
-**Intercepção Inteligente no Sandbox e Contexto do Editor.** O handler `run_command` previne erros de permissão de sistema operacional interceptando tentativas de executar arquivos de dados estáticos (como `.html`, `.css`, `.json`) como binários bash, retornando orientação em tempo de execução ao agente. As abas ativas do Monaco Editor são automaticamente sincronizadas no contexto inicial da sessão (`focus_files`).
-
-
-
-## Módulos da Aplicação (`apps/api`)
-
-| Módulo | Responsabilidade |
-|---|---|
-| `auth/` | Login obrigatório do browser: `AppUser`/`AuthSession`, hash `scrypt`, rate limit de login, troca de senha (ADR 0005). |
-| `router/` | Gateway de saída LLM: catálogo, políticas de roteamento, adaptadores, custo e contabilidade. |
-| `optimizer/` | Cache exato + cache semântico por embedding (Redis), compressão de histórico de contexto e classificação de complexidade do prompt. |
-| `context/` | Indexação de código com tree-sitter, embeddings, busca híbrida RRF no pgvector, e Code Knowledge Graph (`edges.py`: arestas `contains`/`imports` entre `code_chunk`). |
-| `agent/` | Grafo de execução do agente autônomo (LangGraph), checkpointer Postgres, ferramentas com `RiskClass`, `approval_policy.py` (auto-aprovação opt-in), `review_common.py` (segunda opinião), `coordinator.py` (orquestração multiagente, ADR 0004). |
-| `workspace/` | Fronteira do sistema de arquivos (`WorkspaceFS`), integração Git (worktrees, `blame`/`co_change`, identidade por projeto) e GitHub. |
-| `sandbox/` | Gerenciamento de containers efêmeros via serviço executor isolado. |
-| `mcp/` | Cliente de servidor MCP (stdio/HTTP), catálogo, editor estruturado de `mcp.yaml` e confiança por ferramenta individual (`tool_overrides`). |
-| `lsp/` | Ponte de integração entre Monaco Editor no browser e Language Server Protocol por stdio. |
-| `documents/` | Ingestão e busca vetorial/híbrida de documentos (PDFs/MDs) via MinIO + pgvector. |
-| `notes/` | Segundo Cérebro: gerenciamento de notas interconectadas com `[[wikilinks]]`. |
-| `graphify/` | Grafo de Conhecimento e Graph RAG: extração L1 (Wikilinks, Tags, AST/TS Imports), arestas L2/L3, expansão via CTE/GQL, métricas e busca cross-project opt-in. |
-| `skills/` | Serviço de armazenamento e execução de habilidades customizadas (Skills). |
-| `audit/` | Registro de auditoria durável de ações `WRITE` e `EXEC` aprovadas pelo usuário. |
-| `telemetry/` | Buffer `TraceRecorder` (Redis/memória) com persistência durável em Postgres (`ToolSpan`) para spans de ferramentas e RAG. |
-| `browser/` | Integração com o serviço de navegação Chromium headless (`services/browser`) — usada pela tool `browser_action` do agente e pelo painel de navegador manual do IDE. |
-| `evals/` | Módulo de avaliação continuada de qualidade RAG (métricas hit@k / MRR). |
-
-## Garantias de Segurança & Governança
-
-1. **Vínculo Local:** Todas as portas publicadas no `docker-compose.yml` são ligadas exclusivamente a `127.0.0.1`.
-2. **Rede Browser Isolada:** O serviço Chromium roda na rede `browser_net` (`internal: true`), impossibilitando acesso à internet pública durante verificação visual.
-3. **Fronteira de Arquivos:** `WorkspaceFS` impede navegação com `..` ou caminhos fora de `PROJECTS_ROOT`.
-4. **Classificação de Risco:** Ferramentas `WRITE` e `EXEC` exigem aprovação explícita via nó `approve` do LangGraph (`interrupt()`) — auto-aprovação (`approval_policy.py`) só dispensa esse nó dentro de regras explícitas por projeto, fail-closed em ambiguidade.
-5. **Login obrigatório (ADR 0005):** `require_session` nunca fica aberta por omissão — API key (canal de serviço) ou cookie de sessão de usuário, sempre uma das duas. Senha em `scrypt`, token de sessão só guardado como hash SHA-256.
-6. **Consulta Obrigatória do Conhecimento por Agentes de IA:** Qualquer modelo de IA (Claude, Gemini, Antigravity ou subagente autônomo) **deve obrigatoriamente** consultar o cofre Obsidian (`graphify-out/obsidian/`) e o Grafo de Conhecimento (`graph_search` / `sicoobito.graphify`) antes de planejar alterações de arquitetura ou modificar regras de segurança, garantindo conformidade estrita com os ADRs.
-
+1. [ADR 0001: Camada Única de LLM](file:///c:/Users/leona/Documents/Projetos/SicoobitoCode/docs/adr/0001-camada-unica-de-llm.md)
+2. [ADR 0002: Executor Isolado de Comandos](file:///c:/Users/leona/Documents/Projetos/SicoobitoCode/docs/adr/0002-executor-isolado.md)
+3. [ADR 0003: Grafo de Conhecimento e Graphify](file:///c:/Users/leona/Documents/Projetos/SicoobitoCode/docs/adr/0003-grafo-de-conhecimento-graphify.md)
+4. [ADR 0004: Orquestração Multiagente](file:///c:/Users/leona/Documents/Projetos/SicoobitoCode/docs/adr/0004-orquestracao-multiagente.md)
+5. [ADR 0005: Login Obrigatório e Sessão Segura](file:///c:/Users/leona/Documents/Projetos/SicoobitoCode/docs/adr/0005-login-obrigatorio.md)
+6. [ADR 0006: Integração Firecrawl Web & RAG](file:///c:/Users/leona/Documents/Projetos/SicoobitoCode/docs/adr/0006-integracao-firecrawl-web-rag.md)
+7. [ADR 0007: Navegador Interno e Emulação Visual](file:///c:/Users/leona/Documents/Projetos/SicoobitoCode/docs/adr/0007-navegador-interno-e-emulacao-visual.md)
+8. [ADR 0008: RAG Multi-Formato Universal com AnyDoc e PDF Inspector](file:///c:/Users/leona/Documents/Projetos/SicoobitoCode/docs/adr/0008-rag-multi-formato-anydoc-e-pdf-inspector.md)
