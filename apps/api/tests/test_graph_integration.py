@@ -247,6 +247,31 @@ async def test_write_tool_rejeitado_nao_executa(ctx, tmp_path):
     assert "recusou" in mensagens_tool[0]["content"] or "não agora" in mensagens_tool[0]["content"]
 
 
+async def test_pending_action_traz_diff_mesmo_sem_second_opinion(ctx, tmp_path):
+    # second_opinion continua desligado (default) — o diff precisa aparecer de
+    # qualquer forma, porque a UI de aprovação granular depende dele para
+    # mostrar o que vai mudar antes do humano decidir.
+    engine = FakeRouterEngine(
+        [
+            _tool_call_response("call1", "write_file", {"path": "bar.py", "content": "x = 1\n"}),
+            _FINISHED_RESPONSE,
+        ]
+    )
+    compilado = build_graph(engine, ctx).compile(checkpointer=MemorySaver())
+    config = {"configurable": {"thread_id": "t-diff-attached"}}
+
+    entrada = _initial_state("t-diff-attached")
+    async for _ in compilado.astream(entrada, config=config, stream_mode="updates"):
+        pass
+
+    estado_pausado = await compilado.aget_state(config)
+    payload = _interrupt_payload(estado_pausado)
+    pendente = payload["actions"][0]
+    assert pendente.get("diff"), "diff deveria ser calculado e anexado independente de second_opinion"
+    assert "x = 1" in pendente["diff"]
+    assert "review" not in pendente, "sem second_opinion, não deveria haver nota de revisão"
+
+
 # ── Política de auto-aprovação: WRITE/EXEC que casa nunca vê interrupt ──────
 
 

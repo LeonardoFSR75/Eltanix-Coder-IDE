@@ -96,7 +96,11 @@ class MCPManager:
                             parameters=remote_tool.input_schema
                             or {"type": "object", "properties": {}},
                             handler=_make_handler(connection, remote_tool.name),
-                            summarize=lambda a, n=local_name: f"chamar {n}",
+                            summarize=lambda a, n=local_name: (
+                                f"{n}({', '.join(f'{k}={v!r}' for k, v in (a or {}).items())})"[
+                                    :200
+                                ]
+                            ),
                         )
                     )
                     self._registered_names.append(local_name)

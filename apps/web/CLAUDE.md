@@ -57,11 +57,19 @@ nunca chega ao bundle do browser, ver `route.ts`). Um `lib/api/<domínio>.ts` no
 
 | Pasta | O quê |
 |---|---|
-| `app/` | Rotas do App Router — uma pasta por página (`/mcp`, `/settings`, `/rag`, `/graphify`...), mais `app/api/gateway/[...path]/route.ts` (o proxy) |
-| `components/ide/` | Monaco, terminal (xterm), agent dock, painéis do IDE, visualizador 360° do Graphify |
-| `components/providers/` | Contextos globais — `AuthContext.tsx` (chave de API), `Toast.tsx` |
+| `app/` | Rotas do App Router — `/ide` (Monaco/Agent), `/second-brain` (Editor Obsidian & Grafo 2D), `/mcp`, `/settings`, `/rag`, `/audit`, mais `app/api/gateway/[...path]/route.ts` (o proxy) |
+| `components/ide/` | Monaco, terminal (xterm), agent dock, painéis do IDE, visualizador 360° do Graphify, DiffCard e ApprovalCard |
+| `components/providers/` | Contextos globais — `AuthContext.tsx` (sessão e API key), `ProjectContext.tsx` (projeto ativo), `Toast.tsx` |
 | `lib/client.ts` | Único cliente HTTP — ver regra acima |
 | `lib/api/*.ts` | Um arquivo por domínio de backend (`documents.ts`, `notes.ts`, `graphify.ts`, `mcp.ts`, `telemetry.ts`...), tipos + funções finas sobre `lib/client.ts` |
+
+## Segundo Cérebro & Obsidian na Web
+
+A rota `/second-brain` implementa a interface de Segundo Cérebro estilo Obsidian:
+- Editor com suporte a **Wikilinks `[[Nome da Nota]]`** e `#hashtags`.
+- Visualização de Grafo 2D em tempo real desenhada via Canvas HTML5.
+- Sincronização direta com a API `/api/notes/*` e `/api/graphify/*`.
+- **Regra para Agentes**: Sempre consultar os MOCs em `graphify-out/obsidian/00 - 🏠 Painel & MOCs/` e o `Mapa Arquitetural SicoobitoCode.canvas` para manter alinhamento com a arquitetura geral da UI.
 
 ## Padrões a seguir em página/feature nova
 

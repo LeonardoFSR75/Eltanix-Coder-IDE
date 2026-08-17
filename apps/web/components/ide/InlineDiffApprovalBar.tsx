@@ -28,9 +28,9 @@ export function InlineDiffApprovalBar({
         className="inline-accept-btn"
         onClick={onAccept}
         disabled={busy}
-        title="Aceitar alterações (Alt+Enter)"
+        title="Aceitar no projeto (Alt+Enter)"
       >
-        <span>Accept</span>
+        <span>📥 Aceitar no projeto</span>
         <kbd className="kbd-shortcut">Alt+↵</kbd>
       </button>
 
@@ -39,9 +39,9 @@ export function InlineDiffApprovalBar({
         className="inline-reject-btn"
         onClick={onReject}
         disabled={busy}
-        title="Rejeitar alterações (Shift+Alt+Backspace)"
+        title="Descartar alterações (Shift+Alt+Backspace)"
       >
-        <span>Reject</span>
+        <span>🗑️ Descartar</span>
         <kbd className="kbd-shortcut">Shift+Alt+⌫</kbd>
       </button>
 

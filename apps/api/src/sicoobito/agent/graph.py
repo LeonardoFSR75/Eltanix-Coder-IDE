@@ -95,20 +95,14 @@ def _telemetry_status(nome: str, resultado: Any) -> str:
     return "ok" if resultado.ok else "error"
 
 
-async def _attach_review_notes(
-    context: ToolContext, engine: RouterEngine, pendentes: list[PendingApproval]
-) -> None:
-    """Segunda opinião automática — só roda quando o projeto liga
-    `second_opinion` na política, e só sobre o que **vai mesmo** para o
-    humano (chamada depois do filtro de `evaluate_policy`, nunca antes).
+def _attach_diffs(context: ToolContext, pendentes: list[PendingApproval]) -> None:
+    """Calcula e anexa o diff proposto a cada pending action revisável, sempre —
+    independente da política `second_opinion` estar ligada. Antes só era
+    calculado dentro de `_attach_review_notes` (e descartado) quando a segunda
+    opinião estava ativa; a UI de aprovação granular precisa dele para mostrar
+    o que vai mudar antes do humano decidir, com ou sem segunda opinião.
 
-    Muta `pendentes` in place, anexando `review` a cada item elegível.
-    Puramente consultiva: uma falha (rede, modelo fora do ar) vira
-    `verdict: "unavailable"`, nunca `"approved"` — isto não pode virar
-    aprovação silenciosa. O veredito também nunca realimenta
-    `evaluate_policy()`: acoplar os dois deixaria um modelo barato
-    "carimbando" aprovações, o que anularia o desenho fail-closed de ambas
-    as features.
+    Muta `pendentes` in place, anexando `diff` a cada item elegível.
     """
     for pendente in pendentes:
         if pendente["tool"] not in _REVIEWABLE_TOOLS:
@@ -118,11 +112,38 @@ async def _attach_review_notes(
         if proposto is None or not proposto.diff:
             continue
 
+        pendente["diff"] = proposto.diff
+
+
+async def _attach_review_notes(
+    context: ToolContext, engine: RouterEngine, pendentes: list[PendingApproval]
+) -> None:
+    """Segunda opinião automática — só roda quando o projeto liga
+    `second_opinion` na política, e só sobre o que **vai mesmo** para o
+    humano (chamada depois do filtro de `evaluate_policy`, nunca antes).
+
+    Reaproveita o `diff` já anexado por `_attach_diffs` (chamada antes desta,
+    sempre) em vez de recalculá-lo. Muta `pendentes` in place, anexando
+    `review` a cada item elegível. Puramente consultiva: uma falha (rede,
+    modelo fora do ar) vira `verdict: "unavailable"`, nunca `"approved"` —
+    isto não pode virar aprovação silenciosa. O veredito também nunca
+    realimenta `evaluate_policy()`: acoplar os dois deixaria um modelo barato
+    "carimbando" aprovações, o que anularia o desenho fail-closed de ambas
+    as features.
+    """
+    for pendente in pendentes:
+        if pendente["tool"] not in _REVIEWABLE_TOOLS:
+            continue
+
+        diff = pendente.get("diff")
+        if not diff:
+            continue
+
         try:
             veredito = await request_review_verdict(
                 engine,
                 summary=pendente["summary"],
-                diff=proposto.diff,
+                diff=diff,
                 source="agent:pre_approval_review",
                 session_id=context.session_id,
             )
@@ -339,6 +360,7 @@ def build_graph(engine: RouterEngine, context: ToolContext):
             )
 
         if restantes:
+            _attach_diffs(context, restantes)
             if policy.second_opinion:
                 await _attach_review_notes(context, engine, restantes)
 

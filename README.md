@@ -172,8 +172,15 @@ services/executor/  único serviço com acesso ao daemon do Docker (ADR 0002)
 config/       providers.yaml, routes.yaml, pricing.yaml
 ```
 
-## Documentação
+## Documentação & Segundo Cérebro
 
-- [Arquitetura](docs/architecture.md)
-- [Decisões arquiteturais](docs/adr/)
-- Notas de projeto no Obsidian: `vault-solo/Projects/sicoobito-code/`
+- [Arquitetura](docs/architecture.md) — Visão técnica, fluxo de dados e segurança
+- [Decisões Arquiteturais (ADRs)](docs/adr/) — ADRs 0001 a 0005 formais
+- **Segundo Cérebro & Knowledge Graph no Obsidian**: [`graphify-out/obsidian/`](graphify-out/obsidian/)
+  - Mais de **5.400 notas markdown interligadas** por Wikilinks `[[...]]`.
+  - MOCs temáticos (`00 - 🏠 Painel & MOCs/`), Visualizador Canvas e cores por categoria no Graph View.
+  - **Como abrir**: No app Obsidian, clique em *"Abrir outro cofre"* → *"Abrir pasta como cofre"* e aponte para `graphify-out/obsidian`.
+
+> [!IMPORTANT]
+> **Uso Obrigatório por Agentes de IA:**
+> Qualquer agente autônomo (Claude, Gemini, Antigravity ou subagentes) atuando neste repositório **deve obrigatoriamente** consultar o cofre Obsidian (`graphify-out/obsidian/`) e o Grafo de Conhecimento (`graph_search` / `sicoobito.graphify`) antes de planejar e executar modificações estruturais ou de segurança.

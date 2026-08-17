@@ -987,26 +987,38 @@ class AgentRunner:
 
                 estado = await compilado.aget_state(config) if compilado.checkpointer else None
                 if estado is not None:
-                    pendentes_no_estado = estado.values.get("pending") or []
-                    if pendentes_no_estado and not estado.values.get("finished", False):
-                        yield {
-                            "node": "interrupt",
-                            "update": _serializable(
-                                {
-                                    "type": "approval_required",
-                                    "session_id": session.session_id,
-                                    "actions": pendentes_no_estado,
-                                    "auto_approved": [],
-                                }
-                            ),
-                        }
-                    elif estado.tasks:
-                        for tarefa in estado.tasks:
-                            for interrupcao in getattr(tarefa, "interrupts", []) or []:
-                                yield {
-                                    "node": "interrupt",
-                                    "update": _serializable(interrupcao.value),
-                                }
+                    # `estado.tasks[*].interrupts` carrega o payload real passado a
+                    # `interrupt()` em `approve()` — já com `diff`/`review` anexados por
+                    # `_attach_diffs`/`_attach_review_notes`. `estado.values["pending"]`
+                    # é só o que `think()` gravou *antes* de `approve()` rodar (sem
+                    # diff/review), porque o checkpoint desse campo é escrito no fim do
+                    # nó `think`, e a mutação em `approve()` nunca é persistida de volta
+                    # nele. Preferir sempre a versão via `tasks` quando existir.
+                    interrupcoes = [
+                        interrupcao
+                        for tarefa in estado.tasks
+                        for interrupcao in getattr(tarefa, "interrupts", []) or []
+                    ]
+                    if interrupcoes:
+                        for interrupcao in interrupcoes:
+                            yield {
+                                "node": "interrupt",
+                                "update": _serializable(interrupcao.value),
+                            }
+                    else:
+                        pendentes_no_estado = estado.values.get("pending") or []
+                        if pendentes_no_estado and not estado.values.get("finished", False):
+                            yield {
+                                "node": "interrupt",
+                                "update": _serializable(
+                                    {
+                                        "type": "approval_required",
+                                        "session_id": session.session_id,
+                                        "actions": pendentes_no_estado,
+                                        "auto_approved": [],
+                                    }
+                                ),
+                            }
             finally:
                 session.context.on_activity = None
                 structlog.contextvars.unbind_contextvars("session_id")

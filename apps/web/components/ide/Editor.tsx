@@ -413,7 +413,7 @@ export function Editor({
                   onClick={() => void acceptAgentCode()}
                   title="Aceitar alterações do agente e gravar no projeto principal (Alt+Enter)"
                 >
-                  ✓ Aceitar na IDE
+                  📥 Aceitar no projeto
                 </button>
                 <button
                   type="button"
@@ -421,7 +421,7 @@ export function Editor({
                   onClick={() => void rejectAgentCode()}
                   title="Reverter alterações do agente (Shift+Alt+Backspace)"
                 >
-                  ✕ Rejeitar
+                  🗑️ Descartar
                 </button>
               </div>
             </div>

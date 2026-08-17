@@ -2499,18 +2499,6 @@ textarea:focus-visible,
   flex-shrink: 0;
 }
 
-.approval-title {
-  font-size: 12px;
-  font-weight: 700;
-  margin-bottom: 10px;
-  color: #fbbf24;
-}
-
-.approval-actions {
-  display: flex;
-  gap: 10px;
-}
-
 .agent-log {
   flex: 1;
   overflow-y: auto;
@@ -2808,35 +2796,6 @@ textarea:focus-visible,
   z-index: 20;
 }
 
-.agent-approval-bar {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 6px;
-  border: 1px solid var(--border);
-  border-radius: 7px;
-  background: rgba(15, 23, 42, 0.78);
-  backdrop-filter: blur(8px);
-  box-shadow: 0 -4px 14px rgba(0, 0, 0, 0.12);
-}
-
-.agent-approval-meta {
-  flex-shrink: 0;
-  font-size: 9px;
-  font-weight: 700;
-  color: var(--text-dim);
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
-  white-space: nowrap;
-}
-
-.approval-quick-actions {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  margin-left: auto;
-}
-
 .compact-btn {
   padding: 4px 8px !important;
   font-size: 9.5px !important;
@@ -3103,51 +3062,6 @@ textarea:focus-visible,
   overflow: visible;
   display: flex;
   flex-direction: column;
-}
-
-.approval-card-header {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-}
-
-.approval-icon {
-  font-size: 16px;
-}
-
-.approval-subtitle {
-  font-size: 10.5px;
-  color: var(--text-dim);
-}
-
-.approval-list {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.approval-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 11.5px;
-  color: var(--text);
-}
-
-.approval-item-actions {
-  display: flex;
-  gap: 4px;
-  margin-left: auto;
-}
-
-.approval-actions-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 2px;
 }
 
 .agent-input-container {
@@ -5192,11 +5106,14 @@ button.primary:hover:not(:disabled) {
   color: #fca5a5;
 }
 
+/* Aprovação granular (gate de execução) — acento azul (var(--accent)), para
+   contrastar com o âmbar de InlineDiffApprovalBar/pill de worktree (gate de
+   merge de arquivo, ver mais abaixo). Duas cores, dois significados distintos. */
 .stream-approval-card {
   padding: 8px 8px 6px;
   border-radius: 8px;
-  background: linear-gradient(180deg, rgba(245, 158, 11, 0.08), rgba(15, 23, 42, 0.12));
-  border: 1px solid rgba(245, 158, 11, 0.24);
+  background: linear-gradient(180deg, var(--accent-dim), rgba(15, 23, 42, 0.12));
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -5209,7 +5126,7 @@ button.primary:hover:not(:disabled) {
   align-items: center;
   gap: 8px;
   padding-bottom: 4px;
-  border-bottom: 1px solid rgba(245, 158, 11, 0.16);
+  border-bottom: 1px solid color-mix(in srgb, var(--accent) 20%, transparent);
 }
 
 .approval-header-copy {
@@ -5222,7 +5139,7 @@ button.primary:hover:not(:disabled) {
 .approval-title {
   font-size: 11.5px;
   font-weight: 700;
-  color: var(--text);
+  color: var(--accent);
 }
 
 .approval-subtitle {
@@ -5236,16 +5153,17 @@ button.primary:hover:not(:disabled) {
   margin: 0;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
 }
 
 .approval-item {
   display: flex;
-  align-items: center;
-  gap: 6px;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
   font-size: 10.5px;
   color: var(--text);
-  padding: 3px 0;
+  padding: 6px 0;
   border-bottom: 1px solid rgba(255, 255, 255, 0.04);
 }
 
@@ -5253,10 +5171,119 @@ button.primary:hover:not(:disabled) {
   border-bottom: none;
 }
 
+.approval-item-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.approval-item-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.approval-item-tool {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text);
+}
+
 .action-summary {
   flex: 1;
   min-width: 0;
-  color: var(--text);
+  color: var(--text-dim);
+  margin: 0;
+}
+
+.approval-sandbox-note {
+  margin: 0;
+  font-size: 9.5px;
+  color: var(--warn);
+  background: var(--warn-dim);
+  border: 1px solid color-mix(in srgb, var(--warn) 30%, transparent);
+  border-radius: 5px;
+  padding: 3px 6px;
+}
+
+.approval-diff-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.approval-diff-toggle {
+  align-self: flex-start;
+  padding: 2px 4px;
+  border: none;
+  background: transparent;
+  color: var(--accent);
+  font-size: 10px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.approval-diff-body {
+  margin: 0;
+  max-height: 240px;
+  overflow: auto;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.approval-diff-line.add {
+  color: var(--accent-emerald);
+  background: var(--accent-emerald-dim);
+}
+
+.approval-diff-line.del {
+  color: var(--danger);
+  background: var(--danger-dim);
+}
+
+.approval-diff-line.hunk {
+  color: var(--accent);
+}
+
+.approval-diff-line.meta {
+  color: var(--text-muted);
+}
+
+.approval-diff-line.ctx {
+  color: var(--text-dim);
+}
+
+.approval-review-note {
+  margin: 0;
+  font-size: 9.5px;
+}
+
+.approval-review-note.approved {
+  color: var(--accent-emerald);
+}
+
+.approval-review-note.needs_revision {
+  color: var(--warn);
+}
+
+.approval-review-note.unavailable {
+  color: var(--text-muted);
+}
+
+.approval-item-actions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
 }
 
 .btn-approve-item,
@@ -5277,33 +5304,21 @@ button.primary:hover:not(:disabled) {
 }
 
 .btn-approve-item.selected {
-  background: rgba(16, 185, 129, 0.2);
-  border-color: rgba(16, 185, 129, 0.5);
-  color: #10b981;
+  background: var(--accent-emerald-dim);
+  border-color: color-mix(in srgb, var(--accent-emerald) 50%, transparent);
+  color: var(--accent-emerald);
 }
 
 .btn-reject-item.selected {
-  background: rgba(239, 68, 68, 0.2);
-  border-color: rgba(239, 68, 68, 0.5);
-  color: #ef4444;
+  background: var(--danger-dim);
+  border-color: color-mix(in srgb, var(--danger) 50%, transparent);
+  color: var(--danger);
 }
 
-.risk-pill {
-  font-size: 9.5px;
-  font-weight: 700;
-  text-transform: uppercase;
-  padding: 2px 6px;
-  border-radius: 4px;
-}
-
-.risk-pill.high {
-  background: rgba(239, 68, 68, 0.2);
-  color: #ef4444;
-}
-
-.risk-pill.med {
-  background: rgba(245, 158, 11, 0.2);
-  color: #f59e0b;
+.approval-footer-actions {
+  display: flex;
+  gap: 6px;
+  padding-top: 2px;
 }
 
 .btn-approve {
@@ -7899,14 +7914,17 @@ button.primary:hover:not(:disabled) {
   }
 }
 
-/* --- Inline Diff Approval Floating Bar --- */
+/* --- Inline Diff Approval Floating Bar ---
+   Gate de merge de arquivo (não de execução) — acento âmbar (var(--warn)) para
+   se distinguir do azul do ApprovalCard (gate de execução, ver .stream-approval-card
+   acima). Mesmo tratamento se aplica à pill de worktree logo abaixo. */
 .inline-approval-bar {
   display: inline-flex;
   align-items: center;
   gap: 6px;
   background: rgba(15, 23, 42, 0.92);
   backdrop-filter: blur(8px);
-  border: 1px solid rgba(255, 255, 255, 0.14);
+  border: 1px solid color-mix(in srgb, var(--warn) 35%, transparent);
   border-radius: 6px;
   padding: 3px 6px;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
@@ -7919,11 +7937,11 @@ button.primary:hover:not(:disabled) {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  background: #0d5c46;
+  background: color-mix(in srgb, var(--warn) 55%, #1f1305);
   color: #ffffff;
   font-size: 11px;
   font-weight: 600;
-  border: 1px solid rgba(16, 185, 129, 0.3);
+  border: 1px solid color-mix(in srgb, var(--warn) 45%, transparent);
   border-radius: 4px;
   padding: 3px 8px;
   cursor: pointer;
@@ -7931,9 +7949,10 @@ button.primary:hover:not(:disabled) {
 }
 
 .inline-accept-btn:hover:not(:disabled) {
-  background: #059669;
-  border-color: #10b981;
-  box-shadow: 0 0 8px rgba(16, 185, 129, 0.35);
+  background: var(--warn);
+  border-color: var(--warn);
+  color: #1f1305;
+  box-shadow: 0 0 8px color-mix(in srgb, var(--warn) 45%, transparent);
 }
 
 .inline-accept-btn:disabled {
@@ -8040,17 +8059,11 @@ button.primary:hover:not(:disabled) {
   gap: 8px;
   padding: 3px 8px 3px 10px;
   border-radius: 8px;
-  background: linear-gradient(135deg, rgba(99, 102, 241, 0.14) 0%, rgba(129, 140, 248, 0.06) 100%);
-  border: 1px solid rgba(99, 102, 241, 0.28);
-  box-shadow: 0 2px 8px -2px rgba(99, 102, 241, 0.15);
+  background: linear-gradient(135deg, var(--warn-dim) 0%, transparent 100%);
+  border: 1px solid color-mix(in srgb, var(--warn) 30%, transparent);
+  box-shadow: 0 2px 8px -2px color-mix(in srgb, var(--warn) 20%, transparent);
   margin-right: 8px;
   transition: all 0.2s ease;
-}
-
-[data-theme="light"] .agent-worktree-pill {
-  background: linear-gradient(135deg, rgba(99, 102, 241, 0.08) 0%, rgba(79, 70, 229, 0.04) 100%);
-  border-color: rgba(99, 102, 241, 0.25);
-  box-shadow: 0 2px 6px -1px rgba(99, 102, 241, 0.10);
 }
 
 .agent-worktree-label {
@@ -8059,27 +8072,18 @@ button.primary:hover:not(:disabled) {
   gap: 6px;
   font-size: 11px;
   font-weight: 650;
-  color: #818cf8;
+  color: var(--warn);
   letter-spacing: -0.01em;
   white-space: nowrap;
-}
-
-[data-theme="light"] .agent-worktree-label {
-  color: #4338ca;
 }
 
 .agent-worktree-dot {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: #818cf8;
-  box-shadow: 0 0 8px #818cf8;
+  background: var(--warn);
+  box-shadow: 0 0 8px var(--warn);
   animation: pulseGlow 2s infinite;
-}
-
-[data-theme="light"] .agent-worktree-dot {
-  background: #4f46e5;
-  box-shadow: 0 0 8px rgba(79, 70, 229, 0.5);
 }
 
 .agent-worktree-actions {
@@ -8095,18 +8099,18 @@ button.primary:hover:not(:disabled) {
   padding: 3px 10px;
   font-size: 11px;
   font-weight: 600;
-  color: #ffffff;
-  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  color: #1f1305;
+  background: linear-gradient(135deg, var(--warn) 0%, color-mix(in srgb, var(--warn) 70%, black) 100%);
   border: 1px solid rgba(255, 255, 255, 0.2);
   border-radius: 6px;
   cursor: pointer;
-  box-shadow: 0 2px 6px rgba(16, 185, 129, 0.35);
+  box-shadow: 0 2px 6px color-mix(in srgb, var(--warn) 35%, transparent);
   transition: all 0.15s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .agent-worktree-btn-accept:hover {
-  background: linear-gradient(135deg, #34d399 0%, #10b981 100%);
-  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.45);
+  background: linear-gradient(135deg, color-mix(in srgb, var(--warn) 80%, white) 0%, var(--warn) 100%);
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--warn) 45%, transparent);
   transform: translateY(-1px);
 }
 

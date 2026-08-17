@@ -43,15 +43,22 @@ API sem escrever `curl` — abra a pasta como coleção, selecione o ambiente `l
 | Pacote | O quê |
 |---|---|
 | `router/` | Única porta de saída para LLM — engine, adaptadores por provedor, catálogo YAML, health/circuit breaker (Redis), custo (`RequestLog`) |
-| `agent/` | `graph.py` (LangGraph think→approve→act), `tools/` (registro + handlers), `runner.py` (sessão, worktree, streaming) |
+| `agent/` | `graph.py` (LangGraph think→approve→act), `tools/` (registro + handlers), `runner.py` (sessão, worktree, streaming), `coordinator.py` (multiagente) |
 | `context/`, `documents/`, `notes/`, `graphify/` | As quatro fontes de RAG — cada uma com `store.py`, `service.py`/`indexer.py` ou `graph_rag.py` (expansão via CTE/GQL) |
-| `graphify/` | Engine de Grafo de Conhecimento: extração L1 (Wikilinks, Tags, AST/TS Imports), arestas L2/L3, `GraphStore` e `GraphRAGQueryEngine` |
+| `graphify/` | Engine de Grafo de Conhecimento: extração L1 (Wikilinks, Tags, AST/TS Imports), arestas L2/L3, `GraphStore` (PostgreSQL `graph_node`/`graph_edge`), `GraphAnalytics` e `GraphRAGQueryEngine` |
+| `notes/` | Segundo Cérebro: `store.py`, `service.py` (resolução de wikilinks `[[...]]`, fatiamento consciente de prosa e indexação vetorial) |
 | `mcp/` | Cliente MCP real — `config.py`/`config_editor.py` (YAML), `client.py` (conexão stdio/HTTP), `manager.py` (registra tools no `ToolRegistry`) |
 | `telemetry/` | `TraceRecorder` — buffer em memória de spans de tool/RAG (não confundir com `router/telemetry.py`, que é custo de LLM em Postgres) |
 | `evals/` | Harness de hit@k/MRR contra os buscadores reais — `uv run sicoobito-eval-rag` |
 | `db/` | `session.py` (engine/session_scope), `models.py`, migrações Alembic em `alembic/versions/` |
 | `sandbox/` | `container.py` (Docker local) / `executor.py` (cliente do serviço isolado, ver ADR 0002) |
 | `api/routes/` | Uma rota por domínio, sempre `dependencies=[AuthDep]`, sempre registrada em `api/routes/__init__.py` + `main.py::create_app` |
+
+## Uso Obrigatório do Conhecimento por Agentes de IA
+
+Agentes e desenvolvedores trabalhando nesta API **devem** consultar o grafo e as notas antes de propor alterações estruturais:
+- **Obsidian Vault**: `graphify-out/obsidian/` (MOCs temáticos em `00 - 🏠 Painel & MOCs/` e ADRs em `01 - 📑 Documentos & ADRs/`).
+- **Graph Search**: Utilizar a ferramenta `graph_search` ou a engine `GraphStore` para rastrear relacionamentos de dependência e imports antes de refatorar rotas, modelos ou serviços.
 
 ## Padrões a seguir em código novo
 

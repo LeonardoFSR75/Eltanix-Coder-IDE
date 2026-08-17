@@ -18,10 +18,14 @@ Adicionar um módulo dedicado de **Grafo de Conhecimento e Graph RAG (`sicoobito
 2. **Camada 2 (Vetorial - Similaridade)**: Arestas derivadas de alta similaridade no espaço de embeddings (`weight >= 0.75`).
 3. **Camada 3 (Semântica - LLM)**: Relações inferidas via análise de dependência e impacto.
 
-### Armazenamento e Expansão:
+### Armazenamento, Expansão e Cofre Obsidian:
 - Grafo mantido em PostgreSQL (`graph_node` e `graph_edge`).
 - Expansão de vizinhança $N$-hops via **queries CTE recursivas** em SQL (`store.py` e `graph_rag.py`).
 - Métricas de centralidade e densidade computadas via `GraphAnalytics`.
+- **Cofre Obsidian Integrado**: Exportação e estruturação do cofre em `graphify-out/obsidian/` com taxonomia por pastas, MOCs temáticos, visualizador Canvas e cores por categoria no Graph View.
+
+### Protocolo para Agentes de IA:
+- O Grafo de Conhecimento e o cofre Obsidian são de **consulta obrigatória** por qualquer agente de IA autônomo antes de propor ou executar refatorações de código e mudanças de arquitetura.
 
 ## Consequências
 
@@ -29,6 +33,7 @@ Adicionar um módulo dedicado de **Grafo de Conhecimento e Graph RAG (`sicoobito
 - Agente e usuários conseguem navegar e consultar dependências e impactos entre arquivos e notas em até 2 hops sem necessidade de múltiplos prompts manuais.
 - Integração nativa no painel de resumo 360° do projeto (`GET /api/projects/{slug}/summary`).
 - Qualidade de recuperação RAG aprimorada com a combinação de RRF e expansão de grafo.
+- Navegabilidade visual rica via aplicativo Obsidian e tela `/second-brain`.
 
 ### Negativas / Mitigações
 - Custo computacional adicional no momento de indexação L1. Mitigado com expressões regulares eficientes e parsers AST leves.

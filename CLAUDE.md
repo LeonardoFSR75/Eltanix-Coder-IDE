@@ -6,9 +6,37 @@ e como subir a stack — este arquivo é sobre como trabalhar no código.
 
 Guias específicos: [apps/api/CLAUDE.md](apps/api/CLAUDE.md), [apps/web/CLAUDE.md](apps/web/CLAUDE.md), [apps/desktop/CLAUDE.md](apps/desktop/CLAUDE.md).
 
+---
+
+## 🧠 Protocolo de Consulta Obrigatória para Agentes de IA (Obsidian & Graphify)
+
+> [!IMPORTANT]
+> **REGRA FUNDAMENTAL PARA AGENTES (Claude, Gemini, Antigravity, Subagentes e Modelos Locais):**
+> É **OBRIGATÓRIO** consultar a base de conhecimento do **Segundo Cérebro & Knowledge Graph** no Obsidian (`graphify-out/obsidian/`) e os ADRs antes de propor ou executar alterações arquiteturais, refatorações amplas, novos módulos ou modificações em segurança/roteamento.
+
+### 📚 Fontes Obrigatórias de Consulta:
+1. **Painel Central & MOCs do Obsidian (`graphify-out/obsidian/00 - 🏠 Painel & MOCs/`)**:
+   - `00 - 🏠 Início (MOC Principal).md`: Dashboard mestre com visão 360°, tabela de decisões e top hubs.
+   - `MOC - Arquitetura & Sistema.md` e MOCs temáticos especializados.
+   - `Mapa Arquitetural SicoobitoCode.canvas`: Fluxo visual interativo dos componentes.
+2. **Registro de Decisões Arquiteturais (`docs/adr/` e `01 - 📑 Documentos & ADRs/`)**:
+   - `ADR 0001 — Camada Única de LLM`
+   - `ADR 0002 — Executor Isolado`
+   - `ADR 0003 — Grafo de Conhecimento e Graph RAG (Graphify)`
+   - `ADR 0004 — Orquestração Multiagente`
+   - `ADR 0005 — Login Obrigatório com Sessão por Cookie`
+3. **Histórico de Fases & Roadmap (`01 - 📑 Documentos & ADRs/Notas de Projeto (Roadmap & Fases)/`)**:
+   - 20 notas sequenciais (`00-MOC.md` a `19-robustez-agente-router-orquestracao-multiagente.md`).
+4. **Ferramenta `graph_search` (em tempo de execução)**:
+   - Em sessões agênticas, consultar o grafo de conhecimento via ferramenta `graph_search` para mapear dependências em $N$-hops e avaliar impacto de alterações antes de gravar arquivos.
+
+---
 
 ## Invariantes de arquitetura (não violar sem atualizar o ADR correspondente)
 
+- **Uso Obrigatório do Grafo e Segundo Cérebro** (`docs/adr/0003-grafo-de-conhecimento-graphify.md`):
+  Todo agente deve respeitar a malha relacional do repositório. Decisões arquiteturais devem ser
+  registradas em ADR e refletidas no vault Obsidian (`graphify-out/obsidian/`).
 - **Uma única porta de saída para LLM** (`docs/adr/0001-camada-unica-de-llm.md`): nenhum
   módulo fora de `sicoobito.router` importa `litellm`/`openai`/`anthropic`/SDK de
   provedor. Todo consumo passa por `RouterEngine.complete()`/`.embed()`.

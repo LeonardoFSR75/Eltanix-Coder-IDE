@@ -103,6 +103,8 @@ review_common.py` roda uma segunda opinião automática antes da aprovação hum
 — puramente consultiva, uma falha vira "unavailable", nunca "approved". Nenhum
 dos dois substitui `interrupt()` no grafo — só decidem se ele dispara ou não.
 
+**Segundo Cérebro, Obsidian & Grafo de Conhecimento (ADR 0003).** O SicoobitoCode integra nativamente um Grafo de Conhecimento (`sicoobito.graphify`) estruturado em 3 camadas de arestas (L1 Sintática: AST/Wikilinks/Tags, L2 Vetorial: similaridade pgvector, L3 Semântica: LLM). Toda a malha de conhecimento do repositório, documentações, decisões de código e 20 notas de fases e roadmap são persistidas e organizadas no cofre **Obsidian** em `graphify-out/obsidian/`, com MOCs temáticos, visualização Canvas e grafo colorido.
+
 **Sincronização de Worktree da Sessão com o Editor Monaco.** As alterações do agente são gravadas isoladamente no seu worktree de sessão (`.sicoobito/worktrees/<session_id>`). O endpoint `GET /api/workspace/file` resolve arquivos cientes do `session_id` ativo com fallback para o workspace principal, permitindo a leitura no editor sem erros de "arquivo não encontrado". O clique em "Aceitar" no `DiffCard` dispara `POST /api/agent/sessions/{session_id}/files/accept`, copiando a alteração para a raiz do workspace do projeto.
 
 **Validação em Malha Fechada (Closed-Loop Execution).** A ferramenta `write_file` executa checagens automáticas de sintaxe AST/JSON e auto-formatação de código HTML no conteúdo gravado, retornando alertas de erro no `ToolResult`. O `SYSTEM_PROMPT` proíbe a emissão de código solto no chat sem a chamada de ferramenta correspondente e veda a marcação prévia de tarefas como concluídas sem verificação real no sandbox.
@@ -133,10 +135,12 @@ dos dois substitui `interrupt()` no grafo — só decidem se ele dispara ou não
 | `browser/` | Integração com o serviço de navegação Chromium headless (`services/browser`) — usada pela tool `browser_action` do agente e pelo painel de navegador manual do IDE. |
 | `evals/` | Módulo de avaliação continuada de qualidade RAG (métricas hit@k / MRR). |
 
-## Garantias de Segurança
+## Garantias de Segurança & Governança
 
 1. **Vínculo Local:** Todas as portas publicadas no `docker-compose.yml` são ligadas exclusivamente a `127.0.0.1`.
 2. **Rede Browser Isolada:** O serviço Chromium roda na rede `browser_net` (`internal: true`), impossibilitando acesso à internet pública durante verificação visual.
 3. **Fronteira de Arquivos:** `WorkspaceFS` impede navegação com `..` ou caminhos fora de `PROJECTS_ROOT`.
 4. **Classificação de Risco:** Ferramentas `WRITE` e `EXEC` exigem aprovação explícita via nó `approve` do LangGraph (`interrupt()`) — auto-aprovação (`approval_policy.py`) só dispensa esse nó dentro de regras explícitas por projeto, fail-closed em ambiguidade.
 5. **Login obrigatório (ADR 0005):** `require_session` nunca fica aberta por omissão — API key (canal de serviço) ou cookie de sessão de usuário, sempre uma das duas. Senha em `scrypt`, token de sessão só guardado como hash SHA-256.
+6. **Consulta Obrigatória do Conhecimento por Agentes de IA:** Qualquer modelo de IA (Claude, Gemini, Antigravity ou subagente autônomo) **deve obrigatoriamente** consultar o cofre Obsidian (`graphify-out/obsidian/`) e o Grafo de Conhecimento (`graph_search` / `sicoobito.graphify`) antes de planejar alterações de arquitetura ou modificar regras de segurança, garantindo conformidade estrita com os ADRs.
+

@@ -24,6 +24,9 @@ class PendingApproval(TypedDict):
     risk: str
     arguments: dict[str, Any]
     summary: str
+    # Presente sempre que a ferramenta é `edit_file`/`write_file` e o diff
+    # calcula sem erro — ver `agent/graph.py::_attach_diffs`.
+    diff: NotRequired[str]
     # Presente só quando `.sicoobito/approval_policy.yaml` liga
     # `second_opinion` e a ferramenta é `edit_file`/`write_file` — ver
     # `agent/graph.py::_attach_review_notes`.

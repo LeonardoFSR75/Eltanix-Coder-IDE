@@ -5,6 +5,7 @@ import { useToast } from "@/components/Toast";
 import { useIde } from "@/lib/ide-store";
 import { hasDedicatedCard, ToolCallCard } from "./agent/cards";
 import type { ActivityEvent, LogLine, PendingAction, Session } from "./agent/sessionTypes";
+import { UnifiedDiffPreview } from "./agent/UnifiedDiffPreview";
 import DOMPurify from "dompurify";
 
 interface AgentPanelProps {
@@ -329,6 +330,26 @@ function StartupGuardSummary({
   );
 }
 
+// Espelha a RiskClass do backend (agent/tools/base.py) — read/write/exec chega em
+// `PendingAction.risk` como string crua; mapeamos para as variantes já estilizadas
+// de `.tool-card-risk-badge` (ToolCardShell.tsx) em vez de duplicar a paleta aqui.
+function riskBadgeLevel(risk: string): "low" | "medium" | "high" {
+  if (risk === "exec") return "high";
+  if (risk === "write") return "medium";
+  return "low";
+}
+
+function reviewVerdictLabel(verdict: "approved" | "needs_revision" | "unavailable"): string {
+  switch (verdict) {
+    case "approved":
+      return "segunda opinião: aprovado";
+    case "needs_revision":
+      return "segunda opinião: revisão sugerida";
+    case "unavailable":
+      return "segunda opinião: indisponível";
+  }
+}
+
 function ApprovalCard({
   pending,
   decisions,
@@ -344,21 +365,89 @@ function ApprovalCard({
 }) {
   if (pending.length === 0) return null;
 
+  const decidedCount = pending.filter((action) => action.tool_call_id in decisions).length;
+  const allDecided = decidedCount === pending.length;
+
   return (
     <div className="agent-approval-section compact-approval">
-      <div className="agent-approval-bar">
-        <span className="agent-approval-meta">
-          {pending.length === 1 ? pending[0].summary : `${pending.length} pendente${pending.length === 1 ? "" : "s"}`}
-        </span>
+      <div className="stream-approval-card">
+        <div className="approval-card-header">
+          <div className="approval-header-copy">
+            <span className="approval-title">
+              {pending.length === 1
+                ? "1 ação aguardando aprovação de execução"
+                : `${pending.length} ações aguardando aprovação de execução`}
+            </span>
+            <span className="approval-subtitle">Revise cada item — o agente só continua depois da sua decisão</span>
+          </div>
+        </div>
 
-        <div className="approval-quick-actions">
+        <ul className="approval-list">
+          {pending.map((action) => {
+            const decided = decisions[action.tool_call_id];
+            const level = riskBadgeLevel(action.risk);
+            return (
+              <li key={action.tool_call_id} className="approval-item">
+                <div className="approval-item-main">
+                  <div className="approval-item-head">
+                    <span className="approval-item-tool">{action.tool}</span>
+                    <span
+                      className={`tool-card-risk-badge ${level}`}
+                      title={`Nível de risco: ${action.risk}`}
+                    >
+                      {action.risk}
+                    </span>
+                  </div>
+
+                  <p className="action-summary">{action.summary}</p>
+
+                  {action.risk === "exec" && (
+                    <p className="approval-sandbox-note">
+                      Roda em sandbox descartável: usuário não-root, sem privilégios extras, sem acesso à rede.
+                    </p>
+                  )}
+
+                  {action.diff && <UnifiedDiffPreview diff={action.diff} />}
+
+                  {action.review && (
+                    <p className={`approval-review-note ${action.review.verdict}`}>
+                      {reviewVerdictLabel(action.review.verdict)}
+                      {action.review.summary ? ` — ${action.review.summary}` : ""}
+                    </p>
+                  )}
+                </div>
+
+                <div className="approval-item-actions">
+                  <button
+                    type="button"
+                    className={`btn-approve-item ${decided === true ? "selected" : ""}`}
+                    onClick={() => onDecision(action.tool_call_id, true)}
+                    title="Aprovar execução deste item"
+                  >
+                    ✓
+                  </button>
+                  <button
+                    type="button"
+                    className={`btn-reject-item ${decided === false ? "selected" : ""}`}
+                    onClick={() => onDecision(action.tool_call_id, false)}
+                    title="Negar execução deste item"
+                  >
+                    ✕
+                  </button>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+
+        <div className="approval-footer-actions">
           <button
             type="button"
             className="btn-approve compact-btn"
             disabled={running}
             onClick={() => onDecide(Object.fromEntries(pending.map((a) => [a.tool_call_id, true])))}
           >
-            Aceitar tudo
+            Aprovar tudo
           </button>
           <button
             type="button"
@@ -366,7 +455,16 @@ function ApprovalCard({
             disabled={running}
             onClick={() => onDecide(Object.fromEntries(pending.map((a) => [a.tool_call_id, false])))}
           >
-            Recusar tudo
+            Negar tudo
+          </button>
+          <button
+            type="button"
+            className="btn-confirm-decisions"
+            disabled={running || !allDecided}
+            onClick={() => onDecide(decisions)}
+            title={allDecided ? "Confirmar decisões" : "Decida todos os itens antes de confirmar"}
+          >
+            Confirmar decisões ({decidedCount}/{pending.length})
           </button>
         </div>
       </div>

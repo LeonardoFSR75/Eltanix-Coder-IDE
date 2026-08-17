@@ -11,6 +11,11 @@ export interface PendingAction {
   risk: string;
   arguments: Record<string, unknown>;
   summary: string;
+  diff?: string;
+  review?: {
+    verdict: "approved" | "needs_revision" | "unavailable";
+    summary: string;
+  };
 }
 
 export interface StartupGuard {
