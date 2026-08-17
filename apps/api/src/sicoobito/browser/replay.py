@@ -81,6 +81,10 @@ async def store_replay(
         "started_at": started_at,
         "duration_ms": payload.get("duration_ms"),
         "actions": payload.get("actions") or [],
+        # Fase 4c: log de rede da sessão, timestamps na mesma base de
+        # `actions` — permite ao Replay tab mostrar as requisições feitas
+        # perto do instante de cada marcador clicado.
+        "network": payload.get("network") or [],
         "trace_key": trace_key if trace_b64 else None,
         "video_key": video_key if video_b64 else None,
     }
@@ -120,7 +124,8 @@ async def list_recent_replays(redis: Redis | None, *, limit: int = 30) -> list[d
             continue
         with suppress(Exception):
             entrada = json.loads(bruto)
-            entrada.pop("actions", None)  # lista completa só na rota de detalhe
+            entrada.pop("actions", None)  # listas completas só na rota de detalhe
+            entrada.pop("network", None)
             resultado.append(entrada)
     return resultado
 

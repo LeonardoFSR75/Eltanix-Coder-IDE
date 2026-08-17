@@ -86,10 +86,10 @@ async def _finalize_replay(session_id: str) -> dict[str, Any] | None:
     video_dir = _video_dirs.pop(session_id, None)
     started = _session_started_at.pop(session_id, None)
     actions = _action_logs.pop(session_id, [])
+    network = _network_logs.pop(session_id, [])
     _last_used.pop(session_id, None)
     _console_logs.pop(session_id, None)
     _page_errors.pop(session_id, None)
-    _network_logs.pop(session_id, None)
     _pending_requests.pop(session_id, None)
 
     if context is None:
@@ -117,6 +117,7 @@ async def _finalize_replay(session_id: str) -> dict[str, Any] | None:
                 "started_at": started,
                 "duration_ms": int((time.time() - started) * 1000) if started else None,
                 "actions": actions,
+                "network": network,
                 "trace_base64": base64.b64encode(trace_bytes).decode("ascii")
                 if trace_bytes
                 else None,
@@ -253,6 +254,7 @@ async def _get_page(session_id: str) -> Any:
         inicio = _pending_requests[session_id].pop(req, None)
         duracao_ms = int((time.perf_counter() - inicio) * 1000) if inicio is not None else None
         entradas = _network_logs[session_id]
+        session_start = _session_started_at.get(session_id, time.time())
         entradas.append(
             {
                 "method": getattr(req, "method", "?"),
@@ -261,6 +263,10 @@ async def _get_page(session_id: str) -> Any:
                 "status": status_code,
                 "duration_ms": duracao_ms,
                 "size_bytes": tamanho,
+                # Fase 4c: permite correlacionar cada requisição com o marcador
+                # da timeline de replay mais próximo (mesma base de tempo que
+                # `_log_action`, relativa ao início da sessão).
+                "t_offset_ms": int((time.time() - session_start) * 1000),
             }
         )
         if len(entradas) > 50:

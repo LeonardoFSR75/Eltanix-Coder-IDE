@@ -64,6 +64,7 @@ export interface ReplayDetail {
   started_at: number;
   duration_ms: number | null;
   actions: ReplayAction[];
+  network: NetworkLogEntry[];
   trace_key: string | null;
   video_key: string | null;
   trace_url?: string;
@@ -84,6 +85,9 @@ export interface NetworkLogEntry {
   status: number | null;
   duration_ms: number | null;
   size_bytes: number | null;
+  /** Só presente no log persistido do replay (Fase 4c) — offset desde o
+   * início da sessão, mesma base de tempo de `ReplayAction.t_offset_ms`. */
+  t_offset_ms?: number;
 }
 
 export function getBrowserNetworkLog(sessionId: string): Promise<{ requests: NetworkLogEntry[] }> {

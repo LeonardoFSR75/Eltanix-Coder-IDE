@@ -10037,6 +10037,47 @@ button.primary:hover:not(:disabled) {
   border-color: rgba(56, 189, 248, 0.4);
 }
 
+.browser-replay-marker.active {
+  background: rgba(56, 189, 248, 0.22);
+  border-color: #38bdf8;
+}
+
+.browser-replay-snapshot {
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: rgba(0, 0, 0, 0.25);
+  overflow: hidden;
+}
+
+.browser-replay-snapshot-header {
+  padding: 6px 8px;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--text-dim);
+  border-bottom: 1px solid var(--border);
+}
+
+.browser-replay-snapshot-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 140px;
+  overflow-y: auto;
+}
+
+.browser-replay-snapshot-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  font-size: 11px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.browser-replay-snapshot-item:last-child {
+  border-bottom: none;
+}
+
 .browser-replay-marker-action {
   font-weight: 600;
   text-transform: uppercase;
