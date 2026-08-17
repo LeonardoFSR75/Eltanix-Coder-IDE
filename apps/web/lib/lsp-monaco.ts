@@ -159,12 +159,32 @@ export function documentSaved(model: Monaco.editor.ITextModel): void {
 
 // ── diagnósticos ──────────────────────────────────────────────────────────
 
+/** Último lote de diagnósticos por arquivo, independente de qual modelo está
+ * aberto agora — a status bar (Fase 1) lê daqui para mostrar a contagem do
+ * arquivo ativo sem precisar que o Monaco tenha marcado nada. */
+const diagnosticosPorCaminho = new Map<string, Diagnostic[]>();
+
+export function diagnosticCountsFor(path: string | null): { errors: number; warnings: number } {
+  if (!path) return { errors: 0, warnings: 0 };
+  const itens = diagnosticosPorCaminho.get(path) ?? [];
+  let errors = 0;
+  let warnings = 0;
+  for (const item of itens) {
+    const severidade = item.severity ?? 1;
+    if (severidade === 1) errors += 1;
+    else if (severidade === 2) warnings += 1;
+  }
+  return { errors, warnings };
+}
+
 export function applyDiagnostics(
   monaco: MonacoNs,
   model: Monaco.editor.ITextModel,
   path: string,
   itens: Diagnostic[],
 ): void {
+  diagnosticosPorCaminho.set(path, itens);
+
   if (!model || model.isDisposed()) return;
   const documento = documentoDe(model);
   // Diagnósticos chegam para qualquer arquivo do projeto que o servidor tenha

@@ -710,7 +710,10 @@ function Shell() {
         )}
       </div>
 
-      <StatusBar lspStatus={{ language: ide.active ? "code" : null, ready: true, error: null }} cursorPosition={cursorPos} />
+      <StatusBar
+        lspStatus={{ language: ide.active ? "code" : null, ready: true, error: null, errorCount: 0, warningCount: 0 }}
+        cursorPosition={cursorPos}
+      />
     </div>
   );
 }

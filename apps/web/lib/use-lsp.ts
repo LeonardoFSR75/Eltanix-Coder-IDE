@@ -15,6 +15,7 @@ import {
   clearDiagnostics,
   closeDocument,
   definitionAt,
+  diagnosticCountsFor,
   documentChanged,
   documentSaved,
   openDocument,
@@ -56,6 +57,9 @@ export interface LspStatus {
   language: string | null;
   ready: boolean;
   error: string | null;
+  /** Diagnósticos do arquivo ativo — 0/0 até o servidor publicar o primeiro lote. */
+  errorCount: number;
+  warningCount: number;
 }
 
 interface Opcoes {
@@ -68,7 +72,13 @@ interface Opcoes {
 }
 
 export function useLsp({ project, path, language, onNavigate }: Opcoes) {
-  const [status, setStatus] = useState<LspStatus>({ language: null, ready: false, error: null });
+  const [status, setStatus] = useState<LspStatus>({
+    language: null,
+    ready: false,
+    error: null,
+    errorCount: 0,
+    warningCount: 0,
+  });
   // Estado, e não apenas ref: o efeito de conexão roda antes do `onMount` do
   // Monaco, quando ainda não há editor. Guardar isso só numa ref não
   // reagendaria o efeito, e o language server nunca conectaria — sem erro
@@ -138,7 +148,7 @@ export function useLsp({ project, path, language, onNavigate }: Opcoes) {
     const editor = editorRef.current;
     const model = editor?.getModel();
     if (!monaco || !editor || !model || !project || !path || !lspLanguage) {
-      setStatus({ language: lspLanguage, ready: false, error: null });
+      setStatus({ language: lspLanguage, ready: false, error: null, errorCount: 0, warningCount: 0 });
       return;
     }
 
@@ -151,7 +161,7 @@ export function useLsp({ project, path, language, onNavigate }: Opcoes) {
       if (!(lspLanguage in suportadas)) {
         // Degradar em silêncio: a imagem pode não ter o servidor, e um erro
         // vermelho para "markdown não tem autocomplete" é ruído.
-        setStatus({ language: lspLanguage, ready: false, error: null });
+        setStatus({ language: lspLanguage, ready: false, error: null, errorCount: 0, warningCount: 0 });
         return;
       }
 
@@ -164,6 +174,8 @@ export function useLsp({ project, path, language, onNavigate }: Opcoes) {
             language: lspLanguage,
             ready: false,
             error: erro instanceof Error ? erro.message : String(erro),
+            errorCount: 0,
+            warningCount: 0,
           });
         }
         return;
@@ -178,9 +190,22 @@ export function useLsp({ project, path, language, onNavigate }: Opcoes) {
 
       const pararDiagnosticos = conexao.onDiagnostics((arquivo, itens) => {
         applyDiagnostics(monaco, model, arquivo, itens);
+        // Diagnósticos chegam para qualquer arquivo do projeto analisado pelo
+        // servidor, não só o aberto — só atualiza a contagem exibida quando o
+        // lote é do arquivo ativo (mesmo filtro que `applyDiagnostics` usa
+        // para decidir se marca o Monaco).
+        if (arquivo === path) {
+          setStatus((atual) => ({ ...atual, ...diagnosticCountsFor(path) }));
+        }
       });
       const pararEstado = conexao.onStateChange((pronto, erro) => {
-        setStatus({ language: lspLanguage, ready: pronto, error: erro });
+        setStatus((atual) => ({
+          ...atual,
+          language: lspLanguage,
+          ready: pronto,
+          error: erro,
+          ...diagnosticCountsFor(path),
+        }));
       });
       desassinar = () => {
         pararDiagnosticos();

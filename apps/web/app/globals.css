@@ -6945,9 +6945,62 @@ button.primary:hover:not(:disabled) {
   width: 7px;
   height: 7px;
   border-radius: 50%;
+  background: var(--text-dim, #6b7280);
+  box-shadow: none;
+  animation: none;
+}
+
+.copilot-status-dot.idle {
+  background: var(--text-dim, #6b7280);
+}
+
+.copilot-status-dot.running {
+  background: #38bdf8;
+  box-shadow: 0 0 6px rgba(56, 189, 248, 0.6);
+  animation: pulse-glow 2s infinite;
+}
+
+.copilot-status-dot.awaiting-approval {
+  background: #f59e0b;
+  box-shadow: 0 0 6px rgba(245, 158, 11, 0.6);
+  animation: pulse-glow 1.2s infinite;
+}
+
+.copilot-status-dot.done {
   background: #34d399;
   box-shadow: 0 0 6px rgba(52, 211, 153, 0.6);
-  animation: pulse-glow 2s infinite;
+}
+
+.copilot-status-dot.error {
+  background: #f87171;
+  box-shadow: 0 0 6px rgba(248, 113, 113, 0.6);
+}
+
+.copilot-status-dot.closed {
+  background: var(--text-dim, #6b7280);
+  opacity: 0.6;
+}
+
+.agent-dock-branch-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 6px;
+  border-radius: 3px;
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  background: rgba(56, 189, 248, 0.1);
+  color: #38bdf8;
+  font-size: 10.5px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 140px;
+}
+
+.agent-dock-branch-chip:hover {
+  background: rgba(56, 189, 248, 0.2);
 }
 
 .dock-action-btn {

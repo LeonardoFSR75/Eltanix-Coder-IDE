@@ -149,8 +149,8 @@ export function StatusBar({ lspStatus, cursorPosition }: StatusBarProps) {
         </span>
         <Sep />
 
-        <span className="statusbar-item diag-item" title="Problemas e Diagnósticos">
-          0 🚨 0 ⚠️
+        <span className="statusbar-item diag-item" title="Problemas e Diagnósticos do arquivo ativo">
+          {lspStatus.errorCount} 🚨 {lspStatus.warningCount} ⚠️
         </span>
         <Sep />
 

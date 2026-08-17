@@ -5,6 +5,7 @@ import { AgentPanel } from "@/components/ide/AgentPanel";
 import { useToast } from "@/components/Toast";
 import { useIde } from "@/lib/ide-store";
 import { loadHookPrefs } from "@/lib/hook-prefs";
+import { getAgentGraph, listAgentSessions } from "@/lib/api/agent";
 import { AgentChatInput } from "./AgentChatInput";
 import { AgentDockHeader } from "./AgentDockHeader";
 import { AgentManager } from "./AgentManager";
@@ -21,7 +22,7 @@ export function AgentDock({
   onFileTouched?: (path: string) => void;
   onSession?: (sessionId: string | null) => void;
 }) {
-  const { project, toggleAgentDock, groups, activeGroupId } = useIde();
+  const { project, toggleAgentDock, groups, activeGroupId, setPanel } = useIde();
   const { addToast } = useToast();
 
 
@@ -135,6 +136,52 @@ export function AgentDock({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [handleNewSession]);
 
+  // Fase 5.1 — notificação proativa para aprovações pendentes em sessões
+  // filhas (orquestração via `spawn_agent`, ADR 0004). Não existe pub/sub no
+  // backend (só Redis simples via `AgentCoordinator`), então o caminho barato
+  // é reaproveitar `getAgentGraph`, a mesma chamada que `AgentManager.tsx` já
+  // faz sob demanda ao abrir a árvore — aqui em polling, e só gastando a
+  // chamada por sessão-raiz quando ela de fato tem filhos.
+  const notifiedApprovalsRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (!project) return;
+    let cancelado = false;
+
+    const poll = async () => {
+      try {
+        const registros = await listAgentSessions(project);
+        const raizesComFilhos = registros.filter(
+          (r) => !r.parent_session_id && registros.some((f) => f.parent_session_id === r.session_id),
+        );
+        for (const raiz of raizesComFilhos) {
+          if (cancelado) return;
+          const grafo = await getAgentGraph(raiz.session_id);
+          for (const no of grafo) {
+            const jaNotificado = notifiedApprovalsRef.current.has(no.session_id);
+            if (no.status === "waiting_approval" && !jaNotificado) {
+              notifiedApprovalsRef.current.add(no.session_id);
+              handleAgentNotify("approval", `${no.display_name} aguardando aprovação`);
+            } else if (no.status !== "waiting_approval" && jaNotificado) {
+              // Volta a poder notificar se essa sessão parar de esperar
+              // aprovação e depois voltar a esperar (ex.: segundo turno).
+              notifiedApprovalsRef.current.delete(no.session_id);
+            }
+          }
+        }
+      } catch {
+        // Falha de rede aqui não deve virar toast de erro sobre a própria
+        // notificação — o dock volta a tentar no próximo tick.
+      }
+    };
+
+    void poll();
+    const timer = setInterval(poll, 45_000);
+    return () => {
+      cancelado = true;
+      clearInterval(timer);
+    };
+  }, [project, handleAgentNotify]);
+
   return (
     <div className="agent-dock-layout">
       <AgentDockHeader
@@ -144,6 +191,9 @@ export function AgentDock({
         onOpenSettings={() => setSettingsOpen((v) => !v)}
         onCollapse={() => toggleAgentDock()}
         settingsRef={settingsRef}
+        status={active?.status}
+        branch={active?.session?.branch || null}
+        onOpenGit={() => setPanel("git")}
       />
 
       {managerOpen && (

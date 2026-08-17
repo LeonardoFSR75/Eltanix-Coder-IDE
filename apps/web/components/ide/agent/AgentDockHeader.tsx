@@ -1,12 +1,22 @@
 "use client";
 
 import React from "react";
+import type { RuntimeStatus } from "./sessionTypes";
 
 /**
  * Cabeçalho do Dock do Agente — estilo GitHub Copilot Chat.
  *
- * Layout: [🤖 Copilot · status] ............. [+ Nova] [📜] [⚙] [«]
+ * Layout: [🤖 Copilot · status · branch] ............. [+ Nova] [📜] [⚙] [«]
  */
+const STATUS_META: Record<RuntimeStatus, { label: string; className: string }> = {
+  idle: { label: "Ocioso", className: "idle" },
+  running: { label: "Executando", className: "running" },
+  awaiting_approval: { label: "Aguardando aprovação", className: "awaiting-approval" },
+  done: { label: "Concluído", className: "done" },
+  error: { label: "Erro", className: "error" },
+  closed: { label: "Encerrada (leitura)", className: "closed" },
+};
+
 export function AgentDockHeader({
   historyOpen,
   onToggleHistory,
@@ -14,6 +24,9 @@ export function AgentDockHeader({
   onOpenSettings,
   onCollapse,
   settingsRef,
+  status,
+  branch,
+  onOpenGit,
 }: {
   historyOpen: boolean;
   onToggleHistory: () => void;
@@ -21,7 +34,14 @@ export function AgentDockHeader({
   onOpenSettings: () => void;
   onCollapse: () => void;
   settingsRef: React.RefObject<HTMLButtonElement | null>;
+  /** Status da sessão ativa no dock — `undefined` quando nenhuma sessão existe ainda. */
+  status?: RuntimeStatus;
+  /** Branch git da sessão ativa, se houver uma sessão com worktree. */
+  branch?: string | null;
+  onOpenGit?: () => void;
 }) {
+  const meta = status ? STATUS_META[status] : null;
+
   return (
     <div className="agent-dock-header">
       <div className="agent-dock-title-wrap">
@@ -42,7 +62,26 @@ export function AgentDockHeader({
           </svg>
         </div>
         <span className="agent-dock-title">Sicoobito Agente</span>
-        <span className="copilot-status-dot" title="Agente Conectado" />
+        <span
+          className={`copilot-status-dot${meta ? ` ${meta.className}` : ""}`}
+          title={meta ? `Agente: ${meta.label}` : "Nenhuma sessão ativa"}
+        />
+        {branch && (
+          <button
+            type="button"
+            className="agent-dock-branch-chip"
+            title={`Branch da sessão ativa: ${branch} — abrir painel Git`}
+            onClick={onOpenGit}
+          >
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <line x1="6" y1="3" x2="6" y2="15" />
+              <circle cx="18" cy="6" r="3" />
+              <circle cx="6" cy="18" r="3" />
+              <path d="M18 9a9 9 0 0 1-9 9" />
+            </svg>
+            {branch}
+          </button>
+        )}
       </div>
 
       <div className="agent-dock-header-actions">
