@@ -9845,6 +9845,12 @@ button.primary:hover:not(:disabled) {
   cursor: crosshair;
 }
 
+.browser-stream-canvas {
+  min-width: 320px;
+  min-height: 180px;
+  background: #0a0a0a;
+}
+
 .editor-browser-click-ripple {
   position: absolute;
   width: 24px;

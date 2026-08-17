@@ -62,3 +62,29 @@ export function getBrowserNetworkLog(sessionId: string): Promise<{ requests: Net
     `/api/browser/sessions/${encodeURIComponent(sessionId)}/network`,
   );
 }
+
+export interface BrowserStreamTicket {
+  ticket: string;
+  expires_in: number;
+}
+
+export function getBrowserStreamTicket(sessionId: string): Promise<BrowserStreamTicket> {
+  return post<BrowserStreamTicket>(
+    `/api/browser/sessions/${encodeURIComponent(sessionId)}/stream-ticket`,
+    {},
+  );
+}
+
+/** Monta a URL do WebSocket de streaming ao vivo — mesmo padrão de `lib/lsp.ts`:
+ * o ticket viaja na query string porque o browser não manda header customizado
+ * ao abrir um WebSocket, e a rota (`ws_router`, sem `AuthDep`) só aceita quem
+ * chega com um ticket de uso único válido. */
+export function buildBrowserStreamUrl(sessionId: string, ticket: string): string {
+  const origem =
+    process.env.NEXT_PUBLIC_API_ORIGIN ??
+    `${window.location.protocol}//${window.location.hostname}:5401`;
+  return (
+    `${origem.replace(/^http/, "ws")}/api/browser/sessions/${encodeURIComponent(sessionId)}/stream` +
+    `?ticket=${encodeURIComponent(ticket)}`
+  );
+}

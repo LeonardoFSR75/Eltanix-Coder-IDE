@@ -3,8 +3,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   browserAction,
+  buildBrowserStreamUrl,
   closeBrowserSession,
   getBrowserNetworkLog,
+  getBrowserStreamTicket,
   type NetworkLogEntry,
 } from "@/lib/api/browser";
 import { getSandboxServerLogs, getSandboxStats, type SandboxStats } from "@/lib/api/sandbox";
@@ -99,9 +101,16 @@ export function EditorBrowserView({
   const [selectorInput, setSelectorInput] = useState("");
   const [textInput, setTextInput] = useState("");
 
+  // Streaming ao vivo (CDP screencast) no modo Agente
+  const [streamActive, setStreamActive] = useState(false);
+  const [streamConnecting, setStreamConnecting] = useState(false);
+  const wsRef = useRef<WebSocket | null>(null);
+  const streamFrameImgRef = useRef<HTMLImageElement>(new Image());
+
   const containerRef = useRef<HTMLDivElement>(null);
   const imgRef = useRef<HTMLImageElement>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
 
   // Sincroniza estado da URL quando a aba ativa muda
   useEffect(() => {
@@ -169,6 +178,77 @@ export function EditorBrowserView({
       setLoading(false);
     }
   }, [sessionId, renderMode]);
+
+  // Streaming ao vivo — só faz sentido no modo Agente (headless/CDP); no modo
+  // Live o iframe já é a própria fonte visual, sem precisar de screencast.
+  const pararStream = useCallback(() => {
+    wsRef.current?.close();
+    wsRef.current = null;
+    setStreamActive(false);
+    setStreamConnecting(false);
+  }, []);
+
+  const iniciarStream = useCallback(async () => {
+    if (renderMode !== "headless" || wsRef.current) return;
+    setStreamConnecting(true);
+    setErro(null);
+    try {
+      const { ticket } = await getBrowserStreamTicket(sessionId);
+      const url = buildBrowserStreamUrl(sessionId, ticket);
+      const socket = new WebSocket(url);
+      wsRef.current = socket;
+
+      socket.onopen = () => {
+        setStreamConnecting(false);
+        setStreamActive(true);
+      };
+
+      socket.onmessage = (evento) => {
+        try {
+          const msg = JSON.parse(evento.data as string) as { type: string; data?: string };
+          if (msg.type !== "frame" || !msg.data) return;
+          const img = streamFrameImgRef.current;
+          img.onload = () => {
+            const canvas = canvasRef.current;
+            if (!canvas) return;
+            if (canvas.width !== img.naturalWidth || canvas.height !== img.naturalHeight) {
+              canvas.width = img.naturalWidth;
+              canvas.height = img.naturalHeight;
+            }
+            canvas.getContext("2d")?.drawImage(img, 0, 0);
+          };
+          img.src = `data:image/jpeg;base64,${msg.data}`;
+        } catch {
+          // Frame malformado — ignora, o próximo chega em instantes.
+        }
+      };
+
+      socket.onerror = () => {
+        setErro("falha na conexão de streaming ao vivo");
+      };
+
+      socket.onclose = () => {
+        wsRef.current = null;
+        setStreamActive(false);
+        setStreamConnecting(false);
+      };
+    } catch (err) {
+      setStreamConnecting(false);
+      setErro(err instanceof Error ? err.message : String(err));
+    }
+  }, [sessionId, renderMode]);
+
+  // Encerra o stream ao desmontar ou ao sair do modo Agente/trocar de sessão.
+  useEffect(() => {
+    if (renderMode !== "headless" && wsRef.current) pararStream();
+  }, [renderMode, pararStream]);
+
+  useEffect(() => {
+    return () => {
+      wsRef.current?.close();
+      wsRef.current = null;
+    };
+  }, [sessionId]);
 
   // Navegar para nova URL
   const navegar = useCallback(
@@ -396,6 +476,28 @@ export function EditorBrowserView({
     [sessionId, loading, capturar],
   );
 
+  // Mesma ideia, mas para o modo de streaming ao vivo: o próximo frame do
+  // screencast já mostra o resultado, então não precisa forçar `capturar()`.
+  const clicarNoStream = useCallback(
+    (e: React.MouseEvent<HTMLCanvasElement>) => {
+      const canvas = canvasRef.current;
+      if (!canvas || !canvas.width) return;
+      const rect = canvas.getBoundingClientRect();
+      const scaleX = canvas.width / rect.width;
+      const scaleY = canvas.height / rect.height;
+      const x = Math.round((e.clientX - rect.left) * scaleX);
+      const y = Math.round((e.clientY - rect.top) * scaleY);
+
+      setClickIndicator({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+      setTimeout(() => setClickIndicator(null), 600);
+
+      void browserAction({ sessionId, action: "click", x, y }).catch((err) => {
+        setErro(err instanceof Error ? err.message : String(err));
+      });
+    },
+    [sessionId],
+  );
+
   const enviarTexto = useCallback(async () => {
     if (!selectorInput.trim() || !textInput) return;
     setLoading(true);
@@ -430,6 +532,7 @@ export function EditorBrowserView({
   }, [sessionId]);
 
   const reiniciar = useCallback(async () => {
+    pararStream();
     try {
       await closeBrowserSession(sessionId);
     } catch {
@@ -443,7 +546,7 @@ export function EditorBrowserView({
     setConsoleErrors([]);
     setPageErrors([]);
     setNetworkLog([]);
-  }, [sessionId]);
+  }, [sessionId, pararStream]);
 
   const downloadScreenshot = useCallback(() => {
     if (!image) return;
@@ -634,6 +737,17 @@ export function EditorBrowserView({
           >
             🤖 Agente
           </button>
+          {renderMode === "headless" && (
+            <button
+              type="button"
+              className={`browser-mode-btn ${streamActive ? "active" : ""}`}
+              onClick={() => (streamActive ? pararStream() : void iniciarStream())}
+              disabled={streamConnecting}
+              title="Streaming ao vivo via CDP screencast (em vez de screenshot sob pedido)"
+            >
+              {streamConnecting ? "…" : streamActive ? "⏸ Ao Vivo" : "▶ Ao Vivo"}
+            </button>
+          )}
         </div>
 
         {/* 📱 Seletor de Viewport / Emulador de Dispositivo */}
@@ -813,6 +927,21 @@ export function EditorBrowserView({
                 title={title || "Live Browser Preview"}
                 sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals"
               />
+            ) : streamActive ? (
+              <div className="editor-browser-screen-frame">
+                <canvas
+                  ref={canvasRef}
+                  className="editor-browser-screen-img browser-stream-canvas"
+                  onClick={clicarNoStream}
+                  title="Ao vivo — clique em qualquer elemento para interagir"
+                />
+                {clickIndicator && (
+                  <div
+                    className="editor-browser-click-ripple"
+                    style={{ left: clickIndicator.x, top: clickIndicator.y }}
+                  />
+                )}
+              </div>
             ) : image ? (
               <div className="editor-browser-screen-frame">
                 <img

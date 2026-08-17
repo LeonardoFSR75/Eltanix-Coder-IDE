@@ -15,7 +15,8 @@ RUN pip install --no-cache-dir \
     "fastapi==0.118.0" \
     "uvicorn==0.34.0" \
     "playwright==1.48.0" \
-    "pydantic==2.11.0"
+    "pydantic==2.11.0" \
+    "websockets>=13"
 
 # Chromium + as bibliotecas de sistema que ele precisa (--with-deps) — sem
 # isto o navegador falha ao abrir por falta de libs gráficas do slim.
