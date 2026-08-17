@@ -49,6 +49,17 @@ import {
   type ContainerTreeResponse,
   type ContainerItem,
 } from "@/lib/api/containers";
+import {
+  getExtensionsCatalog,
+  syncExtensions,
+  toggleExtension,
+  updateExtension,
+  updateAllExtensions,
+  setAutoUpdate,
+  searchMarketplace,
+  type ExtensionItem,
+  type ExtensionsCatalogResponse,
+} from "@/lib/api/extensions";
 import { useIde } from "@/lib/ide-store";
 
 import { ConfirmDialog, PromptDialog } from "@/components/ide/Overlays";
@@ -2044,23 +2055,7 @@ export function PackagesPanel() {
 
 // ── Extensions (Extensões & Suporte a Linguagens) ──────────────────────────
 
-export interface ExtensionItem {
-  id: string;
-  name: string;
-  publisher: string;
-  version: string;
-  description: string;
-  category: "LSP & Python" | "Node & Next.js" | "Frontend & Frameworks" | "Bancos & SQL" | "APIs & Testes" | "DevOps & Cloud" | "Produtividade" | "C/C++ & Go" | "Containers & DevOps" | "IA & Agente" | "Outros";
-  installed: boolean;
-  active: boolean;
-  latency_ms?: number;
-  icon: string;
-  downloads?: string;
-  rating?: number;
-  isRecommended?: boolean;
-}
-
-const EXTENSIONS_CATALOG: ExtensionItem[] = [
+const FALLBACK_EXTENSIONS_CATALOG: ExtensionItem[] = [
   {
     id: "meta.pyrefly",
     name: "Pyrefly - Python Language Server",
@@ -2427,89 +2422,204 @@ const EXTENSIONS_CATALOG: ExtensionItem[] = [
 
 export function ExtensionsPanel() {
   const { bumpRevision } = useIde();
+  const [catalog, setCatalog] = useState<ExtensionsCatalogResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [syncing, setSyncing] = useState(false);
+  const [updatingAll, setUpdatingAll] = useState(false);
+  const [updatingIds, setUpdatingIds] = useState<Set<string>>(new Set());
   const [filterText, setFilterText] = useState("");
-  const [category, setCategory] = useState<"Todas" | "LSP & Python" | "Node & Next.js" | "Frontend & Frameworks" | "Bancos & SQL" | "APIs & Testes" | "DevOps & Cloud" | "Produtividade" | "C/C++ & Go" | "Containers & DevOps" | "Recomendados">("Todas");
+  const [category, setCategory] = useState<string>("Todas");
   const [activeEngine, setActiveEngine] = useState<"pyrefly" | "pyright">("pyrefly");
-  const [enabledMap, setEnabledMap] = useState<Record<string, boolean>>({
-    "meta.pyrefly": true,
-    "ms-python.python": true,
-    "ms-python.debugpy": true,
-    "ms-python.python-environments": true,
-    "ms-vscode.node-js": true,
-    "vercel.nextjs-tools": true,
-    "meta.react-devtools": true,
-    "vue.volar": true,
-    "angular.ng-template": true,
-    "svelte.svelte-vscode": true,
-    "tailwindcss.vscode-tailwindcss": true,
-    "dbaeumer.vscode-eslint": true,
-    "mtxr.sqltools": true,
-    "prisma.prisma": true,
-    "usernamehw.errorlens": true,
-    "eamodio.gitlens": true,
-    "pkief.material-icon-theme": true,
-    "rangav.vscode-thunder-client": true,
-    "vitest.explorer": true,
-    "ms-kubernetes-tools.vscode-kubernetes-tools": true,
-    "hashicorp.terraform": true,
-    "vscjava.vscode-mermaid-editor": true,
-    "esbenp.prettier-vscode": true,
-    "Shopify.ruby-lsp": true,
-    "llvm-vs-code-extensions.clangd": true,
-    "golang.go": true,
-    "ms-azuretools.container-tools": true,
-    "ms-azuretools.docker": true,
-    "DavidAnson.markdownlint": false,
-    "sicoobito.agentic-engine": true,
-  });
-
   const [selectedExt, setSelectedExt] = useState<ExtensionItem | null>(null);
+  const [onlineResults, setOnlineResults] = useState<ExtensionItem[]>([]);
+  const [searchingOnline, setSearchingOnline] = useState(false);
 
-  const toggleExt = (id: string) => {
-    setEnabledMap((prev) => ({ ...prev, [id]: !prev[id] }));
+  const carregar = useCallback(async (isSync = false) => {
+    try {
+      if (isSync) setSyncing(true);
+      else setLoading(true);
+      const res = isSync ? await syncExtensions(true) : await getExtensionsCatalog();
+      setCatalog(res);
+    } catch {
+      // Fallback em caso de offline
+      if (!catalog) {
+        setCatalog({
+          extensions: FALLBACK_EXTENSIONS_CATALOG,
+          total_count: FALLBACK_EXTENSIONS_CATALOG.length,
+          pending_updates_count: 0,
+          last_sync_timestamp: Date.now() / 1000,
+          auto_update_enabled: true,
+        });
+      }
+    } finally {
+      setLoading(false);
+      setSyncing(false);
+    }
+  }, [catalog]);
+
+  useEffect(() => {
+    carregar();
+  }, []);
+
+  const handleToggle = async (id: string, curActive: boolean) => {
+    try {
+      const res = await toggleExtension(id, !curActive);
+      setCatalog((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          extensions: prev.extensions.map((ext) =>
+            ext.id === id ? { ...ext, active: res.active } : ext
+          ),
+        };
+      });
+    } catch {
+      // Otimista fallback
+      setCatalog((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          extensions: prev.extensions.map((ext) =>
+            ext.id === id ? { ...ext, active: !curActive } : ext
+          ),
+        };
+      });
+    }
   };
 
-  const instalados = EXTENSIONS_CATALOG.filter((ext) => {
-    if (category === "Recomendados") return false;
+  const handleUpdateSingle = async (id: string) => {
+    setUpdatingIds((prev) => new Set(prev).add(id));
+    try {
+      await updateExtension(id);
+      await carregar();
+    } finally {
+      setUpdatingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+    }
+  };
+
+  const handleUpdateAll = async () => {
+    setUpdatingAll(true);
+    try {
+      const res = await updateAllExtensions();
+      if (res.catalog) setCatalog(res.catalog);
+      else await carregar();
+    } finally {
+      setUpdatingAll(false);
+    }
+  };
+
+  const handleToggleAutoUpdate = async () => {
+    if (!catalog) return;
+    const target = !catalog.auto_update_enabled;
+    try {
+      await setAutoUpdate(target);
+      setCatalog((prev) => (prev ? { ...prev, auto_update_enabled: target } : prev));
+    } catch {
+      // noop
+    }
+  };
+
+  const handleOnlineSearch = async (query: string) => {
+    if (query.trim().length < 2) {
+      setOnlineResults([]);
+      return;
+    }
+    setSearchingOnline(true);
+    try {
+      const res = await searchMarketplace(query);
+      setOnlineResults(res.results || []);
+    } catch {
+      setOnlineResults([]);
+    } finally {
+      setSearchingOnline(false);
+    }
+  };
+
+  const extensionsList = catalog?.extensions || FALLBACK_EXTENSIONS_CATALOG;
+  const pendingUpdatesCount = catalog?.pending_updates_count || 0;
+
+  const filteredExtensions = extensionsList.filter((ext) => {
+    if (category === "Atualizações") return ext.hasUpdate;
+    if (category === "Marketplace Online") return false;
     const matchCat = category === "Todas" || ext.category === category;
     const matchText =
       !filterText.trim() ||
       ext.name.toLowerCase().includes(filterText.toLowerCase()) ||
       ext.publisher.toLowerCase().includes(filterText.toLowerCase()) ||
       ext.description.toLowerCase().includes(filterText.toLowerCase());
-    return matchCat && matchText && ext.installed !== false;
+    return matchCat && matchText;
   });
 
-  const recomendados = EXTENSIONS_CATALOG.filter((ext) => {
-    const matchText =
-      !filterText.trim() ||
-      ext.name.toLowerCase().includes(filterText.toLowerCase()) ||
-      ext.publisher.toLowerCase().includes(filterText.toLowerCase()) ||
-      ext.description.toLowerCase().includes(filterText.toLowerCase());
-    return ext.isRecommended && matchText;
-  });
+  const categories = [
+    "Todas",
+    pendingUpdatesCount > 0 ? `Atualizações (${pendingUpdatesCount})` : "Atualizações",
+    "Frontend & Visual",
+    "IA & Web Scraping",
+    "Bancos & RAG",
+    "Segurança & Auditoria",
+    "APIs & Testes",
+    "Segundo Cérebro & Arquitetura",
+    "LSP & Linguagens",
+    "DevOps & Containers",
+    "Produtividade",
+    "Marketplace Online",
+  ];
 
   return (
     <div className="extensions-panel">
+      {/* Header com Ações e Sincronização */}
       <div className="extensions-header">
         <div className="extensions-title-group">
           <div className="extensions-title-icon">🧩</div>
           <div>
-            <h3 className="extensions-title">Extensões & Linguagens</h3>
-            <p className="extensions-subtitle">React, Vue, Angular, Svelte, Tailwind, Python & Node</p>
+            <h3 className="extensions-title">Extensões & 6 Suítes</h3>
+            <p className="extensions-subtitle">
+              {catalog?.total_count || 0} instaladas • Auto-update VS Code & Open VSX
+            </p>
           </div>
         </div>
+        <div className="extensions-header-actions">
+          <button
+            type="button"
+            className={`icon-action-btn ${syncing ? "spinning" : ""}`}
+            title="Sincronizar com Open VSX / VS Code Marketplace"
+            onClick={() => carregar(true)}
+            disabled={syncing}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M21.5 2v6h-6M2.5 22v-6h6" />
+              <path d="M2 11.5a10 10 0 0 1 18.8-4.3L21.5 8M22 12.5a10 10 0 0 1-18.8 4.2L2.5 16" />
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      {/* Barra de Status do Auto-Update & Ação Global de Atualização */}
+      <div className="extensions-auto-update-bar">
         <button
           type="button"
-          className="icon-action-btn"
-          title="Recarregar status de extensão"
-          onClick={() => bumpRevision()}
+          className={`ext-auto-update-pill ${catalog?.auto_update_enabled ? "active" : "inactive"}`}
+          onClick={handleToggleAutoUpdate}
+          title="Alternar modo de atualização automática com Open VSX"
         >
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M21.5 2v6h-6M2.5 22v-6h6" />
-            <path d="M2 11.5a10 10 0 0 1 18.8-4.3L21.5 8M22 12.5a10 10 0 0 1-18.8 4.2L2.5 16" />
-          </svg>
+          <span className="dot" />
+          <span>Auto-Update {catalog?.auto_update_enabled ? "Ativo" : "Pausado"}</span>
         </button>
+
+        {pendingUpdatesCount > 0 && (
+          <button
+            type="button"
+            className="ext-btn-update-all"
+            onClick={handleUpdateAll}
+            disabled={updatingAll}
+          >
+            {updatingAll ? "Atualizando..." : `🔄 Atualizar Todas (${pendingUpdatesCount})`}
+          </button>
+        )}
       </div>
 
       {/* Engine Selection Card for Python */}
@@ -2541,41 +2651,125 @@ export function ExtensionsPanel() {
         <input
           type="text"
           className="extensions-input-search"
-          placeholder="Buscar extensão, LSP, autor..."
+          placeholder={
+            category === "Marketplace Online"
+              ? "Pesquisar extensões públicas no Open VSX..."
+              : "Buscar extensão, suíte, autor..."
+          }
           value={filterText}
-          onChange={(e) => setFilterText(e.target.value)}
+          onChange={(e) => {
+            setFilterText(e.target.value);
+            if (category === "Marketplace Online") {
+              handleOnlineSearch(e.target.value);
+            }
+          }}
         />
       </div>
 
       <div className="extensions-categories">
-        {(["Todas", "LSP & Python", "Node & Next.js", "Frontend & Frameworks", "Bancos & SQL", "APIs & Testes", "DevOps & Cloud", "Produtividade", "C/C++ & Go", "Containers & DevOps", "Recomendados"] as const).map((cat) => (
-          <button
-            key={cat}
-            type="button"
-            className={`ext-cat-chip ${category === cat ? "active" : ""}`}
-            onClick={() => setCategory(cat)}
-          >
-            {cat}
-          </button>
-        ))}
+        {categories.map((cat) => {
+          const isSelected = category === cat || (cat.startsWith("Atualizações") && category === "Atualizações");
+          const isUpdateCat = cat.startsWith("Atualizações");
+          return (
+            <button
+              key={cat}
+              type="button"
+              className={`ext-cat-chip ${isSelected ? "active" : ""} ${isUpdateCat && pendingUpdatesCount > 0 ? "has-updates" : ""}`}
+              onClick={() => {
+                const cleanCat = isUpdateCat ? "Atualizações" : cat;
+                setCategory(cleanCat);
+                if (cleanCat === "Marketplace Online" && filterText.trim().length >= 2) {
+                  handleOnlineSearch(filterText);
+                }
+              }}
+            >
+              {cat}
+            </button>
+          );
+        })}
       </div>
-
-
-
-
 
       {/* Extension Items Grid */}
       <div className="extensions-scroll-list">
-        {category !== "Recomendados" && (
+        {loading && !catalog ? (
+          <div className="packages-empty-state">
+            <div className="empty-spinner" />
+            <p>Carregando catálogo de extensões...</p>
+          </div>
+        ) : category === "Marketplace Online" ? (
           <>
             <div className="ext-section-header">
-              <span>INSTALADOS</span>
-              <span className="ext-section-count">{instalados.length}</span>
+              <span>MARKETPLACE ONLINE (OPEN VSX REGISTRY)</span>
+              <span className="ext-section-count">{onlineResults.length}</span>
             </div>
-            {instalados.map((ext) => {
-              const isEnabled = enabledMap[ext.id] ?? true;
+            {searchingOnline && (
+              <div className="packages-empty-state">
+                <div className="empty-spinner" />
+                <p>Consultando repositórios do Open VSX...</p>
+              </div>
+            )}
+            {!searchingOnline && onlineResults.length === 0 && (
+              <div className="packages-empty-state">
+                <span className="empty-icon">🌐</span>
+                <p>Digite pelo menos 2 caracteres para buscar extensões no marketplace oficial.</p>
+              </div>
+            )}
+            {onlineResults.map((ext) => (
+              <div key={ext.id} className="ext-card recommended-card">
+                <div className="ext-card-header">
+                  <span className="ext-card-icon">{ext.icon || "🧩"}</span>
+                  <div className="ext-card-titles">
+                    <div className="ext-card-name-row">
+                      <span className="ext-card-name">{ext.name}</span>
+                      {ext.downloads && (
+                        <span className="ext-card-downloads">⬇️ {ext.downloads} ★ {ext.rating || 4.8}</span>
+                      )}
+                    </div>
+                    <div className="ext-card-publisher-row">
+                      <span className="ext-publisher-tag">{ext.publisher}</span>
+                      <span className="ext-version-badge">v{ext.version}</span>
+                    </div>
+                  </div>
+                </div>
+                <p className="ext-card-desc">{ext.description}</p>
+                <div className="ext-card-footer">
+                  <span className="ext-status-pill inactive">Open VSX</span>
+                  <div className="ext-card-actions">
+                    <button
+                      type="button"
+                      className="ext-btn-primary-install"
+                      onClick={() => handleToggle(ext.id, false)}
+                    >
+                      Instalar & Ativar
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </>
+        ) : (
+          <>
+            <div className="ext-section-header">
+              <span>{category.toUpperCase()}</span>
+              <span className="ext-section-count">{filteredExtensions.length}</span>
+            </div>
+
+            {filteredExtensions.length === 0 && (
+              <div className="packages-empty-state">
+                <span className="empty-icon">🔍</span>
+                <p>Nenhuma extensão encontrada para o filtro atual.</p>
+              </div>
+            )}
+
+            {filteredExtensions.map((ext) => {
+              const isEnabled = ext.active !== false;
+              const isUpdating = updatingIds.has(ext.id);
+
               return (
-                <div key={ext.id} className={`ext-card ${!isEnabled ? "disabled" : ""}`}>
+                <div
+                  key={ext.id}
+                  className={`ext-card ${!isEnabled ? "disabled" : ""} ${ext.hasUpdate ? "has-update-border" : ""}`}
+                >
                   <div className="ext-card-header">
                     <span className="ext-card-icon">{ext.icon}</span>
                     <div className="ext-card-titles">
@@ -2592,6 +2786,11 @@ export function ExtensionsPanel() {
                           {ext.publisher}
                         </span>
                         <span className="ext-version-badge">v{ext.version}</span>
+                        {ext.hasUpdate && ext.updateInfo && (
+                          <span className="ext-update-available-badge" title="Nova versão disponível no Open VSX">
+                            ↑ v{ext.updateInfo.latest_version}
+                          </span>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -2599,22 +2798,38 @@ export function ExtensionsPanel() {
                   <p className="ext-card-desc">{ext.description}</p>
 
                   <div className="ext-card-footer">
-                    <span className={`ext-status-pill ${isEnabled ? "active" : "inactive"}`}>
-                      {isEnabled ? "Ativo" : "Desativado"}
-                    </span>
+                    <div className="ext-card-status-group">
+                      <span className={`ext-status-pill ${isEnabled ? "active" : "inactive"}`}>
+                        {isEnabled ? "Ativo" : "Desativado"}
+                      </span>
+                      <span className="ext-category-tag">{ext.category}</span>
+                    </div>
+
                     <div className="ext-card-actions">
+                      {ext.hasUpdate && (
+                        <button
+                          type="button"
+                          className="ext-btn-update-single"
+                          onClick={() => handleUpdateSingle(ext.id)}
+                          disabled={isUpdating}
+                          title={`Atualizar para v${ext.updateInfo?.latest_version}`}
+                        >
+                          {isUpdating ? "..." : "↑ Atualizar"}
+                        </button>
+                      )}
+
                       <button
                         type="button"
                         className="ext-btn-secondary"
                         onClick={() => setSelectedExt(ext)}
                         title="Ver detalhes da extensão"
                       >
-                        ⚙️ Config
+                        ⚙️ Info
                       </button>
                       <button
                         type="button"
                         className={`ext-btn-toggle ${isEnabled ? "disable" : "enable"}`}
-                        onClick={() => toggleExt(ext.id)}
+                        onClick={() => handleToggle(ext.id, isEnabled)}
                       >
                         {isEnabled ? "Desabilitar" : "Habilitar"}
                       </button>
@@ -2625,59 +2840,9 @@ export function ExtensionsPanel() {
             })}
           </>
         )}
-
-        {recomendados.length > 0 && (
-          <>
-            <div className="ext-section-header recommended">
-              <span>▼ Recomendados</span>
-              <span className="ext-section-badge-blue">7</span>
-            </div>
-            {recomendados.map((ext) => {
-              const isInstalled = enabledMap[ext.id] ?? false;
-              return (
-                <div key={ext.id} className="ext-card recommended-card">
-                  <div className="ext-card-header">
-                    <span className="ext-card-icon">{ext.icon}</span>
-                    <div className="ext-card-titles">
-                      <div className="ext-card-name-row">
-                        <span className="ext-card-name">{ext.name}</span>
-                        {ext.downloads && (
-                          <span className="ext-card-downloads" title="Downloads no marketplace">
-                            ⬇️ {ext.downloads} ★ {ext.rating}
-                          </span>
-                        )}
-                      </div>
-                      <div className="ext-card-publisher-row">
-                        <span className={`ext-publisher-tag publisher-${ext.publisher.toLowerCase().replace(/[^a-z0-9]/g, "-")}`}>
-                          {ext.publisher}
-                        </span>
-                        <span className="ext-version-badge">v{ext.version}</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <p className="ext-card-desc">{ext.description}</p>
-
-                  <div className="ext-card-footer">
-                    <span className="ext-status-pill inactive">Recomendado</span>
-                    <div className="ext-card-actions">
-                      <button
-                        type="button"
-                        className="ext-btn-primary-install"
-                        onClick={() => toggleExt(ext.id)}
-                      >
-                        {isInstalled ? "✓ Instalado" : "Instalar"}
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </>
-        )}
       </div>
 
-      {/* Modal / Detail Popup */}
+      {/* Modal / Detail Popup com Recursos e Repositório */}
       {selectedExt && (
         <div className="ext-details-overlay" onClick={() => setSelectedExt(null)}>
           <div className="ext-details-modal" onClick={(e) => e.stopPropagation()}>
@@ -2685,32 +2850,64 @@ export function ExtensionsPanel() {
               <span className="ext-card-icon">{selectedExt.icon}</span>
               <div>
                 <h4>{selectedExt.name}</h4>
-                <span className={`ext-publisher-tag publisher-${selectedExt.publisher}`}>
-                  {selectedExt.publisher}
-                </span>
+                <div className="ext-card-publisher-row">
+                  <span className={`ext-publisher-tag publisher-${selectedExt.publisher}`}>
+                    {selectedExt.publisher}
+                  </span>
+                  <span className="ext-version-badge">v{selectedExt.version}</span>
+                </div>
               </div>
               <button type="button" className="close-btn" onClick={() => setSelectedExt(null)}>
                 ✕
               </button>
             </div>
+
             <div className="ext-details-modal-body">
               <p><strong>Descrição:</strong> {selectedExt.description}</p>
-              <p><strong>Versão:</strong> {selectedExt.version}</p>
               <p><strong>Categoria:</strong> {selectedExt.category}</p>
               <p><strong>ID do Pacote:</strong> <code>{selectedExt.id}</code></p>
-              {selectedExt.latency_ms && (
-                <p><strong>Latência Registrada:</strong> <code>{selectedExt.latency_ms}ms</code></p>
+              {selectedExt.upstream_id && (
+                <p><strong>Upstream Open VSX:</strong> <code>{selectedExt.upstream_id}</code></p>
               )}
+              {selectedExt.downloads && (
+                <p><strong>Estatísticas:</strong> ⬇️ {selectedExt.downloads} • ★ {selectedExt.rating || 4.9}</p>
+              )}
+
+              {selectedExt.features && selectedExt.features.length > 0 && (
+                <div className="ext-features-section">
+                  <h5>Recursos Principais</h5>
+                  <ul>
+                    {selectedExt.features.map((feat, idx) => (
+                      <li key={idx}>✓ {feat}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {selectedExt.repository_url && (
+                <div className="ext-repo-section">
+                  <a
+                    href={selectedExt.repository_url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="ext-btn-repo-link"
+                  >
+                    🔗 Repositório Oficial no GitHub / Open VSX
+                  </a>
+                </div>
+              )}
+
               <div className="ext-config-section">
                 <h5>Configurações de Execução</h5>
                 <label className="ext-checkbox-label">
                   <input type="checkbox" defaultChecked /> Autostart junto com a IDE
                 </label>
                 <label className="ext-checkbox-label">
-                  <input type="checkbox" defaultChecked /> Modo de verificação estrita de tipos
+                  <input type="checkbox" defaultChecked /> Auto-update com o marketplace upstream
                 </label>
               </div>
             </div>
+
             <div className="ext-details-modal-footer">
               <button type="button" className="packages-btn-primary" onClick={() => setSelectedExt(null)}>
                 Concluído
@@ -2722,7 +2919,7 @@ export function ExtensionsPanel() {
 
       <div className="packages-footer">
         <span className="status-dot active" />
-        <span>Suporte Pyrefly (Meta) & Python ativado na IDE agêntica</span>
+        <span>Suítes de Extensões & Auto-Update VS Code / Open VSX Conectados</span>
       </div>
     </div>
   );

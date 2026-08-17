@@ -92,6 +92,11 @@
 - Conhecimento especializado para WordPress moderno (Gutenberg, REST API, Performance), FastAPI, Playwright e Firecrawl.
 - Ferramentas `list_skills`, `get_skill` e `propose_skill` para descoberta e evolução autônoma de convenções técnicas.
 
+### 6. Sistema de 6 Suítes de Extensões & Auto-Update Open VSX
+- **ADR 0009**: Ecossistema dinâmico de extensões cobrindo todo o ciclo de vida do desenvolvimento.
+- **6 Suítes Nativas**: Frontend/Design System (Shadcn, DaisyUI, Lucide, Live Server, Chart.js), IA/Scraping (Firecrawl Workflow Builder, Data Connectors, MCP Marketplace), Bancos/RAG (pgvector Studio, Redis Commander, MinIO Explorer), Segurança (SAST Semgrep, Dependency CVEs, Token Profiler), Testes/APIs (Playwright Studio, Bruno Runner, Coverage Gutters) e Segundo Cérebro (Graphify Live Canvas, ADR Assistant, Git Smart Blame).
+- **Auto-Update Contínuo**: Sincronização periódica com a API pública do **Open VSX Registry** e VS Code Marketplace, detecção de atualizações em lote e aplicação de updates com 1 clique.
+
 ---
 
 ## Trilha de Decisões de Arquitetura (ADRs)
@@ -104,3 +109,5 @@
 6. [ADR 0006: Integração Firecrawl Web & RAG](file:///c:/Users/leona/Documents/Projetos/SicoobitoCode/docs/adr/0006-integracao-firecrawl-web-rag.md)
 7. [ADR 0007: Navegador Interno e Emulação Visual](file:///c:/Users/leona/Documents/Projetos/SicoobitoCode/docs/adr/0007-navegador-interno-e-emulacao-visual.md)
 8. [ADR 0008: RAG Multi-Formato Universal com AnyDoc e PDF Inspector](file:///c:/Users/leona/Documents/Projetos/SicoobitoCode/docs/adr/0008-rag-multi-formato-anydoc-e-pdf-inspector.md)
+9. [ADR 0009: Sistema de 6 Suítes de Extensões e Auto-Update Open VSX](file:///c:/Users/leona/Documents/Projetos/SicoobitoCode/docs/adr/0009-sistema-de-extensoes-e-auto-update-open-vsx.md)
+

@@ -7,6 +7,7 @@ from sicoobito.api.routes.browser import ws_router as browser_ws_router
 from sicoobito.api.routes.containers import router as containers_router
 from sicoobito.api.routes.context import router as context_router
 from sicoobito.api.routes.documents import router as documents_router
+from sicoobito.api.routes.extensions import router as extensions_router
 from sicoobito.api.routes.firecrawl import router as firecrawl_router
 from sicoobito.api.routes.git import router as git_router
 from sicoobito.api.routes.health import router as health_router
@@ -35,6 +36,7 @@ __all__ = [
     "containers_router",
     "context_router",
     "documents_router",
+    "extensions_router",
     "firecrawl_router",
     "git_router",
     "graphify_router",
@@ -53,3 +55,4 @@ __all__ = [
     "workspace_router",
     "workspace_ws_router",
 ]
+

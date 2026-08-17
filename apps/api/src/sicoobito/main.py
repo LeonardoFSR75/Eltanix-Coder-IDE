@@ -27,6 +27,7 @@ from sicoobito.api.routes import (
     containers_router,
     context_router,
     documents_router,
+    extensions_router,
     firecrawl_router,
     git_router,
     graphify_router,
@@ -338,6 +339,7 @@ def create_app() -> FastAPI:
     app.include_router(metrics_router)
     app.include_router(context_router)
     app.include_router(documents_router)
+    app.include_router(extensions_router)
     app.include_router(firecrawl_router)
     app.include_router(notes_router)
     app.include_router(graphify_router)
