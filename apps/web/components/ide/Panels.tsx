@@ -63,7 +63,9 @@ import {
 import { useIde } from "@/lib/ide-store";
 
 import { ConfirmDialog, PromptDialog } from "@/components/ide/Overlays";
+import { ContextMenu } from "@/components/ide/ContextMenu";
 import { FileIcon } from "@/components/ide/FileIcons";
+import { PanelState } from "@/components/ide/PanelState";
 
 // ── Explorer ────────────────────────────────────────────────────────────────
 
@@ -542,44 +544,33 @@ export function Explorer() {
       </div>
 
       {menu && (
-        <>
-          <div className="menu-backdrop" onClick={() => setMenu(null)} onContextMenu={(e) => { e.preventDefault(); setMenu(null); }} />
-          <div className="context-menu" style={{ left: menu.x, top: menu.y }}>
-            <button type="button" onClick={() => { setDialogo({ tipo: "novo-arquivo", base: pastaDe(menu.entry), inicial: "" }); setMenu(null); }}>
-              📄 Novo Arquivo
-            </button>
-            <button type="button" onClick={() => { setDialogo({ tipo: "nova-pasta", base: pastaDe(menu.entry), inicial: "" }); setMenu(null); }}>
-              📁 Nova Pasta
-            </button>
-            {menu.entry && selected.size > 1 && selected.has(menu.entry.path) ? (
-              <button
-                type="button"
-                className="danger"
-                onClick={() => {
-                  setDialogo({ tipo: "excluir-lote", alvos: Array.from(selected) });
-                  setMenu(null);
-                }}
-              >
-                🗑️ Excluir {selected.size} itens selecionados
-              </button>
-            ) : menu.entry && (
-              <>
-                <button type="button" onClick={() => {
-                  navigator.clipboard?.writeText(menu.entry!.path);
-                  setMenu(null);
-                }}>
-                  📋 Copiar Caminho
-                </button>
-                <button type="button" onClick={() => { setDialogo({ tipo: "renomear", base: menu.entry!.path, inicial: menu.entry!.name }); setMenu(null); }}>
-                  ✏️ Renomear
-                </button>
-                <button type="button" className="danger" onClick={() => { setDialogo({ tipo: "excluir", alvo: menu.entry! }); setMenu(null); }}>
-                  🗑️ Excluir
-                </button>
-              </>
-            )}
-          </div>
-        </>
+        <ContextMenu
+          x={menu.x}
+          y={menu.y}
+          onClose={() => setMenu(null)}
+          items={[
+            { label: "📄 Novo Arquivo", onSelect: () => setDialogo({ tipo: "novo-arquivo", base: pastaDe(menu.entry), inicial: "" }) },
+            { label: "📁 Nova Pasta", onSelect: () => setDialogo({ tipo: "nova-pasta", base: pastaDe(menu.entry), inicial: "" }) },
+            ...(menu.entry && selected.size > 1 && selected.has(menu.entry.path)
+              ? [
+                  {
+                    label: `🗑️ Excluir ${selected.size} itens selecionados`,
+                    danger: true,
+                    onSelect: () => setDialogo({ tipo: "excluir-lote", alvos: Array.from(selected) }),
+                  },
+                ]
+              : menu.entry
+                ? [
+                    { label: "📋 Copiar Caminho", onSelect: () => navigator.clipboard?.writeText(menu.entry!.path) },
+                    {
+                      label: "✏️ Renomear",
+                      onSelect: () => setDialogo({ tipo: "renomear", base: menu.entry!.path, inicial: menu.entry!.name }),
+                    },
+                    { label: "🗑️ Excluir", danger: true, onSelect: () => setDialogo({ tipo: "excluir", alvo: menu.entry! }) },
+                  ]
+                : []),
+          ]}
+        />
       )}
 
       {dialogo?.tipo === "novo-arquivo" && (
@@ -867,7 +858,7 @@ export function GitPanel() {
     }
   };
 
-  if (!project) return <div className="tree-hint">Selecione um projeto.</div>;
+  if (!project) return <PanelState kind="empty" icon="🗂️" message="Selecione um projeto." />;
 
   const stagedFiles = estado?.files.filter((f) => f.status === "staged") ?? [];
   const unstagedFiles = estado?.files.filter((f) => f.status !== "staged") ?? [];
@@ -963,7 +954,7 @@ export function GitPanel() {
                 )}
               </div>
               {unstagedFiles.length === 0 && stagedFiles.length === 0 && (
-                <div className="tree-hint">Nenhuma alteração pendente. Árvore limpa.</div>
+                <PanelState kind="empty" icon="✅" message="Nenhuma alteração pendente. Árvore limpa." />
               )}
               {unstagedFiles.map((f) => {
                 const filename = f.path.split("/").pop() ?? f.path;
@@ -1039,7 +1030,7 @@ export function DebugPanel() {
   const { project, active, setTerminalOpen } = useIde();
   const [argsInput, setArgsInput] = useState("");
 
-  if (!project) return <div className="tree-hint">Selecione um projeto.</div>;
+  if (!project) return <PanelState kind="empty" icon="🗂️" message="Selecione um projeto." />;
 
   const getRunCommand = (file: string | null, debugMode: boolean = false) => {
     if (!file) return "python -m pytest";
@@ -1336,11 +1327,13 @@ export function BrowserPanel() {
             title="Clique para interagir com a página nesse ponto"
           />
         ) : (
-          <div className="tree-hint">
-            Digite uma URL acima e pressione &quot;Ir&quot; para abrir uma página num navegador de
-            verdade — o serviço é isolado numa rede própria que só alcança{" "}
-            <code>web</code>/<code>api</code>, nunca a internet pública.
-          </div>
+          <PanelState
+            kind="empty"
+            icon="🌐"
+            message={
+              'Digite uma URL acima e pressione "Ir" para abrir uma página num navegador de verdade — o serviço é isolado numa rede própria que só alcança web/api, nunca a internet pública.'
+            }
+          />
         )}
       </div>
 
@@ -1516,6 +1509,19 @@ export function TrelloPanel() {
 
       {/* Cards List */}
       <div style={{ flex: 1, overflowY: "auto", padding: "8px 12px", display: "flex", flexDirection: "column", gap: "8px" }}>
+        {loading && cards.length === 0 ? (
+          <PanelState kind="loading" message="Carregando quadro Trello..." />
+        ) : filteredCards.length === 0 ? (
+          <PanelState
+            kind="empty"
+            icon="📋"
+            message={
+              cards.length === 0
+                ? "Nenhuma tarefa ainda. Crie uma acima para começar."
+                : "Nenhuma tarefa neste filtro."
+            }
+          />
+        ) : null}
         {filteredCards.map((card) => (
           <div
             key={card.id}
@@ -1981,9 +1987,7 @@ export function PackagesPanel() {
             </pre>
           </div>
         ) : (
-          <div className="packages-empty-state" style={{ margin: "8px 12px 0" }}>
-            Nenhum conteúdo em {manifestFile}.
-          </div>
+          <PanelState kind="empty" icon="📄" message={`Nenhum conteúdo em ${manifestFile}.`} />
         )
       ) : (
         <>
@@ -1999,13 +2003,17 @@ export function PackagesPanel() {
 
           <div className="packages-list-scroll">
             {loading ? (
-              <div className="packages-empty-state">Carregando ambiente virtual do projeto...</div>
+              <PanelState kind="loading" message="Carregando ambiente virtual do projeto..." />
             ) : filtrados.length === 0 ? (
-              <div className="packages-empty-state">
-                {packages.length === 0
-                  ? "Nenhum pacote instalado no .venv do projeto ainda. Digite o nome do pacote acima para instalar!"
-                  : "Nenhum pacote encontrado com este filtro."}
-              </div>
+              <PanelState
+                kind="empty"
+                icon={packages.length === 0 ? "📦" : "🔍"}
+                message={
+                  packages.length === 0
+                    ? "Nenhum pacote instalado no .venv do projeto ainda. Digite o nome do pacote acima para instalar!"
+                    : "Nenhum pacote encontrado com este filtro."
+                }
+              />
             ) : (
               <div className="packages-items-grid">
                 {filtrados.map((pkg) => {
@@ -2692,10 +2700,7 @@ export function ExtensionsPanel() {
       {/* Extension Items Grid */}
       <div className="extensions-scroll-list">
         {loading && !catalog ? (
-          <div className="packages-empty-state">
-            <div className="empty-spinner" />
-            <p>Carregando catálogo de extensões...</p>
-          </div>
+          <PanelState kind="loading" message="Carregando catálogo de extensões..." />
         ) : category === "Marketplace Online" ? (
           <>
             <div className="ext-section-header">
@@ -2703,16 +2708,14 @@ export function ExtensionsPanel() {
               <span className="ext-section-count">{onlineResults.length}</span>
             </div>
             {searchingOnline && (
-              <div className="packages-empty-state">
-                <div className="empty-spinner" />
-                <p>Consultando repositórios do Open VSX...</p>
-              </div>
+              <PanelState kind="loading" message="Consultando repositórios do Open VSX..." />
             )}
             {!searchingOnline && onlineResults.length === 0 && (
-              <div className="packages-empty-state">
-                <span className="empty-icon">🌐</span>
-                <p>Digite pelo menos 2 caracteres para buscar extensões no marketplace oficial.</p>
-              </div>
+              <PanelState
+                kind="empty"
+                icon="🌐"
+                message="Digite pelo menos 2 caracteres para buscar extensões no marketplace oficial."
+              />
             )}
             {onlineResults.map((ext) => (
               <div key={ext.id} className="ext-card recommended-card">
@@ -2755,10 +2758,7 @@ export function ExtensionsPanel() {
             </div>
 
             {filteredExtensions.length === 0 && (
-              <div className="packages-empty-state">
-                <span className="empty-icon">🔍</span>
-                <p>Nenhuma extensão encontrada para o filtro atual.</p>
-              </div>
+              <PanelState kind="empty" icon="🔍" message="Nenhuma extensão encontrada para o filtro atual." />
             )}
 
             {filteredExtensions.map((ext) => {
@@ -3023,9 +3023,9 @@ export function ContainersPanel() {
           {expandedSections.containers && (
             <div className="docker-tree-children">
               {loading && !data ? (
-                <div className="docker-empty-state">Consultando daemon Docker local...</div>
+                <PanelState kind="loading" message="Consultando daemon Docker local..." />
               ) : !data || Object.keys(data.containers_by_project).length === 0 ? (
-                <div className="docker-empty-state">Nenhum container ativo encontrado.</div>
+                <PanelState kind="empty" icon="🐳" message="Nenhum container ativo encontrado." />
               ) : (
                 Object.entries(data.containers_by_project).map(([proj, containers]) => (
                   <div key={proj} className="compose-project-group">

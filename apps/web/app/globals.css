@@ -3057,6 +3057,32 @@ textarea:focus-visible,
   margin-bottom: 4px;
 }
 
+.code-review-findings {
+  padding-left: 10px;
+}
+
+.code-review-findings li {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  list-style: none;
+  line-height: 1.5;
+}
+
+.code-review-finding-icon {
+  flex-shrink: 0;
+  font-weight: 700;
+  font-family: var(--font-sans, inherit);
+}
+
+.code-review-findings li.approved .code-review-finding-icon {
+  color: #6ee7b7;
+}
+
+.code-review-findings li.needs-revision .code-review-finding-icon {
+  color: var(--warn, #f59e0b);
+}
+
 .tool-card-body-diff {
   max-height: none;
   overflow: visible;
@@ -8480,6 +8506,90 @@ button.primary:hover:not(:disabled) {
   font-size: 12px;
   line-height: 1.5;
   color: var(--text-dim);
+}
+
+/* ContextMenu — compartilhado entre Explorer e TabStrip (Fase 6). */
+.menu-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+}
+
+.context-menu {
+  position: fixed;
+  z-index: 1001;
+  min-width: 190px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+}
+
+.context-menu button {
+  all: unset;
+  box-sizing: border-box;
+  padding: 6px 10px;
+  font-size: 12px;
+  color: var(--text);
+  border-radius: 4px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.context-menu button:hover {
+  background: var(--surface-3);
+}
+
+.context-menu button.danger {
+  color: var(--danger);
+}
+
+.context-menu button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* PanelState — placeholder padrão de loading/vazio compartilhado entre os
+   painéis da barra lateral (Fase 6). */
+.panel-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 24px 16px;
+  text-align: center;
+}
+
+.panel-state-icon {
+  font-size: 20px;
+  opacity: 0.75;
+}
+
+.panel-state-spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent, #38bdf8);
+  border-radius: 50%;
+  animation: panel-state-spin 0.7s linear infinite;
+}
+
+.panel-state-message {
+  margin: 0;
+  max-width: 240px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-dim);
+}
+
+@keyframes panel-state-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .packages-items-grid {

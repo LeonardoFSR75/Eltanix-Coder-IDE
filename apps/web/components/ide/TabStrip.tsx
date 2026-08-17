@@ -7,8 +7,9 @@
  * aba fixada (duplo-clique ou edição promove).
  */
 
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import { useIde } from "@/lib/ide-store";
+import { ContextMenu } from "@/components/ide/ContextMenu";
 import { FileIcon } from "@/components/ide/FileIcons";
 
 // Payload usado tanto para reordenar dentro do grupo quanto para o
@@ -19,6 +20,7 @@ export function TabStrip({ groupId }: { groupId: string }) {
   const { groups, setActive, closeTab, pinTab, reorderTabs } = useIde();
   const group = groups[groupId];
   const dragPath = useRef<string | null>(null);
+  const [menu, setMenu] = useState<{ x: number; y: number; tab: string } | null>(null);
 
   if (!group) return null;
 
@@ -54,6 +56,10 @@ export function TabStrip({ groupId }: { groupId: string }) {
               if (dragPath.current) reorderTabs(dragPath.current, tab, groupId);
               dragPath.current = null;
             }}
+            onContextMenu={(e) => {
+              e.preventDefault();
+              setMenu({ x: e.clientX, y: e.clientY, tab });
+            }}
           >
             <button
               type="button"
@@ -84,6 +90,32 @@ export function TabStrip({ groupId }: { groupId: string }) {
         <div className="tabs-empty">
           Pressione <kbd className="editor-kbd">Ctrl+P</kbd> para abrir um arquivo
         </div>
+      )}
+      {menu && (
+        <ContextMenu
+          x={menu.x}
+          y={menu.y}
+          onClose={() => setMenu(null)}
+          items={[
+            { label: "Fechar", onSelect: () => closeTab(menu.tab, groupId) },
+            {
+              label: "Fechar outras",
+              onSelect: () => {
+                for (const t of group.tabs) if (t !== menu.tab) closeTab(t, groupId);
+              },
+              disabled: group.tabs.length <= 1,
+            },
+            {
+              label: "Fechar à direita",
+              onSelect: () => {
+                const idx = group.tabs.indexOf(menu.tab);
+                for (const t of group.tabs.slice(idx + 1)) closeTab(t, groupId);
+              },
+              disabled: group.tabs.indexOf(menu.tab) >= group.tabs.length - 1,
+            },
+            { label: "Copiar caminho", onSelect: () => navigator.clipboard?.writeText(menu.tab) },
+          ]}
+        />
       )}
     </div>
   );
