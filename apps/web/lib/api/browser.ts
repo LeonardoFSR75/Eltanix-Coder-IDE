@@ -44,8 +44,37 @@ export function browserAction({
   });
 }
 
-export function closeBrowserSession(sessionId: string): Promise<{ closed: boolean }> {
-  return del<{ closed: boolean }>(`/api/browser/sessions/${encodeURIComponent(sessionId)}`);
+export function closeBrowserSession(
+  sessionId: string,
+): Promise<{ closed: boolean; replay?: boolean }> {
+  return del<{ closed: boolean; replay?: boolean }>(
+    `/api/browser/sessions/${encodeURIComponent(sessionId)}`,
+  );
+}
+
+export interface ReplayAction {
+  t_offset_ms: number;
+  action: string;
+  summary: string;
+}
+
+export interface ReplayDetail {
+  session_id: string;
+  project: string | null;
+  started_at: number;
+  duration_ms: number | null;
+  actions: ReplayAction[];
+  trace_key: string | null;
+  video_key: string | null;
+  trace_url?: string;
+  video_url?: string;
+}
+
+/** `404` é o caso normal quando a sessão nunca foi fechada (replay só existe
+ * depois de `DELETE /sessions/{id}`) — o chamador trata como "sem replay
+ * ainda", não como erro. */
+export function getBrowserReplay(sessionId: string): Promise<ReplayDetail> {
+  return get<ReplayDetail>(`/api/browser/replays/${encodeURIComponent(sessionId)}`);
 }
 
 export interface NetworkLogEntry {

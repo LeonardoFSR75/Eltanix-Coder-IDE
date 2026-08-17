@@ -10,6 +10,7 @@ remontado.
 from __future__ import annotations
 
 import asyncio
+from contextlib import suppress
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
@@ -24,6 +25,7 @@ if TYPE_CHECKING:
 
 import httpx
 import structlog
+from redis.asyncio import Redis
 
 from sicoobito.agent import session_store
 from sicoobito.agent.approval_policy_config import load_approval_policy
@@ -34,6 +36,7 @@ from sicoobito.agent.prompts import build_task_prompt
 from sicoobito.agent.state import AgentMode
 from sicoobito.agent.tools import ToolContext
 from sicoobito.browser.client import BrowserClient, BrowserConfig
+from sicoobito.browser.replay import store_replay
 from sicoobito.config import Settings
 from sicoobito.context.indexer import ContextIndexer
 from sicoobito.context.repomap import build_repo_map
@@ -43,6 +46,7 @@ from sicoobito.router.engine import RouterEngine
 from sicoobito.sandbox.container import SandboxManager, SandboxUnavailableError
 from sicoobito.sandbox.executor import ExecutorSandboxManager
 from sicoobito.security.service import SecureBertService
+from sicoobito.storage.blob import BlobStore
 from sicoobito.workspace import git as git_ops
 from sicoobito.workspace import projects as project_ops
 from sicoobito.workspace.fs import WorkspaceFS
@@ -243,6 +247,8 @@ class AgentRunner:
         firecrawl: FirecrawlService | None = None,
         trace_recorder: TraceRecorder | None = None,
         coordinator: AgentCoordinator | None = None,
+        blob: BlobStore | None = None,
+        redis: Redis | None = None,
     ) -> None:
         self.settings = settings
         self.engine = engine
@@ -255,6 +261,11 @@ class AgentRunner:
         self.audit = audit
         self.firecrawl = firecrawl
         self.trace_recorder = trace_recorder
+        # Replay de sessão do navegador (Fase 4b) — `None` em qualquer um dos
+        # dois é normal (MinIO/Redis fora do ar): `close_session` só perde o
+        # replay, não falha o encerramento da sessão.
+        self.blob = blob
+        self.redis = redis
         # None quando o Redis não está configurado — orquestração multiagente
         # fica indisponível (`spawn_agent` falha fechado), mas sessões normais
         # seguem intactas (ver ADR 0004).
@@ -736,7 +747,15 @@ class AgentRunner:
             resumo_final = f"Sessão encerrada em {sessao.branch}"
         await self.sandboxes.release(session_id)
         if sessao.context.browser is not None:
-            await sessao.context.browser.stop()
+            replay_payload = await sessao.context.browser.stop()
+            with suppress(Exception):
+                await store_replay(
+                    blob=self.blob,
+                    redis=self.redis,
+                    session_id=session_id,
+                    project=sessao.workspace_root.name,
+                    payload=replay_payload,
+                )
         if sessao.branch:
             try:
                 git_ops.remove_worktree(

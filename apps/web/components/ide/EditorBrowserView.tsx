@@ -6,10 +6,13 @@ import {
   buildBrowserStreamUrl,
   closeBrowserSession,
   getBrowserNetworkLog,
+  getBrowserReplay,
   getBrowserStreamTicket,
   type NetworkLogEntry,
+  type ReplayDetail,
 } from "@/lib/api/browser";
 import { getSandboxServerLogs, getSandboxStats, type SandboxStats } from "@/lib/api/sandbox";
+import { HttpError } from "@/lib/client";
 import { useIde } from "@/lib/ide-store";
 
 export type ViewportMode = "responsive" | "desktop" | "laptop" | "tablet" | "mobile" | "mobile-max";
@@ -94,9 +97,14 @@ export function EditorBrowserView({
 
   // DevTools & Drawer
   const [showDrawer, setShowDrawer] = useState(false);
-  const [drawerTab, setDrawerTab] = useState<"inspector" | "logs" | "network">("logs");
+  const [drawerTab, setDrawerTab] = useState<"inspector" | "logs" | "network" | "replay">("logs");
   const [serverLogs, setServerLogs] = useState("");
   const [networkLog, setNetworkLog] = useState<NetworkLogEntry[]>([]);
+  const [replayData, setReplayData] = useState<ReplayDetail | null>(null);
+  const [replayLoading, setReplayLoading] = useState(false);
+  const [replayError, setReplayError] = useState<string | null>(null);
+  const [replayRefreshKey, setReplayRefreshKey] = useState(0);
+  const replayVideoRef = useRef<HTMLVideoElement>(null);
   const [sandboxStats, setSandboxStats] = useState<SandboxStats | null>(null);
   const [selectorInput, setSelectorInput] = useState("");
   const [textInput, setTextInput] = useState("");
@@ -447,6 +455,37 @@ export function EditorBrowserView({
     };
   }, [showDrawer, drawerTab, sessionId]);
 
+  // Busca o replay (trace + vídeo) quando a aba "Replay" é aberta — dado
+  // estático depois que a sessão fecha (`reiniciar()`), não precisa de
+  // polling como rede/logs.
+  useEffect(() => {
+    if (!showDrawer || drawerTab !== "replay") return;
+    let ativo = true;
+    setReplayLoading(true);
+    setReplayError(null);
+    getBrowserReplay(sessionId)
+      .then((data) => {
+        if (ativo) setReplayData(data);
+      })
+      .catch((err) => {
+        if (!ativo) return;
+        setReplayData(null);
+        setReplayError(
+          err instanceof HttpError && err.status === 404
+            ? "Nenhum replay disponível ainda — feche a sessão (\"Reiniciar\") para gerar vídeo + trace."
+            : err instanceof Error
+              ? err.message
+              : String(err),
+        );
+      })
+      .finally(() => {
+        if (ativo) setReplayLoading(false);
+      });
+    return () => {
+      ativo = false;
+    };
+  }, [showDrawer, drawerTab, sessionId, replayRefreshKey]);
+
   // Ações interativas no modo Headless
   const clicarNaCaptura = useCallback(
     async (e: React.MouseEvent<HTMLImageElement>) => {
@@ -546,6 +585,7 @@ export function EditorBrowserView({
     setConsoleErrors([]);
     setPageErrors([]);
     setNetworkLog([]);
+    setReplayRefreshKey((k) => k + 1);
   }, [sessionId, pararStream]);
 
   const downloadScreenshot = useCallback(() => {
@@ -833,6 +873,21 @@ export function EditorBrowserView({
           >
             🔍 DOM
           </button>
+          <button
+            type="button"
+            className={`editor-browser-tool-btn ${showDrawer && drawerTab === "replay" ? "active" : ""}`}
+            title="Replay da sessão (vídeo + trace)"
+            onClick={() => {
+              if (showDrawer && drawerTab === "replay") {
+                setShowDrawer(false);
+              } else {
+                setDrawerTab("replay");
+                setShowDrawer(true);
+              }
+            }}
+          >
+            🎬 Replay
+          </button>
           {image && renderMode === "headless" && (
             <button
               type="button"
@@ -1002,6 +1057,13 @@ export function EditorBrowserView({
                 >
                   DOM & Digitação
                 </button>
+                <button
+                  type="button"
+                  className={`editor-browser-tool-btn ${drawerTab === "replay" ? "active" : ""}`}
+                  onClick={() => setDrawerTab("replay")}
+                >
+                  Replay{replayData ? ` (${replayData.actions.length})` : ""}
+                </button>
               </div>
               <button
                 type="button"
@@ -1120,6 +1182,70 @@ export function EditorBrowserView({
                     <pre className="browser-content-preview">
                       {content}
                     </pre>
+                  )}
+                </div>
+              )}
+
+              {drawerTab === "replay" && (
+                <div className="browser-replay-panel">
+                  {replayLoading ? (
+                    <p className="text-xs text-muted" style={{ padding: 12 }}>
+                      Carregando replay...
+                    </p>
+                  ) : replayError ? (
+                    <p className="text-xs text-muted" style={{ padding: 12 }}>
+                      {replayError}
+                    </p>
+                  ) : replayData ? (
+                    <>
+                      {replayData.video_url && (
+                        <video
+                          ref={replayVideoRef}
+                          src={replayData.video_url}
+                          controls
+                          className="browser-replay-video"
+                        />
+                      )}
+                      {replayData.actions.length > 0 && (
+                        <div className="browser-replay-timeline">
+                          {replayData.actions.map((a, idx) => (
+                            <button
+                              key={idx}
+                              type="button"
+                              className="browser-replay-marker"
+                              onClick={() => {
+                                const video = replayVideoRef.current;
+                                if (video) {
+                                  video.currentTime = a.t_offset_ms / 1000;
+                                  void video.play();
+                                }
+                              }}
+                            >
+                              <span className="browser-replay-marker-time">
+                                {(a.t_offset_ms / 1000).toFixed(1)}s
+                              </span>
+                              <span className="browser-replay-marker-action">{a.action}</span>
+                              <span className="browser-replay-marker-summary">{a.summary}</span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                      {replayData.trace_url && (
+                        <a
+                          className="browser-replay-trace-link"
+                          href={replayData.trace_url}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          ⬇ Baixar trace.zip (abrir em trace.playwright.dev)
+                        </a>
+                      )}
+                    </>
+                  ) : (
+                    <p className="text-xs text-muted" style={{ padding: 12 }}>
+                      Nenhum replay disponível ainda — feche a sessão ("Reiniciar") para gerar
+                      vídeo + trace.
+                    </p>
                   )}
                 </div>
               )}

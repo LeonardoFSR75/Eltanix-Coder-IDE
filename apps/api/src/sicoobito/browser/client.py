@@ -12,6 +12,7 @@ que roda o Chromium é isolado à parte, numa rede própria que só alcança
 
 from __future__ import annotations
 
+from contextlib import suppress
 from dataclasses import dataclass
 from typing import Any
 
@@ -122,22 +123,32 @@ class BrowserClient:
         except httpx.HTTPError as exc:
             raise BrowserError(f"falha ao ler log de rede: {exc}") from exc
 
-    async def stop(self, *, force: bool = False) -> None:
+    async def stop(self, *, force: bool = False) -> dict[str, Any] | None:
         """Por padrão (`force=False`), não faz nada se `_started` for `False`
         — evita um DELETE inútil para sessões que nunca chegaram a usar o
         navegador. Tanto o `AgentRunner` quanto o painel manual do IDE (`api/
         routes/browser.py`) mantêm uma instância por sessão durante toda a
         vida dela, então `_started` reflete de verdade se ESTA sessão chamou
         `start()` — `force=True` fica disponível para quem não tiver essa
-        garantia."""
+        garantia.
+
+        Retorna o corpo da resposta do serviço (Fase 4b: `trace_base64`/
+        `video_base64`/`actions`, quando a sessão gravou algo) para quem quiser
+        persistir o replay — `None` se não havia sessão para fechar ou a
+        chamada falhou (degrada, não derruba: replay é conveniência, não deve
+        impedir o encerramento da sessão)."""
         if not self._started and not force:
-            return
+            return None
         self._started = False
         try:
-            await self._client.delete(
+            resposta = await self._client.delete(
                 f"{self.config.base_url}/sessions/{self.session_id}",
                 headers=self._headers(),
                 timeout=30.0,
             )
+            if resposta.status_code < 400:
+                with suppress(Exception):
+                    return resposta.json()
         except httpx.HTTPError as exc:
             log.warning("browser.stop.failed", session=self.session_id, error=str(exc))
+        return None

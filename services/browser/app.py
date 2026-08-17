@@ -23,8 +23,11 @@ import asyncio
 import base64
 import hmac
 import os
+import shutil
+import tempfile
 import time
 from contextlib import asynccontextmanager, suppress
+from pathlib import Path
 from typing import Annotated, Any, Literal
 
 from fastapi import Depends, FastAPI, Header, HTTPException, WebSocket, WebSocketDisconnect, status
@@ -36,14 +39,98 @@ TOKEN = os.getenv("BROWSER_TOKEN", "")
 SESSION_TTL_SECONDS = int(os.getenv("BROWSER_SESSION_TTL_SECONDS", "1800"))
 REAP_INTERVAL_SECONDS = int(os.getenv("BROWSER_REAP_INTERVAL_SECONDS", "300"))
 
+# Trace/vídeo por sessão (Fase 4b) — arquivos passam por disco local antes de
+# virar bytes na resposta; `api` é quem de fato sobe pro MinIO (este serviço
+# não alcança `minio`, só `web`/`api`, ver docstring do módulo).
+VIDEO_ROOT = Path(tempfile.gettempdir()) / "sicoobito-browser-videos"
+TRACE_ROOT = Path(tempfile.gettempdir()) / "sicoobito-browser-traces"
+VIDEO_ROOT.mkdir(parents=True, exist_ok=True)
+TRACE_ROOT.mkdir(parents=True, exist_ok=True)
+
 _playwright: Any | None = None
 _browser: Any | None = None
 _pages: dict[str, Any] = {}
+_contexts: dict[str, Any] = {}
+_video_dirs: dict[str, str] = {}
+_session_started_at: dict[str, float] = {}
+_action_logs: dict[str, list[dict[str, Any]]] = {}
 _last_used: dict[str, float] = {}
 _console_logs: dict[str, list[str]] = {}
 _page_errors: dict[str, list[str]] = {}
 _network_logs: dict[str, list[dict[str, Any]]] = {}
 _pending_requests: dict[str, dict[Any, float]] = {}
+
+
+def _log_action(session_id: str, action: str, summary: str) -> None:
+    lista = _action_logs.setdefault(session_id, [])
+    inicio = _session_started_at.get(session_id, time.time())
+    lista.append(
+        {
+            "t_offset_ms": int((time.time() - inicio) * 1000),
+            "action": action,
+            "summary": summary[:200],
+        }
+    )
+    if len(lista) > 200:
+        lista.pop(0)
+
+
+async def _finalize_replay(session_id: str) -> dict[str, Any] | None:
+    """Encerra a sessão liberando trace.zip + vídeo como bytes — chamado tanto
+    pelo fechamento explícito (`DELETE /sessions/{id}`, que quer os bytes para
+    subir no MinIO) quanto pela expiração por TTL (`_reap_loop`, que só quer
+    liberar os recursos do Chromium e descarta o resultado: sessão expirou por
+    inatividade, não há painel nem sessão de agente esperando o replay)."""
+    context = _contexts.pop(session_id, None)
+    page = _pages.pop(session_id, None)
+    video_dir = _video_dirs.pop(session_id, None)
+    started = _session_started_at.pop(session_id, None)
+    actions = _action_logs.pop(session_id, [])
+    _last_used.pop(session_id, None)
+    _console_logs.pop(session_id, None)
+    _page_errors.pop(session_id, None)
+    _network_logs.pop(session_id, None)
+    _pending_requests.pop(session_id, None)
+
+    if context is None:
+        return None
+
+    trace_path = TRACE_ROOT / f"{session_id}.zip"
+    video_obj = getattr(page, "video", None) if page is not None else None
+    resultado: dict[str, Any] | None = None
+    try:
+        with suppress(Exception):
+            await context.tracing.stop(path=str(trace_path))
+        with suppress(Exception):
+            await context.close()
+
+        video_bytes = None
+        if video_obj is not None:
+            with suppress(Exception):
+                video_file = await video_obj.path()
+                video_bytes = Path(video_file).read_bytes()
+
+        trace_bytes = trace_path.read_bytes() if trace_path.exists() else None
+
+        if trace_bytes or video_bytes:
+            resultado = {
+                "started_at": started,
+                "duration_ms": int((time.time() - started) * 1000) if started else None,
+                "actions": actions,
+                "trace_base64": base64.b64encode(trace_bytes).decode("ascii")
+                if trace_bytes
+                else None,
+                "video_base64": base64.b64encode(video_bytes).decode("ascii")
+                if video_bytes
+                else None,
+            }
+    finally:
+        with suppress(Exception):
+            trace_path.unlink(missing_ok=True)
+        if video_dir:
+            shutil.rmtree(video_dir, ignore_errors=True)
+
+    return resultado
 
 
 async def _reap_loop() -> None:
@@ -54,14 +141,8 @@ async def _reap_loop() -> None:
             sid for sid, ultimo in _last_used.items() if agora - ultimo > SESSION_TTL_SECONDS
         ]
         for sid in expiradas:
-            page = _pages.pop(sid, None)
-            _last_used.pop(sid, None)
-            _console_logs.pop(sid, None)
-            _page_errors.pop(sid, None)
-            _network_logs.pop(sid, None)
-            _pending_requests.pop(sid, None)
-            if page is not None and not page.is_closed():
-                await page.close()
+            with suppress(Exception):
+                await _finalize_replay(sid)
 
 
 @asynccontextmanager
@@ -73,9 +154,9 @@ async def lifespan(app: FastAPI):
         reaper.cancel()
         with suppress(asyncio.CancelledError):
             await reaper
-        for page in _pages.values():
-            if not page.is_closed():
-                await page.close()
+        for context in _contexts.values():
+            with suppress(Exception):
+                await context.close()
         if _browser is not None:
             await _browser.close()
         if _playwright is not None:
@@ -118,13 +199,30 @@ async def _get_page(session_id: str) -> Any:
         _last_used[session_id] = time.time()
         return page
     browser = await _launch_browser()
-    page = await browser.new_page()
+
+    video_dir = VIDEO_ROOT / session_id
+    video_dir.mkdir(parents=True, exist_ok=True)
+    context = await browser.new_context(
+        viewport={"width": 1280, "height": 800},
+        record_video_dir=str(video_dir),
+        record_video_size={"width": 1280, "height": 800},
+    )
+    # Best-effort: uma sessão sem trace ainda funciona para navegação normal,
+    # só perde o replay (`_finalize_replay` degrada sozinho se isto falhar).
+    with suppress(Exception):
+        await context.tracing.start(screenshots=True, snapshots=True)
+
+    page = await context.new_page()
+    _contexts[session_id] = context
+    _video_dirs[session_id] = str(video_dir)
+    _session_started_at[session_id] = time.time()
     _pages[session_id] = page
     _last_used[session_id] = time.time()
     _console_logs.setdefault(session_id, [])
     _page_errors.setdefault(session_id, [])
     _network_logs.setdefault(session_id, [])
     _pending_requests.setdefault(session_id, {})
+    _action_logs.setdefault(session_id, [])
 
     def _on_console(msg: Any) -> None:
         try:
@@ -199,7 +297,7 @@ async def _get_page(session_id: str) -> Any:
 
 @app.get("/health")
 async def health() -> dict[str, Any]:
-    return {"status": "ok", "sessions": len(_pages), "browser_launched": _browser is not None}
+    return {"status": "ok", "sessions": len(_contexts), "browser_launched": _browser is not None}
 
 
 class CreateSessionRequest(BaseModel):
@@ -331,6 +429,7 @@ async def run_action(session_id: str, payload: ActionRequest) -> dict[str, Any]:
             except Exception:  # noqa: BLE001
                 pass
 
+            _log_action(session_id, "navigate", page.url)
             return {
                 "ok": True,
                 "url": page.url,
@@ -349,6 +448,7 @@ async def run_action(session_id: str, payload: ActionRequest) -> dict[str, Any]:
                 await page.mouse.click(payload.x, payload.y)
             else:
                 raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="informe selector ou x/y")
+            _log_action(session_id, "click", payload.selector or f"{payload.x},{payload.y}")
             return {
                 "ok": True,
                 "duration_ms": int((time.perf_counter() - inicio) * 1000),
@@ -362,6 +462,7 @@ async def run_action(session_id: str, payload: ActionRequest) -> dict[str, Any]:
                     status.HTTP_400_BAD_REQUEST, detail="type exige selector e text"
                 )
             await page.fill(payload.selector, payload.text, timeout=payload.timeout_ms)
+            _log_action(session_id, "type", f"{payload.selector}: {payload.text[:50]}")
             return {
                 "ok": True,
                 "duration_ms": int((time.perf_counter() - inicio) * 1000),
@@ -371,6 +472,7 @@ async def run_action(session_id: str, payload: ActionRequest) -> dict[str, Any]:
 
         if payload.action == "screenshot":
             png = await page.screenshot(timeout=payload.timeout_ms)
+            _log_action(session_id, "screenshot", page.url)
             return {
                 "ok": True,
                 "image_base64": base64.b64encode(png).decode("ascii"),
@@ -382,6 +484,7 @@ async def run_action(session_id: str, payload: ActionRequest) -> dict[str, Any]:
 
         if payload.action == "content":
             texto = await page.inner_text("body")
+            _log_action(session_id, "content", page.url)
             return {
                 "ok": True,
                 "text": texto[:20_000],
@@ -458,14 +561,6 @@ async def stream_screencast(websocket: WebSocket, session_id: str) -> None:
 
 @app.delete("/sessions/{session_id}", dependencies=[Auth])
 async def close_session(session_id: str) -> dict[str, Any]:
-    page = _pages.pop(session_id, None)
-    _last_used.pop(session_id, None)
-    _console_logs.pop(session_id, None)
-    _page_errors.pop(session_id, None)
-    _network_logs.pop(session_id, None)
-    _pending_requests.pop(session_id, None)
-    closed = False
-    if page is not None and not page.is_closed():
-        await page.close()
-        closed = True
-    return {"closed": closed}
+    tinha_sessao = session_id in _contexts
+    replay = await _finalize_replay(session_id) if tinha_sessao else None
+    return {"closed": tinha_sessao, **(replay or {})}

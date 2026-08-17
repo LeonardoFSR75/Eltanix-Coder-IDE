@@ -183,7 +183,12 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     networks:
-      - default
+      # Só `browser_net` — de propósito (ver comentário no topo do arquivo e
+      # o docstring de services/browser/app.py). `default` foi removido: nada
+      # em app.py fala com minio/postgres/redis/ollama, e deixar o serviço
+      # também no `default` vazava rota para a internet pública e para todo
+      # serviço interno a partir do Chromium sandboxado — exatamente o que
+      # `browser_net` (`internal: true`) existe para impedir.
       - browser_net
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://localhost:5406/health')"]

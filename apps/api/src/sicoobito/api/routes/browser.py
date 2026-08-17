@@ -28,6 +28,7 @@ from sicoobito.browser.client import (
     BrowserError,
     BrowserUnavailableError,
 )
+from sicoobito.browser.replay import get_replay, list_recent_replays, store_replay
 from sicoobito.logging_setup import get_logger
 
 log = get_logger(__name__)
@@ -192,12 +193,40 @@ async def browser_stream_socket(websocket: WebSocket, session_id: str) -> None:
 
 
 @router.delete("/sessions/{session_id}")
-async def close_browser_session(session_id: str, request: Request) -> dict[str, bool]:
+async def close_browser_session(session_id: str, request: Request) -> dict[str, Any]:
     clients: dict[str, BrowserClient] = request.app.state.browser_panel_clients
     client = clients.pop(f"panel-{session_id}", None)
     if client is None:
         # Nenhuma ação foi feita nesta sessão — nada existe do lado do
         # serviço para fechar, então nem vale o DELETE.
         return {"closed": False}
-    await client.stop()
-    return {"closed": True}
+    payload = await client.stop()
+    replay = await store_replay(
+        blob=getattr(request.app.state, "blob", None),
+        redis=getattr(request.app.state, "redis", None),
+        session_id=session_id,
+        project=None,
+        payload=payload,
+    )
+    return {"closed": True, "replay": bool(replay)}
+
+
+@router.get("/replays")
+async def list_browser_replays(request: Request) -> dict[str, Any]:
+    redis = getattr(request.app.state, "redis", None)
+    return {"replays": await list_recent_replays(redis)}
+
+
+@router.get("/replays/{session_id}")
+async def get_browser_replay(session_id: str, request: Request) -> dict[str, Any]:
+    redis = getattr(request.app.state, "redis", None)
+    blob = getattr(request.app.state, "blob", None)
+    entrada = await get_replay(redis, session_id)
+    if entrada is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "replay não encontrado ou expirado")
+    if blob is not None:
+        if entrada.get("video_key"):
+            entrada["video_url"] = await blob.presigned_get_url(entrada["video_key"])
+        if entrada.get("trace_key"):
+            entrada["trace_url"] = await blob.presigned_get_url(entrada["trace_key"])
+    return entrada

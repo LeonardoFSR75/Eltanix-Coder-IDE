@@ -269,6 +269,8 @@ async def lifespan(app: FastAPI):
         firecrawl=firecrawl,
         trace_recorder=trace_recorder,
         coordinator=agent_coordinator,
+        blob=blob,
+        redis=redis,
     )
     # O desligamento ordenado abaixo cobre o caso normal; este laço cobre o
     # anormal (kill -9, queda), varrendo containers de execuções anteriores que

@@ -9994,6 +9994,91 @@ button.primary:hover:not(:disabled) {
   font-style: italic;
 }
 
+.browser-replay-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 4px;
+}
+
+.browser-replay-video {
+  width: 100%;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: #000;
+}
+
+.browser-replay-timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.browser-replay-marker {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 5px 8px;
+  color: var(--text);
+  font-size: 11px;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.browser-replay-marker:hover {
+  background: rgba(56, 189, 248, 0.14);
+  border-color: rgba(56, 189, 248, 0.4);
+}
+
+.browser-replay-marker-action {
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  font-size: 10px;
+  color: var(--text-dim);
+}
+
+.browser-replay-marker-summary {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+}
+
+.browser-replay-marker-time {
+  font-variant-numeric: tabular-nums;
+  color: #38bdf8;
+  font-size: 10.5px;
+  flex-shrink: 0;
+}
+
+.browser-replay-trace-link {
+  display: block;
+  text-align: center;
+  padding: 7px 10px;
+  border-radius: 5px;
+  background: rgba(56, 189, 248, 0.12);
+  border: 1px solid rgba(56, 189, 248, 0.35);
+  color: #38bdf8;
+  font-size: 11.5px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.browser-replay-trace-link:hover {
+  background: rgba(56, 189, 248, 0.22);
+  border-color: #38bdf8;
+  color: #e0f2fe;
+}
+
 .browser-card-open-btn {
   display: inline-flex;
   align-items: center;
