@@ -195,17 +195,12 @@ services:
   # Lightpanda Browser: motor headless ultraleve em C/C++ (25MB RAM / 20ms startup)
   # para web scraping massivo, RAG crawling e inspeção rápida de DOM por agentes.
   lightpanda:
-    image: ${LIGHTPANDA_IMAGE:-ghcr.io/lightpanda-io/browser:latest}
-    command: ["--host", "0.0.0.0", "--port", "9222"]
+    image: ${LIGHTPANDA_IMAGE:-lightpanda/browser:latest}
     networks:
       - browser_net
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9222/json/version"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 5s
+      disable: true
 
   mcp-scanner:
     build:

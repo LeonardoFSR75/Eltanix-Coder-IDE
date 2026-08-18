@@ -2062,371 +2062,11 @@ export function PackagesPanel() {
 }
 
 // ── Extensions (Extensões & Suporte a Linguagens) ──────────────────────────
-
-const FALLBACK_EXTENSIONS_CATALOG: ExtensionItem[] = [
-  {
-    id: "meta.pyrefly",
-    name: "Pyrefly - Python Language Server",
-    publisher: "meta",
-    version: "0.1.0",
-    description: "Python autocomplete, typechecking & high-performance static analysis by Meta.",
-    category: "LSP & Python",
-    installed: true,
-    active: true,
-    latency_ms: 496,
-    icon: "🦟",
-  },
-  {
-    id: "ms-python.python",
-    name: "Python",
-    publisher: "ms-python",
-    version: "2026.1.0",
-    description: "Python language support with extension hooks, code formatting, linting & refactoring.",
-    category: "LSP & Python",
-    installed: true,
-    active: true,
-    latency_ms: 7072,
-    icon: "🐍",
-  },
-  {
-    id: "ms-python.debugpy",
-    name: "Python Debugger",
-    publisher: "ms-python",
-    version: "2026.1.0",
-    description: "Python Debugger extension using debugpy & Sicoobito container executor.",
-    category: "LSP & Python",
-    installed: true,
-    active: true,
-    latency_ms: 593,
-    icon: "🐞",
-  },
-  {
-    id: "ms-python.python-environments",
-    name: "Python Environments",
-    publisher: "ms-python",
-    version: "2026.1.0",
-    description: "Provides a unified python environment discovery and virtualenv manager.",
-    category: "LSP & Python",
-    installed: true,
-    active: true,
-    latency_ms: 874,
-    icon: "📦",
-  },
-  {
-    id: "ms-vscode.node-js",
-    name: "Node.js & npm Package Manager",
-    publisher: "ms-vscode",
-    version: "2026.2.0",
-    description: "Node.js environment discovery, package.json management & npm script execution.",
-    category: "Node & Next.js",
-    installed: true,
-    active: true,
-    latency_ms: 310,
-    icon: "🟢",
-  },
-  {
-    id: "vercel.nextjs-tools",
-    name: "Next.js & React App Router",
-    publisher: "vercel",
-    version: "15.1.0",
-    description: "Next.js App Router autocomplete, Server Components, Server Actions & route navigation.",
-    category: "Node & Next.js",
-    installed: true,
-    active: true,
-    latency_ms: 280,
-    icon: "▲",
-  },
-  {
-    id: "meta.react-devtools",
-    name: "React 19 & JSX Features",
-    publisher: "meta",
-    version: "19.0.0",
-    description: "React Hooks, Server Components, JSX/TSX autocomplete & component inspector.",
-    category: "Frontend & Frameworks",
-    installed: true,
-    active: true,
-    latency_ms: 210,
-    icon: "⚛️",
-  },
-  {
-    id: "vue.volar",
-    name: "Vue.js Language Features (Volar)",
-    publisher: "vue",
-    version: "2.2.0",
-    description: "Vue 3 Composition API, Single File Components (.vue), template typechecking & Volar LSP.",
-    category: "Frontend & Frameworks",
-    installed: true,
-    active: true,
-    latency_ms: 290,
-    icon: "💚",
-  },
-  {
-    id: "angular.ng-template",
-    name: "Angular Language Service",
-    publisher: "angular",
-    version: "18.2.0",
-    description: "Angular template IntelliSense, AOT typechecking & component navigation.",
-    category: "Frontend & Frameworks",
-    installed: true,
-    active: true,
-    latency_ms: 340,
-    icon: "🅰️",
-  },
-  {
-    id: "svelte.svelte-vscode",
-    name: "Svelte & SvelteKit",
-    publisher: "svelte",
-    version: "108.4.0",
-    description: "Svelte 5 Runes, SvelteKit routing, reactive state autocomplete & Svelte LSP.",
-    category: "Frontend & Frameworks",
-    installed: true,
-    active: true,
-    latency_ms: 250,
-    icon: "🟧",
-  },
-  {
-    id: "tailwindcss.vscode-tailwindcss",
-    name: "Tailwind CSS IntelliSense",
-    publisher: "tailwindcss",
-    version: "0.14.0",
-    description: "Advanced class autocomplete, CSS directive linting, variant preview & color picker.",
-    category: "Frontend & Frameworks",
-    installed: true,
-    active: true,
-    latency_ms: 180,
-    icon: "🎨",
-  },
-  {
-    id: "dbaeumer.vscode-eslint",
-    name: "ESLint & Prettier",
-    publisher: "dbaeumer",
-    version: "3.0.10",
-    description: "Real-time JavaScript/TypeScript linting, code formatting & style enforcement.",
-    category: "Node & Next.js",
-    installed: true,
-    active: true,
-    latency_ms: 190,
-    icon: "✨",
-  },
-  {
-    id: "mtxr.sqltools",
-    name: "SQLTools - Database Client",
-    publisher: "mtxr",
-    version: "0.28.3",
-    description: "Conexão e navegação nativa em bancos PostgreSQL (pgvector), Redis, MySQL e SQLite.",
-    category: "Bancos & SQL",
-    installed: true,
-    active: true,
-    latency_ms: 150,
-    icon: "🗄️",
-  },
-  {
-    id: "prisma.prisma",
-    name: "Prisma ORM",
-    publisher: "prisma",
-    version: "5.19.0",
-    description: "Autocompletar, realce de sintaxe e migrações para esquemas Prisma.",
-    category: "Bancos & SQL",
-    installed: true,
-    active: true,
-    latency_ms: 130,
-    icon: "💎",
-  },
-  {
-    id: "usernamehw.errorlens",
-    name: "Error Lens",
-    publisher: "usernamehw",
-    version: "3.20.0",
-    description: "Exibe mensagens de erro, warnings e diagnósticos do LSP diretamente inline nas linhas de código.",
-    category: "Produtividade",
-    installed: true,
-    active: true,
-    latency_ms: 90,
-    icon: "👁️",
-  },
-  {
-    id: "eamodio.gitlens",
-    name: "GitLens — Git supercharged",
-    publisher: "eamodio",
-    version: "2026.1.0",
-    description: "Autoria de código linha por linha (blame), histórico de commits e comparação visual de branches.",
-    category: "Produtividade",
-    installed: true,
-    active: true,
-    latency_ms: 110,
-    icon: "📜",
-  },
-  {
-    id: "pkief.material-icon-theme",
-    name: "Material Icon Theme",
-    publisher: "pkief",
-    version: "5.7.0",
-    description: "Ícones dinâmicos e modernos para todos os tipos de arquivo e pasta no Explorer.",
-    category: "Produtividade",
-    installed: true,
-    active: true,
-    latency_ms: 60,
-    icon: "🎨",
-  },
-  {
-    id: "rangav.vscode-thunder-client",
-    name: "Thunder Client",
-    publisher: "rangav",
-    version: "2.26.0",
-    description: "Executor leve de requisições HTTP/REST e GraphQL integrado na IDE agêntica.",
-    category: "APIs & Testes",
-    installed: true,
-    active: true,
-    latency_ms: 140,
-    icon: "⚡",
-  },
-  {
-    id: "vitest.explorer",
-    name: "Vitest & Jest Runner",
-    publisher: "vitest",
-    version: "1.0.8",
-    description: "Execução e debug de testes unitários com 1 clique direto no código.",
-    category: "APIs & Testes",
-    installed: true,
-    active: true,
-    latency_ms: 120,
-    icon: "🧪",
-  },
-  {
-    id: "ms-kubernetes-tools.vscode-kubernetes-tools",
-    name: "Kubernetes",
-    publisher: "ms-kubernetes-tools",
-    version: "1.3.15",
-    description: "Inspeção de pods, navegação de namespaces, deployments e logs de clusters K8s.",
-    category: "DevOps & Cloud",
-    installed: true,
-    active: true,
-    latency_ms: 220,
-    icon: "☸️",
-  },
-  {
-    id: "hashicorp.terraform",
-    name: "HashiCorp Terraform",
-    publisher: "hashicorp",
-    version: "2.32.0",
-    description: "Autocompletar, validação HCL e linting para infraestrutura como código.",
-    category: "DevOps & Cloud",
-    installed: true,
-    active: true,
-    latency_ms: 200,
-    icon: "🏗️",
-  },
-  {
-    id: "vscjava.vscode-mermaid-editor",
-    name: "Mermaid Preview",
-    publisher: "vscjava",
-    version: "1.8.0",
-    description: "Renderização e preview em tempo real de diagramas Mermaid em Markdown.",
-    category: "Produtividade",
-    installed: true,
-    active: true,
-    latency_ms: 110,
-    icon: "📊",
-  },
-  {
-    id: "esbenp.prettier-vscode",
-    name: "Prettier - Code Formatter",
-    publisher: "esbenp",
-    version: "10.4.0",
-    description: "Formatação universal ao salvar arquivos TypeScript, JavaScript, CSS e HTML.",
-    category: "Produtividade",
-    installed: true,
-    active: true,
-    latency_ms: 100,
-    icon: "✨",
-  },
-  {
-    id: "Shopify.ruby-lsp",
-    name: "Ruby LSP",
-    publisher: "Shopify",
-    version: "0.8.1",
-    description: "VS Code plugin for connecting with Ruby LSP language server powered by Shopify.",
-    category: "Outros",
-    installed: true,
-    active: true,
-    latency_ms: 240,
-    icon: "💎",
-  },
-  {
-    id: "llvm-vs-code-extensions.clangd",
-    name: "clangd",
-    publisher: "llvm-vs-code-extensions",
-    version: "0.1.30",
-    description: "C/C++ completion, navigation, and static analysis powered by LLVM clangd engine.",
-    category: "C/C++ & Go",
-    installed: true,
-    active: true,
-    latency_ms: 380,
-    icon: "🅲",
-  },
-  {
-    id: "golang.go",
-    name: "Go",
-    publisher: "golang",
-    version: "0.41.0",
-    description: "Rich Go language support for Visual Studio Code using gopls LSP engine.",
-    category: "C/C++ & Go",
-    installed: true,
-    active: true,
-    latency_ms: 290,
-    icon: "🅶",
-  },
-  {
-    id: "ms-azuretools.container-tools",
-    name: "Container Tools",
-    publisher: "ms-azuretools",
-    version: "1.28.0",
-    description: "Makes it easy to create, manage, and debug containerized applications.",
-    category: "Containers & DevOps",
-    installed: true,
-    active: true,
-    latency_ms: 410,
-    icon: "🧊",
-  },
-  {
-    id: "ms-azuretools.docker",
-    name: "Docker",
-    publisher: "ms-azuretools",
-    version: "1.29.0",
-    description: "Makes it easy to create, manage, and debug Docker applications and Compose stacks.",
-    category: "Containers & DevOps",
-    installed: true,
-    active: true,
-    latency_ms: 360,
-    icon: "🐳",
-  },
-  {
-    id: "DavidAnson.markdownlint",
-    name: "markdownlint",
-    publisher: "DavidAnson",
-    version: "0.57.0",
-    description: "Markdown linting and style checking for repository documentation.",
-    category: "Outros",
-    installed: false,
-    active: false,
-    downloads: "1.5M",
-    rating: 5,
-    isRecommended: true,
-    icon: "📝",
-  },
-  {
-    id: "sicoobito.agentic-engine",
-    name: "Sicoobito Agentic AI Engine",
-    publisher: "sicoobito",
-    version: "1.0.0",
-    description: "Agente autônomo com suporte a múltiplos arquivos, RAG, terminal e auto-correção.",
-    category: "IA & Agente",
-    installed: true,
-    active: true,
-    latency_ms: 120,
-    icon: "🤖",
-  },
-];
+//
+// O catálogo de extensões é servido pelo backend (`MASTER_EXTENSIONS_CATALOG`
+// em `extensions/catalog.py`, persistido em Postgres — ver `extensions/manager.py`).
+// Não duplicar essa lista aqui: se a busca falhar, mostrar erro + retry
+// (`PanelState kind="error"`) em vez de inventar dados desatualizados.
 
 export function ExtensionsPanel() {
   const { bumpRevision } = useIde();
@@ -2441,6 +2081,7 @@ export function ExtensionsPanel() {
   const [selectedExt, setSelectedExt] = useState<ExtensionItem | null>(null);
   const [onlineResults, setOnlineResults] = useState<ExtensionItem[]>([]);
   const [searchingOnline, setSearchingOnline] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
 
   const carregar = useCallback(async (isSync = false) => {
     try {
@@ -2448,22 +2089,14 @@ export function ExtensionsPanel() {
       else setLoading(true);
       const res = isSync ? await syncExtensions(true) : await getExtensionsCatalog();
       setCatalog(res);
-    } catch {
-      // Fallback em caso de offline
-      if (!catalog) {
-        setCatalog({
-          extensions: FALLBACK_EXTENSIONS_CATALOG,
-          total_count: FALLBACK_EXTENSIONS_CATALOG.length,
-          pending_updates_count: 0,
-          last_sync_timestamp: Date.now() / 1000,
-          auto_update_enabled: true,
-        });
-      }
+      setErro(null);
+    } catch (err) {
+      setErro(err instanceof Error ? err.message : String(err));
     } finally {
       setLoading(false);
       setSyncing(false);
     }
-  }, [catalog]);
+  }, []);
 
   useEffect(() => {
     carregar();
@@ -2547,7 +2180,7 @@ export function ExtensionsPanel() {
     }
   };
 
-  const extensionsList = catalog?.extensions || FALLBACK_EXTENSIONS_CATALOG;
+  const extensionsList = catalog?.extensions || [];
   const pendingUpdatesCount = catalog?.pending_updates_count || 0;
 
   const filteredExtensions = extensionsList.filter((ext) => {
@@ -2605,6 +2238,8 @@ export function ExtensionsPanel() {
           </button>
         </div>
       </div>
+
+      {erro && catalog && <div className="panel-error">{erro}</div>}
 
       {/* Barra de Status do Auto-Update & Ação Global de Atualização */}
       <div className="extensions-auto-update-bar">
@@ -2701,6 +2336,12 @@ export function ExtensionsPanel() {
       <div className="extensions-scroll-list">
         {loading && !catalog ? (
           <PanelState kind="loading" message="Carregando catálogo de extensões..." />
+        ) : erro && !catalog ? (
+          <PanelState
+            kind="error"
+            message={`Não foi possível carregar o catálogo do backend: ${erro}`}
+            onRetry={() => carregar()}
+          />
         ) : category === "Marketplace Online" ? (
           <>
             <div className="ext-section-header">

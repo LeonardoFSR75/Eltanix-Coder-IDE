@@ -4,75 +4,80 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import time
-from pathlib import Path
 from typing import Any
 
-from sicoobito.extensions.catalog import MASTER_EXTENSIONS_CATALOG, ExtensionDefinition
+from redis.asyncio import Redis
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from sicoobito.extensions import store
+from sicoobito.extensions.catalog import MASTER_EXTENSIONS_CATALOG
 from sicoobito.extensions.client import OpenVSXClient
 from sicoobito.logging_setup import get_logger
 
 log = get_logger(__name__)
 
-_STATE_FILE_PATH = Path("config/extensions_state.json")
 _AUTO_SYNC_INTERVAL_SECONDS = 3600 * 6  # 6 horas
+_SEARCH_CACHE_PREFIX = "sicoobito:cache:extensions:search"
+_SEARCH_CACHE_TTL_SECONDS = 600  # 10 min — o painel de Extensões busca a cada
+# tecla digitada; o Open VSX não muda rápido o bastante para justificar bater
+# nele a cada busca (mesmo padrão de `optimizer/cache.py`).
 
 
 class ExtensionsManager:
-    """Gerenciador de ciclo de vida, persistência e auto-update de extensões."""
+    """Gerenciador de ciclo de vida e auto-update de extensões.
 
-    def __init__(
-        self,
-        state_file: Path = _STATE_FILE_PATH,
-        client: OpenVSXClient | None = None,
-    ) -> None:
-        self.state_file = state_file
+    O catálogo estático (`MASTER_EXTENSIONS_CATALOG`) fica em memória (nomes,
+    descrições, categorias nunca mudam em runtime); ativação/versão/update
+    pendente são um overlay carregado do Postgres (`extensions/store.py`) uma
+    vez no startup (`hydrate()`) e regravado a cada mutação — troca o antigo
+    `config/extensions_state.json` (escrita sem lock, arriscada sob acesso
+    concorrente) por uma linha por extensão, no mesmo padrão de `Skill`.
+    """
+
+    def __init__(self, client: OpenVSXClient | None = None, redis: Redis | None = None) -> None:
         self.client = client or OpenVSXClient()
+        self._redis = redis
         self._installed_map: dict[str, dict[str, Any]] = {}
         self._enabled_map: dict[str, bool] = {}
         self._pending_updates: dict[str, dict[str, Any]] = {}
         self._last_sync_timestamp: float = 0.0
         self._auto_update_enabled: bool = True
         self._sync_lock = asyncio.Lock()
-        self._load_state()
+        self._hydrated = False
 
-    def _load_state(self) -> None:
-        """Carrega catálogo padrão e mescla com estado persistido em disco."""
         for ext in MASTER_EXTENSIONS_CATALOG:
             self._installed_map[ext.id] = ext.to_dict()
             self._enabled_map[ext.id] = ext.active
 
-        if self.state_file.exists():
-            try:
-                data = json.loads(self.state_file.read_text(encoding="utf-8"))
-                for ext_id, ext_data in data.get("installed", {}).items():
-                    if ext_id in self._installed_map:
-                        self._installed_map[ext_id].update(ext_data)
-                    else:
-                        self._installed_map[ext_id] = ext_data
-
-                self._enabled_map.update(data.get("enabled", {}))
-                self._pending_updates = data.get("pending_updates", {})
-                self._last_sync_timestamp = float(data.get("last_sync_timestamp", 0.0))
-                self._auto_update_enabled = bool(data.get("auto_update_enabled", True))
-            except Exception as exc:
-                log.warning("failed_to_load_extensions_state", error=str(exc))
-
-    def _save_state(self) -> None:
-        """Persiste estado de extensões em disco."""
+    async def hydrate(self, session: AsyncSession) -> None:
+        """Carrega o overlay persistido do Postgres para a memória. Chamado uma
+        vez no `lifespan` da app; best-effort — se falhar, opera só com os
+        defaults do catálogo estático (mesma filosofia de degradação graciosa
+        de `router/health.py` para Redis indisponível)."""
         try:
-            self.state_file.parent.mkdir(parents=True, exist_ok=True)
-            payload = {
-                "installed": self._installed_map,
-                "enabled": self._enabled_map,
-                "pending_updates": self._pending_updates,
-                "last_sync_timestamp": self._last_sync_timestamp,
-                "auto_update_enabled": self._auto_update_enabled,
-            }
-            self.state_file.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+            states = await store.list_states(session)
+            settings = await store.get_settings(session)
         except Exception as exc:
-            log.warning("failed_to_save_extensions_state", error=str(exc))
+            log.warning("failed_to_hydrate_extensions_state", error=str(exc))
+            return
+
+        for ext_id, state in states.items():
+            self._enabled_map[ext_id] = state.active
+            if state.installed_version:
+                overlay = self._installed_map.setdefault(ext_id, {"id": ext_id})
+                overlay["version"] = state.installed_version
+            if state.pending_update_json:
+                try:
+                    self._pending_updates[ext_id] = json.loads(state.pending_update_json)
+                except (json.JSONDecodeError, TypeError):
+                    pass
+
+        self._auto_update_enabled = settings.auto_update_enabled
+        self._last_sync_timestamp = settings.last_sync_timestamp
+        self._hydrated = True
 
     def get_catalog(self) -> dict[str, Any]:
         """Retorna o catálogo completo estruturado para o frontend."""
@@ -93,24 +98,32 @@ class ExtensionsManager:
             "auto_update_enabled": self._auto_update_enabled,
         }
 
-    def toggle_extension(self, extension_id: str, active: bool | None = None) -> bool:
-        """Ativa ou desativa uma extensão."""
+    def is_active(self, extension_id: str) -> bool:
+        """Usado pelo gateway de LSP (`api/routes/lsp.py`) para checar se a
+        extensão associada a um servidor está ligada antes de abrir sessão."""
+        return self._enabled_map.get(extension_id, True)
+
+    async def toggle_extension(
+        self, session: AsyncSession, extension_id: str, active: bool | None = None
+    ) -> bool | None:
+        """Ativa ou desativa uma extensão. `None` se o id não existe no catálogo."""
         if extension_id not in self._installed_map:
-            return False
+            return None
 
         cur_active = self._enabled_map.get(extension_id, True)
         new_active = not cur_active if active is None else active
         self._enabled_map[extension_id] = new_active
-        self._save_state()
+        await store.upsert_state(session, extension_id, active=new_active)
         return new_active
 
-    def set_auto_update(self, enabled: bool) -> bool:
-        """Habilita ou desabilita o auto-update automático."""
+    async def set_auto_update(self, session: AsyncSession, enabled: bool) -> bool:
         self._auto_update_enabled = enabled
-        self._save_state()
+        await store.update_settings(session, auto_update_enabled=enabled)
         return self._auto_update_enabled
 
-    async def sync_with_marketplace(self, force: bool = False) -> dict[str, Any]:
+    async def sync_with_marketplace(
+        self, session: AsyncSession, force: bool = False
+    ) -> dict[str, Any]:
         """Executa sincronização assíncrona com Open VSX Registry para buscar novas versões."""
         async with self._sync_lock:
             now = time.time()
@@ -122,20 +135,26 @@ class ExtensionsManager:
                 updates = await self.client.check_updates_batch(extensions_list)
                 self._pending_updates = updates
                 self._last_sync_timestamp = now
+                for ext_id, update_info in updates.items():
+                    await store.upsert_state(
+                        session,
+                        ext_id,
+                        pending_update_json=json.dumps(update_info, ensure_ascii=False),
+                    )
 
                 # Se o auto-update estiver ativo, aplica atualizações seguras automaticamente
                 if self._auto_update_enabled and updates:
-                    for ext_id, u_info in list(updates.items()):
-                        self.update_extension(ext_id)
+                    for ext_id in list(updates.keys()):
+                        await self.update_extension(session, ext_id)
 
-                self._save_state()
+                await store.update_settings(session, last_sync_timestamp=now)
                 log.info("extensions_sync_completed", updates_found=len(updates))
             except Exception as exc:
                 log.error("extensions_sync_failed", error=str(exc))
 
             return self.get_catalog()
 
-    def update_extension(self, extension_id: str) -> bool:
+    async def update_extension(self, session: AsyncSession, extension_id: str) -> bool:
         """Atualiza a versão de uma extensão específica."""
         update_info = self._pending_updates.pop(extension_id, None)
         if not update_info or extension_id not in self._installed_map:
@@ -143,24 +162,57 @@ class ExtensionsManager:
 
         latest_ver = update_info["latest_version"]
         self._installed_map[extension_id]["version"] = latest_ver
-        self._save_state()
+        await store.upsert_state(
+            session, extension_id, installed_version=latest_ver, pending_update_json=None
+        )
         log.info("extension_updated", id=extension_id, new_version=latest_ver)
         return True
 
-    def update_all_extensions(self) -> int:
+    async def update_all_extensions(self, session: AsyncSession) -> int:
         """Atualiza todas as extensões que possuem atualizações pendentes."""
         count = 0
         for ext_id in list(self._pending_updates.keys()):
-            if self.update_extension(ext_id):
+            if await self.update_extension(session, ext_id):
                 count += 1
         return count
 
+    def configure_redis(self, redis: Redis | None) -> None:
+        """Injeta o cliente Redis depois da criação: o singleton (`get_extensions_manager`)
+        pode ser criado antes do `lifespan` conectar ao Redis (ver `main.py`)."""
+        self._redis = redis
+
     async def search_online(self, query: str) -> list[dict[str, Any]]:
-        """Busca extensões online no Open VSX Registry."""
-        return await self.client.search_marketplace(query)
+        """Busca extensões online no Open VSX Registry, cacheada em Redis por
+        `_SEARCH_CACHE_TTL_SECONDS`. Sem Redis, busca direto — mesma degradação
+        graciosa do resto do serviço."""
+        cache_key = None
+        if self._redis is not None:
+            digest = hashlib.sha256(query.strip().lower().encode("utf-8")).hexdigest()
+            cache_key = f"{_SEARCH_CACHE_PREFIX}:{digest}"
+            try:
+                cached = await self._redis.get(cache_key)
+                if cached:
+                    return json.loads(cached)
+            except Exception as exc:
+                log.warning("extensions.search_cache_unavailable", error=str(exc))
+
+        results = await self.client.search_marketplace(query)
+
+        if cache_key is not None and results:
+            try:
+                await self._redis.set(
+                    cache_key, json.dumps(results, ensure_ascii=False), ex=_SEARCH_CACHE_TTL_SECONDS
+                )
+            except Exception as exc:
+                log.warning("extensions.search_cache_unavailable", error=str(exc))
+
+        return results
 
 
-# Singleton
+# Singleton — instanciado uma vez em `main.py::lifespan` e guardado em
+# `app.state.extensions_manager` (mesmo padrão dos demais serviços com
+# estado); esta função continua existindo para os poucos call sites que ainda
+# não recebem o serviço via `app.state`/`ToolContext`.
 _INSTANCE: ExtensionsManager | None = None
 
 

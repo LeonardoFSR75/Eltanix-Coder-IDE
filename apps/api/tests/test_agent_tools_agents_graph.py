@@ -401,10 +401,11 @@ async def test_wait_for_agents_returns_messages(ctx):
 # ── agent_finish ─────────────────────────────────────────────────────────────
 
 
-async def test_agent_finish_fails_without_parent(ctx):
+async def test_agent_finish_without_parent(ctx):
     resultado = await agent_finish(ctx, {"result_summary": "feito"})
-    assert resultado.ok is False
-    assert "sub-agentes" in resultado.content.lower() or "pai" in resultado.content.lower()
+    assert resultado.ok is True
+    assert resultado.data["finished"] is True
+    assert "feito" in resultado.content
 
 
 async def test_agent_finish_reports_to_parent_and_wakes_it(ctx):

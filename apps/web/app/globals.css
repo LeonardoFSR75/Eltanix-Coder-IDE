@@ -8586,6 +8586,21 @@ button.primary:hover:not(:disabled) {
   color: var(--text-dim);
 }
 
+.panel-state-retry {
+  margin-top: 4px;
+  padding: 5px 12px;
+  font-size: 12px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface-2, transparent);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.panel-state-retry:hover {
+  border-color: var(--accent, #38bdf8);
+}
+
 @keyframes panel-state-spin {
   to {
     transform: rotate(360deg);

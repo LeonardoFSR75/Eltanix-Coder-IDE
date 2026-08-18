@@ -70,6 +70,7 @@ class ToolContext:
     skills: Any | None = None  # SkillService
     audit: Any | None = None  # AuditService
     firecrawl: Any | None = None  # FirecrawlService
+    extensions_manager: Any | None = None  # ExtensionsManager — ver agent/tools/extensions.py
     security: Any | None = None  # SecureBertService
     trace_recorder: Any | None = None  # TraceRecorder
     # RouterEngine — ferramentas que fazem uma segunda chamada de LLM isolada

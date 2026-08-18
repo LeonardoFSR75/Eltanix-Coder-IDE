@@ -245,6 +245,7 @@ class AgentRunner:
         skills: SkillService | None = None,
         audit: AuditService | None = None,
         firecrawl: FirecrawlService | None = None,
+        extensions_manager: Any | None = None,  # ExtensionsManager
         trace_recorder: TraceRecorder | None = None,
         coordinator: AgentCoordinator | None = None,
         blob: BlobStore | None = None,
@@ -260,6 +261,7 @@ class AgentRunner:
         self.skills = skills
         self.audit = audit
         self.firecrawl = firecrawl
+        self.extensions_manager = extensions_manager
         self.trace_recorder = trace_recorder
         # Replay de sessão do navegador (Fase 4b) — `None` em qualquer um dos
         # dois é normal (MinIO/Redis fora do ar): `close_session` só perde o
@@ -524,6 +526,7 @@ class AgentRunner:
             skills=self.skills,
             audit=self.audit,
             firecrawl=self.firecrawl,
+            extensions_manager=self.extensions_manager,
             security=SecureBertService(),
             trace_recorder=self.trace_recorder,
             engine=self.engine,
@@ -540,7 +543,10 @@ class AgentRunner:
         )
         contexto.session_state.project_verified = bool(runtime_validation["project_ok"])
         contexto.session_state.workspace_listed = bool(runtime_validation.get("files"))
-        contexto.session_state.packages_checked = bool(runtime_validation["project_ok"])
+        # NÃO pré-satisfazer aqui: packages_checked só deve virar True quando
+        # `manage_packages(action="list")` de fato rodar e inspecionar as
+        # dependências (ver agent/tools/packages.py) — detectar o ecossistema
+        # em validate_project_runtime() não é o mesmo que checar os pacotes.
         contexto.session_state.git_ready = bool(runtime_validation.get("git_ready", True))
 
         is_web = _detect_web_app(workspace_root)

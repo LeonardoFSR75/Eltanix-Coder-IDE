@@ -8,6 +8,7 @@ from sicoobito.agent.tools import (  # noqa: F401
     agents_graph,
     browser,
     documents,
+    extensions,
     files,
     firecrawl,
     graph,

@@ -17,8 +17,15 @@ from fastapi import APIRouter, HTTPException, Request, WebSocket, WebSocketDisco
 from sicoobito.api.deps import AuthDep
 from sicoobito.api.tickets import TICKET_TTL_SECONDS, TicketStore
 from sicoobito.config import get_settings
+from sicoobito.extensions.manager import get_extensions_manager
 from sicoobito.logging_setup import get_logger
-from sicoobito.lsp import LanguageServerProcess, LspError, server_for_language, supported_languages
+from sicoobito.lsp import (
+    LanguageServerProcess,
+    LspError,
+    extension_for_server,
+    server_for_language,
+    supported_languages,
+)
 from sicoobito.workspace import projects as project_ops
 from sicoobito.workspace.projects import ProjectError
 
@@ -44,19 +51,38 @@ async def languages() -> dict[str, Any]:
 @router.get("/extensions")
 async def extensions() -> dict[str, Any]:
     """Lista as extensões e suítes ativas na IDE agêntica através do ExtensionsManager."""
-    from sicoobito.extensions.manager import get_extensions_manager
     return get_extensions_manager().get_catalog()
 
+
+def _blocked_by_extension(spec_id: str) -> str | None:
+    """`None` se o servidor pode subir; senão o id da extensão desligada que
+    o está bloqueando (ver `lsp/extension_bridge.py`)."""
+    ext_id = extension_for_server(spec_id)
+    if ext_id is None:
+        return None
+    if get_extensions_manager().is_active(ext_id):
+        return None
+    return ext_id
 
 
 @router.post("/ticket")
 async def ticket(
     request: Request, project: str, language: str, server: str | None = None
 ) -> dict[str, Any]:
-    if server_for_language(language, preferred_server=server) is None:
+    spec = server_for_language(language, preferred_server=server)
+    if spec is None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"nenhum language server para '{language}'",
+        )
+    bloqueio = _blocked_by_extension(spec.id)
+    if bloqueio is not None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                f"extensão '{bloqueio}' está desativada — "
+                f"ligue-a no painel de Extensões para usar '{spec.id}'"
+            ),
         )
 
     store: TicketStore | None = getattr(request.app.state, "tickets", None)
@@ -86,6 +112,11 @@ async def lsp_socket(websocket: WebSocket, project: str, language: str) -> None:
     spec = server_for_language(language, preferred_server=server_pref)
     if spec is None:
         await websocket.close(code=4404, reason=f"sem language server para {language}")
+        return
+
+    bloqueio = _blocked_by_extension(spec.id)
+    if bloqueio is not None:
+        await websocket.close(code=4403, reason=f"extensão '{bloqueio}' está desativada")
         return
 
     raiz_projetos = settings.effective_projects_root

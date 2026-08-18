@@ -6,6 +6,7 @@ import asyncio
 import re
 import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import Any
 
@@ -15,6 +16,13 @@ from pydantic import BaseModel, Field
 from sicoobito.api.deps import AuthDep
 from sicoobito.config import get_settings
 from sicoobito.logging_setup import get_logger
+from sicoobito.packages.commands import (
+    MissingBinaryError,
+    build_ecosystem_command,
+    list_python_packages,
+    parse_installed_packages,
+    run_dependency_audit,
+)
 from sicoobito.workspace.projects import resolve
 
 log = get_logger(__name__)
@@ -82,6 +90,43 @@ def get_pip_executable(venv_path: Path) -> Path:
 
 
 DEFAULT_BASE_PACKAGES = ["setuptools", "wheel"]
+
+# Circuit breaker de `python -m venv`: em memória do processo, não por projeto —
+# uma venv quebrada geralmente é uma condição do host (ex.: imagem sem o módulo
+# `venv`), não de um projeto específico. Sem isso, toda chamada de pacotes num
+# host quebrado pagaria de novo o timeout de 120s de `ensure_venv`.
+_VENV_BREAKER_THRESHOLD = 3
+_VENV_BREAKER_COOLDOWN_SECONDS = 90.0
+_venv_breaker_fails = 0
+_venv_breaker_open_until: float | None = None
+
+
+def _venv_breaker_check() -> None:
+    global _venv_breaker_open_until
+    if _venv_breaker_open_until is not None:
+        remaining = _venv_breaker_open_until - time.time()
+        if remaining > 0:
+            raise RuntimeError(
+                "Criação de .venv desativada temporariamente após falhas repetidas "
+                f"neste host — tente novamente em {int(remaining)}s."
+            )
+        _venv_breaker_open_until = None
+
+
+def _venv_breaker_record(success: bool) -> None:
+    global _venv_breaker_fails, _venv_breaker_open_until
+    if success:
+        _venv_breaker_fails = 0
+        _venv_breaker_open_until = None
+        return
+    _venv_breaker_fails += 1
+    if _venv_breaker_fails >= _VENV_BREAKER_THRESHOLD:
+        _venv_breaker_open_until = time.time() + _VENV_BREAKER_COOLDOWN_SECONDS
+        log.warning(
+            "packages.venv.circuit_open",
+            fails=_venv_breaker_fails,
+            cooldown_s=_VENV_BREAKER_COOLDOWN_SECONDS,
+        )
 
 
 def detect_ecosystem(project_path: Path, requested_lang: str | None = None) -> str:
@@ -250,6 +295,7 @@ async def ensure_venv(project_path: Path, install_base: bool = True) -> Path:
             need_create = True
 
     if need_create:
+        _venv_breaker_check()
         log.info("packages.venv.creating", project=project_path.name)
         cmd = [sys.executable, "-m", "venv", "--clear", str(venv_path)]
         proc = await asyncio.create_subprocess_exec(
@@ -262,9 +308,12 @@ async def ensure_venv(project_path: Path, install_base: bool = True) -> Path:
             _stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=120)
         except TimeoutError:
             proc.kill()
+            _venv_breaker_record(success=False)
             raise RuntimeError("Timeout ao criar o ambiente virtual (.venv).") from None
         if proc.returncode != 0:
+            _venv_breaker_record(success=False)
             raise RuntimeError(f"Falha ao criar venv no projeto: {stderr.decode(errors='ignore')}")
+        _venv_breaker_record(success=True)
 
         py_exe = get_python_executable(venv_path)
 
@@ -428,78 +477,13 @@ async def get_project_packages(slug: str, request: Request) -> dict[str, Any]:
     except Exception as exc:
         log.warning("packages.ensure_env.failed", slug=slug, error=str(exc))
 
-    installed_packages: list[dict[str, str]] = []
     venv_path = get_venv_path(project_path)
     py_exe = get_python_executable(venv_path)
 
-    if eco == "nodejs":
-        pkg_json = project_path / "package.json"
-        if pkg_json.exists():
-            try:
-                import json
-
-                data = json.loads(pkg_json.read_text(encoding="utf-8", errors="ignore"))
-                deps = data.get("dependencies", {})
-                dev_deps = data.get("devDependencies", {})
-                for k, v in {**deps, **dev_deps}.items():
-                    installed_packages.append({"name": k, "version": str(v)})
-            except Exception as exc:
-                log.warning("packages.nodejs.parse_failed", error=str(exc))
-    elif eco == "go":
-        go_mod = project_path / "go.mod"
-        if go_mod.exists():
-            for line in go_mod.read_text(encoding="utf-8", errors="ignore").splitlines():
-                line = line.strip()
-                match = re.match(r"^([a-zA-Z0-9_\-\.\/]+)\s+(v[0-9\.\-]+)", line)
-                if match:
-                    installed_packages.append({"name": match.group(1), "version": match.group(2)})
-    elif eco == "rust":
-        cargo_toml = project_path / "Cargo.toml"
-        if cargo_toml.exists():
-            in_deps = False
-            for line in cargo_toml.read_text(encoding="utf-8", errors="ignore").splitlines():
-                stripped = line.strip()
-                if stripped.startswith("["):
-                    in_deps = "dependencies" in stripped.lower()
-                    continue
-                if in_deps and "=" in stripped:
-                    parts = stripped.split("=", 1)
-                    k = parts[0].strip()
-                    v = parts[1].strip().strip('"').strip("'")
-                    installed_packages.append({"name": k, "version": v})
-    elif eco == "php":
-        composer_json = project_path / "composer.json"
-        if composer_json.exists():
-            try:
-                import json
-
-                data = json.loads(composer_json.read_text(encoding="utf-8", errors="ignore"))
-                reqs = data.get("require", {})
-                for k, v in reqs.items():
-                    if k != "php":
-                        installed_packages.append({"name": k, "version": str(v)})
-            except Exception as exc:
-                log.warning("packages.php.parse_failed", error=str(exc))
+    if eco == "python":
+        installed_packages = await list_python_packages(py_exe, project_path)
     else:
-        if py_exe.exists():
-            cmd = [str(py_exe), "-m", "pip", "list", "--format=json"]
-            try:
-                proc = await asyncio.create_subprocess_exec(
-                    *cmd,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE,
-                    cwd=str(project_path),
-                )
-                stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=30)
-                if proc.returncode == 0:
-                    import json
-
-                    raw_pkgs = json.loads(stdout.decode(errors="ignore"))
-                    installed_packages = [
-                        {"name": p["name"], "version": p["version"]} for p in raw_pkgs
-                    ]
-            except Exception as exc:
-                log.warning("packages.list.failed", slug=slug, error=str(exc))
+        installed_packages = parse_installed_packages(project_path, eco)
 
     manifest_file = project_path / manifest_name
     manifest_content = (
@@ -525,6 +509,24 @@ async def get_project_packages(slug: str, request: Request) -> dict[str, Any]:
     }
 
 
+@router.get("/audit")
+async def audit_project_packages(slug: str, request: Request) -> dict[str, Any]:
+    """CVEs conhecidas nas dependências instaladas do projeto, via `pip-audit`
+    (python) ou `npm audit` (nodejs). Outros ecossistemas devolvem
+    `supported: False` — ver `packages/commands.py::run_dependency_audit`."""
+    projects_root = _projects_root(request)
+    try:
+        project_path = resolve(projects_root, slug)
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+    eco = detect_ecosystem(project_path)
+    venv_path = get_venv_path(project_path)
+    py_exe = get_python_executable(venv_path)
+
+    return {"project": slug, **await run_dependency_audit(eco, project_path, py_exe)}
+
+
 @router.post("/install")
 async def install_project_package(
     slug: str, payload: InstallPackageIn, request: Request
@@ -538,48 +540,24 @@ async def install_project_package(
 
     eco = detect_ecosystem(project_path)
     manifest_name = get_manifest_name(eco)
-    import shutil
 
     if eco == "nodejs":
         await ensure_node_env(project_path)
-        npm_bin = shutil.which("npm")
-        if not npm_bin:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="npm não encontrado no ambiente servidor.",
-            )
-        cmd = [npm_bin, "install", payload.package]
     elif eco == "go":
         await ensure_go_env(project_path)
-        go_bin = shutil.which("go")
-        if not go_bin:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="go CLI não encontrado no ambiente servidor.",
-            )
-        cmd = [go_bin, "get", payload.package]
     elif eco == "rust":
         await ensure_rust_env(project_path)
-        cargo_bin = shutil.which("cargo")
-        if not cargo_bin:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="cargo não encontrado no ambiente servidor.",
-            )
-        cmd = [cargo_bin, "add", payload.package]
     elif eco == "php":
         await ensure_php_env(project_path)
-        composer_bin = shutil.which("composer")
-        if not composer_bin:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="composer não encontrado no ambiente servidor.",
-            )
-        cmd = [composer_bin, "require", payload.package]
-    else:
-        venv_path = await ensure_venv(project_path)
-        py_exe = get_python_executable(venv_path)
-        cmd = [str(py_exe), "-m", "pip", "install", payload.package]
+    venv_path = await ensure_venv(project_path) if eco == "python" else get_venv_path(project_path)
+    py_exe = get_python_executable(venv_path)
+
+    try:
+        cmd = build_ecosystem_command(
+            eco, "install", project_path=project_path, package=payload.package, py_exe=py_exe
+        )
+    except MissingBinaryError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
     log.info("packages.install.start", slug=slug, package=payload.package, eco=eco)
 
@@ -641,44 +619,20 @@ async def uninstall_project_package(
 
     eco = detect_ecosystem(project_path)
     manifest_name = get_manifest_name(eco)
-    import shutil
 
-    if eco == "nodejs":
-        npm_bin = shutil.which("npm")
-        if not npm_bin:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST, detail="npm não encontrado."
-            )
-        cmd = [npm_bin, "uninstall", payload.package]
-    elif eco == "go":
-        go_bin = shutil.which("go")
-        if not go_bin:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST, detail="go CLI não encontrado."
-            )
-        cmd = [go_bin, "mod", "edit", f"-droprequire={payload.package}"]
-    elif eco == "rust":
-        cargo_bin = shutil.which("cargo")
-        if not cargo_bin:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST, detail="cargo não encontrado."
-            )
-        cmd = [cargo_bin, "remove", payload.package]
-    elif eco == "php":
-        composer_bin = shutil.which("composer")
-        if not composer_bin:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST, detail="composer não encontrado."
-            )
-        cmd = [composer_bin, "remove", payload.package]
-    else:
-        venv_path = get_venv_path(project_path)
-        py_exe = get_python_executable(venv_path)
-        if not py_exe.exists():
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST, detail="Ambiente virtual não existe."
-            )
-        cmd = [str(py_exe), "-m", "pip", "uninstall", "-y", payload.package]
+    venv_path = get_venv_path(project_path)
+    py_exe = get_python_executable(venv_path)
+    if eco == "python" and not py_exe.exists():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Ambiente virtual não existe."
+        )
+
+    try:
+        cmd = build_ecosystem_command(
+            eco, "uninstall", project_path=project_path, package=payload.package, py_exe=py_exe
+        )
+    except MissingBinaryError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
     proc = await asyncio.create_subprocess_exec(
         *cmd,
@@ -731,7 +685,6 @@ async def sync_project_requirements(slug: str, request: Request) -> dict[str, An
     eco = detect_ecosystem(project_path)
     manifest_name = get_manifest_name(eco)
     manifest_file = project_path / manifest_name
-    import shutil
 
     if not manifest_file.exists():
         raise HTTPException(
@@ -739,35 +692,7 @@ async def sync_project_requirements(slug: str, request: Request) -> dict[str, An
             detail=f"Arquivo {manifest_name} não encontrado.",
         )
 
-    if eco == "nodejs":
-        npm_bin = shutil.which("npm")
-        if not npm_bin:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST, detail="npm não encontrado."
-            )
-        cmd = [npm_bin, "install"]
-    elif eco == "go":
-        go_bin = shutil.which("go")
-        if not go_bin:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST, detail="go CLI não encontrado."
-            )
-        cmd = [go_bin, "mod", "download"]
-    elif eco == "rust":
-        cargo_bin = shutil.which("cargo")
-        if not cargo_bin:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST, detail="cargo não encontrado."
-            )
-        cmd = [cargo_bin, "check"]
-    elif eco == "php":
-        composer_bin = shutil.which("composer")
-        if not composer_bin:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST, detail="composer não encontrado."
-            )
-        cmd = [composer_bin, "install"]
-    else:
+    if eco == "python":
         venv_path = await ensure_venv(project_path)
         py_exe = get_python_executable(venv_path)
         if not py_exe.exists():
@@ -784,6 +709,15 @@ async def sync_project_requirements(slug: str, request: Request) -> dict[str, An
             "message": "requirements.txt sincronizado a partir do ambiente virtual do projeto",
             "stdout": manifest_content,
         }
+
+    # py_exe não é usado pelos ramos não-python de build_ecosystem_command — só
+    # o branch "python" (já tratado acima) lê esse parâmetro.
+    try:
+        cmd = build_ecosystem_command(
+            eco, "sync", project_path=project_path, package=None, py_exe=Path()
+        )
+    except MissingBinaryError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
     proc = await asyncio.create_subprocess_exec(
         *cmd,

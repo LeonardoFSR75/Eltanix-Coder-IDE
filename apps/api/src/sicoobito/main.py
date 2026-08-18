@@ -53,8 +53,9 @@ from sicoobito.auth.service import AuthService
 from sicoobito.browser.client import BrowserConfig
 from sicoobito.config import get_settings
 from sicoobito.context.indexer import ContextIndexer
-from sicoobito.db.session import init_engine, shutdown_engine
+from sicoobito.db.session import init_engine, session_scope, shutdown_engine
 from sicoobito.documents.service import DocumentService
+from sicoobito.extensions.manager import get_extensions_manager
 from sicoobito.firecrawl.service import FirecrawlService
 from sicoobito.logging_setup import get_logger, setup_logging
 from sicoobito.mcp.manager import MCPManager
@@ -170,6 +171,20 @@ async def lifespan(app: FastAPI):
         log.warning("skills.agent_skills.seed_failed", error=str(exc))
     audit = AuditService()
 
+    # `get_extensions_manager()`, não `ExtensionsManager()` direto: é o mesmo
+    # singleton que `api/routes/extensions.py` e `api/routes/lsp.py` ainda
+    # buscam por conta própria — instanciar de novo aqui criaria uma segunda
+    # cópia nunca hidratada do Postgres.
+    extensions_manager = get_extensions_manager()
+    extensions_manager.configure_redis(redis)
+    try:
+        async with session_scope() as session:
+            await extensions_manager.hydrate(session)
+    except Exception as exc:
+        # Mesmo espírito do Redis/MinIO opcionais: sem o overlay do Postgres,
+        # o catálogo ainda funciona com os defaults estáticos em memória.
+        log.warning("extensions.hydrate_failed", error=str(exc)[:200])
+
     auth = AuthService()
     admin_password = settings.admin_password
     if not admin_password:
@@ -238,6 +253,7 @@ async def lifespan(app: FastAPI):
     app.state.notes = notes
     app.state.firecrawl = firecrawl
     app.state.skills = skills
+    app.state.extensions_manager = extensions_manager
     app.state.audit = audit
     app.state.auth = auth
     app.state.mcp_manager = mcp_manager
@@ -267,6 +283,7 @@ async def lifespan(app: FastAPI):
         skills=skills,
         audit=audit,
         firecrawl=firecrawl,
+        extensions_manager=extensions_manager,
         trace_recorder=trace_recorder,
         coordinator=agent_coordinator,
         blob=blob,

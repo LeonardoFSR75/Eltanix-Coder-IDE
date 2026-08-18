@@ -14,13 +14,23 @@ from typing import Any
 
 from sicoobito.agent.tools.base import RiskClass, ToolContext, ToolResult, tool
 from sicoobito.logging_setup import get_logger
+from sicoobito.packages.commands import (
+    MissingBinaryError,
+    build_ecosystem_command,
+    list_python_packages,
+    parse_installed_packages,
+    run_dependency_audit,
+)
 
 log = get_logger(__name__)
 
 
+_READ_ACTIONS = {"list", "audit"}
+
+
 def _packages_risk(args: dict[str, Any]) -> RiskClass:
     action = (args.get("action") or "list").strip().lower()
-    if action == "list":
+    if action in _READ_ACTIONS:
         return RiskClass.READ
     return RiskClass.WRITE
 
@@ -40,8 +50,11 @@ def _packages_risk(args: dict[str, Any]) -> RiskClass:
         "properties": {
             "action": {
                 "type": "string",
-                "enum": ["install", "uninstall", "list", "sync"],
-                "description": "Ação a realizar: install, uninstall, list ou sync",
+                "enum": ["install", "uninstall", "list", "sync", "audit"],
+                "description": (
+                    "Ação a realizar: install, uninstall, list, sync ou audit "
+                    "(CVEs conhecidas nas dependências instaladas, via pip-audit/npm audit)"
+                ),
             },
             "package": {
                 "type": "string",
@@ -65,8 +78,6 @@ def _packages_risk(args: dict[str, Any]) -> RiskClass:
     ),
 )
 async def manage_packages(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
-    import shutil
-
     from sicoobito.api.routes.packages import (
         detect_ecosystem,
         ensure_project_env,
@@ -119,92 +130,21 @@ async def manage_packages(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
     manifest_name = get_manifest_name(eco)
 
     if action == "list":
-        installed_packages: list[dict[str, str]] = []
         venv_path = get_venv_path(project_path)
         if not venv_path.exists() and (canonical_root / ".venv").exists():
             venv_path = get_venv_path(canonical_root)
         py_exe = get_python_executable(venv_path)
 
-        if eco == "nodejs":
-            pkg_json = project_path / "package.json"
-            if not pkg_json.exists() and (canonical_root / "package.json").exists():
-                pkg_json = canonical_root / "package.json"
-            if pkg_json.exists():
-                try:
-                    import json
-
-                    data = json.loads(pkg_json.read_text(encoding="utf-8", errors="ignore"))
-                    deps = data.get("dependencies", {})
-                    dev_deps = data.get("devDependencies", {})
-                    for k, v in {**deps, **dev_deps}.items():
-                        installed_packages.append({"name": k, "version": str(v)})
-                except Exception as exc:
-                    log.warning("manage_packages.node_parse.failed", error=str(exc))
-        elif eco == "go":
-            go_mod = project_path / "go.mod"
-            if not go_mod.exists() and (canonical_root / "go.mod").exists():
-                go_mod = canonical_root / "go.mod"
-            if go_mod.exists():
-                import re
-
-                for line in go_mod.read_text(encoding="utf-8", errors="ignore").splitlines():
-                    line = line.strip()
-                    match = re.match(r"^([a-zA-Z0-9_\-\.\/]+)\s+(v[0-9\.\-]+)", line)
-                    if match:
-                        installed_packages.append(
-                            {"name": match.group(1), "version": match.group(2)}
-                        )
-        elif eco == "rust":
-            cargo_toml = project_path / "Cargo.toml"
-            if not cargo_toml.exists() and (canonical_root / "Cargo.toml").exists():
-                cargo_toml = canonical_root / "Cargo.toml"
-            if cargo_toml.exists():
-                in_deps = False
-                for line in cargo_toml.read_text(encoding="utf-8", errors="ignore").splitlines():
-                    stripped = line.strip()
-                    if stripped.startswith("["):
-                        in_deps = "dependencies" in stripped.lower()
-                        continue
-                    if in_deps and "=" in stripped:
-                        parts = stripped.split("=", 1)
-                        k = parts[0].strip()
-                        v = parts[1].strip().strip('"').strip("'")
-                        installed_packages.append({"name": k, "version": v})
-        elif eco == "php":
-            composer_json = project_path / "composer.json"
-            if not composer_json.exists() and (canonical_root / "composer.json").exists():
-                composer_json = canonical_root / "composer.json"
-            if composer_json.exists():
-                try:
-                    import json
-
-                    data = json.loads(composer_json.read_text(encoding="utf-8", errors="ignore"))
-                    reqs = data.get("require", {})
-                    for k, v in reqs.items():
-                        if k != "php":
-                            installed_packages.append({"name": k, "version": str(v)})
-                except Exception as exc:
-                    log.warning("manage_packages.php_parse.failed", error=str(exc))
+        if eco == "python":
+            installed_packages = await list_python_packages(py_exe, project_path)
         else:
-            if py_exe.exists():
-                cmd = [str(py_exe), "-m", "pip", "list", "--format=json"]
-                try:
-                    proc = await asyncio.create_subprocess_exec(
-                        *cmd,
-                        stdout=asyncio.subprocess.PIPE,
-                        stderr=asyncio.subprocess.PIPE,
-                        cwd=str(project_path),
-                    )
-                    stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=30)
-                    if proc.returncode == 0:
-                        import json
-
-                        raw_pkgs = json.loads(stdout.decode(errors="ignore"))
-                        installed_packages = [
-                            {"name": p["name"], "version": p["version"]} for p in raw_pkgs
-                        ]
-                except Exception as exc:
-                    log.warning("manage_packages.list.failed", error=str(exc))
+            manifest_root = (
+                canonical_root
+                if not (project_path / manifest_name).exists()
+                and (canonical_root / manifest_name).exists()
+                else project_path
+            )
+            installed_packages = parse_installed_packages(manifest_root, eco)
 
         manifest_file = project_path / manifest_name
         if not manifest_file.exists() and (canonical_root / manifest_name).exists():
@@ -259,30 +199,14 @@ async def manage_packages(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
         except Exception as exc:
             return ToolResult.failure(f"Falha ao preparar ambiente do projeto: {exc}")
 
-        if eco == "nodejs":
-            npm_bin = shutil.which("npm")
-            if not npm_bin:
-                return ToolResult.failure("npm não encontrado no sistema.")
-            cmd = [npm_bin, "install", package]
-        elif eco == "go":
-            go_bin = shutil.which("go")
-            if not go_bin:
-                return ToolResult.failure("go CLI não encontrado no sistema.")
-            cmd = [go_bin, "get", package]
-        elif eco == "rust":
-            cargo_bin = shutil.which("cargo")
-            if not cargo_bin:
-                return ToolResult.failure("cargo não encontrado no sistema.")
-            cmd = [cargo_bin, "add", package]
-        elif eco == "php":
-            composer_bin = shutil.which("composer")
-            if not composer_bin:
-                return ToolResult.failure("composer não encontrado no sistema.")
-            cmd = [composer_bin, "require", package]
-        else:
-            venv_path = get_venv_path(project_path)
-            py_exe = get_python_executable(venv_path)
-            cmd = [str(py_exe), "-m", "pip", "install", package]
+        venv_path = get_venv_path(project_path)
+        py_exe = get_python_executable(venv_path)
+        try:
+            cmd = build_ecosystem_command(
+                eco, "install", project_path=project_path, package=package, py_exe=py_exe
+            )
+        except MissingBinaryError as exc:
+            return ToolResult.failure(str(exc))
 
         proc = await asyncio.create_subprocess_exec(
             *cmd,
@@ -360,34 +284,18 @@ async def manage_packages(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
         if not package:
             return ToolResult.failure("O nome do pacote é obrigatório para a ação 'uninstall'.")
 
-        if eco == "nodejs":
-            npm_bin = shutil.which("npm")
-            if not npm_bin:
-                return ToolResult.failure("npm não encontrado.")
-            cmd = [npm_bin, "uninstall", package]
-        elif eco == "go":
-            go_bin = shutil.which("go")
-            if not go_bin:
-                return ToolResult.failure("go CLI não encontrado.")
-            cmd = [go_bin, "mod", "edit", f"-droprequire={package}"]
-        elif eco == "rust":
-            cargo_bin = shutil.which("cargo")
-            if not cargo_bin:
-                return ToolResult.failure("cargo não encontrado.")
-            cmd = [cargo_bin, "remove", package]
-        elif eco == "php":
-            composer_bin = shutil.which("composer")
-            if not composer_bin:
-                return ToolResult.failure("composer não encontrado.")
-            cmd = [composer_bin, "remove", package]
-        else:
-            venv_path = get_venv_path(project_path)
-            if not venv_path.exists() and (canonical_root / ".venv").exists():
-                venv_path = get_venv_path(canonical_root)
-            py_exe = get_python_executable(venv_path)
-            if not py_exe.exists():
-                return ToolResult.failure("Ambiente virtual (.venv) do projeto não existe.")
-            cmd = [str(py_exe), "-m", "pip", "uninstall", "-y", package]
+        venv_path = get_venv_path(project_path)
+        if not venv_path.exists() and (canonical_root / ".venv").exists():
+            venv_path = get_venv_path(canonical_root)
+        py_exe = get_python_executable(venv_path)
+        if eco == "python" and not py_exe.exists():
+            return ToolResult.failure("Ambiente virtual (.venv) do projeto não existe.")
+        try:
+            cmd = build_ecosystem_command(
+                eco, "uninstall", project_path=project_path, package=package, py_exe=py_exe
+            )
+        except MissingBinaryError as exc:
+            return ToolResult.failure(str(exc))
 
         proc = await asyncio.create_subprocess_exec(
             *cmd,
@@ -441,30 +349,17 @@ async def manage_packages(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
         except Exception as exc:
             return ToolResult.failure(f"Falha ao preparar ambiente do projeto: {exc}")
 
-        if eco == "nodejs":
-            npm_bin = shutil.which("npm")
-            if not npm_bin:
-                return ToolResult.failure("npm não encontrado.")
-            cmd = [npm_bin, "install"]
-        elif eco == "go":
-            go_bin = shutil.which("go")
-            if not go_bin:
-                return ToolResult.failure("go CLI não encontrado.")
-            cmd = [go_bin, "mod", "download"]
-        elif eco == "rust":
-            cargo_bin = shutil.which("cargo")
-            if not cargo_bin:
-                return ToolResult.failure("cargo não encontrado.")
-            cmd = [cargo_bin, "check"]
-        elif eco == "php":
-            composer_bin = shutil.which("composer")
-            if not composer_bin:
-                return ToolResult.failure("composer não encontrado.")
-            cmd = [composer_bin, "install"]
-        else:
+        if eco == "python":
             venv_path = await ensure_venv(project_path)
             py_exe = get_python_executable(venv_path)
-            cmd = [str(py_exe), "-m", "pip", "install", "-r", str(manifest_file)]
+        else:
+            py_exe = get_python_executable(get_venv_path(project_path))
+        try:
+            cmd = build_ecosystem_command(
+                eco, "sync", project_path=project_path, package=None, py_exe=py_exe
+            )
+        except MissingBinaryError as exc:
+            return ToolResult.failure(str(exc))
 
         proc = await asyncio.create_subprocess_exec(
             *cmd,
@@ -490,5 +385,33 @@ async def manage_packages(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
             ),
             data={"stdout": stdout.decode(errors="ignore")},
         )
+
+    elif action == "audit":
+        venv_path = get_venv_path(project_path)
+        if not venv_path.exists() and (canonical_root / ".venv").exists():
+            venv_path = get_venv_path(canonical_root)
+        py_exe = get_python_executable(venv_path)
+
+        resultado = await run_dependency_audit(eco, project_path, py_exe)
+        if not resultado["supported"]:
+            return ToolResult(
+                ok=True,
+                content=f"Auditoria de CVE ainda não suportada para o ecossistema '{eco}'.",
+                data=resultado,
+            )
+        if not resultado["tool_available"]:
+            return ToolResult(ok=True, content=resultado["message"], data=resultado)
+        if "error" in resultado:
+            return ToolResult.failure(f"Falha ao rodar {resultado['tool']}: {resultado['error']}")
+
+        count = resultado["count"]
+        content_str = f"=== Auditoria de CVE ({resultado['tool']}) — {count} encontrada(s) ===\n"
+        if resultado["vulnerabilities"]:
+            amostra = "\n".join(
+                f"- {v.get('package')}: {v.get('id') or v.get('severity', 'N/A')}"
+                for v in resultado["vulnerabilities"][:15]
+            )
+            content_str += amostra
+        return ToolResult(ok=True, content=content_str, data=resultado)
 
     return ToolResult.failure(f"Ação desconhecida: {action}")

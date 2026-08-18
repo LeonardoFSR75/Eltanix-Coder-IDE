@@ -457,6 +457,43 @@ class Skill(Base):
         return f"<Skill {self.name!r} enabled={self.enabled}>"
 
 
+class ExtensionState(Base):
+    """Estado runtime de uma extensão (ativação, versão instalada, update
+    pendente). O catálogo estático (`extensions/catalog.py::MASTER_EXTENSIONS_CATALOG`)
+    continua a única fonte de metadados (nome, descrição, categoria); esta tabela
+    só sobrepõe o que muda em runtime — mesmo raciocínio de `Skill`, trocando o
+    arquivo `config/extensions_state.json` (sem lock, sujeito a corrupção em
+    escrita concorrente) por uma linha por extensão."""
+
+    __tablename__ = "extension_state"
+
+    extension_id: Mapped[str] = mapped_column(String(255), primary_key=True)
+    active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    installed_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    pending_update_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+    def __repr__(self) -> str:  # pragma: no cover - conveniência de debug
+        return f"<ExtensionState {self.extension_id!r} active={self.active}>"
+
+
+class ExtensionSettings(Base):
+    """Linha única (`id=1`) com as configurações globais do sistema de
+    extensões — `auto_update_enabled` e o timestamp da última sincronização
+    com o Open VSX Registry."""
+
+    __tablename__ = "extension_settings"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
+    auto_update_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    last_sync_timestamp: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+
+    def __repr__(self) -> str:  # pragma: no cover - conveniência de debug
+        return f"<ExtensionSettings auto_update={self.auto_update_enabled}>"
+
+
 class AuditLogEntry(Base):
     """Uma linha de auditoria. `event_metadata` (não `metadata` — reservado
     pelo `Base` do SQLAlchemy) carrega o que não cabe nos campos fixos."""
