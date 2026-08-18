@@ -22,5 +22,7 @@ export default defineConfig({
     },
     globals: true,
     setupFiles: ["./vitest.setup.ts"],
+    // e2e/ é Playwright, não Vitest — ver apps/web/CLAUDE.md.
+    exclude: ["**/node_modules/**", "**/dist/**", "e2e/**"],
   },
 });
