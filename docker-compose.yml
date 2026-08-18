@@ -180,15 +180,10 @@ services:
     environment:
       BROWSER_TOKEN: ${BROWSER_TOKEN:-browser-local}
       HOST_GATEWAY_HOST: ${HOST_GATEWAY_HOST:-host.docker.internal}
+      LIGHTPANDA_CDP_URL: ${LIGHTPANDA_CDP_URL:-http://lightpanda:9222}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     networks:
-      # Só `browser_net` — de propósito (ver comentário no topo do arquivo e
-      # o docstring de services/browser/app.py). `default` foi removido: nada
-      # em app.py fala com minio/postgres/redis/ollama, e deixar o serviço
-      # também no `default` vazava rota para a internet pública e para todo
-      # serviço interno a partir do Chromium sandboxado — exatamente o que
-      # `browser_net` (`internal: true`) existe para impedir.
       - browser_net
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://localhost:5406/health')"]
@@ -196,6 +191,21 @@ services:
       timeout: 5s
       retries: 10
       start_period: 15s
+
+  # Lightpanda Browser: motor headless ultraleve em C/C++ (25MB RAM / 20ms startup)
+  # para web scraping massivo, RAG crawling e inspeção rápida de DOM por agentes.
+  lightpanda:
+    image: ${LIGHTPANDA_IMAGE:-ghcr.io/lightpanda-io/browser:latest}
+    command: ["--host", "0.0.0.0", "--port", "9222"]
+    networks:
+      - browser_net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9222/json/version"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
 
   mcp-scanner:
     build:

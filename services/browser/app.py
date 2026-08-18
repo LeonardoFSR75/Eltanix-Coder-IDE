@@ -49,6 +49,8 @@ TRACE_ROOT.mkdir(parents=True, exist_ok=True)
 
 _playwright: Any | None = None
 _browser: Any | None = None
+_lp_browser: Any | None = None
+_session_engine: dict[str, str] = {}
 _pages: dict[str, Any] = {}
 _contexts: dict[str, Any] = {}
 _video_dirs: dict[str, str] = {}
@@ -59,6 +61,8 @@ _console_logs: dict[str, list[str]] = {}
 _page_errors: dict[str, list[str]] = {}
 _network_logs: dict[str, list[dict[str, Any]]] = {}
 _pending_requests: dict[str, dict[Any, float]] = {}
+
+LIGHTPANDA_CDP_URL = os.getenv("LIGHTPANDA_CDP_URL", "http://lightpanda:9222")
 
 
 def _log_action(session_id: str, action: str, summary: str) -> None:
@@ -91,6 +95,7 @@ async def _finalize_replay(session_id: str) -> dict[str, Any] | None:
     _console_logs.pop(session_id, None)
     _page_errors.pop(session_id, None)
     _pending_requests.pop(session_id, None)
+    _session_engine.pop(session_id, None)
 
     if context is None:
         return None
@@ -158,25 +163,61 @@ async def lifespan(app: FastAPI):
         for context in _contexts.values():
             with suppress(Exception):
                 await context.close()
+        if _lp_browser is not None:
+            with suppress(Exception):
+                await _lp_browser.close()
         if _browser is not None:
-            await _browser.close()
+            with suppress(Exception):
+                await _browser.close()
         if _playwright is not None:
-            await _playwright.stop()
+            with suppress(Exception):
+                await _playwright.stop()
 
 
-app = FastAPI(title="SicoobitoCode Browser", version="1.0.0", lifespan=lifespan)
+app = FastAPI(title="SicoobitoCode Browser (Dual-Engine)", version="1.1.0", lifespan=lifespan)
 
 
-async def _launch_browser() -> Any:
+async def _get_playwright() -> Any:
     from playwright.async_api import async_playwright
 
-    global _playwright, _browser
+    global _playwright
+    if _playwright is None:
+        _playwright = await async_playwright().start()
+    return _playwright
+
+
+async def _launch_chromium() -> Any:
+    global _browser
     if _browser is not None:
         return _browser
-    pw = await async_playwright().start()
-    _playwright = pw
+    pw = await _get_playwright()
     _browser = await pw.chromium.launch(headless=True)
     return _browser
+
+
+async def _connect_lightpanda() -> Any:
+    global _lp_browser
+    if _lp_browser is not None and _lp_browser.is_connected():
+        return _lp_browser
+    pw = await _get_playwright()
+    cdp_url = LIGHTPANDA_CDP_URL
+    if not cdp_url.startswith("ws://") and not cdp_url.startswith("http://"):
+        cdp_url = f"http://{cdp_url}"
+    _lp_browser = await pw.chromium.connect_over_cdp(cdp_url, timeout=3000)
+    return _lp_browser
+
+
+async def _launch_browser(engine: str = "auto") -> tuple[Any, str]:
+    """Retorna (browser, engine_used). Se 'lightpanda' ou 'auto', tenta Lightpanda com fallback seguro para Chromium."""
+    if engine in ("lightpanda", "auto"):
+        try:
+            lp = await _connect_lightpanda()
+            return lp, "lightpanda"
+        except Exception:
+            if engine == "lightpanda":
+                pass
+    cr = await _launch_chromium()
+    return cr, "chromium"
 
 
 def require_token(authorization: Annotated[str | None, Header()] = None) -> None:
@@ -194,24 +235,25 @@ def require_token(authorization: Annotated[str | None, Header()] = None) -> None
 Auth = Depends(require_token)
 
 
-async def _get_page(session_id: str) -> Any:
+async def _get_page(session_id: str, engine: str = "auto") -> tuple[Any, str]:
     page = _pages.get(session_id)
     if page is not None and not page.is_closed():
         _last_used[session_id] = time.time()
-        return page
-    browser = await _launch_browser()
+        return page, _session_engine.get(session_id, "chromium")
+
+    browser, engine_used = await _launch_browser(engine=engine)
+    _session_engine[session_id] = engine_used
 
     video_dir = VIDEO_ROOT / session_id
     video_dir.mkdir(parents=True, exist_ok=True)
     context = await browser.new_context(
         viewport={"width": 1280, "height": 800},
-        record_video_dir=str(video_dir),
-        record_video_size={"width": 1280, "height": 800},
+        record_video_dir=str(video_dir) if engine_used == "chromium" else None,
+        record_video_size={"width": 1280, "height": 800} if engine_used == "chromium" else None,
     )
-    # Best-effort: uma sessão sem trace ainda funciona para navegação normal,
-    # só perde o replay (`_finalize_replay` degrada sozinho se isto falhar).
-    with suppress(Exception):
-        await context.tracing.start(screenshots=True, snapshots=True)
+    if engine_used == "chromium":
+        with suppress(Exception):
+            await context.tracing.start(screenshots=True, snapshots=True)
 
     page = await context.new_page()
     _contexts[session_id] = context
@@ -303,17 +345,37 @@ async def _get_page(session_id: str) -> Any:
 
 @app.get("/health")
 async def health() -> dict[str, Any]:
-    return {"status": "ok", "sessions": len(_contexts), "browser_launched": _browser is not None}
+    lp_ok = False
+    try:
+        if _lp_browser is not None and _lp_browser.is_connected():
+            lp_ok = True
+        else:
+            import urllib.request
+
+            cdp_url = LIGHTPANDA_CDP_URL.replace("ws://", "http://")
+            with urllib.request.urlopen(f"{cdp_url}/json/version", timeout=1.0) as resp:
+                lp_ok = resp.status == 200
+    except Exception:
+        lp_ok = False
+
+    return {
+        "status": "ok",
+        "sessions": len(_contexts),
+        "chromium_launched": _browser is not None,
+        "lightpanda_available": lp_ok,
+        "engines_supported": ["chromium", "lightpanda"],
+    }
 
 
 class CreateSessionRequest(BaseModel):
     session_id: str = Field(min_length=1, max_length=64)
+    engine: Literal["auto", "lightpanda", "chromium"] = "auto"
 
 
 @app.post("/sessions", dependencies=[Auth])
 async def create_session(payload: CreateSessionRequest) -> dict[str, Any]:
-    await _get_page(payload.session_id)
-    return {"session_id": payload.session_id, "created": True}
+    page, engine_used = await _get_page(payload.session_id, engine=payload.engine)
+    return {"session_id": payload.session_id, "created": True, "engine_used": engine_used}
 
 
 ALLOWED_SCHEMES = ("http://", "https://")
@@ -343,12 +405,18 @@ class ActionRequest(BaseModel):
     x: float | None = None
     y: float | None = None
     text: str | None = None
+    engine: Literal["auto", "lightpanda", "chromium"] = "auto"
     timeout_ms: int = Field(default=15_000, ge=100, le=60_000)
 
 
 @app.post("/sessions/{session_id}/action", dependencies=[Auth])
 async def run_action(session_id: str, payload: ActionRequest) -> dict[str, Any]:
-    page = await _get_page(session_id)
+    # Se a ação for screenshot e o engine for auto, forçamos chromium para rasterização completa
+    engine_hint = payload.engine
+    if payload.action == "screenshot" and engine_hint == "auto":
+        engine_hint = "chromium"
+
+    page, engine_used = await _get_page(session_id, engine=engine_hint)
     inicio = time.perf_counter()
 
     try:
@@ -442,6 +510,7 @@ async def run_action(session_id: str, payload: ActionRequest) -> dict[str, Any]:
                 "title": await page.title(),
                 "status": resposta.status if resposta else None,
                 "duration_ms": int((time.perf_counter() - inicio) * 1000),
+                "engine_used": engine_used,
                 "image_base64": image_b64,
                 "console_errors": list(_console_logs.get(session_id, [])),
                 "page_errors": list(_page_errors.get(session_id, [])),
@@ -457,6 +526,7 @@ async def run_action(session_id: str, payload: ActionRequest) -> dict[str, Any]:
             _log_action(session_id, "click", payload.selector or f"{payload.x},{payload.y}")
             return {
                 "ok": True,
+                "engine_used": engine_used,
                 "duration_ms": int((time.perf_counter() - inicio) * 1000),
                 "console_errors": list(_console_logs.get(session_id, [])),
                 "page_errors": list(_page_errors.get(session_id, [])),
@@ -471,6 +541,7 @@ async def run_action(session_id: str, payload: ActionRequest) -> dict[str, Any]:
             _log_action(session_id, "type", f"{payload.selector}: {payload.text[:50]}")
             return {
                 "ok": True,
+                "engine_used": engine_used,
                 "duration_ms": int((time.perf_counter() - inicio) * 1000),
                 "console_errors": list(_console_logs.get(session_id, [])),
                 "page_errors": list(_page_errors.get(session_id, [])),
@@ -481,6 +552,7 @@ async def run_action(session_id: str, payload: ActionRequest) -> dict[str, Any]:
             _log_action(session_id, "screenshot", page.url)
             return {
                 "ok": True,
+                "engine_used": engine_used,
                 "image_base64": base64.b64encode(png).decode("ascii"),
                 "url": page.url,
                 "duration_ms": int((time.perf_counter() - inicio) * 1000),
@@ -493,6 +565,7 @@ async def run_action(session_id: str, payload: ActionRequest) -> dict[str, Any]:
             _log_action(session_id, "content", page.url)
             return {
                 "ok": True,
+                "engine_used": engine_used,
                 "text": texto[:20_000],
                 "duration_ms": int((time.perf_counter() - inicio) * 1000),
                 "console_errors": list(_console_logs.get(session_id, [])),
@@ -515,17 +588,8 @@ async def get_network_log(session_id: str) -> dict[str, Any]:
 
 @app.websocket("/sessions/{session_id}/stream", dependencies=[Auth])
 async def stream_screencast(websocket: WebSocket, session_id: str) -> None:
-    """Screencast CDP ao vivo — só a API fala com isto, nunca o browser do
-    usuário direto (mesma garantia de `require_token`, que já validou o
-    handshake via `dependencies=[Auth]` antes deste corpo rodar).
-
-    `Page.startScreencast` é uma chamada CDP crua (não faz parte da API alta
-    do Playwright) — cada frame chega via evento `Page.screencastFrame` e
-    precisa ser confirmado (`Page.screencastFrameAck`) ou o Chromium para de
-    mandar frames novos, achando que o consumidor travou.
-    """
     await websocket.accept()
-    page = await _get_page(session_id)
+    page, _ = await _get_page(session_id, engine="chromium")
     cdp = await page.context.new_cdp_session(page)
 
     def _on_frame(params: dict[str, Any]) -> None:

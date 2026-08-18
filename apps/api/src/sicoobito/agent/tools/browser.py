@@ -69,6 +69,15 @@ def _summarize(args: dict[str, Any]) -> str:
                 "description": "Coordenada Y, alternativa a `selector` em `click`",
             },
             "text": {"type": "string", "description": "Texto a digitar, para `type`"},
+            "engine": {
+                "type": "string",
+                "enum": ["auto", "lightpanda", "chromium"],
+                "description": (
+                    "Motor de execução do navegador: `auto` (padrão inteligente), "
+                    "`lightpanda` (ultraleve em C/C++, 25MB RAM / 20ms startup para DOM e scraping rápido) "
+                    "ou `chromium` (renderizador completo para screenshots/canvas)."
+                ),
+            },
         },
         "required": ["action"],
     },
@@ -84,6 +93,10 @@ async def browser_action(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
     acao = args.get("action")
     if acao not in _ACTIONS:
         return ToolResult.failure(f"Ação desconhecida: {acao!r}. Use uma de {sorted(_ACTIONS)}.")
+
+    engine = args.get("engine", "auto")
+    if engine not in {"auto", "lightpanda", "chromium"}:
+        engine = "auto"
 
     if acao == "navigate":
         url_raw = str(args.get("url", ""))
@@ -124,6 +137,7 @@ async def browser_action(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
                 "x": args.get("x"),
                 "y": args.get("y"),
                 "text": args.get("text"),
+                "engine": engine,
             }
         )
     except BrowserUnavailableError as exc:
@@ -151,11 +165,13 @@ async def browser_action(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
             linhas.append(f"  - {c_err}")
         aviso_erros = "\n".join(linhas)
 
+    engine_info = f" [motor: {resultado.get('engine_used', engine)}]" if resultado.get("engine_used") else ""
+
     if acao == "screenshot":
         imagem = resultado.get("image_base64", "")
         return ToolResult(
             ok=True,
-            content=f"Screenshot capturado ({len(imagem)} chars base64).{aviso_erros}",
+            content=f"Screenshot capturado ({len(imagem)} chars base64){engine_info}.{aviso_erros}",
             data={**resultado, "image_base64": imagem, "url": resultado.get("url")},
         )
     if acao == "navigate":
@@ -165,12 +181,12 @@ async def browser_action(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
         return ToolResult(
             ok=True,
             content=(
-                f"Aberto {url_str} — título: {title_str!r}, status {status_code}.{aviso_erros}"
+                f"Aberto {url_str} — título: {title_str!r}, status {status_code}{engine_info}.{aviso_erros}"
             ),
             data=resultado,
         )
     if acao == "content":
         texto = resultado.get("text", "")
-        return ToolResult(ok=True, content=f"{texto}{aviso_erros}", data=resultado)
+        return ToolResult(ok=True, content=f"{texto}{engine_info}{aviso_erros}", data=resultado)
 
-    return ToolResult(ok=True, content=f"{acao} concluído.{aviso_erros}", data=resultado)
+    return ToolResult(ok=True, content=f"{acao} concluído{engine_info}.{aviso_erros}", data=resultado)

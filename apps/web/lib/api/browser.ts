@@ -1,6 +1,7 @@
 import { del, get, post } from "@/lib/client";
 
 export type BrowserAction = "navigate" | "click" | "type" | "screenshot" | "content";
+export type BrowserEngine = "auto" | "lightpanda" | "chromium";
 
 export interface BrowserActionResult {
   ok: boolean;
@@ -8,6 +9,7 @@ export interface BrowserActionResult {
   title?: string;
   status?: number;
   duration_ms?: number;
+  engine_used?: string;
   image_base64?: string;
   text?: string;
   console_errors?: string[];
@@ -22,6 +24,7 @@ export interface BrowserActionParams {
   x?: number;
   y?: number;
   text?: string;
+  engine?: BrowserEngine;
 }
 
 export function browserAction({
@@ -32,6 +35,7 @@ export function browserAction({
   x,
   y,
   text,
+  engine = "auto",
 }: BrowserActionParams): Promise<BrowserActionResult> {
   return post<BrowserActionResult>("/api/browser/action", {
     session_id: sessionId,
@@ -41,6 +45,7 @@ export function browserAction({
     x,
     y,
     text,
+    engine,
   });
 }
 

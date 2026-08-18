@@ -24,14 +24,18 @@ Adotar uma arquitetura de **Navegador Interno Híbrido** no SicoobitoCode compos
 4. **Simulador de Dispositivos**:
    - Presets integrados para Desktop (1280px), Laptop (1024px), Tablet (768x1024), Mobile SE (375x667) e Mobile Max (390x844) com rotação (*Portrait / Landscape*) e zoom configurável.
 
-5. **Compatibilidade com Lightpanda**:
-   - Suporte à integração com navegadores headless ultraleves via CDP (`lightpanda-io/browser`), reduzindo o consumo de memória em até 16x para rotinas de extração de dados e automação de agentes.
+5. **Arquitetura Dual-Engine (Lightpanda & Chromium Playwright)**:
+   - **🐼 Lightpanda Engine (`lightpanda-io/browser`)**: Motor headless em C/C++ (QuickJS/V8) com inicialização em sub-50ms e consumo de apenas ~25MB de RAM (15x a 20x menor que Chromium). Conectado via CDP puro (`ws://lightpanda:9222`), ideal para web scraping massivo, RAG crawling (Firecrawl), auditorias rápidas de DOM e enxames multiagente concorrentes.
+   - **🌐 Chromium Engine (Playwright)**: Motor de renderização completo para screenshots pixel-perfect, captura de traces, gravação de vídeo e testes visuais E2E.
+   - **⚡ Modo Inteligente (`engine="auto"`)**: Roteamento automático baseado no tipo de tarefa (Lightpanda para extração e DOM, Chromium para screenshots) com fallback resiliente para Chromium em caso de indisponibilidade transitória.
 
 ## Consequências
 
 - **Positivas**:
   - Testes visuais e navegação sem sair do ambiente da IDE ou via página dedicada `/browser`.
+  - Redução drástica de consumo de RAM (~25MB por sessão) para rotinas de scraping e inspeção de código do agente.
+  - Alternância de motores via seletor visual na barra de ferramentas da IDE (`⚡ Auto`, `🐼 Lightpanda`, `🌐 Chromium`).
   - Experiência fluida para desenvolvedores com atalhos rápidos de portas comuns (`:3000`, `:5173`, `:8000/docs`, `:5000`).
-  - Redução de consumo de recursos computacionais através da opção de motores headless enxutos.
 - **Negativas / Limitações**:
   - Aplicações externas que configuram cabeçalhos rígidos de `X-Frame-Options: DENY` ou `Content-Security-Policy: frame-ancestors 'none'` requerem uso do modo Headless ou abertura em janela externa via botão `↗`.
+

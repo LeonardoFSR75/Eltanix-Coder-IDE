@@ -78,6 +78,7 @@ class BrowserActionRequest(BaseModel):
     x: float | None = None
     y: float | None = None
     text: str | None = None
+    engine: Literal["auto", "lightpanda", "chromium"] = "auto"
 
 
 @router.post("/action")
@@ -101,6 +102,7 @@ async def browser_action(payload: BrowserActionRequest, request: Request) -> dic
                 "x": payload.x,
                 "y": payload.y,
                 "text": payload.text,
+                "engine": payload.engine,
             }
         )
     except BrowserUnavailableError as exc:

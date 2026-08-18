@@ -51,13 +51,13 @@ class BrowserClient:
     def _headers(self) -> dict[str, str]:
         return {"Authorization": f"Bearer {self.config.token}"} if self.config.token else {}
 
-    async def start(self, *, retries: int = 3) -> None:
+    async def start(self, engine: str = "auto", *, retries: int = 3) -> None:
         ultimo_erro = None
         for tentativa in range(retries + 1):
             try:
                 resposta = await self._client.post(
                     f"{self.config.base_url}/sessions",
-                    json={"session_id": self.session_id},
+                    json={"session_id": self.session_id, "engine": engine},
                     headers=self._headers(),
                     timeout=10.0,
                 )

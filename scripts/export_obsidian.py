@@ -42,7 +42,7 @@ def run_export() -> None:
 
     communities: dict[int, list[str]] = {}
     for node in data.get("nodes", []):
-        cid = int(node.get("community", 0))
+        cid = int(node.get("community") or 0)
         communities.setdefault(cid, []).append(node["id"])
 
     labels: dict[int, str] = {}

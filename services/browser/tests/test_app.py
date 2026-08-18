@@ -43,9 +43,9 @@ def _fake_page() -> MagicMock:
     return page
 
 
-def _install_fake_page(app_module, monkeypatch) -> MagicMock:
+def _install_fake_page(app_module, monkeypatch, engine_used: str = "chromium") -> MagicMock:
     page = _fake_page()
-    fake_get_page = AsyncMock(return_value=page)
+    fake_get_page = AsyncMock(return_value=(page, engine_used))
     monkeypatch.setattr(app_module, "_get_page", fake_get_page)
     return page
 
@@ -299,4 +299,53 @@ def test_close_session_cleans_logs(monkeypatch):
     assert response.status_code == 200
     assert "s1" not in app_module._console_logs
     assert "s1" not in app_module._page_errors
+
+
+# ── dual-engine (Lightpanda & Chromium) ──────────────────────────────────
+
+
+def test_create_session_with_lightpanda_engine(monkeypatch):
+    app_module = _reload_app(monkeypatch, token=None)
+    _install_fake_page(app_module, monkeypatch, engine_used="lightpanda")
+    client = TestClient(app_module.app)
+
+    response = client.post("/sessions", json={"session_id": "lp-1", "engine": "lightpanda"})
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["session_id"] == "lp-1"
+    assert data["created"] is True
+    assert data["engine_used"] == "lightpanda"
+
+
+def test_action_reports_engine_used(monkeypatch):
+    app_module = _reload_app(monkeypatch, token=None)
+    _install_fake_page(app_module, monkeypatch, engine_used="lightpanda")
+    client = TestClient(app_module.app)
+
+    response = client.post(
+        "/sessions/lp-1/action",
+        json={"action": "content", "engine": "lightpanda"},
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["ok"] is True
+    assert data["engine_used"] == "lightpanda"
+    assert data["text"] == "conteúdo da página"
+
+
+def test_health_reports_dual_engine_support(monkeypatch):
+    app_module = _reload_app(monkeypatch, token=None)
+    client = TestClient(app_module.app)
+
+    response = client.get("/health")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "ok"
+    assert "engines_supported" in data
+    assert "lightpanda" in data["engines_supported"]
+    assert "chromium" in data["engines_supported"]
+
 

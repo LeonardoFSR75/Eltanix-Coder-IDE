@@ -83,6 +83,8 @@ export function EditorBrowserView({
 
   const [status, setStatus] = useState<number | null>(null);
   const [durationMs, setDurationMs] = useState<number | null>(null);
+  const [browserEngine, setBrowserEngine] = useState<"auto" | "lightpanda" | "chromium">("auto");
+  const [engineUsed, setEngineUsed] = useState<string | null>(null);
   const [image, setImage] = useState<string | null>(null);
   const [content, setContent] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -173,12 +175,13 @@ export function EditorBrowserView({
     setLoading(true);
     setErro(null);
     try {
-      const shot = await browserAction({ sessionId, action: "screenshot" });
+      const shot = await browserAction({ sessionId, action: "screenshot", engine: browserEngine });
       if (shot.image_base64) {
         setImage(shot.image_base64);
       }
       if (shot.url) setCurrentUrl(shot.url);
       if (shot.title) setTitle(shot.title);
+      if (shot.engine_used) setEngineUsed(shot.engine_used);
       setConsoleErrors(shot.console_errors ?? []);
       setPageErrors(shot.page_errors ?? []);
     } catch (err) {
@@ -186,7 +189,7 @@ export function EditorBrowserView({
     } finally {
       setLoading(false);
     }
-  }, [sessionId, renderMode]);
+  }, [sessionId, renderMode, browserEngine]);
 
   // Streaming ao vivo — só faz sentido no modo Agente (headless/CDP); no modo
   // Live o iframe já é a própria fonte visual, sem precisar de screencast.
@@ -302,13 +305,14 @@ export function EditorBrowserView({
       }
 
       try {
-        const resultado = await browserAction({ sessionId, action: "navigate", url: alvo });
+        const resultado = await browserAction({ sessionId, action: "navigate", url: alvo, engine: browserEngine });
         const finalUrl = resultado.url ?? alvo;
         setCurrentUrl(finalUrl);
         setUrlInput(finalUrl);
         setTitle(resultado.title ?? null);
         setStatus(resultado.status ?? 200);
         setDurationMs(resultado.duration_ms ?? null);
+        if (resultado.engine_used) setEngineUsed(resultado.engine_used);
         setConsoleErrors(resultado.console_errors ?? []);
         setPageErrors(resultado.page_errors ?? []);
         if (resultado.image_base64) {
@@ -322,7 +326,7 @@ export function EditorBrowserView({
         setLoading(false);
       }
     },
-    [sessionId, capturar, renderMode, activeTabId],
+    [sessionId, capturar, renderMode, activeTabId, browserEngine],
   );
 
   // Navegação de Histórico (Voltar / Avançar)
@@ -504,7 +508,8 @@ export function EditorBrowserView({
       setLoading(true);
       setErro(null);
       try {
-        await browserAction({ sessionId, action: "click", x, y });
+        const res = await browserAction({ sessionId, action: "click", x, y, engine: browserEngine });
+        if (res.engine_used) setEngineUsed(res.engine_used);
         await new Promise((r) => setTimeout(r, 300));
         await capturar();
       } catch (err) {
@@ -513,7 +518,7 @@ export function EditorBrowserView({
         setLoading(false);
       }
     },
-    [sessionId, loading, capturar],
+    [sessionId, loading, capturar, browserEngine],
   );
 
   // Mesma ideia, mas para o modo de streaming ao vivo: o próximo frame do
@@ -531,11 +536,11 @@ export function EditorBrowserView({
       setClickIndicator({ x: e.clientX - rect.left, y: e.clientY - rect.top });
       setTimeout(() => setClickIndicator(null), 600);
 
-      void browserAction({ sessionId, action: "click", x, y }).catch((err) => {
+      void browserAction({ sessionId, action: "click", x, y, engine: browserEngine }).catch((err) => {
         setErro(err instanceof Error ? err.message : String(err));
       });
     },
-    [sessionId],
+    [sessionId, browserEngine],
   );
 
   const enviarTexto = useCallback(async () => {
@@ -543,12 +548,14 @@ export function EditorBrowserView({
     setLoading(true);
     setErro(null);
     try {
-      await browserAction({
+      const res = await browserAction({
         sessionId,
         action: "type",
         selector: selectorInput.trim(),
         text: textInput,
+        engine: browserEngine,
       });
+      if (res.engine_used) setEngineUsed(res.engine_used);
       await new Promise((r) => setTimeout(r, 300));
       await capturar();
       setTextInput("");
@@ -557,19 +564,20 @@ export function EditorBrowserView({
     } finally {
       setLoading(false);
     }
-  }, [sessionId, selectorInput, textInput, capturar]);
+  }, [sessionId, selectorInput, textInput, capturar, browserEngine]);
 
   const verConteudo = useCallback(async () => {
     setErro(null);
     try {
-      const resultado = await browserAction({ sessionId, action: "content" });
+      const resultado = await browserAction({ sessionId, action: "content", engine: browserEngine });
+      if (resultado.engine_used) setEngineUsed(resultado.engine_used);
       setContent(resultado.text ?? "");
       setDrawerTab("inspector");
       setShowDrawer(true);
     } catch (err) {
       setErro(err instanceof Error ? err.message : String(err));
     }
-  }, [sessionId]);
+  }, [sessionId, browserEngine]);
 
   const reiniciar = useCallback(async () => {
     pararStream();
@@ -779,15 +787,57 @@ export function EditorBrowserView({
             🤖 Agente
           </button>
           {renderMode === "headless" && (
-            <button
-              type="button"
-              className={`browser-mode-btn ${streamActive ? "active" : ""}`}
-              onClick={() => (streamActive ? pararStream() : void iniciarStream())}
-              disabled={streamConnecting}
-              title="Streaming ao vivo via CDP screencast (em vez de screenshot sob pedido)"
-            >
-              {streamConnecting ? "…" : streamActive ? "⏸ Ao Vivo" : "▶ Ao Vivo"}
-            </button>
+            <>
+              <button
+                type="button"
+                className={`browser-mode-btn ${streamActive ? "active" : ""}`}
+                onClick={() => (streamActive ? pararStream() : void iniciarStream())}
+                disabled={streamConnecting}
+                title="Streaming ao vivo via CDP screencast (em vez de screenshot sob pedido)"
+              >
+                {streamConnecting ? "…" : streamActive ? "⏸ Ao Vivo" : "▶ Ao Vivo"}
+              </button>
+              <div
+                className="browser-engine-switcher"
+                style={{
+                  display: "inline-flex",
+                  gap: "2px",
+                  alignItems: "center",
+                  background: "rgba(255, 255, 255, 0.05)",
+                  padding: "2px 4px",
+                  borderRadius: "6px",
+                  border: "1px solid rgba(255, 255, 255, 0.08)",
+                }}
+              >
+                <button
+                  type="button"
+                  className={`browser-mode-btn ${browserEngine === "auto" ? "active" : ""}`}
+                  onClick={() => setBrowserEngine("auto")}
+                  title="Auto: Lightpanda para DOM/scraping ultraleve (25MB RAM) e Chromium para screenshots"
+                  style={{ fontSize: "11px", padding: "2px 6px" }}
+                >
+                  ⚡ Auto
+                </button>
+                <button
+                  type="button"
+                  className={`browser-mode-btn ${browserEngine === "lightpanda" ? "active" : ""}`}
+                  onClick={() => setBrowserEngine("lightpanda")}
+                  title="Lightpanda Browser (C/C++ ultraleve - 25MB RAM, sub-50ms cold start)"
+                  style={{ fontSize: "11px", padding: "2px 6px" }}
+                >
+                  🐼 Lightpanda
+                </button>
+                <button
+                  type="button"
+                  className={`browser-mode-btn ${browserEngine === "chromium" ? "active" : ""}`}
+                  onClick={() => setBrowserEngine("chromium")}
+                  title="Chromium Playwright (Renderização completa, vídeos e screenshots)"
+                  style={{ fontSize: "11px", padding: "2px 6px" }}
+                >
+                  🌐 Chromium
+                </button>
+              </div>
+            </>
           )}
         </div>
 
@@ -819,6 +869,20 @@ export function EditorBrowserView({
 
         {/* 📊 Badges de Telemetria e Gaveta DevTools */}
         <div className="editor-browser-meta-group">
+          {engineUsed && (
+            <span
+              className="editor-browser-status-badge"
+              style={{
+                background: engineUsed === "lightpanda" ? "rgba(16, 185, 129, 0.15)" : "rgba(59, 130, 246, 0.15)",
+                color: engineUsed === "lightpanda" ? "#34d399" : "#60a5fa",
+                border: "1px solid currentColor",
+                fontSize: "11px",
+              }}
+              title={`Motor ativo: ${engineUsed === "lightpanda" ? "Lightpanda (25MB RAM / Sub-50ms)" : "Chromium (Full Render)"}`}
+            >
+              {engineUsed === "lightpanda" ? "🐼 Lightpanda" : "🌐 Chromium"}
+            </span>
+          )}
           {portasStr && (
             <span className="editor-browser-status-badge status-ok" title="Porta ativa no sandbox">
               🟢 {portasStr}
