@@ -46,6 +46,7 @@ Ao construir, remodelar ou aprimorar qualquer aplicação, interface de usuário
    - **Dependências & Licenças**: Verificação contínua de CVEs em pacotes instalados (`manage_packages`).
 
 5. **🧪 Suíte Testes, APIs & Verificação E2E**:
+   - **Backend Python Padrão**: Para APIs, microsserviços e rotas em Python, utilize exclusivamente **FastAPI** + Pydantic v2. NUNCA tente instalar ou migrar para frameworks legados/redundantes (como Flask ou Django) a não ser por solicitação expressa do usuário.
    - **Testes Ponta a Ponta**: Execução com **Playwright** no navegador interno integrado com screenshots comparativos.
    - **Contratos de API**: Testes de endpoints REST/GraphQL tipados com validação de schemas JSON.
 
@@ -247,10 +248,11 @@ def build_task_prompt(
     if mode == "plan":
         partes.append(
             "## 📐 MODO PLANEJAR ATIVO (Engenharia & Escopo Arquitetural):\n"
-            "1. Analise detalhadamente a arquitetura do projeto, schemas de dados, endpoints e componentes de interface.\n"
+            "⚠️ ATENÇÃO OBRIGATÓRIA: As ferramentas de criação/edição de arquivos (`write_file`, `edit_file`) estão bloqueadas até que o plano seja registrado.\n"
+            "1. Analise a arquitetura do projeto, schemas de dados, endpoints e componentes de interface.\n"
             "2. Defina o framework visual/extensão prioritário (Tailwind, Lucide, Alpine, Shadcn, etc.).\n"
-            "3. Chame `write_todos` com o plano completo de escopo em 5 fases (decompondo em Models/Schemas, Services/Domain, UI/CSS Design System, Testes e Validação no Navegador).\n"
-            "4. Apresente ao usuário uma síntese clara do escopo arquitetural proposto e aguarde aprovação ou prossiga conforme instrução."
+            "3. PASSO OBRIGATÓRIO Nº 1: Chame `write_todos` no seu primeiro turno com o plano em 5 fases (isso registrará o plano e desbloqueará as ferramentas de criação/edição de arquivos).\n"
+            "4. Crie/atualize os arquivos necessários e apresente ao usuário uma síntese clara do escopo proposto."
         )
     elif mode == "auto":
         partes.append(
@@ -264,7 +266,8 @@ def build_task_prompt(
     elif mode == "orchestra":
         partes.append(
             "## 🎻 MODO ORQUESTRA ATIVO (TDD Estrito + Revisão de Código Independente):\n"
-            "Comece chamando `write_todos` com o plano detalhado, dividido em etapas pequenas e verificáveis. Para CADA item do plano, siga este ciclo à risca, sem pular passos:\n"
+            "⚠️ ATENÇÃO OBRIGATÓRIA: As ferramentas de escrita e execução de comandos estão bloqueadas até que o plano seja registrado.\n"
+            "PASSO OBRIGATÓRIO Nº 1: Comece chamando `write_todos` com o plano detalhado em etapas pequenas para desbloquear as demais ferramentas. Para CADA item do plano, siga este ciclo à risca, sem pular passos:\n"
             "1. Escreva um teste que cubra o comportamento esperado e rode com `run_command` — confirme que ele FALHA antes de implementar.\n"
             "2. Implemente a solução completa, limpa e robusta que faz o teste passar, com acabamento visual de alto padrão.\n"
             "3. Rode os testes de novo com `run_command` e confirme que passam sem regressões.\n"

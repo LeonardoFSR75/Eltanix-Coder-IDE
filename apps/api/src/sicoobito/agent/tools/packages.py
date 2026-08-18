@@ -50,10 +50,10 @@ def _packages_risk(args: dict[str, Any]) -> RiskClass:
         "properties": {
             "action": {
                 "type": "string",
-                "enum": ["install", "uninstall", "list", "sync", "audit"],
+                "enum": ["install", "uninstall", "list", "sync", "audit", "clean"],
                 "description": (
-                    "Ação a realizar: install, uninstall, list, sync ou audit "
-                    "(CVEs conhecidas nas dependências instaladas, via pip-audit/npm audit)"
+                    "Ação a realizar: install, uninstall, list, sync, audit ou clean "
+                    "(remover pacotes órfãos não declarados no manifesto do projeto)"
                 ),
             },
             "package": {
@@ -173,6 +173,19 @@ async def manage_packages(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
         if installed_packages:
             amostra = ", ".join(f"{p['name']}=={p['version']}" for p in installed_packages[:15])
             content_str += f"Instalados (primeiros 15): {amostra}\n"
+
+        installed_names = {p["name"].lower().replace("_", "-") for p in installed_packages}
+        if (
+            eco == "python"
+            and "fastapi" in installed_names
+            and ("flask" in installed_names or "django" in installed_names)
+        ):
+            conflito = "flask" if "flask" in installed_names else "django"
+            content_str += (
+                f"\n⚠️ ALERTA DE CONFLITO DE STACK: Foram detectados dois frameworks web ('fastapi' e '{conflito}') no ambiente. "
+                f"O padrão do repositório é 'fastapi'. Recomenda-se remover o framework secundário com manage_packages(action='uninstall', package='{conflito}') "
+                f"ou rodar manage_packages(action='clean') para purgar pacotes órfãos.\n"
+            )
 
         ctx.session_state.packages_checked = True
 
@@ -413,5 +426,50 @@ async def manage_packages(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
             )
             content_str += amostra
         return ToolResult(ok=True, content=content_str, data=resultado)
+
+    elif action == "clean":
+        if eco != "python":
+            return ToolResult.failure("A ação 'clean' atualmente é suportada apenas para o ecossistema Python.")
+
+        venv_path = get_venv_path(project_path)
+        if not venv_path.exists() and (canonical_root / ".venv").exists():
+            venv_path = get_venv_path(canonical_root)
+        py_exe = get_python_executable(venv_path)
+
+        installed = await list_python_packages(py_exe, project_path)
+        req_map = parse_requirements_txt(project_path)
+        if canonical_root != project_path and (canonical_root / "requirements.txt").exists():
+            req_map.update(parse_requirements_txt(canonical_root))
+
+        ignored_base = {"pip", "setuptools", "wheel", "sicoobito", "pip-tools", "uv", "pytest", "ruff", "bandit", "semgrep"}
+        to_remove = []
+        for p in installed:
+            name = p["name"].lower().replace("_", "-")
+            if name not in req_map and name not in ignored_base:
+                to_remove.append(p["name"])
+
+        removed_count = 0
+        for pkg in to_remove:
+            try:
+                cmd = build_ecosystem_command(
+                    eco, "uninstall", project_path=project_path, package=pkg, py_exe=py_exe
+                )
+                proc = await asyncio.create_subprocess_exec(
+                    *cmd,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                    cwd=str(project_path),
+                )
+                await asyncio.wait_for(proc.communicate(), timeout=30)
+                if proc.returncode == 0:
+                    removed_count += 1
+            except Exception:
+                pass
+
+        return ToolResult(
+            ok=True,
+            content=f"Limpeza concluída: {removed_count} pacote(s) órfão(s) não declarados em requirements.txt foram removidos do ambiente .venv.",
+            data={"removed_packages": to_remove, "removed_count": removed_count},
+        )
 
     return ToolResult.failure(f"Ação desconhecida: {action}")
