@@ -79,6 +79,7 @@ export function HeaderNav() {
       label: "Plataforma",
       icon: "🌐",
       items: [
+        { href: "/analytics", label: "Analytics ML & Diagnósticos", icon: "🧠", description: "Telemetria ML, falhas preditivas e propostas autônomas" },
         { href: "/skills", label: "Skills do Agente", icon: "⚡", description: "Prompts & Sandboxes de ferramentas" },
         { href: "/mcp", label: "Servidores MCP", icon: "🔌", description: "Integrações Protocolo MCP (STDIO / SSE)" },
         { href: "/providers", label: "Provedores LLM", icon: "🌐", description: "Ollama, OpenAI & Gateway da API" },

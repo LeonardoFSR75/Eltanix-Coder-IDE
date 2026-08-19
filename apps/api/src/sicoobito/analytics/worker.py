@@ -32,7 +32,7 @@ class AnalyticsBatchWorker:
     """Worker periódico que processa lotes de trajetórias acumuladas."""
 
     def __init__(self, router: RouterEngine | None = None) -> None:
-        self.router = router or RouterEngine()
+        self.router = router
         self.rca_engine = RCAEngine(self.router)
         self.proposal_generator = CorrectionProposalGenerator(self.router)
 

@@ -16,7 +16,7 @@ class CorrectionProposalGenerator:
     """Gera propostas de correção acionáveis baseadas na causa raiz diagnosticada."""
 
     def __init__(self, router: RouterEngine | None = None) -> None:
-        self.router = router or RouterEngine()
+        self.router = router
 
     async def generate_proposal(
         self, trajectory: dict[str, Any], rca_result: dict[str, Any]

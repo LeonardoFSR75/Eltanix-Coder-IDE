@@ -15,10 +15,13 @@ class FeatureExtractor:
     """Gera representação semântica vetorial para trajetórias de chat."""
 
     def __init__(self, router: RouterEngine | None = None) -> None:
-        self.router = router or RouterEngine()
+        self.router = router
 
     async def generate_trajectory_embedding(self, trajectory: dict[str, Any]) -> list[float] | None:
         """Gera o embedding denso combinado (Prompt + Resumos de Passos + Erros)."""
+        if not self.router:
+            return None
+
         try:
             prompt = trajectory.get("user_prompt", "")
             steps = trajectory.get("trajectory_data", {}).get("steps", [])

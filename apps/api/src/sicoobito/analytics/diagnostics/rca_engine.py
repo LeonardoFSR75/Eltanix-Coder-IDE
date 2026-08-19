@@ -16,7 +16,7 @@ class RCAEngine:
     """Diagnostica causas raízes de falhas de trajetória utilizando a fachada de LLM."""
 
     def __init__(self, router: RouterEngine | None = None) -> None:
-        self.router = router or RouterEngine()
+        self.router = router
 
     async def analyze_failure(self, trajectory: dict[str, Any], category: str) -> dict[str, Any]:
         """Gera uma explicação detalhada e causa raiz da falha capturada."""
@@ -44,11 +44,17 @@ class RCAEngine:
             f"o componente responsável (Sandbox, Prompt, Tool, RAG ou Router)."
         )
 
-        try:
-            res = await self.router.complete(prompt=analysis_prompt, max_tokens=256)
-            explanation = res.text.strip()
-        except Exception as e:
-            logger.warning("rca_engine.completion_failed", error=str(e))
+        if self.router:
+            try:
+                res = await self.router.complete(prompt=analysis_prompt, max_tokens=256)
+                explanation = res.text.strip()
+            except Exception as e:
+                logger.warning("rca_engine.completion_failed", error=str(e))
+                explanation = (
+                    f"Causa raiz inferida por regra: Falha no componente {category} "
+                    f"durante a execução do comando."
+                )
+        else:
             explanation = (
                 f"Causa raiz inferida por regra: Falha no componente {category} "
                 f"durante a execução do comando."

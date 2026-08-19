@@ -26,7 +26,7 @@ class AnalyticsService:
 
     def __init__(self, db: AsyncSession, router: RouterEngine | None = None) -> None:
         self.db = db
-        self.router = router or RouterEngine()
+        self.router = router
         self.feature_extractor = FeatureExtractor(self.router)
         self.rca_engine = RCAEngine(self.router)
         self.proposal_generator = CorrectionProposalGenerator(self.router)
