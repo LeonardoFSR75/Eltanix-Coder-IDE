@@ -45,6 +45,12 @@ class SessionRuntimeState:
     workspace_listed: bool = False
     packages_checked: bool = False
     git_ready: bool = False
+    # True depois que a primeira `write_todos` com itens em modo `plan`/
+    # `orchestra` foi aprovada e executada nesta sessão (Fase 3 do upgrade
+    # do agente) — usado por `agent/tools/plan.py::_todos_risk` para nunca
+    # reabrir o gate de aprovação humana nas atualizações seguintes do
+    # mesmo plano, mesmo que a lista volte a ficar vazia no meio do caminho.
+    plan_registered: bool = False
 
 
 @dataclass(slots=True)
@@ -86,11 +92,48 @@ class ToolContext:
     # em `agent/graph.py::think()`. `None` para toda sessão raiz e todo filho
     # spawnado sem `skill_name` — não muda o comportamento de hoje.
     specialization_prompt: str | None = None
+    # Skills roteadas automaticamente por similaridade de embedding
+    # (`SkillService.find_relevant`, chamado em `AgentRunner.create_session()`)
+    # ou forçadas por um slash command reconhecido — terceira seção opcional
+    # do system prompt, mesmo mecanismo aditivo de `custom_instructions`/
+    # `specialization_prompt` em `agent/graph.py::build_graph()`. `None`
+    # quando nenhuma skill bateu o `min_score` ou o roteamento falhou
+    # (degrada silenciosamente, nunca bloqueia a sessão).
+    routed_skills_prompt: str | None = None
+    # Regras de contexto por glob (Fase 4 do upgrade do agente, estilo
+    # `.cursor/rules`) já casadas contra `focus_files`/`focus_folder` e
+    # renderizadas em texto por `agent/context_rules.py::build_context_rules_prompt`
+    # — quarta seção opcional do system prompt, mesmo mecanismo aditivo das
+    # três anteriores. `None` quando nenhuma regra casou ou o projeto não
+    # tem `.sicoobito/context_rules.yaml`.
+    context_rules_prompt: str | None = None
+    # Modo customizado (Fase 6 do upgrade do agente) resolvido uma única vez
+    # na criação da sessão (`AgentRunner._resolve_custom_mode`), quando `mode`
+    # não é um dos 7 modos embutidos (`agent/state.py::BUILTIN_MODES`).
+    # `allowed_tools=None` significa "não resolvido" (id inválido, modo
+    # deletado, ou sem `CustomModeService`) — `agent/graph.py::_tool_schemas`
+    # degrada para somente leitura nesse caso, nunca libera WRITE/EXEC.
+    # `allowed_tools=[]` é uma lista vazia *de verdade* salva pelo usuário —
+    # nenhuma ferramenta liberada, também nunca escrita.
+    custom_mode_allowed_tools: list[str] | None = None
+    custom_mode_prompt_block: str | None = None
+    # Modo escolhido na criação da sessão (`AgentSession.mode`) — fixo pelo
+    # resto da sessão (não há troca de modo em runtime hoje). Ferramentas
+    # cuja classe de risco depende de contexto além dos próprios argumentos
+    # (ex: `write_todos` só vira WRITE na primeira chamada em modo
+    # `plan`/`orchestra`, ver `agent/tools/plan.py::_todos_risk`) leem daqui
+    # em vez de receberem o modo por parâmetro.
+    mode: str = "agent"
     # Política de auto-aprovação (`agent/approval_policy.py::ApprovalPolicy`)
     # carregada de `.sicoobito/approval_policy.yaml` no projeto — consultada
     # pelo nó `approve` em `agent/graph.py` antes do `interrupt()`. `None`
     # equivale a uma política vazia (nenhuma regra, tudo pausa como sempre).
     approval_policy: Any | None = None
+    # Snapshots de arquivo antes de cada escrita (Fase 8 do upgrade do
+    # agente: checkpoints/rewind) — gravado best-effort em `agent/graph.py::
+    # act()`, nunca bloqueia a ferramenta em si (mesmo espírito de `audit`/
+    # `trace_recorder`: `None` degrada para "sem rewind disponível", não erro).
+    snapshots: Any | None = None  # SnapshotService
     # Orquestração multiagente (ver ADR 0004) — usados por
     # `agent/tools/agents_graph.py`. `coordinator` é `None` sem Redis
     # configurado (orquestração indisponível, `spawn_agent` falha fechado).
@@ -151,7 +194,14 @@ class ToolResult:
 class Tool:
     name: str
     description: str
-    _risk: RiskClass | Callable[[dict[str, Any]], RiskClass]
+    # O callable recebe `(argumentos, context)` — `context` é `None` nos
+    # pontos que só olham o "pior caso" sem sessão real (listagem de
+    # ferramentas, filtro de schema por modo em `_tool_schemas`). Toda
+    # função de risco precisa aceitar o segundo parâmetro mesmo que o
+    # ignore (ver `_packages_risk`/`_extensions_risk`), para que ferramentas
+    # como `write_todos` possam decidir com base em estado de sessão
+    # (`ToolContext.mode`/`session_state`) sem um tipo paralelo.
+    _risk: RiskClass | Callable[[dict[str, Any], ToolContext | None], RiskClass]
     parameters: dict[str, Any]
     handler: Callable[[ToolContext, dict[str, Any]], Awaitable[ToolResult]]
     summarize: Callable[[dict[str, Any]], str] | None = None
@@ -160,7 +210,7 @@ class Tool:
         self,
         name: str,
         description: str,
-        risk: RiskClass | Callable[[dict[str, Any]], RiskClass],
+        risk: RiskClass | Callable[[dict[str, Any], ToolContext | None], RiskClass],
         parameters: dict[str, Any],
         handler: Callable[[ToolContext, dict[str, Any]], Awaitable[ToolResult]],
         summarize: Callable[[dict[str, Any]], str] | None = None,
@@ -175,12 +225,14 @@ class Tool:
     @property
     def risk(self) -> RiskClass:
         if callable(self._risk):
-            return self._risk({"action": "install"})
+            return self._risk({"action": "install"}, None)
         return self._risk
 
-    def resolve_risk(self, arguments: dict[str, Any] | None = None) -> RiskClass:
+    def resolve_risk(
+        self, arguments: dict[str, Any] | None = None, context: ToolContext | None = None
+    ) -> RiskClass:
         if callable(self._risk):
-            return self._risk(arguments or {})
+            return self._risk(arguments or {}, context)
         return self._risk
 
     @property

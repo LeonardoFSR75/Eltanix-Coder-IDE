@@ -444,6 +444,10 @@ class Skill(Base):
     parameters_json: Mapped[str] = mapped_column(Text, default="{}", nullable=False)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     usage_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    # Vetor de embedding de `description`, usado por `skills/store.py::search_by_similarity`
+    # para o roteamento automático (`SkillService.find_relevant`) — nulo até o seed/CRUD
+    # conseguir calculá-lo (embedding indisponível não impede a skill de existir).
+    description_embedding: Mapped[list[float] | None] = mapped_column(VECTOR_TYPE, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -455,6 +459,70 @@ class Skill(Base):
 
     def __repr__(self) -> str:  # pragma: no cover - conveniência de debug
         return f"<Skill {self.name!r} enabled={self.enabled}>"
+
+
+class CustomMode(Base):
+    """Modo de execução do agente definido pelo usuário (Fase 6 do upgrade do
+    agente) — nome, ícone, ferramentas permitidas e bloco de prompt próprios,
+    selecionável ao lado dos 7 modos embutidos (`agent/state.py::BUILTIN_MODES`).
+
+    O `id` (texto do UUID) é o próprio valor que passa a circular como
+    `mode`/`AgentSession.mode`/SSE — não existe uma segunda tabela de mapeamento.
+    """
+
+    __tablename__ = "custom_mode"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name: Mapped[str] = mapped_column(String(80), nullable=False)
+    icon: Mapped[str] = mapped_column(String(16), default="🧩", nullable=False)
+    description: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    # Lista explícita de nomes de ferramenta (não classe de risco) — filtra
+    # `ToolRegistry.all()` em `agent/graph.py::_tool_schemas` quando `mode` não
+    # é um dos 7 literais conhecidos. Vazio == nenhuma ferramenta liberada.
+    allowed_tools: Mapped[list] = mapped_column(JSON_TYPE, default=list, nullable=False)
+    prompt_block: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+    def __repr__(self) -> str:  # pragma: no cover - conveniência de debug
+        return f"<CustomMode {self.name!r}>"
+
+
+class SessionFileSnapshot(Base):
+    """Conteúdo de um arquivo *antes* de uma escrita do agente (Fase 8 do
+    upgrade do agente: checkpoints/rewind de sessão).
+
+    Gravada best-effort em `agent/graph.py::act()`, sempre que uma ferramenta
+    `edit_file`/`write_file` vai rodar — reaproveita a mesma leitura "antes"
+    que `agent/tools/diffing.py::compute_proposed_diff` já faz para o diff de
+    aprovação, então não é I/O extra, só mais um lugar que guarda o mesmo
+    dado. `iteration` é `AgentState["iterations"]` no momento da escrita — o
+    mesmo contador que o checkpointer do LangGraph também vê, o que permite
+    `agent/snapshot_store.py::restore_targets` casar "restaurar até aqui" com
+    o checkpoint correspondente sem precisar de uma segunda numeração.
+    """
+
+    __tablename__ = "session_file_snapshot"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    session_id: Mapped[str] = mapped_column(String(32), nullable=False)
+    iteration: Mapped[int] = mapped_column(Integer, nullable=False)
+    path: Mapped[str] = mapped_column(Text, nullable=False)
+    content_before: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    __table_args__ = (
+        Index("ix_session_file_snapshot_session_iteration", "session_id", "iteration"),
+    )
+
+    def __repr__(self) -> str:  # pragma: no cover - conveniência de debug
+        return f"<SessionFileSnapshot {self.session_id}:{self.iteration}:{self.path!r}>"
 
 
 class ExtensionState(Base):
@@ -542,7 +610,10 @@ class AgentSessionRecord(Base):
     session_id: Mapped[str] = mapped_column(String(32), primary_key=True)
     project: Mapped[str] = mapped_column(String(255), nullable=False)
     task: Mapped[str] = mapped_column(Text, nullable=False)
-    mode: Mapped[str] = mapped_column(String(16), nullable=False)
+    # String(64), não String(16): desde a Fase 6 do upgrade do agente, `mode`
+    # também pode ser o id (UUID em texto, 36 chars) de um modo customizado
+    # (`CustomMode`) em vez de um dos 7 literais fixos.
+    mode: Mapped[str] = mapped_column(String(64), nullable=False)
     profile: Mapped[str | None] = mapped_column(String(64), nullable=True)
     branch: Mapped[str | None] = mapped_column(String(255), nullable=True)
     base_branch: Mapped[str | None] = mapped_column(String(255), nullable=True)
@@ -833,3 +904,81 @@ class AuthSession(Base):
 
     def __repr__(self) -> str:  # pragma: no cover
         return f"<AuthSession user={self.user_id}>"
+
+
+class ChatTrajectory(Base):
+    """Armazena o fluxo e telemetria completa de uma sessão de chat do agente para análise por ML."""
+
+    __tablename__ = "chat_trajectory"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    session_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    project_slug: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
+    user_prompt: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    step_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    tool_calls_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    tool_errors_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    status: Mapped[str] = mapped_column(String(32), default="success", nullable=False)
+    failure_category: Mapped[str] = mapped_column(String(64), default="NONE", nullable=False, index=True)
+    trajectory_data: Mapped[dict] = mapped_column(JSON_TYPE, default=dict, nullable=False)
+    metrics: Mapped[dict] = mapped_column(JSON_TYPE, default=dict, nullable=False)
+    embedding: Mapped[list | None] = mapped_column(VECTOR_TYPE, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    def __repr__(self) -> str:  # pragma: no cover
+        return f"<ChatTrajectory session={self.session_id} category={self.failure_category}>"
+
+
+class FailureCluster(Base):
+    """Agrupa falhas semelhantes detectadas por agrupamento semântico (clustering)."""
+
+    __tablename__ = "failure_cluster"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    failure_category: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    description: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    occurrence_count: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    centroid_embedding: Mapped[list | None] = mapped_column(VECTOR_TYPE, nullable=True)
+    sample_trajectory_ids: Mapped[list] = mapped_column(JSON_TYPE, default=list, nullable=False)
+    status: Mapped[str] = mapped_column(String(32), default="active", nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+    def __repr__(self) -> str:  # pragma: no cover
+        return f"<FailureCluster name={self.name!r} count={self.occurrence_count}>"
+
+
+class CorrectionProposal(Base):
+    """Proposta de correção gerada pela IA/ML para mitigar falhas mapeadas na IDE."""
+
+    __tablename__ = "correction_proposal"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    cluster_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("failure_cluster.id", ondelete="SET NULL"), nullable=True
+    )
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    proposal_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    target_file: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    diff_content: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    explanation: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    confidence_score: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    status: Mapped[str] = mapped_column(String(32), default="pending", nullable=False, index=True)
+    applied_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+    def __repr__(self) -> str:  # pragma: no cover
+        return f"<CorrectionProposal title={self.title!r} type={self.proposal_type} status={self.status}>"
+

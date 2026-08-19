@@ -19,6 +19,7 @@ from typing import Any
 
 from sicoobito.agent.tools.base import RiskClass, ToolContext, ToolResult, tool
 from sicoobito.browser.client import BrowserError, BrowserUnavailableError
+from sicoobito.security.url_safety import is_agent_local_test_target
 
 _ACTIONS = {"navigate", "click", "type", "screenshot", "content"}
 
@@ -106,14 +107,15 @@ async def browser_action(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
 
         parsed = urlparse(url_raw)
         hostname = (parsed.hostname or "").lower()
-        if (
-            hostname not in {"localhost", "127.0.0.1", "0.0.0.0", "web", "api"}
-            and not hostname.startswith("sicoobito-")
-        ):
+        if not is_agent_local_test_target(hostname):
+            # `ok=False` (não `ok=True`) de propósito: isto conta como falha
+            # de tool-call para o guard de repetição em `agent/graph.py` — um
+            # modelo insistindo em URLs externas idênticas para de tentar
+            # depois de 3 vezes, em vez de escapar do guard silenciosamente.
             return ToolResult(
-                ok=True,
+                ok=False,
                 content=(
-                    "AVISO DE AMBIENTE: O navegador do SicoobitoCode é isolado da rede pública e "
+                    "ERRO: AVISO DE AMBIENTE: O navegador do SicoobitoCode é isolado da rede pública e "
                     "é destinado EXCLUSIVAMENTE para testar e inspecionar a aplicação web local "
                     "no sandbox (ex.: http://localhost:5000).\n"
                     f"Ele não navega em sites externos da internet como '{hostname}'.\n"
@@ -138,6 +140,11 @@ async def browser_action(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
                 "y": args.get("y"),
                 "text": args.get("text"),
                 "engine": engine,
+                # `capture_screenshot` fica de fora de propósito: o default
+                # `False` do serviço (`ActionRequest`) já é o que o agente
+                # quer — navegações em sequência (click/type/content) não
+                # precisam de imagem a cada passo; quando quiser ver a tela,
+                # o modelo chama a ação `screenshot` explicitamente.
             }
         )
     except BrowserUnavailableError as exc:

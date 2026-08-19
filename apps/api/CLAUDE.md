@@ -52,6 +52,7 @@ API sem escrever `curl` — abra a pasta como coleção, selecione o ambiente `l
 | `evals/` | Harness de hit@k/MRR contra os buscadores reais — `uv run sicoobito-eval-rag` |
 | `db/` | `session.py` (engine/session_scope), `models.py`, migrações Alembic em `alembic/versions/` |
 | `sandbox/` | `container.py` (Docker local) / `executor.py` (cliente do serviço isolado, ver ADR 0002) |
+| `analytics/` | Subsistema de ML & Auto-Diagnóstico — clusterização K-Means/DBScan de trajetórias de falhas, gerador de correções e propostas de diffs |
 | `api/routes/` | Uma rota por domínio, sempre `dependencies=[AuthDep]`, sempre registrada em `api/routes/__init__.py` + `main.py::create_app` |
 
 ## Uso Obrigatório do Conhecimento por Agentes de IA

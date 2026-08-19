@@ -24,7 +24,7 @@ log = get_logger(__name__)
 _READ_ACTIONS = {"list", "search", "recommend"}
 
 
-def _extensions_risk(args: dict[str, Any]) -> RiskClass:
+def _extensions_risk(args: dict[str, Any], _context: ToolContext | None = None) -> RiskClass:
     action = (args.get("action") or "list").strip().lower()
     return RiskClass.READ if action in _READ_ACTIONS else RiskClass.WRITE
 

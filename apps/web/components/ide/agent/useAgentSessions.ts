@@ -2,7 +2,6 @@
 
 import { useCallback, useMemo, useReducer, useRef } from "react";
 import { post } from "@/lib/client";
-import type { Mode } from "./modes";
 import { AgentSessionRuntime, type NotifyKind } from "./sessionRuntime";
 import type { Session, SessionStatus, SessionSummary } from "./sessionTypes";
 
@@ -53,7 +52,7 @@ export function useAgentSessions({
   const startSession = useCallback(
     (
       task: string,
-      mode: Mode,
+      mode: string,
       profile?: string | null,
       focusFiles?: string[],
       focusFolder?: string | null,

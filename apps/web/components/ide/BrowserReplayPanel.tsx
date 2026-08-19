@@ -3,6 +3,7 @@
 import { useRef, useState } from "react";
 
 import type { NetworkLogEntry, ReplayDetail } from "@/lib/api/browser";
+import { PanelState } from "./PanelState";
 
 interface BrowserReplayPanelProps {
   loading: boolean;
@@ -21,24 +22,18 @@ export function BrowserReplayPanel({ loading, error, data }: BrowserReplayPanelP
   const [selectedIdx, setSelectedIdx] = useState<number | null>(null);
 
   if (loading) {
-    return (
-      <p className="text-xs text-muted" style={{ padding: 12 }}>
-        Carregando replay...
-      </p>
-    );
+    return <PanelState kind="loading" message="Carregando replay..." />;
   }
   if (error) {
-    return (
-      <p className="text-xs text-muted" style={{ padding: 12 }}>
-        {error}
-      </p>
-    );
+    return <PanelState kind="error" message={error} />;
   }
   if (!data) {
     return (
-      <p className="text-xs text-muted" style={{ padding: 12 }}>
-        Nenhum replay disponível ainda — feche a sessão ("Reiniciar") para gerar vídeo + trace.
-      </p>
+      <PanelState
+        kind="empty"
+        icon="🎬"
+        message='Nenhum replay disponível ainda — feche a sessão ("Reiniciar") para gerar vídeo + trace.'
+      />
     );
   }
 

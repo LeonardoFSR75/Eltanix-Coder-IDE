@@ -4,7 +4,7 @@ IDE agêntica local-first: FastAPI (`apps/api`) + Next.js (`apps/web`) + Svelte 
 Redis, MinIO, tudo via Docker Compose. Ver [README.md](README.md) para a visão de produto
 e como subir a stack — este arquivo é sobre como trabalhar no código.
 
-Guias específicos: [apps/api/CLAUDE.md](apps/api/CLAUDE.md), [apps/web/CLAUDE.md](apps/web/CLAUDE.md), [apps/desktop/CLAUDE.md](apps/desktop/CLAUDE.md).
+Guias específicos: [apps/api/CLAUDE.md](apps/api/CLAUDE.md), [apps/web/CLAUDE.md](apps/web/CLAUDE.md), [apps/desktop/CLAUDE.md](apps/desktop/CLAUDE.md), [`docs/ide_capabilities.md`](docs/ide_capabilities.md).
 
 ---
 

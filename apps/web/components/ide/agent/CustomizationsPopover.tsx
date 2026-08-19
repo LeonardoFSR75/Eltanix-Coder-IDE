@@ -25,14 +25,33 @@ import {
   type ApprovalPolicy,
   type ApprovalRule,
 } from "@/lib/api/approvalPolicy";
+import {
+  getContextRules,
+  newContextRule,
+  updateContextRules,
+  type ContextRule,
+  type ContextRulesConfig,
+} from "@/lib/api/contextRules";
 import { loadHookPrefs, saveHookPrefs, type HookPrefs } from "@/lib/hook-prefs";
-import { MODE_HINT, MODES, type Mode } from "./modes";
+import {
+  createCustomMode,
+  deleteCustomMode,
+  listCustomModes,
+  newCustomMode,
+  updateCustomMode,
+  type CustomMode,
+  type CustomModeInput,
+} from "@/lib/api/customModes";
+import { ConfirmDialog } from "@/components/ide/Overlays";
+import { MODE_HINT, MODES } from "./modes";
 
 type CategoriaId =
   | "overview"
   | "agents"
   | "skills"
   | "instructions"
+  | "context_rules"
+  | "custom_modes"
   | "approval"
   | "hooks"
   | "mcp"
@@ -41,8 +60,10 @@ type CategoriaId =
 const CATEGORIAS: { id: CategoriaId; label: string; enabled: boolean }[] = [
   { id: "overview", label: "Visão geral", enabled: true },
   { id: "agents", label: "Agentes", enabled: true },
+  { id: "custom_modes", label: "Meus modos", enabled: true },
   { id: "skills", label: "Habilidades", enabled: true },
   { id: "instructions", label: "Instruções", enabled: true },
+  { id: "context_rules", label: "Regras de contexto", enabled: true },
   { id: "approval", label: "Auto-aprovação", enabled: true },
   { id: "hooks", label: "Hooks", enabled: true },
   { id: "mcp", label: "Servidores MCP", enabled: true },
@@ -60,8 +81,8 @@ export function CustomizationsPopover({
 }: {
   anchorRef: React.RefObject<HTMLButtonElement | null>;
   onClose: () => void;
-  mode: Mode;
-  setMode: (mode: Mode) => void;
+  mode: string;
+  setMode: (mode: string) => void;
   project: string | null;
 }) {
   const popoverRef = useRef<HTMLDivElement>(null);
@@ -83,6 +104,18 @@ export function CustomizationsPopover({
   const [approvalErro, setApprovalErro] = useState<string | null>(null);
   const [approvalMsg, setApprovalMsg] = useState<string | null>(null);
   const [savingApproval, setSavingApproval] = useState(false);
+  const [contextRules, setContextRules] = useState<ContextRulesConfig | null>(null);
+  const [contextRulesLoadedFor, setContextRulesLoadedFor] = useState<string | null>(null);
+  const [contextRulesErro, setContextRulesErro] = useState<string | null>(null);
+  const [contextRulesMsg, setContextRulesMsg] = useState<string | null>(null);
+  const [savingContextRules, setSavingContextRules] = useState(false);
+  const [customModes, setCustomModes] = useState<CustomMode[] | null>(null);
+  const [customModesErro, setCustomModesErro] = useState<string | null>(null);
+  const [modoForm, setModoForm] = useState<CustomModeInput | null>(null);
+  const [editingModoId, setEditingModoId] = useState<string | null>(null);
+  const [savingModo, setSavingModo] = useState(false);
+  const [modoErro, setModoErro] = useState<string | null>(null);
+  const [modoToDelete, setModoToDelete] = useState<CustomMode | null>(null);
   const [hookPrefs, setHookPrefs] = useState<HookPrefs>(() => loadHookPrefs());
 
   const handleToggleHookPref = (key: keyof HookPrefs) => {
@@ -117,11 +150,96 @@ export function CustomizationsPopover({
   }, [anchorRef, onClose]);
 
   useEffect(() => {
-    if (categoria !== "tools" || tools !== null) return;
+    // A aba "Meus modos" também precisa da lista de ferramentas (checklist de
+    // `allowed_tools`) — mesmo carregamento preguiçoso da aba "Ferramentas".
+    if ((categoria !== "tools" && categoria !== "custom_modes") || tools !== null) return;
     listAgentTools()
       .then((t) => setTools(t))
       .catch((err) => setToolsErro(err instanceof Error ? err.message : String(err)));
   }, [categoria, tools]);
+
+  useEffect(() => {
+    if (categoria !== "custom_modes" || customModes !== null) return;
+    listCustomModes()
+      .then((m) => setCustomModes(m))
+      .catch((err) => setCustomModesErro(err instanceof Error ? err.message : String(err)));
+  }, [categoria, customModes]);
+
+  const handleStartCreateModo = () => {
+    setModoForm(newCustomMode());
+    setEditingModoId(null);
+    setModoErro(null);
+  };
+
+  const handleStartEditModo = (m: CustomMode) => {
+    setModoForm({
+      name: m.name,
+      icon: m.icon,
+      description: m.description,
+      allowed_tools: m.allowed_tools,
+      prompt_block: m.prompt_block,
+    });
+    setEditingModoId(m.id);
+    setModoErro(null);
+  };
+
+  const handleCancelModoForm = () => {
+    setModoForm(null);
+    setEditingModoId(null);
+    setModoErro(null);
+  };
+
+  const handleToggleModoTool = (nome: string) => {
+    setModoForm((prev) => {
+      if (!prev) return prev;
+      const has = prev.allowed_tools.includes(nome);
+      return {
+        ...prev,
+        allowed_tools: has
+          ? prev.allowed_tools.filter((t) => t !== nome)
+          : [...prev.allowed_tools, nome],
+      };
+    });
+  };
+
+  const handleSaveModo = async () => {
+    if (!modoForm || !modoForm.name.trim()) return;
+    setSavingModo(true);
+    setModoErro(null);
+    try {
+      const payload = { ...modoForm, name: modoForm.name.trim() };
+      const salvo = editingModoId
+        ? await updateCustomMode(editingModoId, payload)
+        : await createCustomMode(payload);
+      setCustomModes((prev) => {
+        const lista = prev ?? [];
+        return editingModoId
+          ? lista.map((m) => (m.id === salvo.id ? salvo : m))
+          : [...lista, salvo];
+      });
+      setModoForm(null);
+      setEditingModoId(null);
+    } catch (err) {
+      setModoErro(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSavingModo(false);
+    }
+  };
+
+  const handleDeleteModo = async (m: CustomMode) => {
+    setSavingModo(true);
+    setModoErro(null);
+    try {
+      await deleteCustomMode(m.id);
+      setCustomModes((prev) => (prev ?? []).filter((x) => x.id !== m.id));
+      if (mode === m.id) setMode("agent");
+    } catch (err) {
+      setModoErro(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSavingModo(false);
+      setModoToDelete(null);
+    }
+  };
 
   useEffect(() => {
     if (categoria !== "skills" || skills !== null) return;
@@ -197,6 +315,57 @@ export function CustomizationsPopover({
     } finally {
       setSavingApproval(false);
     }
+  };
+
+  useEffect(() => {
+    if (categoria !== "context_rules" || !project || contextRulesLoadedFor === project) return;
+    getContextRules(project)
+      .then((c) => {
+        setContextRules(c);
+        setContextRulesLoadedFor(project);
+      })
+      .catch((err) => setContextRulesErro(err instanceof Error ? err.message : String(err)));
+  }, [categoria, project, contextRulesLoadedFor]);
+
+  const handleSaveContextRules = async () => {
+    if (!project || !contextRules) return;
+    setSavingContextRules(true);
+    setContextRulesErro(null);
+    setContextRulesMsg(null);
+    try {
+      // Regra com glob vazio (linha em branco enquanto o usuário digita) não
+      // vai para o arquivo — só filtrada no momento de salvar, mesmo padrão
+      // já usado pelos prefixos de comando na aba Auto-aprovação.
+      const regrasSaneadas = contextRules.rules
+        .map((r) => ({ glob: r.glob.trim(), instructions: r.instructions.trim() }))
+        .filter((r) => r.glob && r.instructions);
+      const salvo = await updateContextRules(project, regrasSaneadas);
+      setContextRules(salvo);
+      setContextRulesMsg("Salvo — vale a partir da próxima sessão do agente.");
+    } catch (err) {
+      setContextRulesErro(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSavingContextRules(false);
+    }
+  };
+
+  const handleAddContextRule = (rule: ContextRule) => {
+    setContextRules((prev) => (prev ? { ...prev, rules: [...prev.rules, rule] } : prev));
+    setContextRulesMsg(null);
+  };
+
+  const handleRemoveContextRule = (index: number) => {
+    setContextRules((prev) =>
+      prev ? { ...prev, rules: prev.rules.filter((_, i) => i !== index) } : prev,
+    );
+    setContextRulesMsg(null);
+  };
+
+  const handleUpdateContextRule = (index: number, rule: ContextRule) => {
+    setContextRules((prev) =>
+      prev ? { ...prev, rules: prev.rules.map((r, i) => (i === index ? rule : r)) } : prev,
+    );
+    setContextRulesMsg(null);
   };
 
   const handleAddRule = (rule: ApprovalRule) => {
@@ -369,6 +538,255 @@ export function CustomizationsPopover({
                   </>
                 )}
               </>
+            )}
+          </div>
+        )}
+
+        {categoria === "context_rules" && (
+          <div className="customizations-list">
+            {!project && (
+              <div className="tree-hint">Selecione um projeto para configurar regras de contexto.</div>
+            )}
+            {project && (
+              <>
+                <p className="customizations-item-desc" style={{ marginBottom: 8 }}>
+                  Instruções extras injetadas no agente só quando o arquivo/pasta em foco da
+                  sessão bate no glob (estilo <code>.cursor/rules</code>). Avaliado uma vez no
+                  início da sessão. Guardado em <code>.sicoobito/context_rules.yaml</code>.
+                </p>
+                {contextRulesErro && <div className="panel-error">{contextRulesErro}</div>}
+                {contextRulesMsg && (
+                  <div className="tree-hint ok-hint" style={{ color: "var(--accent-emerald)" }}>
+                    {contextRulesMsg}
+                  </div>
+                )}
+                {contextRulesLoadedFor !== project && !contextRulesErro && (
+                  <div className="tree-hint">carregando…</div>
+                )}
+                {contextRulesLoadedFor === project && contextRules && (
+                  <>
+                    {contextRules.rules.length === 0 && (
+                      <div className="tree-hint">
+                        Nenhuma regra ainda — nenhuma instrução condicional é injetada.
+                      </div>
+                    )}
+
+                    {contextRules.rules.map((rule, i) => (
+                      <div key={i} className="customizations-item">
+                        <div className="customizations-item-title">
+                          Regra de contexto
+                          <button
+                            type="button"
+                            className="theme-btn"
+                            style={{ marginLeft: "auto", padding: "1px 8px", fontSize: "11px" }}
+                            onClick={() => handleRemoveContextRule(i)}
+                          >
+                            ✕ remover
+                          </button>
+                        </div>
+                        <input
+                          className="studio-input"
+                          style={{ width: "100%", marginTop: 4 }}
+                          placeholder="glob, ex: apps/api/**/*.py"
+                          value={rule.glob}
+                          onChange={(e) =>
+                            handleUpdateContextRule(i, { ...rule, glob: e.target.value })
+                          }
+                        />
+                        <textarea
+                          className="studio-input"
+                          style={{
+                            width: "100%",
+                            minHeight: 60,
+                            fontFamily: "var(--font-mono)",
+                            fontSize: 11.5,
+                            resize: "vertical",
+                            marginTop: 4,
+                          }}
+                          placeholder="instruções aplicadas quando o foco bater neste glob"
+                          value={rule.instructions}
+                          onChange={(e) =>
+                            handleUpdateContextRule(i, { ...rule, instructions: e.target.value })
+                          }
+                        />
+                      </div>
+                    ))}
+
+                    <button
+                      type="button"
+                      className="theme-btn"
+                      style={{ marginTop: 8 }}
+                      onClick={() => handleAddContextRule(newContextRule())}
+                    >
+                      + regra de contexto
+                    </button>
+
+                    <button
+                      type="button"
+                      className="theme-btn"
+                      style={{ marginTop: 8, marginLeft: 8 }}
+                      disabled={savingContextRules}
+                      onClick={() => void handleSaveContextRules()}
+                    >
+                      {savingContextRules ? "salvando…" : "💾 Salvar regras"}
+                    </button>
+                  </>
+                )}
+              </>
+            )}
+          </div>
+        )}
+
+        {categoria === "custom_modes" && (
+          <div className="customizations-list">
+            <p className="customizations-item-desc" style={{ marginBottom: 8 }}>
+              Modos próprios: nome, ícone, ferramentas permitidas e um bloco de prompt fixo.
+              Selecionar um modo customizado troca <code>mode</code> para o id dele — funciona
+              igual a escolher Agent/Ask/Plan.
+            </p>
+            {customModesErro && <div className="panel-error">{customModesErro}</div>}
+            {modoErro && <div className="panel-error">{modoErro}</div>}
+            {!customModes && !customModesErro && <div className="tree-hint">carregando…</div>}
+            {customModes && customModes.length === 0 && !modoForm && (
+              <div className="tree-hint">Nenhum modo customizado ainda.</div>
+            )}
+
+            {(customModes ?? []).map((m) => (
+              <div
+                key={m.id}
+                className={`customizations-item${m.id === mode ? " active" : ""}`}
+              >
+                <div className="customizations-item-title">
+                  <button
+                    type="button"
+                    className="customizations-item-button"
+                    style={{ all: "unset", cursor: "pointer", flex: 1 }}
+                    onClick={() => {
+                      setMode(m.id);
+                      onClose();
+                    }}
+                  >
+                    {m.icon} {m.name}
+                    {m.id === mode && <span className="pill ok">atual</span>}
+                  </button>
+                  <button
+                    type="button"
+                    className="theme-btn"
+                    style={{ padding: "1px 8px", fontSize: "11px" }}
+                    onClick={() => handleStartEditModo(m)}
+                  >
+                    editar
+                  </button>
+                  <button
+                    type="button"
+                    className="theme-btn"
+                    style={{ padding: "1px 8px", fontSize: "11px", marginLeft: 4 }}
+                    onClick={() => setModoToDelete(m)}
+                  >
+                    remover
+                  </button>
+                </div>
+                <div className="customizations-item-desc">
+                  {m.description || `${m.allowed_tools.length} ferramenta(s) permitida(s)`}
+                </div>
+              </div>
+            ))}
+
+            {!modoForm && (
+              <button type="button" className="theme-btn" style={{ marginTop: 8 }} onClick={handleStartCreateModo}>
+                + criar modo
+              </button>
+            )}
+
+            {modoForm && (
+              <div className="customizations-item" style={{ marginTop: 8 }}>
+                <div className="customizations-item-title">
+                  {editingModoId ? "Editar modo" : "Novo modo"}
+                </div>
+                <input
+                  className="studio-input"
+                  style={{ width: "100%", marginTop: 4 }}
+                  placeholder="nome do modo"
+                  value={modoForm.name}
+                  onChange={(e) => setModoForm({ ...modoForm, name: e.target.value })}
+                />
+                <input
+                  className="studio-input"
+                  style={{ width: "100%", marginTop: 4 }}
+                  placeholder="ícone (emoji)"
+                  value={modoForm.icon}
+                  onChange={(e) => setModoForm({ ...modoForm, icon: e.target.value })}
+                />
+                <input
+                  className="studio-input"
+                  style={{ width: "100%", marginTop: 4 }}
+                  placeholder="descrição curta"
+                  value={modoForm.description}
+                  onChange={(e) => setModoForm({ ...modoForm, description: e.target.value })}
+                />
+                <textarea
+                  className="studio-input"
+                  style={{
+                    width: "100%",
+                    minHeight: 80,
+                    fontFamily: "var(--font-mono)",
+                    fontSize: 11.5,
+                    resize: "vertical",
+                    marginTop: 4,
+                  }}
+                  placeholder="bloco de prompt sempre injetado quando este modo estiver ativo"
+                  value={modoForm.prompt_block}
+                  onChange={(e) => setModoForm({ ...modoForm, prompt_block: e.target.value })}
+                />
+
+                <div className="customizations-item-desc" style={{ marginTop: 8, marginBottom: 4 }}>
+                  Ferramentas permitidas
+                </div>
+                {toolsErro && <div className="panel-error">{toolsErro}</div>}
+                {!tools && !toolsErro && <div className="tree-hint">carregando ferramentas…</div>}
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                  {(tools ?? []).map((t) => (
+                    <label
+                      key={t.name}
+                      style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11.5 }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={modoForm.allowed_tools.includes(t.name)}
+                        onChange={() => handleToggleModoTool(t.name)}
+                      />
+                      {t.name}
+                    </label>
+                  ))}
+                </div>
+
+                <button
+                  type="button"
+                  className="theme-btn"
+                  style={{ marginTop: 8 }}
+                  disabled={savingModo || !modoForm.name.trim()}
+                  onClick={() => void handleSaveModo()}
+                >
+                  {savingModo ? "salvando…" : "💾 Salvar modo"}
+                </button>
+                <button
+                  type="button"
+                  className="theme-btn"
+                  style={{ marginTop: 8, marginLeft: 8 }}
+                  onClick={handleCancelModoForm}
+                >
+                  cancelar
+                </button>
+              </div>
+            )}
+
+            {modoToDelete && (
+              <ConfirmDialog
+                danger
+                message={`Remover o modo customizado '${modoToDelete.name}'?`}
+                onConfirm={() => void handleDeleteModo(modoToDelete)}
+                onClose={() => setModoToDelete(null)}
+              />
             )}
           </div>
         )}

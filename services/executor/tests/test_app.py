@@ -10,6 +10,7 @@ dessas env vars recarrega o módulo via `importlib.reload` (helper
 
 from __future__ import annotations
 
+import asyncio
 import importlib
 import time
 from unittest.mock import MagicMock
@@ -321,3 +322,243 @@ def test_list_sandboxes_returns_expected_shape(monkeypatch):
     assert sandboxes[0]["session_id"] == "minha-sessao"
     assert sandboxes[0]["status"] == "running"
     assert sandboxes[0]["created"] == "2026-07-30T00:00:00Z"
+
+
+# --------------------------------------------------------------------------
+# get_sandbox_stats / cache do port-scan / get_server_logs
+# (item 10 do plano de robustez do navegador interno: chamadas docker-py
+# bloqueantes movidas para `asyncio.to_thread`, sem cobertura de teste antes)
+# --------------------------------------------------------------------------
+
+
+def _container_com_portas(portas: list[int]) -> MagicMock:
+    container = MagicMock(id="stats-container-id", status="running")
+    saida = "\n".join(str(p) for p in portas).encode("utf-8")
+    container.exec_run.return_value = MagicMock(exit_code=0, output=saida)
+    container.stats.return_value = {
+        "memory_stats": {"usage": 100 * 1024 * 1024, "limit": 2048 * 1024 * 1024},
+        "pids_stats": {"current": 3},
+    }
+    return container
+
+
+def test_get_sandbox_stats_returns_ports_and_metrics(monkeypatch):
+    app_module = _reload_app(monkeypatch)
+    mock_client = _with_mock_docker(app_module)
+    container = _container_com_portas([5000, 8000])
+    mock_client.containers.get.return_value = container
+    client = TestClient(app_module.app)
+
+    response = client.get("/sandboxes/minha-sessao/stats", headers=AUTH_HEADERS)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ports"] == [5000, 8000]
+    assert body["metrics"]["memory_mb"] == 100.0
+    assert body["metrics"]["pids_count"] == 3
+    container.exec_run.assert_called_once()
+
+
+def test_get_sandbox_stats_caches_port_scan_within_ttl(monkeypatch):
+    """Dois polls seguidos (StatusBar + EditorBrowserView pollam a mesma
+    sessão de forma independente hoje) não podem disparar dois `exec_run`
+    caros contra `/proc/net/tcp` — o segundo, dentro do TTL do cache,
+    reaproveita o resultado do primeiro."""
+    app_module = _reload_app(monkeypatch)
+    mock_client = _with_mock_docker(app_module)
+    container = _container_com_portas([5000])
+    mock_client.containers.get.return_value = container
+    client = TestClient(app_module.app)
+
+    client.get("/sandboxes/minha-sessao/stats", headers=AUTH_HEADERS)
+    client.get("/sandboxes/minha-sessao/stats", headers=AUTH_HEADERS)
+
+    assert container.exec_run.call_count == 1
+
+
+def test_get_sandbox_stats_rescans_ports_after_cache_ttl_expires(monkeypatch):
+    app_module = _reload_app(monkeypatch)
+    monkeypatch.setattr(app_module, "PORT_SCAN_CACHE_TTL_SECONDS", 0.0)
+    mock_client = _with_mock_docker(app_module)
+    container = _container_com_portas([5000])
+    mock_client.containers.get.return_value = container
+    client = TestClient(app_module.app)
+
+    client.get("/sandboxes/minha-sessao/stats", headers=AUTH_HEADERS)
+    client.get("/sandboxes/minha-sessao/stats", headers=AUTH_HEADERS)
+
+    assert container.exec_run.call_count == 2
+
+
+def test_get_sandbox_stats_returns_404_when_sandbox_does_not_exist(monkeypatch):
+    import docker.errors
+
+    app_module = _reload_app(monkeypatch)
+    mock_client = _with_mock_docker(app_module)
+    mock_client.containers.get.side_effect = docker.errors.NotFound("não existe")
+    client = TestClient(app_module.app)
+
+    response = client.get("/sandboxes/sessao-fantasma/stats", headers=AUTH_HEADERS)
+
+    assert response.status_code == 404
+
+
+def test_get_server_logs_returns_decoded_tail(monkeypatch):
+    app_module = _reload_app(monkeypatch)
+    mock_client = _with_mock_docker(app_module)
+    container = MagicMock(id="logs-container-id")
+    container.exec_run.return_value = MagicMock(exit_code=0, output=b"linha 1\nlinha 2\n")
+    mock_client.containers.get.return_value = container
+    client = TestClient(app_module.app)
+
+    response = client.get("/sandboxes/minha-sessao/logs/server", headers=AUTH_HEADERS)
+
+    assert response.status_code == 200
+    assert response.json()["logs"] == "linha 1\nlinha 2\n"
+
+
+def test_destroy_sandbox_clears_port_scan_cache(monkeypatch):
+    """Sem isto, um novo container recriado para a mesma sessão poderia
+    herdar por engano portas escaneadas do container anterior (destruído)
+    até o TTL do cache expirar sozinho."""
+    app_module = _reload_app(monkeypatch)
+    mock_client = _with_mock_docker(app_module)
+    app_module._port_scan_cache["minha-sessao"] = (time.time(), [1234])
+    mock_client.containers.get.return_value = MagicMock()
+    client = TestClient(app_module.app)
+
+    client.delete("/sandboxes/minha-sessao", headers=AUTH_HEADERS)
+
+    assert "minha-sessao" not in app_module._port_scan_cache
+
+
+# --------------------------------------------------------------------------
+# reap + tetos de tamanho dos caches (item 11 do plano de robustez do
+# navegador interno)
+# --------------------------------------------------------------------------
+
+
+def test_reap_removes_unrecognized_containers_and_clears_their_caches(monkeypatch):
+    """Uma sessão removida via `/sandboxes/reap` (a API não a reconhece mais)
+    passava batido por `_container_cache`/`_port_scan_cache` — a próxima
+    chamada de stats para essa sessão reaproveitaria um id de container que
+    não existe mais até o lookup por nome se autocorrigir."""
+    app_module = _reload_app(monkeypatch)
+    mock_client = _with_mock_docker(app_module)
+    orfao = MagicMock(labels={app_module.LABEL: "sessao-orfa"})
+    mantida = MagicMock(labels={app_module.LABEL: "sessao-mantida"})
+    mock_client.containers.list.return_value = [orfao, mantida]
+    app_module._container_cache["sessao-orfa"] = "id-orfao"
+    app_module._container_cache["sessao-mantida"] = "id-mantido"
+    app_module._port_scan_cache["sessao-orfa"] = (time.time(), [1234])
+    client = TestClient(app_module.app)
+
+    # `keep` chega como corpo JSON de lista pura (ver
+    # `apps/api/src/sicoobito/sandbox/executor.py::reap_orphans`,
+    # `json=list(self._sandboxes)`), não como query param.
+    response = client.post(
+        "/sandboxes/reap", headers=AUTH_HEADERS, json=["sessao-mantida"]
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"removed": 1}
+    orfao.remove.assert_called_once_with(force=True)
+    mantida.remove.assert_not_called()
+    assert "sessao-orfa" not in app_module._container_cache
+    assert "sessao-orfa" not in app_module._port_scan_cache
+    assert app_module._container_cache["sessao-mantida"] == "id-mantido"
+
+
+def test_cache_container_id_evicts_oldest_entry_past_the_cap(monkeypatch):
+    app_module = _reload_app(monkeypatch)
+    monkeypatch.setattr(app_module, "_MAX_CACHED_CONTAINERS", 2)
+
+    app_module._cache_container_id("s1", "id-1")
+    app_module._cache_container_id("s2", "id-2")
+    app_module._cache_container_id("s3", "id-3")
+
+    assert len(app_module._container_cache) == 2
+    assert "s1" not in app_module._container_cache
+    assert app_module._container_cache["s3"] == "id-3"
+
+
+# --------------------------------------------------------------------------
+# item 20: handlers do item 10 não bloqueiam o event loop
+# --------------------------------------------------------------------------
+
+
+def test_get_sandbox_stats_does_not_block_the_event_loop(monkeypatch):
+    """Prova positiva de concorrência (não só timeout-cutting, que já é
+    coberto por `test_exec_command_times_out_without_hanging_the_test`
+    acima): enquanto `get_sandbox_stats` está presa dentro do
+    `asyncio.to_thread` esperando um `container.stats()` lento, uma
+    corrotina concorrente no MESMO event loop precisa continuar avançando
+    livremente. Antes do item 10 (chamada docker-py síncrona direto dentro
+    de `async def`), essa sonda ficaria inteiramente presa atrás da chamada
+    lenta — o teste falharia por `progresso` nunca chegar a 5.
+    """
+    app_module = _reload_app(monkeypatch)
+    mock_client = _with_mock_docker(app_module)
+    container = _container_com_portas([5000])
+
+    def _stats_lenta(*args, **kwargs):
+        time.sleep(0.5)
+        return {
+            "memory_stats": {"usage": 100 * 1024 * 1024, "limit": 2048 * 1024 * 1024},
+            "pids_stats": {"current": 3},
+        }
+
+    container.stats.side_effect = _stats_lenta
+    mock_client.containers.get.return_value = container
+
+    async def cenario():
+        progresso: list[int] = []
+
+        async def sonda_concorrente():
+            for i in range(10):
+                await asyncio.sleep(0.05)
+                progresso.append(i)
+
+        resultado, _ = await asyncio.gather(
+            app_module.get_sandbox_stats("minha-sessao"), sonda_concorrente()
+        )
+        return resultado, progresso
+
+    resultado, progresso = asyncio.run(cenario())
+
+    assert resultado["metrics"]["memory_mb"] == 100.0
+    # As 10 iterações da sonda (0.5s no total) precisam ter progredido
+    # inteiras enquanto os 0.5s de `container.stats()` corriam em paralelo
+    # numa thread separada — não em série, presas atrás dela.
+    assert progresso == list(range(10))
+
+
+def test_get_server_logs_does_not_block_the_event_loop(monkeypatch):
+    app_module = _reload_app(monkeypatch)
+    mock_client = _with_mock_docker(app_module)
+    container = MagicMock(id="logs-lento")
+
+    def _exec_run_lento(*args, **kwargs):
+        time.sleep(0.5)
+        return MagicMock(exit_code=0, output=b"linha 1\n")
+
+    container.exec_run.side_effect = _exec_run_lento
+    mock_client.containers.get.return_value = container
+
+    async def cenario():
+        progresso: list[int] = []
+
+        async def sonda_concorrente():
+            for i in range(10):
+                await asyncio.sleep(0.05)
+                progresso.append(i)
+
+        resultado, _ = await asyncio.gather(
+            app_module.get_server_logs("minha-sessao"), sonda_concorrente()
+        )
+        return resultado, progresso
+
+    resultado, progresso = asyncio.run(cenario())
+
+    assert resultado["logs"] == "linha 1\n"
+    assert progresso == list(range(10))

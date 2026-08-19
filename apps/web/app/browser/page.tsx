@@ -9,7 +9,7 @@ export default function StandaloneBrowserPage() {
   return (
     <div className="browser-page-layout" style={{ height: "calc(100vh - 56px)", display: "flex", flexDirection: "column" }}>
       <EditorBrowserView
-        initialUrl="http://localhost:3000"
+        initialUrl="http://localhost:5400"
         sessionId={currentProject ? `browser-${currentProject}` : "browser-global"}
         isStandalone={true}
       />

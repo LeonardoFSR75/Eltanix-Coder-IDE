@@ -12,7 +12,7 @@
  */
 
 import { get, post, streamEvents } from "@/lib/client";
-import type { Mode } from "./modes";
+import { rewindSession } from "@/lib/api/agent";
 import type { ActivityEvent, LogLine, PendingAction, RuntimeStatus, Session, TodoItem } from "./sessionTypes";
 
 export type { ActivityEvent, LogLine, PendingAction, Session, TodoItem };
@@ -194,7 +194,16 @@ export class AgentSessionRuntime {
         });
         if (message.name === "browser_action" && message.ok !== false) {
           const data = (message.data ?? {}) as Record<string, unknown>;
-          const navUrl = typeof data.url === "string" ? data.url : "";
+          // Prefere a URL original pedida pelo agente quando o serviço de
+          // navegador substituiu por um hostname Docker-interno
+          // (`url_is_internal_fallback`) — nenhuma das duas, porém, é
+          // garantidamente alcançável por um iframe direto no navegador
+          // real (é tipicamente a porta de um sandbox nunca publicada no
+          // host), então o evento abaixo sempre abre em modo Agente.
+          const isFallback = data.url_is_internal_fallback === true;
+          const original = typeof data.original_url === "string" ? data.original_url : "";
+          const resolved = typeof data.url === "string" ? data.url : "";
+          const navUrl = (isFallback ? original : resolved) || resolved || original;
           if (navUrl && typeof window !== "undefined") {
             window.dispatchEvent(
               new CustomEvent("sicoobito:browser:open", {
@@ -202,6 +211,15 @@ export class AgentSessionRuntime {
               })
             );
           }
+        }
+        if (
+          (message.name === "manage_packages" || message.name === "manage_extensions") &&
+          message.ok !== false &&
+          typeof window !== "undefined"
+        ) {
+          const eventName =
+            message.name === "manage_packages" ? "sicoobito:packages:changed" : "sicoobito:extensions:changed";
+          window.dispatchEvent(new CustomEvent(eventName, { detail: { sessionId: this.session?.session_id } }));
         }
       }
       for (const path of (update.files_changed ?? []) as string[]) {
@@ -278,12 +296,50 @@ export class AgentSessionRuntime {
     this.abortController?.abort();
   }
 
+  /** Restaura a sessão para o fim de uma iteração anterior (Fase 8): trunca
+   * o histórico no backend e recarrega `log` a partir de `/messages` (a
+   * mesma fonte de `loadClosed`) para refletir o corte — sem isso o log em
+   * memória continuaria mostrando turnos que o backend já descartou. */
+  async rewind(iteration: number): Promise<void> {
+    if (!this.session || this.running || this.readOnly) return;
+    try {
+      const resultado = await rewindSession(this.session.session_id, iteration);
+      const data = await get<{
+        session_id: string;
+        branch: string;
+        messages: Array<Record<string, unknown>>;
+      }>(`/api/agent/sessions/${this.session.session_id}/messages`);
+
+      this.log = [];
+      for (const message of data.messages ?? []) {
+        this.log.push(...messageToLogLines(message));
+      }
+      this.pending = [];
+      this.todos = [];
+      this.currentActivity = null;
+      this.recentActivities = [];
+      this.finished = false;
+      this.errored = false;
+      this.lastUserText = null;
+
+      const arquivos = resultado.files_restored.length;
+      this.onNotify?.(
+        "done",
+        `Sessão restaurada para a iteração ${iteration}` +
+          (arquivos ? ` — ${arquivos} arquivo(s) revertido(s)` : ""),
+      );
+      this.onChange();
+    } catch (err) {
+      this.onNotify?.("error", err instanceof Error ? err.message : "falha ao restaurar sessão");
+    }
+  }
+
 
   /** Cria a sessão no backend e devolve o runtime já com `session` preenchido — sem esperar o turno terminar. */
   static async start(
     opts: RuntimeOptions,
     task: string,
-    mode: Mode,
+    mode: string,
     profile?: string | null,
     focusFiles?: string[],
     focusFolder?: string | null,

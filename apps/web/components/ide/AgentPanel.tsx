@@ -6,6 +6,8 @@ import { useIde } from "@/lib/ide-store";
 import { hasDedicatedCard, ToolCallCard } from "./agent/cards";
 import type { ActivityEvent, LogLine, PendingAction, Session } from "./agent/sessionTypes";
 import { UnifiedDiffPreview } from "./agent/UnifiedDiffPreview";
+import { type AgentCheckpoint, listCheckpoints } from "@/lib/api/agent";
+import { ConfirmDialog } from "@/components/ide/Overlays";
 import DOMPurify from "dompurify";
 
 interface AgentPanelProps {
@@ -17,6 +19,7 @@ interface AgentPanelProps {
   recentActivities?: ActivityEvent[];
   readOnly?: boolean;
   onDecide: (decisions: Record<string, boolean>) => void;
+  onRewind?: (iteration: number) => void;
   onPresetSelect?: (prompt: string) => void;
 }
 
@@ -330,6 +333,108 @@ function StartupGuardSummary({
   );
 }
 
+/** Lista de pontos de restauração da sessão (Fase 8 do upgrade do agente) —
+ * painel autocontido, à parte do fluxo turno a turno do `MessageStream`: um
+ * checkpoint é por chamada ao modelo (`iteration`), granularidade mais fina
+ * que "um por turno de conversa", então misturá-lo nas fronteiras de
+ * mensagem do log só confundiria. Busca a lista sob demanda (ao expandir),
+ * não a cada mudança de `log` — não é algo que muda turno a turno. */
+function CheckpointsPanel({
+  session,
+  running,
+  readOnly,
+  onRewind,
+}: {
+  session: Session | null;
+  running?: boolean;
+  readOnly?: boolean;
+  onRewind?: (iteration: number) => void;
+}) {
+  const [collapsed, setCollapsed] = useState(true);
+  const [checkpoints, setCheckpoints] = useState<AgentCheckpoint[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [confirmIteration, setConfirmIteration] = useState<number | null>(null);
+
+  useEffect(() => {
+    setCheckpoints([]);
+    setCollapsed(true);
+  }, [session?.session_id]);
+
+  const carregar = async () => {
+    if (!session) return;
+    setLoading(true);
+    try {
+      const pontos = await listCheckpoints(session.session_id);
+      setCheckpoints(pontos);
+    } catch {
+      setCheckpoints([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const toggle = () => {
+    const abrindo = collapsed;
+    setCollapsed((prev) => !prev);
+    if (abrindo) void carregar();
+  };
+
+  if (!session || !onRewind || readOnly) return null;
+
+  return (
+    <div className="agent-summary-strip">
+      <div className="agent-summary-header">
+        <span className="agent-section-label">Checkpoints</span>
+        <button
+          type="button"
+          className="agent-summary-toggle"
+          onClick={toggle}
+          aria-label={collapsed ? "Expandir checkpoints" : "Minimizar checkpoints"}
+          title={collapsed ? "Expandir checkpoints" : "Minimizar checkpoints"}
+        >
+          {collapsed ? "▸" : "▾"}
+        </button>
+      </div>
+
+      {!collapsed && (
+        <div className="agent-checkpoints-list">
+          {loading && <span className="agent-checkpoints-empty">carregando…</span>}
+          {!loading && checkpoints.length === 0 && (
+            <span className="agent-checkpoints-empty">nenhum checkpoint ainda</span>
+          )}
+          {!loading &&
+            checkpoints.map((cp) => (
+              <div key={cp.iteration} className="agent-checkpoint-row">
+                <span className="agent-checkpoint-iteration">#{cp.iteration}</span>
+                <span className="agent-checkpoint-summary" title={cp.summary}>
+                  {cp.summary || (cp.finished ? "(sem resposta de texto)" : "em andamento…")}
+                </span>
+                <button
+                  type="button"
+                  className="agent-checkpoint-restore"
+                  disabled={running}
+                  title="Restaurar a sessão e os arquivos para este ponto"
+                  onClick={() => setConfirmIteration(cp.iteration)}
+                >
+                  restaurar aqui
+                </button>
+              </div>
+            ))}
+        </div>
+      )}
+
+      {confirmIteration !== null && (
+        <ConfirmDialog
+          danger
+          message={`Restaurar a sessão para o checkpoint #${confirmIteration}? Turnos e escritas de arquivo posteriores serão desfeitos.`}
+          onConfirm={() => onRewind(confirmIteration)}
+          onClose={() => setConfirmIteration(null)}
+        />
+      )}
+    </div>
+  );
+}
+
 // Espelha a RiskClass do backend (agent/tools/base.py) — read/write/exec chega em
 // `PendingAction.risk` como string crua; mapeamos para as variantes já estilizadas
 // de `.tool-card-risk-badge` (ToolCardShell.tsx) em vez de duplicar a paleta aqui.
@@ -348,6 +453,58 @@ function reviewVerdictLabel(verdict: "approved" | "needs_revision" | "unavailabl
     case "unavailable":
       return "segunda opinião: indisponível";
   }
+}
+
+interface PlanReviewItem {
+  content?: string;
+  status?: string;
+}
+
+function planItemStatusIcon(status?: string): string {
+  switch (status) {
+    case "completed":
+      return "✓";
+    case "in_progress":
+      return "◐";
+    default:
+      return "○";
+  }
+}
+
+/** Corpo especial de `write_todos` no card de aprovação (Fase 3 — Modo
+ * Planejamento estilo Antigravity): em vez do resumo de uma linha genérico,
+ * mostra a lista completa de itens do plano com status, para o usuário
+ * revisar o plano proposto antes de liberar as ferramentas de escrita. */
+function PlanReviewBody({ action }: { action: PendingAction }) {
+  const itens = Array.isArray(action.arguments?.items)
+    ? (action.arguments.items as PlanReviewItem[])
+    : [];
+
+  return (
+    <div className="approval-plan-review">
+      <p className="approval-plan-review-title">📐 Revisar plano antes de executar</p>
+      <p className="approval-plan-review-hint">
+        Aprovar libera as ferramentas de criação/edição de arquivos para esta sessão.
+      </p>
+      {itens.length > 0 ? (
+        <ul className="approval-plan-items">
+          {itens.map((item, idx) => (
+            <li
+              key={`${idx}-${item.content ?? ""}`}
+              className={`approval-plan-item status-${item.status || "pending"}`}
+            >
+              <span className="approval-plan-item-status" aria-hidden="true">
+                {planItemStatusIcon(item.status)}
+              </span>
+              <span className="approval-plan-item-content">{item.content}</span>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="action-summary">{action.summary}</p>
+      )}
+    </div>
+  );
 }
 
 export function ApprovalCard({
@@ -399,7 +556,11 @@ export function ApprovalCard({
                     </span>
                   </div>
 
-                  <p className="action-summary">{action.summary}</p>
+                  {action.tool === "write_todos" ? (
+                    <PlanReviewBody action={action} />
+                  ) : (
+                    <p className="action-summary">{action.summary}</p>
+                  )}
 
                   {action.risk === "exec" && (
                     <p className="approval-sandbox-note">
@@ -623,6 +784,7 @@ export function AgentPanel({
   recentActivities,
   readOnly,
   onDecide,
+  onRewind,
   onPresetSelect,
 }: AgentPanelProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -692,6 +854,13 @@ export function AgentPanel({
             session={session}
             collapsed={guardCollapsed}
             onToggle={() => setGuardCollapsed((prev) => !prev)}
+          />
+
+          <CheckpointsPanel
+            session={session}
+            running={running}
+            readOnly={readOnly}
+            onRewind={onRewind}
           />
         </>
       )}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import {
   browserAction,
   buildBrowserStreamUrl,
@@ -11,20 +11,28 @@ import {
   type NetworkLogEntry,
   type ReplayDetail,
 } from "@/lib/api/browser";
-import { getSandboxServerLogs, getSandboxStats, type SandboxStats } from "@/lib/api/sandbox";
+import { getSandboxServerLogs } from "@/lib/api/sandbox";
 import { HttpError } from "@/lib/client";
 import { useIde } from "@/lib/ide-store";
+import { useSandboxStats } from "@/lib/use-sandbox-stats";
+import { useVisibilityGatedInterval } from "@/lib/use-visibility-gated-interval";
 
 import { BrowserReplayPanel } from "./BrowserReplayPanel";
+import { PanelState } from "./PanelState";
 
 export type ViewportMode = "responsive" | "desktop" | "laptop" | "tablet" | "mobile" | "mobile-max";
 export type RenderMode = "live" | "headless";
+export type BrowserEngine = "auto" | "lightpanda" | "chromium";
 
 interface BrowserTab {
   id: string;
   title: string;
   url: string;
   mode: RenderMode;
+  // Per aba, não global — item 12 do plano de robustez do navegador interno:
+  // antes era um único `useState` compartilhado por todas as abas, então
+  // trocar de aba "esquecia" o motor escolhido para a aba anterior.
+  engine: BrowserEngine;
   history: string[];
   historyIndex: number;
 }
@@ -33,6 +41,11 @@ interface EditorBrowserViewProps {
   initialUrl?: string;
   sessionId?: string;
   isStandalone?: boolean;
+  /** Força o modo inicial da primeira aba — usado quando quem abriu já sabe
+   * que a URL só é alcançável via o serviço de navegador (ex.: porta de um
+   * sandbox, resolvida por `sicoobito-<sessionId>:<porta>` dentro do
+   * `browser_net`), nunca por um iframe direto no navegador real. */
+  initialMode?: RenderMode;
 }
 
 const VIEWPORT_SIZES: Record<ViewportMode, { width: string; height?: string; label: string; icon: string }> = {
@@ -44,18 +57,141 @@ const VIEWPORT_SIZES: Record<ViewportMode, { width: string; height?: string; lab
   "mobile-max": { width: "390px", height: "844px", label: "Mobile Max (390x844)", icon: "📲" },
 };
 
+// Hostnames que só existem dentro da rede Docker do projeto (`browser_net`)
+// — nunca são alcançáveis pelo navegador REAL do usuário, que roda fora do
+// Docker. Checagem client-side best-effort: complementa (não substitui) o
+// sinal `url_is_internal_fallback` que o backend manda quando ELE faz essa
+// substituição por baixo dos panos (ver `services/browser/app.py::validate_url`
+// e o addendum do ADR 0007) — este regex cobre o caso de o usuário digitar
+// um desses hosts diretamente na barra de endereço do modo Live.
+const DOCKER_INTERNAL_HOSTNAME_RE =
+  /^(sicoobito-[\w-]+|web|api|executor|redis|minio|postgres|browser|ollama|mcp-scanner|host\.docker\.internal)$/i;
+
+function suspectedDockerInternalHostname(url: string): string | null {
+  try {
+    const hostname = new URL(url).hostname;
+    return DOCKER_INTERNAL_HOSTNAME_RE.test(hostname) ? hostname : null;
+  } catch {
+    return null;
+  }
+}
+
+// Schema real de portas publicadas no host — ver o cabeçalho de
+// `docker-compose.yml` (faixa 5400-5499). `:5406 browser` fica de fora de
+// propósito: aquela rede é `internal: true` e nunca publica porta no host
+// (ver `services/browser/app.py` e o addendum do ADR 0007) — um bookmark
+// pra lá reproduziria a classe de bug que este arquivo existe pra evitar.
+// Teto de tentativas de reconexão automática do streaming CDP antes de
+// desistir e pedir intervenção manual (item 13c do plano de robustez do
+// navegador interno) — sem teto, uma sessão de navegador morta de verdade
+// reconectaria para sempre, pedindo um ticket novo a cada tentativa.
+const MAX_STREAM_RECONNECT_ATTEMPTS = 5;
+
 const DEV_BOOKMARKS = [
-  { label: ":3000 Next.js", url: "http://localhost:3000" },
-  { label: ":5173 Vite", url: "http://localhost:5173" },
-  { label: ":8000 Swagger", url: "http://localhost:8000/docs" },
-  { label: ":5000 API", url: "http://localhost:5000" },
-  { label: ":8080 App", url: "http://localhost:8080" },
+  { label: ":5400 Web", url: "http://localhost:5400" },
+  { label: ":5401 API/Swagger", url: "http://localhost:5401/docs" },
+  { label: ":5408 MinIO Console", url: "http://localhost:5408" },
+  { label: ":5410 MCP Scanner", url: "http://localhost:5410" },
 ];
 
+// ── Estado consolidado do "resultado" da sessão de navegador ───────────────
+// Item 12 do plano de robustez do navegador interno: antes eram ~18 `useState`
+// independentes cobrindo URL/título/status/imagem/erros/logs/stats — e
+// `reiniciar()` resetava só uma parte deles manualmente, esquecendo
+// `durationMs`/`engineUsed`/`serverLogs`/`sandboxStats`/`currentUrl`/
+// `urlInput` (badges e endereço ficavam obsoletos depois de "Reiniciar", um
+// bug real). Um reducer único com uma action `reset` central torna essa
+// omissão estruturalmente impossível: resetar volta ao estado inicial
+// inteiro, não exige lembrar de zerar cada campo um por um. A action `patch`
+// (merge parcial, no espírito do `setState` de objeto) evita o boilerplate
+// de uma dúzia de `case` nomeados para cada transição — a maioria dos
+// call-sites só precisa atualizar 1-3 campos relacionados de uma vez.
+export interface BrowserResultState {
+  urlInput: string;
+  currentUrl: string | null;
+  title: string | null;
+  status: number | null;
+  durationMs: number | null;
+  engineUsed: string | null;
+  image: string | null;
+  content: string | null;
+  loading: boolean;
+  erro: string | null;
+  consoleErrors: string[];
+  pageErrors: string[];
+  /** URL original pedida pelo usuário quando o backend sinaliza
+   * `url_is_internal_fallback` — usada no link "abrir em nova janela" (que
+   * roda no navegador real, não dentro do serviço de navegador). */
+  originalUrl: string | null;
+  urlIsInternalFallback: boolean;
+  /** Aviso do modo Live: hostname Docker-interno detectado antes de navegar
+   * (heurística client-side) — bloqueia o `src` do iframe em vez de deixar
+   * a tela em branco silenciosa. */
+  internalHostnameWarning: string | null;
+  iframeLoadFailed: boolean;
+  serverLogs: string;
+  networkLog: NetworkLogEntry[];
+  /** `true` assim que o streaming CDP (canvas) desenhou seu primeiro frame de
+   * verdade — item 13 do plano de robustez do navegador interno. Enquanto
+   * falso, o último `image` (screenshot estático) continua visível por cima
+   * do canvas, fechando o "flash" de tela vazia entre iniciar o stream e o
+   * primeiro frame chegar. Não confundir com `image`: os frames do stream em
+   * si NUNCA passam por aqui — iriam a um re-render por frame (10-30fps),
+   * anulando a otimização de desenhar direto no canvas via ref. Só esta
+   * transição única (false → true) por sessão de stream passa pelo reducer. */
+  streamFrameReady: boolean;
+}
+
+export type BrowserResultAction =
+  | { type: "patch"; payload: Partial<BrowserResultState> }
+  | { type: "reset"; url: string };
+
+// Exportados só para o teste de regressão do item 12/19 (garantir que
+// `reset` de fato limpa todo campo, o bug que motivou este reducer existir)
+// — nenhum outro módulo fora deste arquivo e do teste deveria importá-los.
+export function initialResultState(url: string): BrowserResultState {
+  return {
+    urlInput: url,
+    currentUrl: url,
+    title: null,
+    status: null,
+    durationMs: null,
+    engineUsed: null,
+    image: null,
+    content: null,
+    loading: false,
+    erro: null,
+    consoleErrors: [],
+    pageErrors: [],
+    originalUrl: null,
+    urlIsInternalFallback: false,
+    internalHostnameWarning: null,
+    iframeLoadFailed: false,
+    serverLogs: "",
+    networkLog: [],
+    streamFrameReady: false,
+  };
+}
+
+export function resultReducer(
+  state: BrowserResultState,
+  action: BrowserResultAction,
+): BrowserResultState {
+  switch (action.type) {
+    case "patch":
+      return { ...state, ...action.payload };
+    case "reset":
+      return initialResultState(action.url);
+    default:
+      return state;
+  }
+}
+
 export function EditorBrowserView({
-  initialUrl = "http://localhost:3000",
+  initialUrl = "http://localhost:5400",
   sessionId: customSessionId,
   isStandalone = false,
+  initialMode = "live",
 }: EditorBrowserViewProps) {
   const { activeSessionId } = useIde();
   const rawSessionId = customSessionId || activeSessionId || "ide-main-browser";
@@ -67,7 +203,8 @@ export function EditorBrowserView({
       id: "tab-1",
       title: "Localhost",
       url: initialUrl,
-      mode: "live",
+      mode: initialMode,
+      engine: "auto",
       history: [initialUrl],
       historyIndex: 0,
     },
@@ -75,22 +212,57 @@ export function EditorBrowserView({
   const [activeTabId, setActiveTabId] = useState<string>("tab-1");
 
   const currentTab = tabs.find((t) => t.id === activeTabId) || tabs[0];
+  // Fonte única de verdade para modo/motor: os dois vivem só em `tabs`, por
+  // aba. Antes, `renderMode` era um `useState` próprio sincronizado só por
+  // um efeito (ao trocar de aba) + dois handlers manuais (ao trocar de
+  // modo) — uma segunda fonte de verdade a mais para divergir da real.
+  const renderMode = currentTab.mode;
+  const browserEngine = currentTab.engine;
 
-  const [urlInput, setUrlInput] = useState(currentTab.url);
-  const [currentUrl, setCurrentUrl] = useState<string | null>(currentTab.url);
-  const [title, setTitle] = useState<string | null>(currentTab.title);
-  const [renderMode, setRenderMode] = useState<RenderMode>(currentTab.mode);
+  const updateCurrentTab = useCallback(
+    (changes: Partial<Pick<BrowserTab, "mode" | "engine">>) => {
+      setTabs((prev) => prev.map((t) => (t.id === activeTabId ? { ...t, ...changes } : t)));
+    },
+    [activeTabId],
+  );
 
-  const [status, setStatus] = useState<number | null>(null);
-  const [durationMs, setDurationMs] = useState<number | null>(null);
-  const [browserEngine, setBrowserEngine] = useState<"auto" | "lightpanda" | "chromium">("auto");
-  const [engineUsed, setEngineUsed] = useState<string | null>(null);
-  const [image, setImage] = useState<string | null>(null);
-  const [content, setContent] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [erro, setErro] = useState<string | null>(null);
-  const [consoleErrors, setConsoleErrors] = useState<string[]>([]);
-  const [pageErrors, setPageErrors] = useState<string[]>([]);
+  const [result, dispatch] = useReducer(resultReducer, initialUrl, initialResultState);
+  // `status`/`durationMs` ficam guardados no reducer (a resposta de
+  // `navigate` já os traz) mas nenhuma parte do JSX os lê hoje — mesmo
+  // comportamento de antes da consolidação, não algo perdido nesta
+  // refatoração; por isso não entram na desestruturação abaixo.
+  const {
+    urlInput,
+    currentUrl,
+    title,
+    engineUsed,
+    image,
+    content,
+    loading,
+    erro,
+    consoleErrors,
+    pageErrors,
+    originalUrl,
+    urlIsInternalFallback,
+    internalHostnameWarning,
+    iframeLoadFailed,
+    serverLogs,
+    networkLog,
+    streamFrameReady,
+  } = result;
+
+  const patch = useCallback((payload: Partial<BrowserResultState>) => {
+    dispatch({ type: "patch", payload });
+  }, []);
+
+  // Poller "singleton" por sessão, compartilhado com `StatusBar` — ver
+  // `lib/use-sandbox-stats.ts` (item 14 do plano de robustez do navegador
+  // interno). Pausado em modo Live: o iframe faz bypass do backend, então os
+  // stats do sandbox ficam irrelevantes para o que está na tela.
+  const sandboxStats = useSandboxStats(sessionId || activeSessionId, {
+    enabled: renderMode !== "live",
+  });
+
   const [clickIndicator, setClickIndicator] = useState<{ x: number; y: number } | null>(null);
 
   // Responsividade & Fullscreen
@@ -102,13 +274,10 @@ export function EditorBrowserView({
   // DevTools & Drawer
   const [showDrawer, setShowDrawer] = useState(false);
   const [drawerTab, setDrawerTab] = useState<"inspector" | "logs" | "network" | "replay">("logs");
-  const [serverLogs, setServerLogs] = useState("");
-  const [networkLog, setNetworkLog] = useState<NetworkLogEntry[]>([]);
   const [replayData, setReplayData] = useState<ReplayDetail | null>(null);
   const [replayLoading, setReplayLoading] = useState(false);
   const [replayError, setReplayError] = useState<string | null>(null);
   const [replayRefreshKey, setReplayRefreshKey] = useState(0);
-  const [sandboxStats, setSandboxStats] = useState<SandboxStats | null>(null);
   const [selectorInput, setSelectorInput] = useState("");
   const [textInput, setTextInput] = useState("");
 
@@ -117,6 +286,16 @@ export function EditorBrowserView({
   const [streamConnecting, setStreamConnecting] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
   const streamFrameImgRef = useRef<HTMLImageElement>(new Image());
+  // `true` só após o primeiro `drawImage` de verdade nesta conexão — usado
+  // pra disparar `streamFrameReady` no reducer uma única vez por stream, não
+  // a cada frame (ver comentário do campo em `BrowserResultState`).
+  const streamFirstFrameRef = useRef(false);
+  // `pararStream()` marca aqui ANTES de fechar o socket, para o `onclose`
+  // saber que foi um encerramento deliberado (usuário/troca de modo) e não
+  // tentar reconectar — item 13c do plano de robustez do navegador interno.
+  const streamDeliberateStopRef = useRef(false);
+  const streamReconnectAttemptsRef = useRef(0);
+  const streamReconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const imgRef = useRef<HTMLImageElement>(null);
@@ -126,11 +305,9 @@ export function EditorBrowserView({
   // Sincroniza estado da URL quando a aba ativa muda
   useEffect(() => {
     if (currentTab) {
-      setUrlInput(currentTab.url);
-      setCurrentUrl(currentTab.url);
-      setTitle(currentTab.title);
-      setRenderMode(currentTab.mode);
+      patch({ urlInput: currentTab.url, currentUrl: currentTab.url, title: currentTab.title });
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTabId]);
 
   // Listener para estado Fullscreen nativo
@@ -172,38 +349,52 @@ export function EditorBrowserView({
   // Captura de tela via Headless
   const capturar = useCallback(async () => {
     if (renderMode === "live") return;
-    setLoading(true);
-    setErro(null);
+    patch({ loading: true, erro: null });
     try {
       const shot = await browserAction({ sessionId, action: "screenshot", engine: browserEngine });
-      if (shot.image_base64) {
-        setImage(shot.image_base64);
-      }
-      if (shot.url) setCurrentUrl(shot.url);
-      if (shot.title) setTitle(shot.title);
-      if (shot.engine_used) setEngineUsed(shot.engine_used);
-      setConsoleErrors(shot.console_errors ?? []);
-      setPageErrors(shot.page_errors ?? []);
+      const payload: Partial<BrowserResultState> = {
+        consoleErrors: shot.console_errors ?? [],
+        pageErrors: shot.page_errors ?? [],
+      };
+      if (shot.image_base64) payload.image = shot.image_base64;
+      if (shot.url) payload.currentUrl = shot.url;
+      if (shot.title) payload.title = shot.title;
+      if (shot.engine_used) payload.engineUsed = shot.engine_used;
+      patch(payload);
     } catch (err) {
-      setErro(err instanceof Error ? err.message : String(err));
+      patch({ erro: err instanceof Error ? err.message : String(err) });
     } finally {
-      setLoading(false);
+      patch({ loading: false });
     }
-  }, [sessionId, renderMode, browserEngine]);
+  }, [sessionId, renderMode, browserEngine, patch]);
 
   // Streaming ao vivo — só faz sentido no modo Agente (headless/CDP); no modo
   // Live o iframe já é a própria fonte visual, sem precisar de screencast.
+  const clearStreamReconnectTimer = useCallback(() => {
+    if (streamReconnectTimerRef.current) {
+      clearTimeout(streamReconnectTimerRef.current);
+      streamReconnectTimerRef.current = null;
+    }
+  }, []);
+
   const pararStream = useCallback(() => {
+    streamDeliberateStopRef.current = true;
+    clearStreamReconnectTimer();
+    streamReconnectAttemptsRef.current = 0;
     wsRef.current?.close();
     wsRef.current = null;
     setStreamActive(false);
     setStreamConnecting(false);
-  }, []);
+    streamFirstFrameRef.current = false;
+    patch({ streamFrameReady: false });
+  }, [clearStreamReconnectTimer, patch]);
 
   const iniciarStream = useCallback(async () => {
     if (renderMode !== "headless" || wsRef.current) return;
+    streamDeliberateStopRef.current = false;
+    streamFirstFrameRef.current = false;
     setStreamConnecting(true);
-    setErro(null);
+    patch({ erro: null, streamFrameReady: false });
     try {
       const { ticket } = await getBrowserStreamTicket(sessionId);
       const url = buildBrowserStreamUrl(sessionId, ticket);
@@ -211,6 +402,7 @@ export function EditorBrowserView({
       wsRef.current = socket;
 
       socket.onopen = () => {
+        streamReconnectAttemptsRef.current = 0;
         setStreamConnecting(false);
         setStreamActive(true);
       };
@@ -228,6 +420,13 @@ export function EditorBrowserView({
               canvas.height = img.naturalHeight;
             }
             canvas.getContext("2d")?.drawImage(img, 0, 0);
+            // Só a PRIMEIRA vez — as demais são puramente imperativas (ref),
+            // sem passar pelo reducer/re-render (ver comentário do campo
+            // `streamFrameReady` em `BrowserResultState`).
+            if (!streamFirstFrameRef.current) {
+              streamFirstFrameRef.current = true;
+              patch({ streamFrameReady: true });
+            }
           };
           img.src = `data:image/jpeg;base64,${msg.data}`;
         } catch {
@@ -236,31 +435,64 @@ export function EditorBrowserView({
       };
 
       socket.onerror = () => {
-        setErro("falha na conexão de streaming ao vivo");
+        patch({ erro: "falha na conexão de streaming ao vivo" });
       };
 
       socket.onclose = () => {
         wsRef.current = null;
         setStreamActive(false);
         setStreamConnecting(false);
+        // Encerramento deliberado (usuário pausou, saiu do modo Agente,
+        // desmontou) — `pararStream()`/o efeito de desmontagem já marcaram
+        // isto antes de fechar o socket. Não reconectar nesse caso.
+        if (streamDeliberateStopRef.current) return;
+        if (streamReconnectAttemptsRef.current >= MAX_STREAM_RECONNECT_ATTEMPTS) {
+          patch({
+            erro: "streaming ao vivo caiu e não reconectou — tente “▶ Ao Vivo” manualmente.",
+          });
+          return;
+        }
+        // Backoff exponencial (1s, 2s, 4s, 8s, teto de 10s) — pede um ticket
+        // NOVO a cada tentativa (tickets são de uso único, ver `TicketStore`/
+        // invariante #9 do plano); item 13c do plano de robustez do
+        // navegador interno.
+        const tentativa = streamReconnectAttemptsRef.current;
+        streamReconnectAttemptsRef.current += 1;
+        const atrasoMs = Math.min(1000 * 2 ** tentativa, 10_000);
+        clearStreamReconnectTimer();
+        streamReconnectTimerRef.current = setTimeout(() => {
+          void iniciarStream();
+        }, atrasoMs);
       };
     } catch (err) {
       setStreamConnecting(false);
-      setErro(err instanceof Error ? err.message : String(err));
+      patch({ erro: err instanceof Error ? err.message : String(err) });
     }
-  }, [sessionId, renderMode]);
+  }, [sessionId, renderMode, patch, clearStreamReconnectTimer]);
 
-  // Encerra o stream ao desmontar ou ao sair do modo Agente/trocar de sessão.
+  // Encerra o stream ao sair do modo Agente/trocar de sessão, e auto-inicia
+  // ao entrar — antes exigia um segundo clique manual em "▶ Ao Vivo" depois
+  // de trocar para 🤖 Agente, e a maioria dos usuários ficava no caminho de
+  // poll-por-ação (screenshot sob pedido), mais lento (item 13b do plano).
   useEffect(() => {
-    if (renderMode !== "headless" && wsRef.current) pararStream();
-  }, [renderMode, pararStream]);
+    if (renderMode !== "headless") {
+      if (wsRef.current) pararStream();
+      return;
+    }
+    if (!streamActive && !streamConnecting) {
+      void iniciarStream();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [renderMode, streamActive, streamConnecting]);
 
   useEffect(() => {
     return () => {
+      streamDeliberateStopRef.current = true;
+      clearStreamReconnectTimer();
       wsRef.current?.close();
       wsRef.current = null;
     };
-  }, [sessionId]);
+  }, [sessionId, clearStreamReconnectTimer]);
 
   // Navegar para nova URL
   const navegar = useCallback(
@@ -269,9 +501,27 @@ export function EditorBrowserView({
       if (!bruto) return;
       const alvo = /^https?:\/\//i.test(bruto) ? bruto : `http://${bruto}`;
 
-      setLoading(true);
-      setErro(null);
-      setContent(null);
+      // Checagem ANTES de qualquer mudança de estado: em modo Live, se o
+      // host parece Docker-interno, a navegação nem chega a atualizar
+      // `currentUrl`/a aba — senão o `src` reativo do iframe (JSX abaixo)
+      // apontaria pra lá de qualquer jeito, mesmo pulando a atribuição
+      // imperativa de `iframeRef.current.src`.
+      if (renderMode === "live") {
+        const hostnameSuspeito = suspectedDockerInternalHostname(alvo);
+        if (hostnameSuspeito) {
+          patch({
+            internalHostnameWarning:
+              `O host "${hostnameSuspeito}" só existe dentro da rede Docker do projeto e não é ` +
+              "alcançável por este navegador — troque para o modo 🤖 Agente ou use " +
+              "localhost:<porta>.",
+            urlInput: alvo,
+          });
+          return;
+        }
+        patch({ internalHostnameWarning: null });
+      }
+
+      patch({ loading: true, erro: null, content: null });
 
       // Atualiza estado da aba atual
       setTabs((prev) =>
@@ -293,40 +543,49 @@ export function EditorBrowserView({
         }),
       );
 
-      setCurrentUrl(alvo);
-      setUrlInput(alvo);
+      patch({
+        currentUrl: alvo,
+        urlInput: alvo,
+        originalUrl: alvo,
+        urlIsInternalFallback: false,
+        iframeLoadFailed: false,
+      });
 
       if (renderMode === "live") {
         if (iframeRef.current) {
           iframeRef.current.src = alvo;
         }
-        setLoading(false);
+        patch({ loading: false });
         return;
       }
 
       try {
         const resultado = await browserAction({ sessionId, action: "navigate", url: alvo, engine: browserEngine });
         const finalUrl = resultado.url ?? alvo;
-        setCurrentUrl(finalUrl);
-        setUrlInput(finalUrl);
-        setTitle(resultado.title ?? null);
-        setStatus(resultado.status ?? 200);
-        setDurationMs(resultado.duration_ms ?? null);
-        if (resultado.engine_used) setEngineUsed(resultado.engine_used);
-        setConsoleErrors(resultado.console_errors ?? []);
-        setPageErrors(resultado.page_errors ?? []);
-        if (resultado.image_base64) {
-          setImage(resultado.image_base64);
-        } else {
+        const payload: Partial<BrowserResultState> = {
+          currentUrl: finalUrl,
+          urlInput: finalUrl,
+          originalUrl: resultado.original_url ?? alvo,
+          urlIsInternalFallback: Boolean(resultado.url_is_internal_fallback),
+          title: resultado.title ?? null,
+          status: resultado.status ?? 200,
+          durationMs: resultado.duration_ms ?? null,
+          consoleErrors: resultado.console_errors ?? [],
+          pageErrors: resultado.page_errors ?? [],
+        };
+        if (resultado.engine_used) payload.engineUsed = resultado.engine_used;
+        if (resultado.image_base64) payload.image = resultado.image_base64;
+        patch(payload);
+        if (!resultado.image_base64) {
           await capturar();
         }
       } catch (err) {
-        setErro(err instanceof Error ? err.message : String(err));
+        patch({ erro: err instanceof Error ? err.message : String(err) });
       } finally {
-        setLoading(false);
+        patch({ loading: false });
       }
     },
-    [sessionId, capturar, renderMode, activeTabId, browserEngine],
+    [sessionId, capturar, renderMode, activeTabId, browserEngine, patch],
   );
 
   // Navegação de Histórico (Voltar / Avançar)
@@ -374,9 +633,10 @@ export function EditorBrowserView({
     const newTab: BrowserTab = {
       id: newId,
       title: "Nova Aba",
-      url: "http://localhost:3000",
+      url: "http://localhost:5400",
       mode: "live",
-      history: ["http://localhost:3000"],
+      engine: "auto",
+      history: ["http://localhost:5400"],
       historyIndex: 0,
     };
     setTabs((prev) => [...prev, newTab]);
@@ -396,69 +656,40 @@ export function EditorBrowserView({
     [tabs, activeTabId],
   );
 
-  // Polling de telemetria e stats do container do Sandbox
-  useEffect(() => {
-    let ativo = true;
-    const targetSid = sessionId || activeSessionId;
-    if (!targetSid) return;
-    const fetchStats = async () => {
-      try {
-        const data = await getSandboxStats(targetSid);
-        if (ativo && data) setSandboxStats(data);
-      } catch {
-        // Ignora erros de polling
-      }
-    };
-    void fetchStats();
-    const timer = setInterval(fetchStats, 4000);
-    return () => {
-      ativo = false;
-      clearInterval(timer);
-    };
-  }, [sessionId, activeSessionId]);
-
-  // Polling de logs do servidor quando o drawer de logs estiver aberto
-  useEffect(() => {
-    const targetSid = sessionId || activeSessionId;
-    if (!showDrawer || drawerTab !== "logs" || !targetSid) return;
-    let ativo = true;
-    const fetchLogs = async () => {
+  // Polling de logs do servidor quando o drawer de logs estiver aberto —
+  // `useVisibilityGatedInterval` (item 14) substitui a flag `ativo` que este
+  // efeito reimplementava manualmente, e pausa sozinho quando a aba do
+  // navegador perde foco.
+  const targetSid = sessionId || activeSessionId;
+  useVisibilityGatedInterval(
+    async (aindaValido) => {
+      if (!targetSid) return;
       try {
         const data = await getSandboxServerLogs(targetSid, 200);
-        if (ativo && data?.logs) {
-          setServerLogs(data.logs);
+        if (aindaValido() && data?.logs) {
+          patch({ serverLogs: data.logs });
         }
       } catch {
         // Ignora erros
       }
-    };
-    void fetchLogs();
-    const timer = setInterval(fetchLogs, 2500);
-    return () => {
-      ativo = false;
-      clearInterval(timer);
-    };
-  }, [showDrawer, drawerTab, sessionId, activeSessionId]);
+    },
+    2500,
+    showDrawer && drawerTab === "logs" && Boolean(targetSid),
+  );
 
   // Polling do log de rede quando o drawer estiver na aba "Rede"
-  useEffect(() => {
-    if (!showDrawer || drawerTab !== "network") return;
-    let ativo = true;
-    const fetchNetwork = async () => {
+  useVisibilityGatedInterval(
+    async (aindaValido) => {
       try {
         const data = await getBrowserNetworkLog(sessionId);
-        if (ativo) setNetworkLog(data.requests ?? []);
+        if (aindaValido()) patch({ networkLog: data.requests ?? [] });
       } catch {
         // Ignora erros
       }
-    };
-    void fetchNetwork();
-    const timer = setInterval(fetchNetwork, 2000);
-    return () => {
-      ativo = false;
-      clearInterval(timer);
-    };
-  }, [showDrawer, drawerTab, sessionId]);
+    },
+    2000,
+    showDrawer && drawerTab === "network",
+  );
 
   // Busca o replay (trace + vídeo) quando a aba "Replay" é aberta — dado
   // estático depois que a sessão fecha (`reiniciar()`), não precisa de
@@ -505,24 +736,26 @@ export function EditorBrowserView({
       setClickIndicator({ x: e.clientX - rect.left, y: e.clientY - rect.top });
       setTimeout(() => setClickIndicator(null), 600);
 
-      setLoading(true);
-      setErro(null);
+      patch({ loading: true, erro: null });
       try {
         const res = await browserAction({ sessionId, action: "click", x, y, engine: browserEngine });
-        if (res.engine_used) setEngineUsed(res.engine_used);
+        if (res.engine_used) patch({ engineUsed: res.engine_used });
         await new Promise((r) => setTimeout(r, 300));
         await capturar();
       } catch (err) {
-        setErro(err instanceof Error ? err.message : String(err));
+        patch({ erro: err instanceof Error ? err.message : String(err) });
       } finally {
-        setLoading(false);
+        patch({ loading: false });
       }
     },
-    [sessionId, loading, capturar, browserEngine],
+    [sessionId, loading, capturar, browserEngine, patch],
   );
 
   // Mesma ideia, mas para o modo de streaming ao vivo: o próximo frame do
-  // screencast já mostra o resultado, então não precisa forçar `capturar()`.
+  // screencast já mostra o resultado, então não precisa forçar `capturar()`
+  // nem o `setTimeout` de 300ms de `clicarNaCaptura` acima — verificado como
+  // parte do item 13d do plano de robustez do navegador interno (este é o
+  // único handler de clique alcançável enquanto `streamActive` é true).
   const clicarNoStream = useCallback(
     (e: React.MouseEvent<HTMLCanvasElement>) => {
       const canvas = canvasRef.current;
@@ -537,16 +770,15 @@ export function EditorBrowserView({
       setTimeout(() => setClickIndicator(null), 600);
 
       void browserAction({ sessionId, action: "click", x, y, engine: browserEngine }).catch((err) => {
-        setErro(err instanceof Error ? err.message : String(err));
+        patch({ erro: err instanceof Error ? err.message : String(err) });
       });
     },
-    [sessionId, browserEngine],
+    [sessionId, browserEngine, patch],
   );
 
   const enviarTexto = useCallback(async () => {
     if (!selectorInput.trim() || !textInput) return;
-    setLoading(true);
-    setErro(null);
+    patch({ loading: true, erro: null });
     try {
       const res = await browserAction({
         sessionId,
@@ -555,29 +787,29 @@ export function EditorBrowserView({
         text: textInput,
         engine: browserEngine,
       });
-      if (res.engine_used) setEngineUsed(res.engine_used);
+      if (res.engine_used) patch({ engineUsed: res.engine_used });
       await new Promise((r) => setTimeout(r, 300));
       await capturar();
       setTextInput("");
     } catch (err) {
-      setErro(err instanceof Error ? err.message : String(err));
+      patch({ erro: err instanceof Error ? err.message : String(err) });
     } finally {
-      setLoading(false);
+      patch({ loading: false });
     }
-  }, [sessionId, selectorInput, textInput, capturar, browserEngine]);
+  }, [sessionId, selectorInput, textInput, capturar, browserEngine, patch]);
 
   const verConteudo = useCallback(async () => {
-    setErro(null);
+    patch({ erro: null });
     try {
       const resultado = await browserAction({ sessionId, action: "content", engine: browserEngine });
-      if (resultado.engine_used) setEngineUsed(resultado.engine_used);
-      setContent(resultado.text ?? "");
+      if (resultado.engine_used) patch({ engineUsed: resultado.engine_used });
+      patch({ content: resultado.text ?? "" });
       setDrawerTab("inspector");
       setShowDrawer(true);
     } catch (err) {
-      setErro(err instanceof Error ? err.message : String(err));
+      patch({ erro: err instanceof Error ? err.message : String(err) });
     }
-  }, [sessionId, browserEngine]);
+  }, [sessionId, browserEngine, patch]);
 
   const reiniciar = useCallback(async () => {
     pararStream();
@@ -586,16 +818,13 @@ export function EditorBrowserView({
     } catch {
       // Ignora erro
     }
-    setImage(null);
-    setContent(null);
-    setTitle(null);
-    setStatus(null);
-    setErro(null);
-    setConsoleErrors([]);
-    setPageErrors([]);
-    setNetworkLog([]);
+    // Reset completo num único dispatch — a versão anterior zerava campo por
+    // campo manualmente e esquecia `durationMs`/`engineUsed`/`serverLogs`/
+    // `sandboxStats`/`currentUrl`/`urlInput` (badges obsoletas depois de
+    // "Reiniciar", ver comentário do reducer no topo do arquivo).
+    dispatch({ type: "reset", url: currentTab.url });
     setReplayRefreshKey((k) => k + 1);
-  }, [sessionId, pararStream]);
+  }, [sessionId, pararStream, currentTab.url]);
 
   const downloadScreenshot = useCallback(() => {
     if (!image) return;
@@ -631,14 +860,23 @@ export function EditorBrowserView({
     >
       {/* 📑 Barra Superior de Múltiplas Abas */}
       <div className="browser-tabs-bar">
-        <div className="browser-tabs-list">
+        <div className="browser-tabs-list" role="tablist" aria-label="Abas do navegador">
           {tabs.map((tab) => (
             <div
               key={tab.id}
               className={`browser-tab-item ${tab.id === activeTabId ? "active" : ""}`}
+              role="tab"
+              aria-selected={tab.id === activeTabId}
+              tabIndex={tab.id === activeTabId ? 0 : -1}
               onClick={() => setActiveTabId(tab.id)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  setActiveTabId(tab.id);
+                }
+              }}
             >
-              <span className="browser-tab-icon">
+              <span className="browser-tab-icon" aria-hidden="true">
                 {tab.mode === "live" ? "⚡" : "🤖"}
               </span>
               <span className="browser-tab-title" title={tab.url}>
@@ -650,6 +888,7 @@ export function EditorBrowserView({
                   className="browser-tab-close"
                   onClick={(e) => fecharAba(tab.id, e)}
                   title="Fechar aba"
+                  aria-label={`Fechar aba ${tab.title || tab.url}`}
                 >
                   ×
                 </button>
@@ -661,6 +900,7 @@ export function EditorBrowserView({
             className="browser-add-tab-btn"
             onClick={adicionarAba}
             title="Abrir nova aba"
+            aria-label="Abrir nova aba"
           >
             +
           </button>
@@ -673,6 +913,7 @@ export function EditorBrowserView({
             className={`editor-browser-btn ${isFullscreen ? "active" : ""}`}
             onClick={() => void toggleFullscreen()}
             title={isFullscreen ? "Sair da Tela Cheia (F11 / Esc)" : "Tela Cheia (F11)"}
+            aria-label={isFullscreen ? "Sair da tela cheia" : "Entrar em tela cheia"}
           >
             {isFullscreen ? "🗗" : "⛶"}
           </button>
@@ -687,6 +928,7 @@ export function EditorBrowserView({
             type="button"
             className="editor-browser-btn"
             title="Voltar (Alt + ←)"
+            aria-label="Voltar"
             onClick={voltar}
             disabled={!canGoBack || loading}
           >
@@ -696,6 +938,7 @@ export function EditorBrowserView({
             type="button"
             className="editor-browser-btn"
             title="Avançar (Alt + →)"
+            aria-label="Avançar"
             onClick={avancar}
             disabled={!canGoForward || loading}
           >
@@ -705,6 +948,7 @@ export function EditorBrowserView({
             type="button"
             className={`editor-browser-btn ${loading ? "btn-spin" : ""}`}
             title="Recarregar página"
+            aria-label="Recarregar página"
             onClick={recarregar}
             disabled={loading || !currentUrl}
           >
@@ -714,6 +958,7 @@ export function EditorBrowserView({
             type="button"
             className="editor-browser-btn"
             title="Ir para página inicial (Home)"
+            aria-label="Ir para página inicial"
             onClick={irParaHome}
           >
             🏠
@@ -725,16 +970,21 @@ export function EditorBrowserView({
           <span
             className="editor-browser-url-icon"
             title={isSecure ? "Conexão Segura HTTPS" : "Conexão Local / HTTP"}
+            aria-hidden="true"
           >
             {isSecure ? "🔒" : "🔓"}
           </span>
+          <label htmlFor="editor-browser-url-input" className="sr-only">
+            Endereço da página
+          </label>
           <input
+            id="editor-browser-url-input"
             type="text"
             className="editor-browser-url-input"
             value={urlInput}
-            onChange={(e) => setUrlInput(e.target.value)}
+            onChange={(e) => patch({ urlInput: e.target.value })}
             onKeyDown={(e) => e.key === "Enter" && void navegar(urlInput)}
-            placeholder="http://localhost:3000"
+            placeholder="http://localhost:5400"
           />
           <button
             type="button"
@@ -746,11 +996,16 @@ export function EditorBrowserView({
           </button>
           {currentUrl && (
             <a
-              href={currentUrl}
+              // `currentUrl` pode ser um hostname Docker-interno resolvido
+              // pelo backend (`url_is_internal_fallback`) — uma nova janela
+              // do sistema roda fora do Docker, então usa `originalUrl`
+              // (o que o usuário pediu) nesse caso.
+              href={urlIsInternalFallback ? originalUrl || currentUrl : currentUrl}
               target="_blank"
               rel="noopener noreferrer"
               className="browser-open-external-btn"
               title="Abrir em nova janela do sistema"
+              aria-label="Abrir em nova janela do sistema"
             >
               ↗
             </a>
@@ -762,12 +1017,7 @@ export function EditorBrowserView({
           <button
             type="button"
             className={`browser-mode-btn ${renderMode === "live" ? "active" : ""}`}
-            onClick={() => {
-              setRenderMode("live");
-              setTabs((prev) =>
-                prev.map((t) => (t.id === activeTabId ? { ...t, mode: "live" } : t)),
-              );
-            }}
+            onClick={() => updateCurrentTab({ mode: "live" })}
             title="Modo Live Iframe (Interação nativa, HMR e WebSockets em tempo real)"
           >
             ⚡ Live
@@ -776,10 +1026,7 @@ export function EditorBrowserView({
             type="button"
             className={`browser-mode-btn ${renderMode === "headless" ? "active" : ""}`}
             onClick={() => {
-              setRenderMode("headless");
-              setTabs((prev) =>
-                prev.map((t) => (t.id === activeTabId ? { ...t, mode: "headless" } : t)),
-              );
+              updateCurrentTab({ mode: "headless" });
               if (currentUrl) void navegar(currentUrl);
             }}
             title="Modo Headless Agent (Playwright / Lightpanda CDP com telemetria e inspeção)"
@@ -812,7 +1059,7 @@ export function EditorBrowserView({
                 <button
                   type="button"
                   className={`browser-mode-btn ${browserEngine === "auto" ? "active" : ""}`}
-                  onClick={() => setBrowserEngine("auto")}
+                  onClick={() => updateCurrentTab({ engine: "auto" })}
                   title="Auto: Lightpanda para DOM/scraping ultraleve (25MB RAM) e Chromium para screenshots"
                   style={{ fontSize: "11px", padding: "2px 6px" }}
                 >
@@ -821,7 +1068,7 @@ export function EditorBrowserView({
                 <button
                   type="button"
                   className={`browser-mode-btn ${browserEngine === "lightpanda" ? "active" : ""}`}
-                  onClick={() => setBrowserEngine("lightpanda")}
+                  onClick={() => updateCurrentTab({ engine: "lightpanda" })}
                   title="Lightpanda Browser (C/C++ ultraleve - 25MB RAM, sub-50ms cold start)"
                   style={{ fontSize: "11px", padding: "2px 6px" }}
                 >
@@ -830,7 +1077,7 @@ export function EditorBrowserView({
                 <button
                   type="button"
                   className={`browser-mode-btn ${browserEngine === "chromium" ? "active" : ""}`}
-                  onClick={() => setBrowserEngine("chromium")}
+                  onClick={() => updateCurrentTab({ engine: "chromium" })}
                   title="Chromium Playwright (Renderização completa, vídeos e screenshots)"
                   style={{ fontSize: "11px", padding: "2px 6px" }}
                 >
@@ -861,6 +1108,7 @@ export function EditorBrowserView({
               className={`editor-browser-btn ${isLandscape ? "active" : ""}`}
               onClick={() => setIsLandscape(!isLandscape)}
               title={isLandscape ? "Girar para Retrato" : "Girar para Paisagem (Landscape)"}
+              aria-label={isLandscape ? "Girar para retrato" : "Girar para paisagem"}
             >
               🔄
             </button>
@@ -958,6 +1206,7 @@ export function EditorBrowserView({
               type="button"
               className="editor-browser-tool-btn"
               title="Baixar screenshot"
+              aria-label="Baixar screenshot"
               onClick={downloadScreenshot}
             >
               📸
@@ -988,18 +1237,28 @@ export function EditorBrowserView({
           </button>
         ))}
         <div style={{ marginLeft: "auto", display: "flex", gap: 6, alignItems: "center" }}>
-          <span style={{ fontSize: 11, opacity: 0.7 }}>Zoom:</span>
+          <span style={{ fontSize: 11, opacity: 0.7 }} id="editor-browser-zoom-label">Zoom:</span>
           <button
             type="button"
             className="browser-zoom-btn"
+            title="Diminuir zoom"
+            aria-label="Diminuir zoom"
             onClick={() => setZoomLevel((z) => Math.max(50, z - 10))}
           >
             -
           </button>
-          <span style={{ fontSize: 11, minWidth: 35, textAlign: "center" }}>{zoomLevel}%</span>
+          <span
+            style={{ fontSize: 11, minWidth: 35, textAlign: "center" }}
+            aria-live="polite"
+            aria-labelledby="editor-browser-zoom-label"
+          >
+            {zoomLevel}%
+          </span>
           <button
             type="button"
             className="browser-zoom-btn"
+            title="Aumentar zoom"
+            aria-label="Aumentar zoom"
             onClick={() => setZoomLevel((z) => Math.min(150, z + 10))}
           >
             +
@@ -1008,8 +1267,32 @@ export function EditorBrowserView({
       </div>
 
       {erro && (
-        <div className="editor-browser-error-banner">
+        <div className="editor-browser-error-banner" role="alert">
           <span>⚠️ {erro}</span>
+        </div>
+      )}
+
+      {internalHostnameWarning && (
+        <div className="editor-browser-error-banner" role="alert">
+          <span>🌐 {internalHostnameWarning}</span>
+        </div>
+      )}
+
+      {iframeLoadFailed && !internalHostnameWarning && (
+        <div className="editor-browser-error-banner" role="alert">
+          <span>
+            ⚠️ A página não carregou. Se o endereço só existe dentro do sandbox/rede Docker,
+            troque para o modo 🤖 Agente.
+          </span>
+        </div>
+      )}
+
+      {urlIsInternalFallback && originalUrl && renderMode !== "live" && (
+        <div className="editor-browser-error-banner" role="status" style={{ opacity: 0.85 }}>
+          <span>
+            ℹ️ Resolvido internamente via {currentUrl} (endereço Docker-interno, só visível ao
+            serviço de navegador) — o link "abrir em nova janela" usa {originalUrl}.
+          </span>
         </div>
       )}
 
@@ -1046,14 +1329,48 @@ export function EditorBrowserView({
                 className="browser-live-iframe"
                 title={title || "Live Browser Preview"}
                 sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals"
+                onLoad={() => patch({ iframeLoadFailed: false })}
+                // Melhor esforço: falhas de DNS/conexão dentro de um iframe
+                // cross-origin normalmente não disparam `onError` (o
+                // navegador mostra sua própria página de erro e ainda
+                // dispara `onLoad`) — a heurística de hostname acima é a
+                // defesa primária; isto cobre casos que `onError` de fato
+                // reporta (ex.: bloqueio por CSP/X-Frame-Options).
+                onError={() => patch({ iframeLoadFailed: true })}
               />
             ) : streamActive ? (
               <div className="editor-browser-screen-frame">
+                {/* Última captura estática, sobreposta e visível até o
+                    primeiro frame do screencast chegar — evita o flash de
+                    "vazio" na troca one-shot → streaming (item 13a). Nunca
+                    recebe clique: o canvas por cima já cobre a interação. */}
+                {image && (
+                  <img
+                    src={`data:image/png;base64,${image}`}
+                    alt=""
+                    aria-hidden="true"
+                    className="editor-browser-screen-img"
+                    style={{
+                      position: "absolute",
+                      inset: 0,
+                      opacity: streamFrameReady ? 0 : 1,
+                      transition: "opacity 150ms ease-out",
+                      pointerEvents: "none",
+                    }}
+                  />
+                )}
                 <canvas
                   ref={canvasRef}
                   className="editor-browser-screen-img browser-stream-canvas"
+                  style={{
+                    position: "relative",
+                    opacity: streamFrameReady ? 1 : 0,
+                    transition: "opacity 150ms ease-out",
+                  }}
                   onClick={clicarNoStream}
                   title="Ao vivo — clique em qualquer elemento para interagir"
+                  role="img"
+                  aria-label={`Transmissão ao vivo de ${title || currentUrl || "página renderizada"}`}
                 />
                 {clickIndicator && (
                   <div
@@ -1150,7 +1467,7 @@ export function EditorBrowserView({
                     <button
                       type="button"
                       className="browser-logs-clear-btn"
-                      onClick={() => setServerLogs("")}
+                      onClick={() => patch({ serverLogs: "" })}
                     >
                       Limpar
                     </button>
@@ -1164,9 +1481,7 @@ export function EditorBrowserView({
               {drawerTab === "network" && (
                 <div className="browser-network-panel">
                   {networkLog.length === 0 ? (
-                    <p className="text-xs text-muted" style={{ padding: 12 }}>
-                      Nenhuma requisição interceptada ainda.
-                    </p>
+                    <PanelState kind="empty" icon="📡" message="Nenhuma requisição interceptada ainda." />
                   ) : (
                     <table className="browser-network-table">
                       <thead>

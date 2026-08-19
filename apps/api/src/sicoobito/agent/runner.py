@@ -10,6 +10,7 @@ remontado.
 from __future__ import annotations
 
 import asyncio
+import uuid
 from contextlib import suppress
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -29,14 +30,19 @@ from redis.asyncio import Redis
 
 from sicoobito.agent import session_store
 from sicoobito.agent.approval_policy_config import load_approval_policy
+from sicoobito.agent.context_rules import build_context_rules_prompt, match_context_rules
+from sicoobito.agent.context_rules_config import load_context_rules
 from sicoobito.agent.coordinator import AgentCoordinator
+from sicoobito.agent.custom_modes import CustomModeService
 from sicoobito.agent.graph import DEFAULT_MAX_ITERATIONS, build_graph
 from sicoobito.agent.headless import run_headless_burst
 from sicoobito.agent.prompts import build_task_prompt
-from sicoobito.agent.state import AgentMode
+from sicoobito.agent.slash_commands import resolve_slash_command
+from sicoobito.agent.snapshot_store import SnapshotService
+from sicoobito.agent.state import BUILTIN_MODES, AgentMode
 from sicoobito.agent.tools import ToolContext
 from sicoobito.browser.client import BrowserClient, BrowserConfig
-from sicoobito.browser.replay import store_replay
+from sicoobito.browser.replay import mark_replay_expired, store_replay
 from sicoobito.config import Settings
 from sicoobito.context.indexer import ContextIndexer
 from sicoobito.context.repomap import build_repo_map
@@ -118,6 +124,19 @@ def _load_custom_instructions(workspace_root: Path) -> str | None:
         log.warning("agent.custom_instructions.read_failed", error=str(exc)[:200])
         return None
     return texto or None
+
+
+def _load_context_rules_prompt(
+    workspace_root: Path, *, focus_files: list[str] | None, focus_folder: str | None
+) -> str | None:
+    """Lê `.sicoobito/context_rules.yaml` do projeto e devolve a seção de prompt
+    já renderizada para as regras que casarem com `focus_files`/`focus_folder`
+    (Fase 4 do upgrade do agente, estilo `.cursor/rules`). `load_context_rules`
+    já degrada para uma config vazia em qualquer falha de leitura/parse/validação
+    — aqui só resta combinar leitura + match + renderização."""
+    config = load_context_rules(workspace_root)
+    casadas = match_context_rules(config, focus_files=focus_files, focus_folder=focus_folder)
+    return build_context_rules_prompt(casadas)
 
 
 @dataclass(slots=True)
@@ -243,6 +262,8 @@ class AgentRunner:
         documents: DocumentService | None = None,
         notes: NoteService | None = None,
         skills: SkillService | None = None,
+        custom_modes: CustomModeService | None = None,
+        snapshots: SnapshotService | None = None,
         audit: AuditService | None = None,
         firecrawl: FirecrawlService | None = None,
         extensions_manager: Any | None = None,  # ExtensionsManager
@@ -259,6 +280,8 @@ class AgentRunner:
         self.documents = documents
         self.notes = notes
         self.skills = skills
+        self.custom_modes = custom_modes
+        self.snapshots = snapshots
         self.audit = audit
         self.firecrawl = firecrawl
         self.extensions_manager = extensions_manager
@@ -337,6 +360,139 @@ class AgentRunner:
                 limits=httpx.Limits(max_keepalive_connections=10, max_connections=30)
             )
         return self._browser_http
+
+    # ── Roteamento automático de skills (Fase 1 do upgrade do agente) ──────
+
+    _SKILLS_TOP_K = 2
+    _SKILLS_MIN_SCORE = 0.72
+
+    # Fase 3 do upgrade do agente (estilo Antigravity): "Modo Planejar" sempre
+    # segue o processo estruturado destas duas skills vendorizadas
+    # (`.agents/agent-skills/skills/`), independente de slash command ou
+    # similaridade — o modo em si já é a intenção "planejar antes de agir".
+    _PLAN_MODE_FORCED_SKILLS = ("spec-driven-development", "planning-and-task-breakdown")
+
+    async def _route_skills(self, task: str, mode: str = "agent") -> str | None:
+        """Monta a seção de skills ativas para esta tarefa, combinando três
+        fontes independentes (nunca duplicando uma skill presente em mais de
+        uma):
+
+        1. **Forçada por slash command** (Fase 2): se `task` começa com um
+           comando reconhecido (`/spec`, `/test`, `/fix`...), a skill que ele
+           mapeia (`agent/slash_commands.py`) é buscada por nome exato — sem
+           depender de embedding, determinística.
+        2. **Forçada pelo modo `plan`** (Fase 3): sempre injeta
+           `_PLAN_MODE_FORCED_SKILLS`, também por nome exato — o "Modo
+           Planejar" da UI não depende do usuário lembrar de digitar `/spec`.
+        3. **Roteada por similaridade** (Fase 1): embeda `task` inteiro
+           (incluindo o prefixo do comando, se houver — ruído desprezível
+           para o embedding) e busca as skills mais próximas de
+           `description` via `SkillService.find_relevant`.
+
+        Best-effort em cada fonte: falha na busca por nome ou no embedding
+        não derruba a outra fonte nem a sessão — cada uma degrada para "não
+        contribuiu nada" independentemente. Chamado uma única vez, na
+        criação da sessão, para preservar o prefixo estável do system prompt
+        (ver docstring de `SYSTEM_PROMPT` em `prompts.py`)."""
+        if self.skills is None:
+            return None
+
+        secoes: list[str] = []
+        nomes_vistos: set[str] = set()
+
+        _, comando = resolve_slash_command(task)
+        if comando is not None and comando.skill_name is not None:
+            try:
+                skill_forcada = await self.skills.get_by_name(comando.skill_name)
+            except Exception as exc:
+                log.debug("agent.skill_routing.command_lookup_failed", error=str(exc)[:200])
+                skill_forcada = None
+            if skill_forcada is not None:
+                secoes.append(
+                    f"### {skill_forcada.name} (ativada por `{comando.command}`)\n\n"
+                    f"{skill_forcada.system_prompt}"
+                )
+                nomes_vistos.add(skill_forcada.name)
+
+        if mode == "plan":
+            for nome_skill in self._PLAN_MODE_FORCED_SKILLS:
+                if nome_skill in nomes_vistos:
+                    continue
+                try:
+                    skill_do_modo = await self.skills.get_by_name(nome_skill)
+                except Exception as exc:
+                    log.debug("agent.skill_routing.plan_mode_lookup_failed", error=str(exc)[:200])
+                    skill_do_modo = None
+                if skill_do_modo is not None:
+                    secoes.append(
+                        f"### {skill_do_modo.name} (padrão do Modo Planejar)\n\n"
+                        f"{skill_do_modo.system_prompt}"
+                    )
+                    nomes_vistos.add(skill_do_modo.name)
+
+        if task.strip():
+            try:
+                resultado = await self.engine.embed(
+                    requested_model=self.settings.embedding_profile,
+                    inputs=[task],
+                    source="agent.skill_routing",
+                )
+                dados = resultado.payload.get("data") or []
+                vetor = dados[0].get("embedding") if dados else None
+                if vetor:
+                    relevantes = await self.skills.find_relevant(
+                        vetor, top_k=self._SKILLS_TOP_K, min_score=self._SKILLS_MIN_SCORE
+                    )
+                    for skill in relevantes:
+                        if skill.name in nomes_vistos:
+                            continue
+                        secoes.append(
+                            f"### {skill.name} (roteada automaticamente por similaridade)\n\n"
+                            f"{skill.system_prompt}"
+                        )
+                        nomes_vistos.add(skill.name)
+            except Exception as exc:
+                log.debug("agent.skill_routing.failed", error=str(exc)[:200])
+
+        if not secoes:
+            return None
+
+        return (
+            "## Habilidades relevantes para esta tarefa\n\n"
+            "Siga o processo descrito abaixo quando ele for aplicável ao que você está "
+            "fazendo agora.\n\n" + "\n\n".join(secoes)
+        )
+
+    # ── Modos customizáveis pelo usuário (Fase 6 do upgrade do agente) ─────
+
+    async def _resolve_custom_mode(self, mode: str) -> tuple[list[str] | None, str | None]:
+        """Resolve `mode` como id de modo customizado, uma única vez na
+        criação da sessão — nunca a cada turno, mesmo motivo de todo o resto
+        do prompt aditivo (`_route_skills`, `_load_context_rules_prompt`):
+        preservar o prefixo estável do system prompt (ver docstring de
+        `SYSTEM_PROMPT` em `prompts.py`).
+
+        Devolve `(None, None)` sempre que `mode` já é um dos 7 modos
+        embutidos, quando não há `CustomModeService` configurado, quando
+        `mode` não é um UUID válido, ou quando nenhum modo customizado bate
+        com esse id — em todos os casos, `agent/graph.py::_tool_schemas`
+        degrada para somente leitura, nunca falha aberto para WRITE/EXEC.
+        """
+        if mode in BUILTIN_MODES or self.custom_modes is None:
+            return None, None
+        try:
+            mode_id = uuid.UUID(mode)
+        except ValueError:
+            log.debug("agent.custom_mode.invalid_id", mode=mode[:80])
+            return None, None
+        try:
+            modo = await self.custom_modes.get(mode_id)
+        except Exception as exc:
+            log.warning("agent.custom_mode.lookup_failed", error=str(exc)[:200])
+            return None, None
+        if modo is None:
+            return None, None
+        return list(modo.allowed_tools or []), modo.prompt_block or None
 
     # ── Sessão ──────────────────────────────────────────────────────────────
 
@@ -506,6 +662,14 @@ class AgentRunner:
             burst.add_done_callback(self._background_tasks.discard)
             return True
 
+        routed_skills_prompt = (
+            await self._route_skills(task, mode) if self.skills is not None else None
+        )
+        context_rules_prompt = _load_context_rules_prompt(
+            workspace_root, focus_files=focus_files, focus_folder=focus_folder
+        )
+        custom_mode_allowed_tools, custom_mode_prompt_block = await self._resolve_custom_mode(mode)
+
         contexto = ToolContext(
             session_id=session_id,
             workspace_root=worktree_path,
@@ -529,9 +693,15 @@ class AgentRunner:
             extensions_manager=self.extensions_manager,
             security=SecureBertService(),
             trace_recorder=self.trace_recorder,
+            snapshots=self.snapshots,
             engine=self.engine,
             custom_instructions=_load_custom_instructions(workspace_root),
             specialization_prompt=specialization_prompt,
+            routed_skills_prompt=routed_skills_prompt,
+            context_rules_prompt=context_rules_prompt,
+            custom_mode_allowed_tools=custom_mode_allowed_tools,
+            custom_mode_prompt_block=custom_mode_prompt_block,
+            mode=mode,
             approval_policy=load_approval_policy(workspace_root),
             coordinator=self.coordinator,
             spawn_child_agent=_spawn_child_agent if self.coordinator is not None else None,
@@ -549,7 +719,14 @@ class AgentRunner:
         # em validate_project_runtime() não é o mesmo que checar os pacotes.
         contexto.session_state.git_ready = bool(runtime_validation.get("git_ready", True))
 
-        is_web = _detect_web_app(workspace_root)
+        # `_detect_web_app` faz vários `Path.exists()`/`.iterdir()`/
+        # `.read_text()` — I/O bloqueante que, sem `to_thread`, prendia o
+        # event loop inteiro a cada `create_session` (item 11 do plano de
+        # robustez do navegador interno). Ao contrário do I/O pontual deste
+        # arquivo silenciado com um comentário de lint ao lado (linhas 86 e
+        # 511), esta função varre o projeto inteiro e roda em todo
+        # `create_session`, então o custo real justifica a correção completa.
+        is_web = await asyncio.to_thread(_detect_web_app, workspace_root)
         sessao = AgentSession(
             session_id=session_id,
             workspace_root=workspace_root,
@@ -755,13 +932,18 @@ class AgentRunner:
         if sessao.context.browser is not None:
             replay_payload = await sessao.context.browser.stop()
             with suppress(Exception):
-                await store_replay(
+                replay = await store_replay(
                     blob=self.blob,
                     redis=self.redis,
                     session_id=session_id,
                     project=sessao.workspace_root.name,
                     payload=replay_payload,
                 )
+                if not replay and replay_payload and replay_payload.get("expired_by_ttl"):
+                    # Mesmo sinal do painel manual (ver `api/routes/browser.py`
+                    # ::close_browser_session`) — o serviço de navegador já
+                    # descartou a sessão por TTL antes deste `stop()` chegar.
+                    await mark_replay_expired(self.redis, session_id)
         if sessao.branch:
             try:
                 git_ops.remove_worktree(
@@ -801,6 +983,7 @@ class AgentRunner:
             mode=session.mode,
             focus_files=session.focus_files,
             focus_folder=session.focus_folder,
+            custom_mode_prompt_block=session.context.custom_mode_prompt_block,
         )
 
         if session.images:
@@ -826,6 +1009,157 @@ class AgentRunner:
             "total_cost_usd": 0.0,
             "total_tokens": 0,
         }
+
+    # ── Checkpoints / rewind (Fase 8 do upgrade do agente) ────────────────────
+
+    @staticmethod
+    async def _iteration_checkpoints(compilado: Any, config: Any) -> list[Any]:
+        """Um checkpoint representante por valor distinto de `AgentState
+        ["iterations"]`, em ordem cronológica — não um checkpoint por nó do
+        grafo (think/approve/act geram um cada, vários por iteração).
+
+        `aget_state_history` devolve o mais novo primeiro; junta tudo (o
+        histórico de uma sessão é limitado por `max_iterations`, cabe em
+        memória sem problema) e agrupa por corridas contíguas do mesmo valor
+        de `iterations` andando em ordem cronológica.
+
+        Dentro de cada grupo, prefere o checkpoint cuja última mensagem NÃO é
+        de `role="user"`. Isso importa porque continuar uma sessão já
+        finalizada (`stream_run` com `message=...`) funde a nova mensagem do
+        usuário como uma atualização de entrada ANTES do próximo `think()`
+        rodar — essa fusão não muda `iterations` (só `think()` muda), então
+        ela vira só mais um checkpoint dentro da MESMA corrida contígua do
+        último valor do turno anterior, mais novo que o checkpoint que de
+        fato terminou aquele turno. Sem este filtro, tanto `list_checkpoints`
+        quanto `rewind_to` pegariam esse checkpoint "turno anterior já
+        terminado, mas com a próxima mensagem já colada" em vez do estado
+        limpo de fim de turno — fazendo um rewind para aquele valor de
+        iteração não desfazer a mensagem seguinte. Um checkpoint pós-`act()`/
+        pós-`think()` legítimo nunca termina com `role="user"` por último (a
+        última mensagem é sempre do `act()` — resultado de ferramenta — ou do
+        `think()` — resposta do assistente); só o estado inicial da sessão e
+        essas fusões de entrada terminam assim, então o filtro nunca descarta
+        um checkpoint que devesse ser o representante.
+        """
+        historico = [snap async for snap in compilado.aget_state_history(config)]
+        historico.reverse()  # cronológico: mais antigo primeiro
+
+        grupos: list[list[Any]] = []
+        for snap in historico:
+            iteracao = (snap.values or {}).get("iterations")
+            if iteracao is None:
+                continue
+            if grupos and (grupos[-1][0].values or {}).get("iterations") == iteracao:
+                grupos[-1].append(snap)
+            else:
+                grupos.append([snap])
+
+        representantes: list[Any] = []
+        for grupo in grupos:
+            candidato = next(
+                (
+                    s
+                    for s in reversed(grupo)
+                    if ((s.values or {}).get("messages") or [{}])[-1].get("role") != "user"
+                ),
+                grupo[-1],
+            )
+            representantes.append(candidato)
+        return representantes
+
+    async def list_checkpoints(self, session: AgentSession) -> list[dict[str, Any]]:
+        """`[]` sem checkpointer (Postgres indisponível) — mesmo fail-soft de
+        `AgentRunner.session_diff`/histórico de mensagens."""
+        compilado = await self._compiled_graph(session)
+        if not compilado.checkpointer:
+            return []
+        config: Any = {"configurable": {"thread_id": session.session_id}}
+
+        pontos: list[dict[str, Any]] = []
+        for snap in await self._iteration_checkpoints(compilado, config):
+            valores = snap.values or {}
+            mensagens = valores.get("messages") or []
+            ultima_assistant = next(
+                (
+                    m
+                    for m in reversed(mensagens)
+                    if m.get("role") == "assistant" and m.get("content")
+                ),
+                None,
+            )
+            resumo = (ultima_assistant or {}).get("content") or ""
+            ultima_mensagem = mensagens[-1] if mensagens else {}
+            finalizado = bool(
+                ultima_mensagem.get("role") == "assistant"
+                and ultima_mensagem.get("content")
+                and not ultima_mensagem.get("tool_calls")
+            )
+            pontos.append(
+                {
+                    "iteration": valores.get("iterations"),
+                    "created_at": snap.created_at,
+                    "summary": resumo[:160],
+                    "finished": finalizado,
+                }
+            )
+        return pontos
+
+    async def rewind_to(self, session: AgentSession, *, iteration: int) -> dict[str, Any]:
+        """Restaura a sessão para o fim da iteração `iteration`: trunca
+        `messages`/`todos`/etc. do checkpointer até esse ponto (forka um novo
+        checkpoint a partir do antigo — `aupdate_state` é o "time travel"
+        nativo do LangGraph, não apaga nada) e reverte todo arquivo escrito
+        depois dela, usando `SnapshotService.restore_targets` (Fase 8).
+
+        Levanta `RuntimeError`/`ValueError` em vez de degradar: ao contrário
+        de quase tudo nesta classe, isto é uma ação explícita e destrutiva do
+        usuário — se não pode ser feita direito, a rota precisa saber e
+        devolver um erro, não fingir sucesso.
+        """
+        compilado = await self._compiled_graph(session)
+        if not compilado.checkpointer:
+            raise RuntimeError("checkpointer indisponível — sem histórico para restaurar")
+        config: Any = {"configurable": {"thread_id": session.session_id}}
+
+        alvo_config = next(
+            (
+                snap.config
+                for snap in await self._iteration_checkpoints(compilado, config)
+                if (snap.values or {}).get("iterations") == iteration
+            ),
+            None,
+        )
+        if alvo_config is None:
+            raise ValueError(f"iteração {iteration} não encontrada no histórico desta sessão")
+
+        await compilado.aupdate_state(alvo_config, values=None)
+
+        arquivos_restaurados: list[str] = []
+        if self.snapshots is not None:
+            alvos = await self.snapshots.restore_targets(
+                session_id=session.session_id, after_iteration=iteration
+            )
+            for alvo in alvos:
+                try:
+                    await asyncio.to_thread(
+                        session.context.fs.write, alvo.path, alvo.content_before
+                    )
+                    arquivos_restaurados.append(alvo.path)
+                except Exception as exc:
+                    log.warning(
+                        "agent.rewind.file_restore_failed",
+                        session=session.session_id,
+                        path=alvo.path,
+                        error=str(exc)[:200],
+                    )
+
+        log.info(
+            "agent.rewind.done",
+            session=session.session_id,
+            iteration=iteration,
+            files_restored=len(arquivos_restaurados),
+        )
+        return {"iteration": iteration, "files_restored": arquivos_restaurados}
 
     async def run_zombie_session_reaper(self, interval_seconds: int = 3600) -> None:
         """Laço de limpeza periódica, mesmo padrão de `SandboxManager.run_reaper`

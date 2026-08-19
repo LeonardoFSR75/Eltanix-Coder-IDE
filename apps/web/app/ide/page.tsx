@@ -3,7 +3,9 @@
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { BrowserPanel, ContainersPanel, DebugPanel, Explorer, ExtensionsPanel, GitPanel, PackagesPanel, SearchPanel, TrelloPanel } from "@/components/ide/Panels";
+import { BrowserPanel, ContainersPanel, DebugPanel, Explorer, GitPanel, SearchPanel, TrelloPanel } from "@/components/ide/Panels";
+import { PackagesPanel } from "@/components/ide/PackagesPanel";
+import { ExtensionsPanel } from "@/components/ide/ExtensionsPanel";
 
 import { StatusBar } from "@/components/ide/StatusBar";
 import { TopMenuBar } from "@/components/ide/TopMenuBar";
@@ -132,7 +134,12 @@ function Shell() {
       const sid = customEvt.detail?.sessionId || sessionId;
       if (url) {
         if (sid) ide.setActiveSessionId(sid);
-        ide.openFile(`browser:${url}`);
+        // Modo Agente, não Live: este evento nasce de uma navegação do
+        // AGENTE (`browser_action`), tipicamente contra um servidor no
+        // sandbox cuja porta nunca é publicada no host — um iframe direto
+        // (`browser:`) falharia sempre; o modo Agente resolve via o
+        // serviço de navegador (`sicoobito-<sessionId>:<porta>`).
+        ide.openFile(`browser-agent:${url}`);
       }
     };
     window.addEventListener("sicoobito:browser:open", handleBrowserOpen);

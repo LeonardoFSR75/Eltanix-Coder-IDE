@@ -28,7 +28,7 @@ log = get_logger(__name__)
 _READ_ACTIONS = {"list", "audit"}
 
 
-def _packages_risk(args: dict[str, Any]) -> RiskClass:
+def _packages_risk(args: dict[str, Any], _context: ToolContext | None = None) -> RiskClass:
     action = (args.get("action") or "list").strip().lower()
     if action in _READ_ACTIONS:
         return RiskClass.READ

@@ -22,6 +22,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import hmac
+import ipaddress
 import os
 import shutil
 import tempfile
@@ -38,6 +39,11 @@ from urllib.parse import urlparse
 TOKEN = os.getenv("BROWSER_TOKEN", "")
 SESSION_TTL_SECONDS = int(os.getenv("BROWSER_SESSION_TTL_SECONDS", "1800"))
 REAP_INTERVAL_SECONDS = int(os.getenv("BROWSER_REAP_INTERVAL_SECONDS", "300"))
+# Teto de contextos Chromium/Lightpanda vivos ao mesmo tempo — sem isto, uma
+# rajada de sessões (painel + várias sessões de agente) esgota a memória do
+# único processo de browser compartilhado, sem nenhum aviso até o container
+# cair. Análogo ao `SandboxConcurrencyGate` do lado do executor.
+MAX_CONCURRENT_SESSIONS = int(os.getenv("BROWSER_MAX_CONCURRENT_SESSIONS", "20"))
 
 # Trace/vídeo por sessão (Fase 4b) — arquivos passam por disco local antes de
 # virar bytes na resposta; `api` é quem de fato sobe pro MinIO (este serviço
@@ -46,6 +52,14 @@ VIDEO_ROOT = Path(tempfile.gettempdir()) / "sicoobito-browser-videos"
 TRACE_ROOT = Path(tempfile.gettempdir()) / "sicoobito-browser-traces"
 VIDEO_ROOT.mkdir(parents=True, exist_ok=True)
 TRACE_ROOT.mkdir(parents=True, exist_ok=True)
+# Teto por blob (trace.zip OU video.webm) antes de base64-codificar e devolver
+# no corpo JSON do `DELETE /sessions/{id}` — sem isto, uma gravação longa vira
+# uma resposta HTTP gigante (base64 já é +33% do tamanho original) que tanto
+# `BrowserClient.stop()` quanto `store_replay` precisam segurar inteira em
+# memória. Sessões que estourarem o teto perdem só aquele blob (sinalizado em
+# `trace_dropped_size_limit`/`video_dropped_size_limit`), não o resto do
+# replay (actions/network continuam completos).
+MAX_REPLAY_BLOB_BYTES = int(os.getenv("BROWSER_MAX_REPLAY_BLOB_BYTES", str(20 * 1024 * 1024)))
 
 _playwright: Any | None = None
 _browser: Any | None = None
@@ -61,6 +75,37 @@ _console_logs: dict[str, list[str]] = {}
 _page_errors: dict[str, list[str]] = {}
 _network_logs: dict[str, list[dict[str, Any]]] = {}
 _pending_requests: dict[str, dict[Any, float]] = {}
+# Lembra qual netloc (host:porta) resolveu por último para cada sessão, para
+# tentá-lo primeiro na próxima navegação em vez de sempre reiniciar do
+# candidato original (item 8 do plano de robustez do navegador interno).
+_last_successful_netloc: dict[str, str] = {}
+# Sessões que o `_reap_loop` descartou por TTL enquanto ainda tinham
+# trace/vídeo gravado — os bytes já foram jogados fora nesse momento (ver
+# docstring de `_finalize_replay`), então isto é só um sinal de curta duração
+# (podado depois de 1h) para o próximo `DELETE /sessions/{id}` distinguir
+# "nunca houve nada" de "havia algo, mas expirou antes de alguém pedir" —
+# item 9 do plano de robustez do navegador interno.
+_expired_sessions: dict[str, float] = {}
+
+# Um `asyncio.Lock` por sessão, serializando toda ação sobre a mesma `Page`
+# (inclusive a criação do contexto): sem isto, duas requisições concorrentes
+# para uma sessão nova podiam ambas ver `_pages.get(session_id) is None`,
+# ambas criar um contexto Chromium, e a perdedora da corrida nunca era
+# fechada (contexto + diretório de vídeo vazam até o processo cair); duas
+# ações concorrentes na MESMA `Page` já criada colidem em comportamento
+# indefinido do Playwright (não foi projetado pra ser pilotado por duas
+# corrotinas ao mesmo tempo).
+_session_locks: dict[str, asyncio.Lock] = {}
+_session_locks_guard = asyncio.Lock()
+
+
+async def _lock_for_session(session_id: str) -> asyncio.Lock:
+    async with _session_locks_guard:
+        lock = _session_locks.get(session_id)
+        if lock is None:
+            lock = asyncio.Lock()
+            _session_locks[session_id] = lock
+        return lock
 
 LIGHTPANDA_CDP_URL = os.getenv("LIGHTPANDA_CDP_URL", "http://lightpanda:9222")
 
@@ -96,6 +141,12 @@ async def _finalize_replay(session_id: str) -> dict[str, Any] | None:
     _page_errors.pop(session_id, None)
     _pending_requests.pop(session_id, None)
     _session_engine.pop(session_id, None)
+    _last_successful_netloc.pop(session_id, None)
+    # Seguro remover mesmo se o chamador atual detém o lock: isto só tira a
+    # entrada do dicionário, não invalida o objeto `asyncio.Lock` que ele já
+    # segura — o próximo `_lock_for_session` para este `session_id` (uma
+    # sessão nova, já que esta acabou de ser finalizada) cria um lock novo.
+    _session_locks.pop(session_id, None)
 
     if context is None:
         return None
@@ -117,7 +168,14 @@ async def _finalize_replay(session_id: str) -> dict[str, Any] | None:
 
         trace_bytes = trace_path.read_bytes() if trace_path.exists() else None
 
-        if trace_bytes or video_bytes:
+        trace_dropped = bool(trace_bytes) and len(trace_bytes) > MAX_REPLAY_BLOB_BYTES
+        video_dropped = bool(video_bytes) and len(video_bytes) > MAX_REPLAY_BLOB_BYTES
+        if trace_dropped:
+            trace_bytes = None
+        if video_dropped:
+            video_bytes = None
+
+        if trace_bytes or video_bytes or trace_dropped or video_dropped:
             resultado = {
                 "started_at": started,
                 "duration_ms": int((time.time() - started) * 1000) if started else None,
@@ -129,6 +187,8 @@ async def _finalize_replay(session_id: str) -> dict[str, Any] | None:
                 "video_base64": base64.b64encode(video_bytes).decode("ascii")
                 if video_bytes
                 else None,
+                "trace_dropped_size_limit": trace_dropped,
+                "video_dropped_size_limit": video_dropped,
             }
     finally:
         with suppress(Exception):
@@ -148,7 +208,18 @@ async def _reap_loop() -> None:
         ]
         for sid in expiradas:
             with suppress(Exception):
-                await _finalize_replay(sid)
+                lock = await _lock_for_session(sid)
+                async with lock:
+                    resultado = await _finalize_replay(sid)
+                if resultado is not None:
+                    _expired_sessions[sid] = agora
+
+        # Poda marcadores velhos — sinal de curta duração para o próximo
+        # `close_session` consultar, não registro de auditoria (ver
+        # `_expired_sessions` acima).
+        limite = agora - 3600
+        for sid in [s for s, quando in _expired_sessions.items() if quando < limite]:
+            _expired_sessions.pop(sid, None)
 
 
 @asynccontextmanager
@@ -236,10 +307,38 @@ Auth = Depends(require_token)
 
 
 async def _get_page(session_id: str, engine: str = "auto") -> tuple[Any, str]:
+    """Chame sempre com o lock de `_lock_for_session(session_id)` já
+    adquirido pelo chamador — esta função não se protege sozinha (ver
+    `_session_locks` acima)."""
     page = _pages.get(session_id)
     if page is not None and not page.is_closed():
+        cached_engine = _session_engine.get(session_id, "chromium")
+        # Lightpanda é leve mas não sustenta rasterização completa (sem
+        # `Page.captureScreenshot` confiável via CDP) — se a sessão já está
+        # presa nele e a ação atual pediu explicitamente chromium (hoje só
+        # acontece para `screenshot`, ver `_run_action_locked`), falhar aqui
+        # com uma mensagem clara em vez de deixar `page.screenshot()` estourar
+        # mais abaixo um "ação falhou" genérico que mascara a causa real.
+        if engine == "chromium" and cached_engine == "lightpanda":
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                detail=(
+                    f"sessão '{session_id}' já está usando o motor 'lightpanda' (leve, sem "
+                    "suporte a screenshot) — para capturar tela, feche esta sessão "
+                    "(DELETE /sessions/{session_id}) e abra outra com engine='chromium' ou 'auto'."
+                ),
+            )
         _last_used[session_id] = time.time()
-        return page, _session_engine.get(session_id, "chromium")
+        return page, cached_engine
+
+    if session_id not in _contexts and len(_contexts) >= MAX_CONCURRENT_SESSIONS:
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=(
+                f"Limite de {MAX_CONCURRENT_SESSIONS} sessões de navegador simultâneas "
+                "atingido — feche alguma sessão (painel ou agente) antes de abrir outra."
+            ),
+        )
 
     browser, engine_used = await _launch_browser(engine=engine)
     _session_engine[session_id] = engine_used
@@ -288,7 +387,16 @@ async def _get_page(session_id: str, engine: str = "auto") -> tuple[Any, str]:
 
     def _on_request(req: Any) -> None:
         try:
-            _pending_requests[session_id][req] = time.perf_counter()
+            pendentes = _pending_requests[session_id]
+            pendentes[req] = time.perf_counter()
+            # Requisições penduradas (SSE/long-poll/WS que nunca disparam
+            # `response`/`requestfailed`) nunca eram removidas daqui — sem
+            # limite, o dict cresce sem parar ao longo de uma sessão longa.
+            # Descarta a mais antiga (dict é ordenado por inserção) quando
+            # passa do limite, mesmo padrão de poda já usado em
+            # `_console_logs`/`_page_errors`/`_network_logs`.
+            if len(pendentes) > 200:
+                pendentes.pop(next(iter(pendentes)), None)
         except Exception:
             pass
 
@@ -340,23 +448,33 @@ async def _get_page(session_id: str, engine: str = "auto") -> tuple[Any, str]:
     except Exception:
         pass
 
-    return page
+    return page, engine_used
+
+
+def _check_lightpanda_sync(cdp_url: str) -> bool:
+    """Chamada bloqueante (`urllib.request`) — só é segura fora do event
+    loop, ver o `asyncio.to_thread` em `health()` abaixo."""
+    import urllib.request
+
+    try:
+        with urllib.request.urlopen(f"{cdp_url}/json/version", timeout=1.0) as resp:
+            return resp.status == 200
+    except Exception:
+        return False
 
 
 @app.get("/health")
 async def health() -> dict[str, Any]:
     lp_ok = False
-    try:
-        if _lp_browser is not None and _lp_browser.is_connected():
-            lp_ok = True
-        else:
-            import urllib.request
-
-            cdp_url = LIGHTPANDA_CDP_URL.replace("ws://", "http://")
-            with urllib.request.urlopen(f"{cdp_url}/json/version", timeout=1.0) as resp:
-                lp_ok = resp.status == 200
-    except Exception:
-        lp_ok = False
+    if _lp_browser is not None and _lp_browser.is_connected():
+        lp_ok = True
+    else:
+        # Docker consulta este endpoint a cada `SESSION_TTL_SECONDS`/3 (ver
+        # healthcheck no docker-compose.yml) — antes, `urllib.request.urlopen`
+        # síncrono aqui bloqueava o event loop inteiro (até 1s de timeout) a
+        # cada poll, travando toda requisição concorrente nesse intervalo.
+        cdp_url = LIGHTPANDA_CDP_URL.replace("ws://", "http://")
+        lp_ok = await asyncio.to_thread(_check_lightpanda_sync, cdp_url)
 
     return {
         "status": "ok",
@@ -374,28 +492,93 @@ class CreateSessionRequest(BaseModel):
 
 @app.post("/sessions", dependencies=[Auth])
 async def create_session(payload: CreateSessionRequest) -> dict[str, Any]:
-    page, engine_used = await _get_page(payload.session_id, engine=payload.engine)
+    lock = await _lock_for_session(payload.session_id)
+    async with lock:
+        _page, engine_used = await _get_page(payload.session_id, engine=payload.engine)
     return {"session_id": payload.session_id, "created": True, "engine_used": engine_used}
 
 
 ALLOWED_SCHEMES = ("http://", "https://")
+
+# Hosts de metadados cloud / link-local — nunca são um alvo legítimo,
+# independente de quem pediu a navegação. Cópia sincronizada (não
+# importada) de `sicoobito.security.url_safety.BLOCKED_HOSTNAMES`: este
+# serviço roda isolado num container mínimo (ver Dockerfile — não instala o
+# pacote `sicoobito` de propósito, para manter a menor superfície possível
+# numa rede que já é a mais permissiva do sistema) — ver o addendum do ADR
+# 0007 para o porquê da duplicação ser intencional.
 BLOCKED_HOSTS = {
     "169.254.169.254",
     "metadata.google.internal",
     "instance-data",
 }
 
+# `localhost`/`127.0.0.1`/`0.0.0.0` são o gatilho legítimo da substituição
+# de candidatos logo abaixo em `run_action` (sessão panel-* tenta
+# `sicoobito-<sid>`/`host.docker.internal` como fallback) — nunca devem ser
+# bloqueados aqui, mesmo sendo tecnicamente loopback/reservado.
+_LOOPBACK_TRIGGERS = {"localhost", "127.0.0.1", "0.0.0.0"}
 
-def validate_url(url: str | None) -> None:
+# Hosts de infraestrutura Docker que nenhuma sessão deveria alcançar
+# diretamente por URL explícita (nem painel, nem agente) — `browser_net` não
+# lhes dá rota mesmo, mas rejeitar cedo dá um erro claro em vez de um
+# timeout de conexão confuso.
+_INFRA_HOSTS_ALWAYS_BLOCKED = {"executor", "redis", "minio", "postgres", "mcp-scanner"}
+
+# Hosts Docker-internos que só sessões de AGENTE podem alcançar diretamente
+# (a allowlist correspondente vive em
+# `sicoobito.agent.tools.browser::is_agent_local_test_target`) — sessões do
+# PAINEL MANUAL (`panel-*`) nunca devem, porque o resultado é renderizado
+# num `<iframe>` do navegador REAL do usuário, fora do Docker, que não
+# resolve esses nomes (ver item 2 / `url_is_internal_fallback` abaixo para o
+# sinal complementar quando a substituição acontece por baixo dos panos).
+_DOCKER_INTERNAL_HOSTS_BLOCKED_FOR_PANEL = {"web", "api", "host.docker.internal"}
+
+
+def validate_url(url: str | None, *, session_id: str = "") -> None:
     if not url or not url.startswith(ALLOWED_SCHEMES):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="url precisa ser http(s)")
     parsed = urlparse(url)
     hostname = (parsed.hostname or "").lower()
-    if not hostname or hostname in BLOCKED_HOSTS or hostname.startswith("169.254."):
+    if not hostname:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="url sem hostname válido")
+
+    if hostname in BLOCKED_HOSTS or hostname.startswith("169.254."):
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST,
             detail=f"Acesso ao host '{hostname}' é restrito por segurança (SSRF).",
         )
+
+    if hostname in _INFRA_HOSTS_ALWAYS_BLOCKED:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            detail=f"Acesso ao host '{hostname}' é restrito por segurança (SSRF).",
+        )
+
+    is_panel = session_id.startswith("panel-")
+    if is_panel and (
+        hostname in _DOCKER_INTERNAL_HOSTS_BLOCKED_FOR_PANEL
+        or hostname.startswith("sicoobito-")
+    ):
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"O host '{hostname}' só existe dentro da rede Docker e nunca será alcançável "
+                "pelo navegador real do host — o painel manual não navega para ele diretamente. "
+                "Digite `localhost:<porta>` (o serviço resolve o alvo correto internamente)."
+            ),
+        )
+
+    if hostname in _LOOPBACK_TRIGGERS:
+        return
+
+    with suppress(ValueError):
+        ip = ipaddress.ip_address(hostname)
+        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                detail=f"Acesso ao IP privado/reservado '{hostname}' é restrito por segurança (SSRF).",
+            )
 
 
 class ActionRequest(BaseModel):
@@ -407,10 +590,25 @@ class ActionRequest(BaseModel):
     text: str | None = None
     engine: Literal["auto", "lightpanda", "chromium"] = "auto"
     timeout_ms: int = Field(default=15_000, ge=100, le=60_000)
+    # Default `False`: o agente (`agent/tools/browser.py`) navega várias vezes
+    # em sequência (DOM-only, click/type/content) sem precisar de imagem a
+    # cada passo — forçar rasterização em toda `navigate` anulava a vantagem
+    # de leveza do Lightpanda e custava um render completo do Chromium à toa.
+    # O painel manual (`api/routes/browser.py`) passa `True` explicitamente.
+    capture_screenshot: bool = False
 
 
 @app.post("/sessions/{session_id}/action", dependencies=[Auth])
 async def run_action(session_id: str, payload: ActionRequest) -> dict[str, Any]:
+    # Serializa TODA ação desta sessão (inclusive a criação preguiçosa da
+    # página) atrás do mesmo lock — ver o comentário em `_session_locks`
+    # acima para as duas classes de corrida que isto fecha.
+    lock = await _lock_for_session(session_id)
+    async with lock:
+        return await _run_action_locked(session_id, payload)
+
+
+async def _run_action_locked(session_id: str, payload: ActionRequest) -> dict[str, Any]:
     # Se a ação for screenshot e o engine for auto, forçamos chromium para rasterização completa
     engine_hint = payload.engine
     if payload.action == "screenshot" and engine_hint == "auto":
@@ -421,7 +619,7 @@ async def run_action(session_id: str, payload: ActionRequest) -> dict[str, Any]:
 
     try:
         if payload.action == "navigate":
-            validate_url(payload.url)
+            validate_url(payload.url, session_id=session_id)
             alvo_url = payload.url or ""
             parsed = urlparse(alvo_url)
             hostname = (parsed.hostname or "").lower()
@@ -442,7 +640,17 @@ async def run_action(session_id: str, payload: ActionRequest) -> dict[str, Any]:
                     candidatos.append(parsed._replace(netloc=sandbox_host).geturl())
                     if session_id.startswith("panel-"):
                         candidatos.append(parsed._replace(netloc=host_gateway).geturl())
+
+                # Tenta primeiro o candidato que resolveu da última vez nesta
+                # sessão, em vez de sempre reiniciar do topo.
+                lembrado = _last_successful_netloc.get(session_id)
+                if lembrado:
+                    candidatos.sort(key=lambda c: urlparse(c).netloc != lembrado)
+
                 urls_to_try = candidatos
+            # Só uma URL "de verdade" (não candidato de fallback interno) —
+            # nenhuma substituição em jogo, então nunca é fallback interno.
+            eh_url_original_unica = urls_to_try == [alvo_url]
 
             # Limpa logs da sessão anterior para esta nova navegação
             _console_logs[session_id] = []
@@ -452,7 +660,11 @@ async def run_action(session_id: str, payload: ActionRequest) -> dict[str, Any]:
 
             resposta = None
             ultimo_erro = None
-            limite_tempo = time.perf_counter() + min(payload.timeout_ms / 1000, 15.0)
+            url_bem_sucedida: str | None = None
+            # Orçamento real do chamador (até 60s, `ActionRequest.timeout_ms`)
+            # — antes ficava artificialmente limitado a 15s mesmo quando o
+            # caller pedia mais.
+            limite_tempo = time.perf_counter() + payload.timeout_ms / 1000
 
             while True:
                 for tentativa_url in urls_to_try:
@@ -464,6 +676,7 @@ async def run_action(session_id: str, payload: ActionRequest) -> dict[str, Any]:
                             wait_until="domcontentloaded",
                         )
                         ultimo_erro = None
+                        url_bem_sucedida = tentativa_url
                         break
                     except Exception as exc:  # noqa: BLE001
                         ultimo_erro = exc
@@ -496,17 +709,32 @@ async def run_action(session_id: str, payload: ActionRequest) -> dict[str, Any]:
                     )
                 raise ultimo_erro
 
+            # Sinaliza explicitamente quando a URL efetivamente carregada é
+            # uma substituição Docker-interna (`sicoobito-<sid>`/
+            # `host.docker.internal`) em vez da URL pedida — sem isto, quem
+            # chama (painel manual → iframe "Ao Vivo" no navegador real do
+            # usuário) não tinha como saber que recebeu um hostname que só
+            # resolve dentro do `browser_net`.
+            url_is_internal_fallback = (
+                not eh_url_original_unica and url_bem_sucedida is not None and url_bem_sucedida != alvo_url
+            )
+            if url_is_internal_fallback and url_bem_sucedida:
+                _last_successful_netloc[session_id] = urlparse(url_bem_sucedida).netloc
+
             image_b64 = None
-            try:
-                png = await page.screenshot(timeout=min(payload.timeout_ms, 5000))
-                image_b64 = base64.b64encode(png).decode("ascii")
-            except Exception:  # noqa: BLE001
-                pass
+            if payload.capture_screenshot:
+                try:
+                    png = await page.screenshot(timeout=min(payload.timeout_ms, 5000))
+                    image_b64 = base64.b64encode(png).decode("ascii")
+                except Exception:  # noqa: BLE001
+                    pass
 
             _log_action(session_id, "navigate", page.url)
             return {
                 "ok": True,
                 "url": page.url,
+                "original_url": alvo_url,
+                "url_is_internal_fallback": url_is_internal_fallback,
                 "title": await page.title(),
                 "status": resposta.status if resposta else None,
                 "duration_ms": int((time.perf_counter() - inicio) * 1000),
@@ -589,7 +817,9 @@ async def get_network_log(session_id: str) -> dict[str, Any]:
 @app.websocket("/sessions/{session_id}/stream", dependencies=[Auth])
 async def stream_screencast(websocket: WebSocket, session_id: str) -> None:
     await websocket.accept()
-    page, _ = await _get_page(session_id, engine="chromium")
+    lock = await _lock_for_session(session_id)
+    async with lock:
+        page, _ = await _get_page(session_id, engine="chromium")
     cdp = await page.context.new_cdp_session(page)
 
     def _on_frame(params: dict[str, Any]) -> None:
@@ -631,6 +861,17 @@ async def stream_screencast(websocket: WebSocket, session_id: str) -> None:
 
 @app.delete("/sessions/{session_id}", dependencies=[Auth])
 async def close_session(session_id: str) -> dict[str, Any]:
-    tinha_sessao = session_id in _contexts
-    replay = await _finalize_replay(session_id) if tinha_sessao else None
-    return {"closed": tinha_sessao, **(replay or {})}
+    lock = await _lock_for_session(session_id)
+    async with lock:
+        tinha_sessao = session_id in _contexts
+        replay = await _finalize_replay(session_id) if tinha_sessao else None
+    resultado: dict[str, Any] = {"closed": tinha_sessao, **(replay or {})}
+    if not tinha_sessao and _expired_sessions.pop(session_id, None) is not None:
+        # A sessão não existe mais porque o `_reap_loop` já a descartou por
+        # TTL antes deste DELETE chegar — e ela tinha trace/vídeo em
+        # andamento quando isso aconteceu (ver `_expired_sessions`). O
+        # chamador (`apps/api/src/sicoobito/browser/client.py::stop()`)
+        # propaga esta flag para marcar o replay como perdido em vez de
+        # simplesmente "não havia nada" (item 9 do plano de robustez).
+        resultado["expired_by_ttl"] = True
+    return resultado

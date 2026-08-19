@@ -62,6 +62,21 @@ export async function listAgentTools(): Promise<AgentToolInfo[]> {
   return tools;
 }
 
+export interface SlashCommandInfo {
+  command: string;
+  skill_name: string | null;
+  suggested_mode: string | null;
+  description: string;
+}
+
+/** Catálogo de slash commands reais do agente (`/spec`, `/test`, `/fix`...) —
+ * cada um ativa deterministicamente uma skill do backend (`agent/slash_commands.py`).
+ * Fonte única do servidor, consumida pelo autocomplete de `AgentChatInput.tsx`. */
+export async function listSlashCommands(): Promise<SlashCommandInfo[]> {
+  const { commands } = await get<{ commands: SlashCommandInfo[] }>("/api/agent/slash-commands");
+  return commands;
+}
+
 /** Árvore de agentes a partir de `sessionId` (ele + todos os descendentes),
  * com status ao vivo do `AgentCoordinator` — inclusive `waiting_approval`
  * para um filho headless, que a lista de sessões sozinha não revela. */
@@ -99,5 +114,35 @@ export interface SessionDiff {
 
 export async function getSessionDiff(sessionId: string): Promise<SessionDiff> {
   return get<SessionDiff>(`/api/agent/sessions/${encodeURIComponent(sessionId)}/diff`);
+}
+
+export interface AgentCheckpoint {
+  iteration: number;
+  created_at: string;
+  summary: string;
+  finished: boolean;
+}
+
+/** Pontos de restauração (Fase 8) — um por chamada ao modelo já concluída
+ * nesta sessão. `[]` se o checkpointer estiver indisponível. */
+export async function listCheckpoints(sessionId: string): Promise<AgentCheckpoint[]> {
+  const { checkpoints } = await get<{ checkpoints: AgentCheckpoint[] }>(
+    `/api/agent/sessions/${encodeURIComponent(sessionId)}/checkpoints`,
+  );
+  return checkpoints;
+}
+
+export interface RewindResult {
+  iteration: number;
+  files_restored: string[];
+}
+
+/** Restaura a sessão para o fim de `iteration`: trunca o histórico do grafo
+ * e reverte no worktree todo arquivo escrito depois dela. Ação destrutiva —
+ * sempre confirmar com o usuário antes de chamar. */
+export async function rewindSession(sessionId: string, iteration: number): Promise<RewindResult> {
+  return post<RewindResult>(`/api/agent/sessions/${encodeURIComponent(sessionId)}/rewind`, {
+    iteration,
+  });
 }
 

@@ -13,6 +13,7 @@ from sicoobito.agent.graph import (
     _is_stuck_repeat,
     _next_repetition_state,
     _para_api,
+    _telemetry_span_name,
     _tool_fingerprint,
     _tool_schemas,
 )
@@ -181,3 +182,32 @@ def test_next_repetition_state_restarts_on_a_different_failing_call():
     anterior = _tool_fingerprint("run_command", {"command": "pytest"})
     nova = _tool_fingerprint("edit_file", {"path": "x.py"})
     assert _next_repetition_state(nova, False, anterior, 2) == (nova, 1)
+
+
+def test_telemetry_span_name_appends_sub_action_for_composite_tools():
+    # Item 11 do plano de robustez do navegador interno: `browser_action`
+    # (e outras ferramentas compostas com um campo `action`) não podem virar
+    # um único span genérico na telemetria — impossível saber qual sub-ação
+    # foi lenta ou falhou.
+    assert (
+        _telemetry_span_name("browser_action", {"action": "navigate", "url": "http://x"})
+        == "browser_action.navigate"
+    )
+    assert (
+        _telemetry_span_name("manage_packages", {"action": "install"})
+        == "manage_packages.install"
+    )
+
+
+def test_telemetry_span_name_falls_back_to_tool_name_without_action_field():
+    assert _telemetry_span_name("run_command", {"command": "pytest"}) == "run_command"
+    assert _telemetry_span_name("edit_file", {}) == "edit_file"
+
+
+def test_telemetry_span_name_ignores_non_identifier_action_values():
+    # Um `action` que não pareça um identificador curto (ex.: veio de outro
+    # campo por coincidência, ou é um valor arbitrário do modelo) não deve
+    # virar sufixo do nome do span — evita span names inesperados/ilimitados.
+    assert _telemetry_span_name("some_tool", {"action": "abre a URL http://x.com"}) == "some_tool"
+    assert _telemetry_span_name("some_tool", {"action": 123}) == "some_tool"
+    assert _telemetry_span_name("some_tool", {"action": "a" * 60}) == "some_tool"

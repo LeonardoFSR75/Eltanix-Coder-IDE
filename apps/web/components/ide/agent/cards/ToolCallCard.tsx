@@ -7,6 +7,7 @@ import { DiffCard } from "./DiffCard";
 import { ExplorerCard } from "./ExplorerCard";
 import { GitCard } from "./GitCard";
 import { GraphCard } from "./GraphCard";
+import { PackagesCard } from "./PackagesCard";
 import { ListFilesCard, ReadFileCard } from "./ReadFileCard";
 import { RunCommandCard } from "./RunCommandCard";
 import { SearchCard } from "./SearchCard";
@@ -27,6 +28,7 @@ const DEDICATED_CARD_TOOLS = new Set([
   "code_graph",
   "find_circular_imports",
   "find_orphan_modules",
+  "manage_packages",
 ]);
 
 // `<ToolCallCard .../>` sempre produz um elemento React válido (mesmo quando
@@ -67,6 +69,8 @@ export function ToolCallCard(props: ToolCardProps & { sessionId: string | null }
     case "find_circular_imports":
     case "find_orphan_modules":
       return <ExplorerCard {...props} />;
+    case "manage_packages":
+      return <PackagesCard {...props} />;
     default:
       if (GIT_TOOLS.has(props.tool)) return <GitCard {...props} />;
       return null;

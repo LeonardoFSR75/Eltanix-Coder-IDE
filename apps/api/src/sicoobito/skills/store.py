@@ -1,10 +1,11 @@
-"""Persistência de skills — CRUD simples, sem vetor nem chunking."""
+"""Persistência de skills — CRUD simples + busca por similaridade do embedding
+de `description` (roteamento automático, ver `SkillService.find_relevant`)."""
 
 from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from sicoobito.db.models import Skill
@@ -96,3 +97,56 @@ async def delete_skill(session: AsyncSession, skill_id: uuid.UUID) -> Skill | No
         return None
     await session.delete(skill)
     return skill
+
+
+async def set_description_embedding(
+    session: AsyncSession, skill_id: uuid.UUID, embedding: list[float]
+) -> None:
+    """Grava o vetor de `description` calculado fora da transação (a chamada ao
+    provedor de embedding não pode acontecer dentro de um `session_scope`)."""
+    skill = await session.get(Skill, skill_id)
+    if skill is not None:
+        skill.description_embedding = embedding
+
+
+async def search_by_similarity(
+    session: AsyncSession,
+    *,
+    query_embedding: list[float],
+    top_k: int = 2,
+    min_score: float = 0.72,
+) -> list[Skill]:
+    """Top-k skills habilitadas por similaridade de cosseno entre
+    `query_embedding` e `description_embedding`. `1 - (a <=> b)` converte a
+    distância de cosseno do pgvector (0 = idêntico) em score de similaridade
+    (1 = idêntico) — mesma convenção usada para o `min_score` em
+    `SkillService.find_relevant`. Skills sem embedding ainda calculado
+    (`description_embedding IS NULL`) nunca aparecem — silenciosamente
+    ausentes do roteamento automático até o próximo seed/CRUD as recalcular,
+    não um erro.
+    """
+    sql = """
+        SELECT id, 1 - (description_embedding <=> CAST(:embedding AS vector)) AS score
+        FROM skill
+        WHERE enabled = true AND description_embedding IS NOT NULL
+        ORDER BY description_embedding <=> CAST(:embedding AS vector)
+        LIMIT :top_k
+    """
+    rows = (
+        await session.execute(
+            text(sql), {"embedding": str(query_embedding), "top_k": top_k}
+        )
+    ).mappings().all()
+
+    matched_ids = [row["id"] for row in rows if float(row["score"]) >= min_score]
+    if not matched_ids:
+        return []
+
+    skills = {
+        s.id: s
+        for s in (
+            await session.execute(select(Skill).where(Skill.id.in_(matched_ids)))
+        ).scalars()
+    }
+    # Reordena pelo score original (a query `IN` do passo acima não preserva ordem).
+    return [skills[i] for i in matched_ids if i in skills]

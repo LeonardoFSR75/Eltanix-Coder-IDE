@@ -22,5 +22,10 @@ export default defineConfig({
     },
     globals: true,
     setupFiles: ["./vitest.setup.ts"],
+    // e2e/ são specs Playwright (rodam via `npm run test:e2e` contra a stack
+    // Docker inteira, ver e2e/README ou apps/web/CLAUDE.md) — sem isto, o
+    // glob padrão de spec do Vitest as pega também e elas quebram, porque
+    // usam o `test()`/`test.use()` do @playwright/test, não do Vitest.
+    exclude: ["**/node_modules/**", "**/dist/**", "e2e/**"],
   },
 });

@@ -5,7 +5,22 @@ from __future__ import annotations
 import operator
 from typing import Annotated, Any, Literal, NotRequired, TypedDict
 
-AgentMode = Literal["ask", "edit", "agent", "plan", "auto", "orchestra", "explore"]
+# Os 7 modos embutidos, cada um com bloco de prompt fixo (`agent/prompts.py::
+# build_task_prompt`) e gate de ferramentas fixo (`agent/graph.py::
+# _tool_schemas`). Qualquer `mode` fora desta lista é tratado como o id (UUID
+# em texto) de um modo customizado (Fase 6 do upgrade do agente, ver
+# `agent/custom_modes.py`) — resolvido uma única vez na criação da sessão
+# (`AgentRunner._resolve_custom_mode`), nunca consultado no banco a cada turno.
+BUILTIN_MODES: frozenset[str] = frozenset(
+    {"ask", "edit", "agent", "plan", "auto", "orchestra", "explore"}
+)
+# Antes um `Literal` fixo dos 7 valores acima — alargado para `str` pela Fase
+# 6 para também aceitar o id de um modo customizado. A validação de "isto é um
+# modo válido" não é mais responsabilidade do tipo: é responsabilidade de
+# `_tool_schemas`/`build_task_prompt` degradarem com segurança (somente
+# leitura) quando `mode` não bate com nenhum modo embutido nem customizado
+# resolvido.
+AgentMode = str
 
 
 class ReviewNote(TypedDict):

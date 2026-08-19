@@ -3,8 +3,8 @@
   "configurations": [
     {
       "name": "web-dev",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev", "--prefix", "apps/web"],
+      "runtimeExecutable": "bun",
+      "runtimeArgs": ["--cwd=apps/web", "run", "dev"],
       "port": 3000
     }
   ]

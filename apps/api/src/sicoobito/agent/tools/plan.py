@@ -1,9 +1,16 @@
 """Ferramenta de plano/checklist do agente.
 
 Sem isto, "Modo Planejar" produzia só um parágrafo de texto que ninguém
-conseguia acompanhar turno a turno. `write_todos` é `RiskClass.READ` de
-propósito — não toca em arquivo nenhum, então o modelo pode atualizar a
-lista livremente a cada turno, sem fricção de aprovação.
+conseguia acompanhar turno a turno. `write_todos` é `RiskClass.READ` na
+maioria das chamadas — não toca em arquivo nenhum, então o modelo pode
+atualizar a lista livremente a cada turno, sem fricção de aprovação.
+
+**Exceção (Fase 3 do upgrade do agente, estilo Antigravity)**: em modo
+`plan`/`orchestra`, a primeira chamada que de fato registra um plano (a
+lista deixa de estar vazia) vira `RiskClass.WRITE` — o usuário revisa e
+aprova o plano antes de qualquer ferramenta de escrita/execução ser
+liberada, em vez de só confiar no texto do prompt pedindo isso. Ver
+`_todos_risk` e `ToolContext.session_state.plan_registered`.
 """
 
 from __future__ import annotations
@@ -13,6 +20,19 @@ from typing import Any
 from sicoobito.agent.tools.base import RiskClass, ToolContext, ToolResult, tool
 
 _VALID_STATUS = {"pending", "in_progress", "completed"}
+_GATED_MODES = {"plan", "orchestra"}
+
+
+def _todos_risk(args: dict[str, Any], context: ToolContext | None) -> RiskClass:
+    if context is None or context.mode not in _GATED_MODES:
+        return RiskClass.READ
+    if context.session_state.plan_registered:
+        return RiskClass.READ
+    itens = args.get("items") or []
+    tem_conteudo = any(
+        isinstance(item, dict) and str(item.get("content", "")).strip() for item in itens
+    )
+    return RiskClass.WRITE if tem_conteudo else RiskClass.READ
 
 
 @tool(
@@ -23,7 +43,7 @@ _VALID_STATUS = {"pending", "in_progress", "completed"}
         "enviada substitui a anterior por completo, então reenvie todos os itens, "
         "não só os que mudaram de status."
     ),
-    risk=RiskClass.READ,
+    risk=_todos_risk,
     parameters={
         "type": "object",
         "properties": {
@@ -84,6 +104,14 @@ async def write_todos(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
             status = "in_progress"
             rebaixados.append(conteudo)
         todos.append({"content": conteudo, "status": status})
+
+    # Chega aqui só depois de aprovado quando `_todos_risk` classificou esta
+    # chamada como WRITE (a própria que registra o plano) — marca a sessão
+    # para que nenhuma atualização seguinte do mesmo plano volte a pedir
+    # aprovação, mesmo que a lista fique momentaneamente vazia no meio do
+    # trabalho (ex: o modelo reenvia a lista inteira num estado intermediário).
+    if ctx.mode in _GATED_MODES and todos and not ctx.session_state.plan_registered:
+        ctx.session_state.plan_registered = True
 
     resumo = "\n".join(f"[{t['status']}] {t['content']}" for t in todos) or "(lista vazia)"
     aviso = ""

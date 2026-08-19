@@ -1,17 +1,22 @@
-"""Seed de habilidades (agent-skills do Addy Osmani).
+"""Seed de habilidades (agent-skills do Addy Osmani + skills curadas do projeto).
 
-Importa as 24 habilidades de engenharia de software do repositório
-`.agents/agent-skills` para a tabela `skill` no banco de dados.
+Importa todas as habilidades encontradas recursivamente em `.agents/` (skills
+curadas em `.agents/skills/` + o pacote vendorizado em `.agents/agent-skills/`)
+para a tabela `skill` no banco de dados.
 """
 
 from __future__ import annotations
 
 import re
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from sicoobito.db.session import session_scope
 from sicoobito.logging_setup import get_logger
 from sicoobito.skills import store
+
+if TYPE_CHECKING:
+    from sicoobito.router.engine import RouterEngine
 
 log = get_logger(__name__)
 
@@ -50,13 +55,26 @@ def parse_skill_markdown(filepath: Path) -> dict[str, str] | None:
     }
 
 
-async def seed_agent_skills(skills_dir: Path) -> int:
-    """Carrega e sincroniza todas as skills em `skills_dir` (recursivo) para a tabela `skill`."""
+async def seed_agent_skills(
+    skills_dir: Path,
+    *,
+    engine: RouterEngine | None = None,
+    embedding_profile: str = "embedding",
+) -> int:
+    """Carrega e sincroniza todas as skills em `skills_dir` (recursivo) para a tabela `skill`.
+
+    Quando `engine` é passado, também calcula o embedding de `description` de
+    cada skill nova (roteamento automático, Fase 1 do upgrade do agente) —
+    best-effort: uma falha do provedor de embedding não impede o seed, a skill
+    só fica sem embedding até um recálculo futuro (nunca entra no roteamento
+    automático até lá, mas continua acessível via `list_skills`/`get_skill`).
+    """
     if not skills_dir.exists() or not skills_dir.is_dir():  # noqa: ASYNC240
         log.warning("skills.seed.dir_not_found", path=str(skills_dir))
         return 0
 
     count = 0
+    novas: list[tuple[str, str]] = []  # (skill_id, description) — embedado fora da transação
     async with session_scope() as session:
         existing_skills = await store.list_skills(session)
         existing_names = {s.name for s in existing_skills}
@@ -67,7 +85,7 @@ async def seed_agent_skills(skills_dir: Path) -> int:
                 continue
 
             if parsed["name"] not in existing_names:
-                await store.create_skill(
+                skill = await store.create_skill(
                     session,
                     name=parsed["name"],
                     description=parsed["description"],
@@ -76,7 +94,35 @@ async def seed_agent_skills(skills_dir: Path) -> int:
                     parameters_json=parsed["parameters_json"],
                 )
                 existing_names.add(parsed["name"])
+                novas.append((str(skill.id), parsed["description"]))
                 count += 1
                 log.info("skills.seed.imported", name=parsed["name"])
 
+    if engine is not None and novas:
+        await _embed_new_skills(engine, embedding_profile, novas)
+
     return count
+
+
+async def _embed_new_skills(
+    engine: RouterEngine, embedding_profile: str, skills: list[tuple[str, str]]
+) -> None:
+    import uuid
+
+    try:
+        resultado = await engine.embed(
+            requested_model=embedding_profile,
+            inputs=[description for _, description in skills],
+            source="skills.seed",
+        )
+    except Exception as exc:
+        log.warning("skills.seed.embed_failed", error=str(exc)[:200], count=len(skills))
+        return
+
+    data = resultado.payload.get("data") or []
+    async with session_scope() as session:
+        for (skill_id, _), item in zip(skills, data, strict=False):
+            vetor = item.get("embedding")
+            if not vetor:
+                continue
+            await store.set_description_embedding(session, uuid.UUID(skill_id), vetor)

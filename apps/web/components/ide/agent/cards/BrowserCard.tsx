@@ -11,13 +11,19 @@ export function BrowserCard({ tool, content, data, ok }: ToolCardProps) {
   const { openFile } = useIde();
   const image = typeof data.image_base64 === "string" ? data.image_base64 : null;
   const url = typeof data.url === "string" ? data.url : undefined;
+  const originalUrl = typeof data.original_url === "string" ? data.original_url : undefined;
+  const urlIsInternalFallback = data.url_is_internal_fallback === true;
   const title = typeof data.title === "string" ? data.title : undefined;
   const consoleErrors = Array.isArray(data.console_errors) ? (data.console_errors as string[]) : [];
   const pageErrors = Array.isArray(data.page_errors) ? (data.page_errors as string[]) : [];
   const hasErrors = consoleErrors.length > 0 || pageErrors.length > 0;
 
   const abrirNoEditor = () => {
-    const alvo = url || "http://localhost:5000";
+    // `url` pode ser um hostname Docker-interno resolvido pelo serviço de
+    // navegador (`url_is_internal_fallback`) — o painel central em modo
+    // Live roda num iframe do navegador real, que não resolve isso, então
+    // usa `original_url` (o que o agente pediu) nesse caso.
+    const alvo = (urlIsInternalFallback ? originalUrl : url) || url || "http://localhost:5400";
     openFile(`browser:${alvo}`);
   };
 

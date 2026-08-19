@@ -19,6 +19,7 @@ até alguém perceber.
 from __future__ import annotations
 
 import json
+import re
 import time
 from typing import Any
 
@@ -28,7 +29,7 @@ from langgraph.types import interrupt
 from sicoobito.agent.approval_policy import ApprovalPolicy, evaluate_policy
 from sicoobito.agent.prompts import APPROVAL_DENIED_TEMPLATE, SYSTEM_PROMPT
 from sicoobito.agent.review_common import request_review_verdict
-from sicoobito.agent.state import AgentState, PendingApproval
+from sicoobito.agent.state import BUILTIN_MODES, AgentState, PendingApproval
 from sicoobito.agent.tools import RiskClass, ToolContext, registry
 from sicoobito.agent.tools.diffing import compute_proposed_diff
 from sicoobito.logging_setup import get_logger
@@ -95,6 +96,23 @@ def _telemetry_status(nome: str, resultado: Any) -> str:
     return "ok" if resultado.ok else "error"
 
 
+_SUB_ACAO_RE = re.compile(r"[a-z_][a-z0-9_]{0,40}")
+
+
+def _telemetry_span_name(nome: str, argumentos: dict[str, Any]) -> str:
+    """Ferramentas compostas (`browser_action`, `manage_packages`,
+    `manage_extensions`, `project_manager`, `trello_action`...) usam um campo
+    `action` para a sub-operação real — sem isto, toda navegação, clique ou
+    captura de tela do navegador, por exemplo, vira um único span genérico
+    `browser_action` em `/api/telemetry/recent`, tornando impossível saber
+    qual sub-ação foi lenta ou falhou. Convenção já compartilhada por vários
+    módulos em `agent/tools/`, não uma exceção só do navegador."""
+    sub_acao = argumentos.get("action")
+    if isinstance(sub_acao, str) and _SUB_ACAO_RE.fullmatch(sub_acao):
+        return f"{nome}.{sub_acao}"
+    return nome
+
+
 def _attach_diffs(context: ToolContext, pendentes: list[PendingApproval]) -> None:
     """Calcula e anexa o diff proposto a cada pending action revisável, sempre —
     independente da política `second_opinion` estar ligada. Antes só era
@@ -158,7 +176,9 @@ async def _attach_review_notes(
         }
 
 
-def _tool_schemas(mode: str, has_plan: bool) -> list[dict[str, Any]]:
+def _tool_schemas(
+    mode: str, has_plan: bool, context: ToolContext | None = None
+) -> list[dict[str, Any]]:
     """Ferramentas oferecidas por modo.
 
     Restringir por schema é mais confiável que instruir o modelo a não chamar:
@@ -171,6 +191,14 @@ def _tool_schemas(mode: str, has_plan: bool) -> list[dict[str, Any]]:
     chamar `write_todos` — o "Modo Planejar" na prática não mostrava plano
     nenhum, só executava como o modo agente comum. `orchestra` reusa esse
     mesmo portão: o ciclo plano→TDD→revisão→commit não começa sem plano.
+
+    `mode` fora de `BUILTIN_MODES` (Fase 6 — modo customizado): filtra
+    `registry.all()` pela lista explícita de nomes salva em
+    `ToolContext.custom_mode_allowed_tools`, já resolvida uma única vez na
+    criação da sessão (`AgentRunner._resolve_custom_mode`). Sem contexto ou
+    sem resolução (id inválido/deletado), degrada para o mesmo somente-leitura
+    de `ask`/`explore` — nunca cai no `registry.schemas()` sem filtro do final
+    desta função.
     """
     if mode in ("ask", "explore"):
         # `explore` é somente-leitura como `ask` — a diferença entre os dois
@@ -179,6 +207,11 @@ def _tool_schemas(mode: str, has_plan: bool) -> list[dict[str, Any]]:
     if mode == "edit":
         return registry.schemas(allow_exec=False, allow_write=True)
     if mode in ("plan", "orchestra") and not has_plan:
+        return registry.schemas(allow_exec=False, allow_write=False)
+    if mode not in BUILTIN_MODES:
+        if context is not None and context.custom_mode_allowed_tools is not None:
+            permitidos = set(context.custom_mode_allowed_tools)
+            return [t.to_openai_schema() for t in registry.all() if t.name in permitidos]
         return registry.schemas(allow_exec=False, allow_write=False)
     return registry.schemas()
 
@@ -226,6 +259,10 @@ def build_graph(engine: RouterEngine, context: ToolContext):
         system_prompt += f"\n\n## Instruções do projeto\n\n{context.custom_instructions}"
     if context.specialization_prompt:
         system_prompt += f"\n\n## Especialização deste agente\n\n{context.specialization_prompt}"
+    if context.routed_skills_prompt:
+        system_prompt += f"\n\n{context.routed_skills_prompt}"
+    if context.context_rules_prompt:
+        system_prompt += f"\n\n{context.context_rules_prompt}"
 
     async def think(state: AgentState) -> dict[str, Any]:
         if context.on_activity is not None:
@@ -248,7 +285,9 @@ def build_graph(engine: RouterEngine, context: ToolContext):
             requested_model=state.get("model") or "coding",
             params={
                 "messages": mensagens,
-                "tools": _tool_schemas(state.get("mode", "agent"), bool(state.get("todos"))),
+                "tools": _tool_schemas(
+                    state.get("mode", "agent"), bool(state.get("todos")), context
+                ),
                 "temperature": 0,
             },
             source=f"agent:{state.get('mode', 'agent')}",
@@ -311,7 +350,7 @@ def build_graph(engine: RouterEngine, context: ToolContext):
             if ferramenta is None:
                 continue
             argumentos = _parse_arguments(chamada)
-            risk = ferramenta.resolve_risk(argumentos)
+            risk = ferramenta.resolve_risk(argumentos, context)
             if not risk.requires_approval:
                 continue
             pendentes.append(
@@ -454,7 +493,7 @@ def build_graph(engine: RouterEngine, context: ToolContext):
                 continue
 
             argumentos = _parse_arguments(chamada)
-            risk = ferramenta.resolve_risk(argumentos)
+            risk = ferramenta.resolve_risk(argumentos, context)
 
             if risk.requires_approval and not aprovacoes.get(call_id, False):
                 respostas.append(
@@ -523,6 +562,30 @@ def build_graph(engine: RouterEngine, context: ToolContext):
                 )
                 continue
 
+            snapshot_elegivel = (
+                risk is not RiskClass.READ
+                and nome in _REVIEWABLE_TOOLS
+                and context.snapshots is not None
+            )
+            if snapshot_elegivel:
+                # Best-effort, de propósito: reaproveita a mesma leitura
+                # "antes" que `_attach_diffs`/`evaluate_policy` já fazem via
+                # `compute_proposed_diff` (não é I/O extra) para alimentar o
+                # rewind (Fase 8) — uma falha aqui nunca pode impedir a
+                # ferramenta em si de rodar, só perde a possibilidade de
+                # desfazer esta escrita específica depois.
+                try:
+                    proposto = compute_proposed_diff(context, nome, argumentos)
+                    if proposto is not None:
+                        await context.snapshots.record(
+                            session_id=state.get("session_id", ""),
+                            iteration=state.get("iterations", 0),
+                            path=proposto.path,
+                            content_before=proposto.before,
+                        )
+                except Exception as exc:
+                    log.warning("agent.snapshot.failed", tool=nome, error=str(exc)[:200])
+
             inicio = time.perf_counter()
             try:
                 resultado = await ferramenta.handler(context, argumentos)
@@ -549,7 +612,7 @@ def build_graph(engine: RouterEngine, context: ToolContext):
                 if context.trace_recorder is not None:
                     context.trace_recorder.record(
                         kind="tool",
-                        name=nome,
+                        name=_telemetry_span_name(nome, argumentos),
                         latency_ms=duracao_ms,
                         status="error",
                         session_id=state.get("session_id", ""),
@@ -585,7 +648,7 @@ def build_graph(engine: RouterEngine, context: ToolContext):
             if context.trace_recorder is not None:
                 context.trace_recorder.record(
                     kind="tool",
-                    name=nome,
+                    name=_telemetry_span_name(nome, argumentos),
                     latency_ms=duracao_ms,
                     status=status_da_ferramenta,
                     session_id=state.get("session_id", ""),

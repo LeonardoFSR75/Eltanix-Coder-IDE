@@ -1,15 +1,27 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { MODE_HINT, type Mode } from "./modes";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { MODE_HINT, MODES } from "./modes";
 import { ModelPicker } from "./ModelPicker";
 import { useIde } from "@/lib/ide-store";
+import { listSlashCommands, type SlashCommandInfo } from "@/lib/api/agent";
+import { listCustomModes, type CustomMode } from "@/lib/api/customModes";
+
+type MentionKind = "file" | "folder" | "docs" | "web";
+
+interface MentionSuggestion {
+  kind: MentionKind;
+  label: string;
+  // Caminho real do arquivo/pasta — ausente para as menções especiais
+  // `@docs`/`@web`, que não têm contraparte no workspace.
+  path?: string;
+}
 
 interface AgentChatInputProps {
   task: string;
   setTask: (task: string) => void;
-  mode: Mode;
-  setMode: (mode: Mode) => void;
+  mode: string;
+  setMode: (mode: string) => void;
   profile: string | null;
   setProfile: (profile: string | null) => void;
   focusFiles: string[];
@@ -48,7 +60,29 @@ export function AgentChatInput({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { active, files } = useIde();
-  const [showSlashHint, setShowSlashHint] = useState(false);
+  const [slashCommands, setSlashCommands] = useState<SlashCommandInfo[] | null>(null);
+  const [activeSlashIndex, setActiveSlashIndex] = useState(0);
+
+  // Carrega o catálogo uma vez — lista pequena e estática por sessão do
+  // frontend, não precisa recarregar a cada `/` digitado.
+  useEffect(() => {
+    listSlashCommands()
+      .then(setSlashCommands)
+      .catch(() => setSlashCommands([]));
+  }, []);
+
+  // Modos customizados do usuário (Fase 6) — só para resolver ícone/nome do
+  // badge quando `mode` não é um dos 7 builtins; mesmo padrão dos slash
+  // commands acima (carrega uma vez, degrada para lista vazia se falhar).
+  const [customModes, setCustomModes] = useState<CustomMode[]>([]);
+  useEffect(() => {
+    listCustomModes()
+      .then(setCustomModes)
+      .catch(() => setCustomModes([]));
+  }, []);
+  const activeCustomMode = MODES.includes(mode as (typeof MODES)[number])
+    ? null
+    : (customModes.find((m) => m.id === mode) ?? null);
 
   // Auto-resize textarea conforme o conteúdo
   useEffect(() => {
@@ -58,10 +92,101 @@ export function AgentChatInput({
     }
   }, [task]);
 
-  // Detecta se o usuário está digitando /
+  // Só considera "digitando um comando" enquanto não houver espaço depois da
+  // `/` — depois do espaço o comando já foi escolhido e o resto é a
+  // instrução em si, não faz sentido continuar filtrando o menu.
+  const primeiraPalavra = task.match(/^\/(\S*)$/);
+  const slashMenuOpen = primeiraPalavra !== null && (slashCommands?.length ?? 0) > 0;
+  const filteredSlashCommands = useMemo(() => {
+    if (!slashMenuOpen || !slashCommands) return [];
+    const termo = primeiraPalavra![1].toLowerCase();
+    return slashCommands.filter((c) => c.command.slice(1).toLowerCase().startsWith(termo));
+  }, [slashMenuOpen, slashCommands, primeiraPalavra]);
+
   useEffect(() => {
-    setShowSlashHint(task.startsWith("/"));
-  }, [task]);
+    setActiveSlashIndex(0);
+  }, [filteredSlashCommands.length]);
+
+  // Comando já fechado (espaço digitado depois dele) — usado só para o aviso
+  // de modo sugerido, não afeta mais o menu de autocomplete.
+  const matchedCommand = useMemo(() => {
+    if (!slashCommands) return null;
+    const primeiraPalavraCompleta = task.match(/^(\/\S+)(?:\s|$)/)?.[1];
+    if (!primeiraPalavraCompleta) return null;
+    return slashCommands.find((c) => c.command === primeiraPalavraCompleta.toLowerCase()) ?? null;
+  }, [task, slashCommands]);
+
+  const applySlashCommand = (comando: SlashCommandInfo) => {
+    setTask(`${comando.command} `);
+    requestAnimationFrame(() => textareaRef.current?.focus());
+  };
+
+  // Menções `@` de contexto — mesmo padrão de detecção do `/`, mas o token
+  // pode aparecer no meio da frase (não só no início): "corrija o @App.tsx".
+  // Lookbehind em vez de consumir o espaço no match em si, pra não precisar
+  // recompor manualmente o espaço/quebra de linha ao aplicar a menção.
+  const [activeMentionIndex, setActiveMentionIndex] = useState(0);
+  const mentionMatch = task.match(/(?<=^|\s)@(\S*)$/);
+  const mentionMenuOpen = mentionMatch !== null && !slashMenuOpen;
+
+  // Todas as pastas ancestrais dos arquivos do workspace, derivadas uma vez
+  // por lista de arquivos — `files` não separa pastas de arquivos.
+  const folderPaths = useMemo(() => {
+    const vistas = new Set<string>();
+    for (const f of files) {
+      const partes = f.path.split("/");
+      for (let i = 1; i < partes.length; i++) {
+        vistas.add(partes.slice(0, i).join("/"));
+      }
+    }
+    return Array.from(vistas);
+  }, [files]);
+
+  const mentionSuggestions = useMemo<MentionSuggestion[]>(() => {
+    if (!mentionMenuOpen) return [];
+    const termo = (mentionMatch?.[1] ?? "").toLowerCase();
+
+    const especiais: MentionSuggestion[] = [];
+    if ("docs".startsWith(termo)) {
+      especiais.push({ kind: "docs", label: "buscar no Segundo Cérebro (search_notes)" });
+    }
+    if ("web".startsWith(termo)) {
+      especiais.push({ kind: "web", label: "pesquisar na internet (web_search)" });
+    }
+
+    const pastas: MentionSuggestion[] = termo
+      ? folderPaths
+          .filter((p) => p.toLowerCase().includes(termo))
+          .slice(0, 4)
+          .map((p) => ({ kind: "folder", label: p, path: p }))
+      : [];
+
+    const arquivos: MentionSuggestion[] = files
+      .filter((f) => f.path.toLowerCase().includes(termo))
+      .slice(0, 6)
+      .map((f) => ({ kind: "file", label: f.path, path: f.path }));
+
+    return [...especiais, ...pastas, ...arquivos].slice(0, 10);
+  }, [mentionMenuOpen, mentionMatch, files, folderPaths]);
+
+  useEffect(() => {
+    setActiveMentionIndex(0);
+  }, [mentionSuggestions.length]);
+
+  const applyMention = (s: MentionSuggestion) => {
+    const start = mentionMatch?.index ?? task.length;
+    const before = task.slice(0, start);
+    if (s.kind === "file" && s.path) {
+      setFocusFiles((prev) => (prev.includes(s.path!) ? prev : [...prev, s.path!]));
+      setTask(`${before}@${s.path} `);
+    } else if (s.kind === "folder" && s.path) {
+      setFocusFolder(s.path);
+      setTask(`${before}@${s.path} `);
+    } else {
+      setTask(`${before}@${s.kind} `);
+    }
+    requestAnimationFrame(() => textareaRef.current?.focus());
+  };
 
   const handlePaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
     const items = e.clipboardData?.items;
@@ -105,6 +230,52 @@ export function AgentChatInput({
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (filteredSlashCommands.length > 0) {
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setActiveSlashIndex((i) => (i + 1) % filteredSlashCommands.length);
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setActiveSlashIndex((i) => (i - 1 + filteredSlashCommands.length) % filteredSlashCommands.length);
+        return;
+      }
+      if (e.key === "Tab" || e.key === "Enter") {
+        e.preventDefault();
+        applySlashCommand(filteredSlashCommands[activeSlashIndex]);
+        return;
+      }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setTask("");
+        return;
+      }
+    }
+
+    if (mentionSuggestions.length > 0) {
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setActiveMentionIndex((i) => (i + 1) % mentionSuggestions.length);
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setActiveMentionIndex((i) => (i - 1 + mentionSuggestions.length) % mentionSuggestions.length);
+        return;
+      }
+      if (e.key === "Tab" || e.key === "Enter") {
+        e.preventDefault();
+        applyMention(mentionSuggestions[activeMentionIndex]);
+        return;
+      }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setTask(task.slice(0, mentionMatch?.index ?? task.length));
+        return;
+      }
+    }
+
     if (e.key === "Enter" && !(e.ctrlKey || e.metaKey)) {
       if (canSubmit && !running) {
         e.preventDefault();
@@ -217,15 +388,69 @@ export function AgentChatInput({
           onChange={(e) => setTask(e.target.value)}
           onPaste={handlePaste}
           onKeyDown={handleKeyDown}
-          placeholder="Pergunte ao Sicoobito Agente, cole imagens (Ctrl+V) ou use / para comandos..."
+          placeholder="Pergunte ao Sicoobito Agente, cole imagens (Ctrl+V), use / para comandos ou @ para menções..."
           rows={1}
           disabled={running}
         />
 
-        {/* Slash command hint */}
-        {showSlashHint && (
-          <div className="slash-hint">
-            <kbd>/explain</kbd> <kbd>/fix</kbd> <kbd>/test</kbd> <kbd>/refactor</kbd> <kbd>/docs</kbd>
+        {/* Autocomplete de slash commands — cada um ativa uma skill real no
+            backend (agent/slash_commands.py), não é mais só um hint visual. */}
+        {filteredSlashCommands.length > 0 && (
+          <div className="slash-menu" role="listbox">
+            {filteredSlashCommands.map((c, i) => (
+              <button
+                key={c.command}
+                type="button"
+                role="option"
+                aria-selected={i === activeSlashIndex}
+                className={`slash-menu-item${i === activeSlashIndex ? " active" : ""}`}
+                onMouseEnter={() => setActiveSlashIndex(i)}
+                onClick={() => applySlashCommand(c)}
+              >
+                <kbd>{c.command}</kbd>
+                <span className="slash-menu-desc">{c.description}</span>
+                {c.suggested_mode && <span className="slash-menu-mode">{c.suggested_mode}</span>}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* Autocomplete de menções `@` — arquivos/pastas do workspace anexam
+            direto ao foco da sessão (mesmo estado dos botões manuais);
+            `@docs`/`@web` ficam como marcador de texto que o agente resolve
+            sozinho chamando `search_notes`/`web_search` (ver SYSTEM_PROMPT). */}
+        {mentionSuggestions.length > 0 && (
+          <div className="mention-menu" role="listbox">
+            {mentionSuggestions.map((s, i) => (
+              <button
+                key={`${s.kind}-${s.path ?? s.label}`}
+                type="button"
+                role="option"
+                aria-selected={i === activeMentionIndex}
+                className={`mention-menu-item${i === activeMentionIndex ? " active" : ""}`}
+                onMouseEnter={() => setActiveMentionIndex(i)}
+                onClick={() => applyMention(s)}
+              >
+                <span className="mention-menu-icon">
+                  {s.kind === "file" ? "📄" : s.kind === "folder" ? "📁" : s.kind === "docs" ? "🧠" : "🌐"}
+                </span>
+                <span className="mention-menu-label">
+                  {s.kind === "docs" || s.kind === "web" ? `@${s.kind}` : s.path}
+                </span>
+                {(s.kind === "docs" || s.kind === "web") && (
+                  <span className="mention-menu-desc">{s.label}</span>
+                )}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* Comando já digitado por completo com um modo sugerido diferente do
+            atual — só avisa, nunca troca o modo sozinho (decisão do usuário). */}
+        {matchedCommand && matchedCommand.suggested_mode && matchedCommand.suggested_mode !== mode && (
+          <div className="slash-mode-hint">
+            {matchedCommand.command} normalmente roda em modo{" "}
+            <strong>{matchedCommand.suggested_mode}</strong> — atual: {mode}
           </div>
         )}
 
@@ -267,6 +492,14 @@ export function AgentChatInput({
             {(mode === "orchestra" || mode === "explore") && (
               <span className="mode-active-badge" title={MODE_HINT[mode]}>
                 {mode === "orchestra" ? "🎼 Orchestra" : "🔍 Explore"}
+              </span>
+            )}
+
+            {/* Badge de modo customizado (Fase 6) — mode é o id do modo, não
+                um dos 7 builtins acima. */}
+            {activeCustomMode && (
+              <span className="mode-active-badge" title={activeCustomMode.description}>
+                {activeCustomMode.icon} {activeCustomMode.name}
               </span>
             )}
 

@@ -16,10 +16,15 @@ if hasattr(sys.stdout, "reconfigure"):
 import networkx as nx
 from networkx.readwrite import json_graph
 
+import os
+os.environ["GRAPHIFY_VIZ_NODE_LIMIT"] = "30000"
+
 import graphify.export as exp
 
 # Permite renderização completa no HTML de todos os nós indexados
-exp.MAX_NODES_FOR_VIZ = 20000
+exp.MAX_NODES_FOR_VIZ = 30000
+if hasattr(exp, "GRAPHIFY_VIZ_NODE_LIMIT"):
+    exp.GRAPHIFY_VIZ_NODE_LIMIT = 30000
 
 
 def sanitize_filename(name: str) -> str:
@@ -62,7 +67,6 @@ def run_export() -> None:
             communities,
             output_path=str(html_out),
             community_labels=labels,
-            project_name="SicoobitoCode Knowledge Graph",
         )
         print(f"[OK] Visualizador HTML atualizado em {html_out}")
     except Exception as exc:

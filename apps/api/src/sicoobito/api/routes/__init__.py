@@ -1,4 +1,5 @@
 from sicoobito.api.routes.agent import router as agent_router
+from sicoobito.api.routes.analytics import router as analytics_router
 from sicoobito.api.routes.approval_policy import router as approval_policy_router
 from sicoobito.api.routes.audit import router as audit_router
 from sicoobito.api.routes.auth import router as auth_router
@@ -6,6 +7,8 @@ from sicoobito.api.routes.browser import router as browser_router
 from sicoobito.api.routes.browser import ws_router as browser_ws_router
 from sicoobito.api.routes.containers import router as containers_router
 from sicoobito.api.routes.context import router as context_router
+from sicoobito.api.routes.context_rules import router as context_rules_router
+from sicoobito.api.routes.custom_modes import router as custom_modes_router
 from sicoobito.api.routes.documents import router as documents_router
 from sicoobito.api.routes.extensions import router as extensions_router
 from sicoobito.api.routes.firecrawl import router as firecrawl_router
@@ -28,6 +31,7 @@ from sicoobito.graphify.api.router import router as graphify_router
 
 __all__ = [
     "agent_router",
+    "analytics_router",
     "approval_policy_router",
     "audit_router",
     "auth_router",
@@ -35,6 +39,8 @@ __all__ = [
     "browser_ws_router",
     "containers_router",
     "context_router",
+    "context_rules_router",
+    "custom_modes_router",
     "documents_router",
     "extensions_router",
     "firecrawl_router",
@@ -55,4 +61,5 @@ __all__ = [
     "workspace_router",
     "workspace_ws_router",
 ]
+
 

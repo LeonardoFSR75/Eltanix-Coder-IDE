@@ -6,6 +6,14 @@ export type BrowserEngine = "auto" | "lightpanda" | "chromium";
 export interface BrowserActionResult {
   ok: boolean;
   url?: string;
+  /** URL originalmente pedida em `navigate`, antes de qualquer substituição
+   * interna — só vem preenchido quando `action === "navigate"`. */
+  original_url?: string;
+  /** `true` quando `url` acima é uma substituição Docker-interna
+   * (`sicoobito-<sid>`/`host.docker.internal`) que só resolve dentro da
+   * rede `browser_net` — nunca deve virar `src` de um iframe renderizado no
+   * navegador real do usuário (ver `EditorBrowserView.tsx`, modo Live). */
+  url_is_internal_fallback?: boolean;
   title?: string;
   status?: number;
   duration_ms?: number;

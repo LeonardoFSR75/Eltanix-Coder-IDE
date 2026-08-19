@@ -40,6 +40,7 @@
 │  mcp:        MCPManager · conexões stdio/HTTP · scanner cisco  │
 │  lsp:        ponte WebSocket ↔ language server                 │
 │  rag:        4x RAG: documents + notes + context + graphify    │
+│  analytics:  ML analytics, clustering (K-Means) & auto-diagnóstico │
 │  audit:      registro de aprovações WRITE/EXEC                 │
 │  browser:    sessão CDP / Playwright / Lightpanda isolado      │
 │                                                                 │

@@ -73,6 +73,22 @@ class SkillService:
             skill = await store.delete_skill(session, skill_id)
         return skill is not None
 
+    async def find_relevant(
+        self, query_embedding: list[float], *, top_k: int = 2, min_score: float = 0.72
+    ) -> list[Skill]:
+        """Roteamento automático (Fase 1 do upgrade do agente): skills cujo
+        embedding de `description` está mais próximo do embedding da tarefa.
+        Chamador (`agent/runner.py`) já resolveu o embedding da tarefa fora
+        daqui — este método só lê o banco, não fala com o provedor de LLM."""
+        async with session_scope() as session:
+            return await store.search_by_similarity(
+                session, query_embedding=query_embedding, top_k=top_k, min_score=min_score
+            )
+
+    async def set_description_embedding(self, skill_id: uuid.UUID, embedding: list[float]) -> None:
+        async with session_scope() as session:
+            await store.set_description_embedding(session, skill_id, embedding)
+
     async def get_and_record_usage(self, skill_id: uuid.UUID) -> Skill | None:
         """Usado pela ferramenta `get_skill` do agente: lê a skill e conta
         como uso — aceitável como efeito colateral de uma ferramenta READ,

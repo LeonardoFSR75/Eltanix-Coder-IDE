@@ -74,3 +74,36 @@ export async function uninstallProjectPackage(
 export async function syncProjectRequirements(slug: string): Promise<SyncRequirementsResult> {
   return post<SyncRequirementsResult>(`/api/projects/${encodeURIComponent(slug)}/packages/sync`);
 }
+
+export type PackagesSyncStatus = "ok" | "warning" | "idle";
+
+const SYNC_IGNORED_PACKAGES = new Set(["pip", "setuptools", "wheel", "distribute"]);
+
+function normalizePackageNameForSync(name: string): string {
+  return name.trim().toLowerCase().replace(/[_\s]+/g, "-");
+}
+
+// Compartilhado entre `PackagesPanel` e o indicador da `StatusBar` — os dois
+// precisam da mesma resposta para "o .venv bate com o manifesto?" a partir
+// da mesma resposta de `getProjectPackages`, então vive aqui em vez de em
+// cada componente (ao contrário da duplicação deliberada entre as fontes de
+// RAG, aqui é só aritmética pura sobre a mesma forma de dado).
+export function resolvePackagesSyncStatus(
+  installed: PackageItem[],
+  requirementsMap: Record<string, string>
+): PackagesSyncStatus {
+  const installedNames = new Set(
+    installed
+      .map((pkg) => normalizePackageNameForSync(pkg.name))
+      .filter((name) => !SYNC_IGNORED_PACKAGES.has(name))
+  );
+  const reqNames = new Set(
+    Object.keys(requirementsMap)
+      .map((name) => normalizePackageNameForSync(name))
+      .filter((name) => !SYNC_IGNORED_PACKAGES.has(name))
+  );
+
+  if (installedNames.size === 0) return "idle";
+  const hasMismatch = [...installedNames].some((name) => !reqNames.has(name));
+  return hasMismatch ? "warning" : "ok";
+}

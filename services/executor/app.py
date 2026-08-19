@@ -241,12 +241,23 @@ for name in ('pkill', 'killall', 'ps', 'fuser', 'lsof', 'netstat'):
 
 
 _container_cache: dict[str, str] = {}
+# Teto de segurança: `destroy_sandbox`/`reap` já removem a entrada
+# correspondente quando destroem um container (ver os dois), mas um processo
+# de longa duração com muita rotatividade de sessões (ou uma remoção que
+# escapou desses dois caminhos) não pode fazer este dict crescer sem limite —
+# item 11 do plano de robustez do navegador interno. Descarta a entrada mais
+# antiga (dict é ordenado por inserção) ao estourar.
+_MAX_CACHED_CONTAINERS = int(os.getenv("EXECUTOR_MAX_CACHED_CONTAINERS", "500"))
 
 
-@app.post("/sandboxes", dependencies=[Auth])
-async def create_sandbox(payload: CreateRequest) -> dict[str, Any]:
+def _cache_container_id(session_id: str, container_id: str) -> None:
+    _container_cache[session_id] = container_id
+    if len(_container_cache) > _MAX_CACHED_CONTAINERS:
+        _container_cache.pop(next(iter(_container_cache)), None)
+
+
+def _create_sandbox_sync(payload: CreateRequest, host_path: str) -> dict[str, Any]:
     nome = f"sicoobito-{payload.session_id}"
-    host_path = to_host_path(payload.workspace)
 
     cid = _container_cache.get(payload.session_id)
     if cid:
@@ -265,7 +276,7 @@ async def create_sandbox(payload: CreateRequest) -> dict[str, Any]:
         if container.status != "running":
             container.start()
         _ensure_bootstrap(container)
-        _container_cache[payload.session_id] = str(container.id)
+        _cache_container_id(payload.session_id, str(container.id))
         return {"id": container.id, "name": nome, "reused": True}
 
     # As flags de segurança abaixo (user, cap_drop, security_opt, privileged,
@@ -273,84 +284,89 @@ async def create_sandbox(payload: CreateRequest) -> dict[str, Any]:
     # apps/api/src/sicoobito/sandbox/container.py — aquele é o caminho local/dev,
     # este é o serviço isolado de produção (ADR 0002). Mudou uma flag aqui,
     # mude a mesma lá.
+    vols = {host_path: {"bind": WORKDIR, "mode": "rw"}}
+    for env_name, container_path in payload.env_mounts.items():
+        if env_name in {".venv", "node_modules", "vendor"}:
+            host_env_path = to_host_path(container_path)
+            vols[host_env_path] = {"bind": f"{WORKDIR}/{env_name}", "mode": "rw"}
+
+    default_env = {
+        "HOME": "/tmp",
+        "HOST": "0.0.0.0",
+        "FLASK_RUN_HOST": "0.0.0.0",
+        "UVICORN_HOST": "0.0.0.0",
+        "VITE_HOST": "0.0.0.0",
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "PIP_DISABLE_PIP_VERSION_CHECK": "1",
+        "PIP_NO_INPUT": "1",
+        "PIP_RETRIES": "0",
+        "PIP_DEFAULT_TIMEOUT": "2",
+        "VIRTUAL_ENV": "/workspace/.venv",
+        "PYTHONPATH": (
+            "/tmp/sicoobito_bootstrap:"
+            "/workspace:"
+            "/workspace/.venv/lib/python3.12/site-packages:"
+            "/workspace/.venv/lib/python3.11/site-packages:"
+            "/workspace/.venv/lib/python3.10/site-packages:"
+            "/workspace/.venv/Lib/site-packages:"
+            "/workspace/.venv/lib/site-packages"
+        ),
+        "PATH": (
+            "/tmp/sicoobito_bootstrap:"
+            "/usr/local/sbin:/usr/local/bin:"
+            "/usr/sbin:/usr/bin:/sbin:/bin:"
+            "/workspace/.venv/bin:/workspace/.venv/Scripts:"
+            "/workspace/node_modules/.bin"
+        ),
+    }
+
+    # Conecta o sandbox na rede interna browser_net para que o serviço browser
+    # consiga inspecionar a aplicação web sem liberar acesso à internet pública.
+    sandbox_network = "bridge" if NETWORK_ENABLED else "none"
+    if not NETWORK_ENABLED:
+        try:
+            for net in client().networks.list():
+                if net.name in ("browser_net", "sicoobito_browser_net") or (
+                    net.name and net.name.endswith("_browser_net")
+                ):
+                    sandbox_network = net.name
+                    break
+        except Exception:  # noqa: BLE001
+            pass
+
+    container = client().containers.run(
+        DEFAULT_IMAGE,
+        command=["sleep", "infinity"],
+        name=nome,
+        detach=True,
+        working_dir=WORKDIR,
+        volumes=vols,
+        network_mode=sandbox_network,
+        mem_limit=DEFAULT_MEMORY,
+        cpu_quota=CPU_QUOTA,
+        pids_limit=PIDS_LIMIT,
+        user="1000:1000",
+        environment=default_env,
+        labels={LABEL: payload.session_id},
+        privileged=False,
+        security_opt=["no-new-privileges:true"],
+        cap_drop=["ALL"],
+        auto_remove=False,
+    )
+    _cache_container_id(payload.session_id, str(container.id))
+    _ensure_bootstrap(container)
+    return {"id": container.id, "name": nome, "reused": False, "host_path": host_path}
+
+
+@app.post("/sandboxes", dependencies=[Auth])
+async def create_sandbox(payload: CreateRequest) -> dict[str, Any]:
+    host_path = to_host_path(payload.workspace)
     try:
-        vols = {host_path: {"bind": WORKDIR, "mode": "rw"}}
-        for env_name, container_path in payload.env_mounts.items():
-            if env_name in {".venv", "node_modules", "vendor"}:
-                host_env_path = to_host_path(container_path)
-                vols[host_env_path] = {"bind": f"{WORKDIR}/{env_name}", "mode": "rw"}
-
-        default_env = {
-            "HOME": "/tmp",
-            "HOST": "0.0.0.0",
-            "FLASK_RUN_HOST": "0.0.0.0",
-            "UVICORN_HOST": "0.0.0.0",
-            "VITE_HOST": "0.0.0.0",
-            "PYTHONDONTWRITEBYTECODE": "1",
-            "PIP_DISABLE_PIP_VERSION_CHECK": "1",
-            "PIP_NO_INPUT": "1",
-            "PIP_RETRIES": "0",
-            "PIP_DEFAULT_TIMEOUT": "2",
-            "VIRTUAL_ENV": "/workspace/.venv",
-            "PYTHONPATH": (
-                "/tmp/sicoobito_bootstrap:"
-                "/workspace:"
-                "/workspace/.venv/lib/python3.12/site-packages:"
-                "/workspace/.venv/lib/python3.11/site-packages:"
-                "/workspace/.venv/lib/python3.10/site-packages:"
-                "/workspace/.venv/Lib/site-packages:"
-                "/workspace/.venv/lib/site-packages"
-            ),
-            "PATH": (
-                "/tmp/sicoobito_bootstrap:"
-                "/usr/local/sbin:/usr/local/bin:"
-                "/usr/sbin:/usr/bin:/sbin:/bin:"
-                "/workspace/.venv/bin:/workspace/.venv/Scripts:"
-                "/workspace/node_modules/.bin"
-            ),
-        }
-
-        # Conecta o sandbox na rede interna browser_net para que o serviço browser
-        # consiga inspecionar a aplicação web sem liberar acesso à internet pública.
-        sandbox_network = "bridge" if NETWORK_ENABLED else "none"
-        if not NETWORK_ENABLED:
-            try:
-                for net in client().networks.list():
-                    if net.name in ("browser_net", "sicoobito_browser_net") or (
-                        net.name and net.name.endswith("_browser_net")
-                    ):
-                        sandbox_network = net.name
-                        break
-            except Exception:  # noqa: BLE001
-                pass
-
-        container = client().containers.run(
-            DEFAULT_IMAGE,
-            command=["sleep", "infinity"],
-            name=nome,
-            detach=True,
-            working_dir=WORKDIR,
-            volumes=vols,
-            network_mode=sandbox_network,
-            mem_limit=DEFAULT_MEMORY,
-            cpu_quota=CPU_QUOTA,
-            pids_limit=PIDS_LIMIT,
-            user="1000:1000",
-            environment=default_env,
-            labels={LABEL: payload.session_id},
-            privileged=False,
-            security_opt=["no-new-privileges:true"],
-            cap_drop=["ALL"],
-            auto_remove=False,
-        )
-        _container_cache[payload.session_id] = str(container.id)
-        _ensure_bootstrap(container)
+        return await asyncio.to_thread(_create_sandbox_sync, payload, host_path)
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY, detail=f"falha ao criar sandbox: {exc}"
         ) from exc
-
-    return {"id": container.id, "name": nome, "reused": False, "host_path": host_path}
 
 
 @app.post("/sandboxes/{session_id}/exec", dependencies=[Auth])
@@ -361,7 +377,7 @@ async def exec_command(session_id: str, payload: ExecRequest) -> dict[str, Any]:
         try:
             container = client().containers.get(nome)
             cid = str(container.id)
-            _container_cache[session_id] = cid
+            _cache_container_id(session_id, cid)
         except docker.errors.NotFound as exc:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail=f"sandbox {session_id} não existe"
@@ -428,9 +444,9 @@ async def exec_command(session_id: str, payload: ExecRequest) -> dict[str, Any]:
     }
 
 
-@app.delete("/sandboxes/{session_id}", dependencies=[Auth])
-async def destroy_sandbox(session_id: str) -> dict[str, Any]:
+def _destroy_sandbox_sync(session_id: str) -> dict[str, Any]:
     _container_cache.pop(session_id, None)
+    _port_scan_cache.pop(session_id, None)
     nome = f"sicoobito-{session_id}"
     try:
         container = client().containers.get(nome)
@@ -440,8 +456,12 @@ async def destroy_sandbox(session_id: str) -> dict[str, Any]:
     return {"removed": True}
 
 
-@app.get("/sandboxes", dependencies=[Auth])
-async def list_sandboxes() -> dict[str, Any]:
+@app.delete("/sandboxes/{session_id}", dependencies=[Auth])
+async def destroy_sandbox(session_id: str) -> dict[str, Any]:
+    return await asyncio.to_thread(_destroy_sandbox_sync, session_id)
+
+
+def _list_sandboxes_sync() -> dict[str, Any]:
     containers = client().containers.list(all=True, filters={"label": LABEL})
     return {
         "sandboxes": [
@@ -456,24 +476,25 @@ async def list_sandboxes() -> dict[str, Any]:
     }
 
 
-@app.get("/sandboxes/{session_id}/stats", dependencies=[Auth])
-async def get_sandbox_stats(session_id: str) -> dict[str, Any]:
-    nome = f"sicoobito-{session_id}"
-    cid = _container_cache.get(session_id)
-    container = None
-    if cid:
-        try:
-            container = client().containers.get(cid)
-        except Exception:
-            _container_cache.pop(session_id, None)
-    if container is None:
-        try:
-            container = client().containers.get(nome)
-            _container_cache[session_id] = str(container.id)
-        except docker.errors.NotFound as exc:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail=f"sandbox {session_id} não existe"
-            ) from exc
+@app.get("/sandboxes", dependencies=[Auth])
+async def list_sandboxes() -> dict[str, Any]:
+    return await asyncio.to_thread(_list_sandboxes_sync)
+
+
+# `/proc/net/tcp` só é lido via um `exec_run` de verdade dentro do sandbox
+# (não tem outro jeito sem acesso à rede do container de fora) — uma exec
+# cara, chamada a cada poll de status (StatusBar + EditorBrowserView, hoje
+# ~a cada 4s cada, ver item 14 do plano). Um cache curto por sessão evita
+# repetir a exec quando dois pollers batem quase juntos.
+_port_scan_cache: dict[str, tuple[float, list[int]]] = {}
+PORT_SCAN_CACHE_TTL_SECONDS = float(os.getenv("EXECUTOR_PORT_SCAN_CACHE_SECONDS", "2.0"))
+
+
+def _scan_listening_ports(container: Any, session_id: str) -> list[int]:
+    agora = time.time()
+    cacheado = _port_scan_cache.get(session_id)
+    if cacheado is not None and agora - cacheado[0] < PORT_SCAN_CACHE_TTL_SECONDS:
+        return cacheado[1]
 
     ports: list[int] = []
     try:
@@ -490,6 +511,40 @@ async def get_sandbox_stats(session_id: str) -> dict[str, Any]:
                         ports.append(p_int)
     except Exception:
         pass
+
+    ordenadas = sorted(ports)
+    _port_scan_cache[session_id] = (agora, ordenadas)
+    # Mesmo teto de segurança de `_cache_container_id` — este cache é
+    # normalmente limpo por sessão (`destroy_sandbox`/`reap`), mas sem um
+    # limite duro ele cresceria sem parar se algum caminho de remoção escapar
+    # dessa limpeza.
+    if len(_port_scan_cache) > _MAX_CACHED_CONTAINERS:
+        _port_scan_cache.pop(next(iter(_port_scan_cache)), None)
+    return ordenadas
+
+
+def _get_container_cached(session_id: str, nome: str) -> Any:
+    cid = _container_cache.get(session_id)
+    if cid:
+        try:
+            return client().containers.get(cid)
+        except Exception:
+            _container_cache.pop(session_id, None)
+    try:
+        container = client().containers.get(nome)
+        _cache_container_id(session_id, str(container.id))
+        return container
+    except docker.errors.NotFound as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=f"sandbox {session_id} não existe"
+        ) from exc
+
+
+def _get_sandbox_stats_sync(session_id: str) -> dict[str, Any]:
+    nome = f"sicoobito-{session_id}"
+    container = _get_container_cached(session_id, nome)
+
+    ports = _scan_listening_ports(container, session_id)
 
     stats_data: dict[str, Any] = {}
     try:
@@ -510,29 +565,19 @@ async def get_sandbox_stats(session_id: str) -> dict[str, Any]:
         "session_id": session_id,
         "name": nome,
         "status": container.status,
-        "ports": sorted(ports),
+        "ports": ports,
         "metrics": stats_data,
     }
 
 
-@app.get("/sandboxes/{session_id}/logs/server", dependencies=[Auth])
-async def get_server_logs(session_id: str, tail: int = 100) -> dict[str, Any]:
+@app.get("/sandboxes/{session_id}/stats", dependencies=[Auth])
+async def get_sandbox_stats(session_id: str) -> dict[str, Any]:
+    return await asyncio.to_thread(_get_sandbox_stats_sync, session_id)
+
+
+def _get_server_logs_sync(session_id: str, tail: int) -> dict[str, Any]:
     nome = f"sicoobito-{session_id}"
-    cid = _container_cache.get(session_id)
-    container = None
-    if cid:
-        try:
-            container = client().containers.get(cid)
-        except Exception:
-            _container_cache.pop(session_id, None)
-    if container is None:
-        try:
-            container = client().containers.get(nome)
-            _container_cache[session_id] = str(container.id)
-        except docker.errors.NotFound as exc:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail=f"sandbox {session_id} não existe"
-            ) from exc
+    container = _get_container_cached(session_id, nome)
 
     try:
         res = container.exec_run(["tail", f"-n{tail}", "/tmp/sicoobito_server.log"])
@@ -546,6 +591,34 @@ async def get_server_logs(session_id: str, tail: int = 100) -> dict[str, Any]:
     }
 
 
+@app.get("/sandboxes/{session_id}/logs/server", dependencies=[Auth])
+async def get_server_logs(session_id: str, tail: int = 100) -> dict[str, Any]:
+    return await asyncio.to_thread(_get_server_logs_sync, session_id, tail)
+
+
+def _reap_sync(manter: set[str]) -> int:
+    removidos = 0
+    for container in client().containers.list(all=True, filters={"label": LABEL}):
+        sid = container.labels.get(LABEL, "")
+        if sid in manter:
+            continue
+        try:
+            container.remove(force=True)
+            removidos += 1
+        except Exception:  # noqa: BLE001, S110 - limpeza é best-effort
+            pass
+        else:
+            # `destroy_sandbox` já limpa as duas entradas para uma remoção
+            # explícita — este é o caminho de remoção indireta (a API
+            # esqueceu a sessão, ver docstring de `reap` abaixo), que sem
+            # isto deixava `_container_cache`/`_port_scan_cache` referenciando
+            # um container que não existe mais (item 11 do plano de robustez
+            # do navegador interno).
+            _container_cache.pop(sid, None)
+            _port_scan_cache.pop(sid, None)
+    return removidos
+
+
 @app.post("/sandboxes/reap", dependencies=[Auth])
 async def reap(keep: list[str] | None = None) -> dict[str, Any]:
     """Remove sandboxes que a API não reconhece mais.
@@ -554,15 +627,7 @@ async def reap(keep: list[str] | None = None) -> dict[str, Any]:
     quais sessões ainda existem e o resto cai.
     """
     manter = set(keep or [])
-    removidos = 0
-    for container in client().containers.list(all=True, filters={"label": LABEL}):
-        if container.labels.get(LABEL, "") in manter:
-            continue
-        try:
-            container.remove(force=True)
-            removidos += 1
-        except Exception:  # noqa: BLE001, S110 - limpeza é best-effort
-            pass
+    removidos = await asyncio.to_thread(_reap_sync, manter)
     return {"removed": removidos}
 
 

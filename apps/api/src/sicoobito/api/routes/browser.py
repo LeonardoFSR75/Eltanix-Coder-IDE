@@ -13,6 +13,8 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
+import os
+import time
 from typing import Any, Literal
 
 import websockets
@@ -28,7 +30,13 @@ from sicoobito.browser.client import (
     BrowserError,
     BrowserUnavailableError,
 )
-from sicoobito.browser.replay import get_replay, list_recent_replays, store_replay
+from sicoobito.browser.replay import (
+    get_replay,
+    list_recent_replays,
+    mark_replay_expired,
+    store_replay,
+    was_replay_expired,
+)
 from sicoobito.logging_setup import get_logger
 
 log = get_logger(__name__)
@@ -43,6 +51,16 @@ ws_router = APIRouter(prefix="/api/browser", tags=["browser"])
 
 def _escopo_stream(session_id: str) -> str:
     return f"browser-stream:{session_id}"
+
+
+# Um painel aberto e nunca fechado explicitamente (usuário só fecha a aba do
+# navegador, sem clicar em "fechar") deixava a entrada em
+# `browser_panel_clients` (abaixo) para sempre — item 11 do plano de robustez
+# do navegador interno. `services/browser` já expira a sessão de verdade
+# sozinho (`SESSION_TTL_SECONDS`, default 1800s, ver `_reap_loop` naquele
+# serviço); esta margem é bem maior de propósito, só para nunca competir com
+# um painel ainda em uso enquanto o TTL do lado de lá não bate.
+PANEL_CLIENT_IDLE_TTL_SECONDS = int(os.getenv("BROWSER_PANEL_CLIENT_IDLE_TTL_SECONDS", "3600"))
 
 
 def _client(request: Request, session_id: str) -> BrowserClient:
@@ -62,12 +80,52 @@ def _client(request: Request, session_id: str) -> BrowserClient:
             "Serviço de navegador não configurado (BROWSER_URL vazio nesta instância).",
         )
     clients: dict[str, BrowserClient] = request.app.state.browser_panel_clients
+    last_used: dict[str, float] | None = getattr(
+        request.app.state, "browser_panel_client_last_used", None
+    )
+    if last_used is None:
+        last_used = {}
+        request.app.state.browser_panel_client_last_used = last_used
     key = f"panel-{session_id}"
     client = clients.get(key)
     if client is None:
         client = BrowserClient(key, config, request.app.state.browser_http)
         clients[key] = client
+    last_used[key] = time.time()
     return client
+
+
+async def purge_idle_panel_clients(app_state: Any) -> int:
+    """Remove do cache instâncias de `BrowserClient` ociosas há mais de
+    `PANEL_CLIENT_IDLE_TTL_SECONDS` — ver comentário acima de
+    `PANEL_CLIENT_IDLE_TTL_SECONDS`. Retorna quantas foram removidas."""
+    clients: dict[str, BrowserClient] = getattr(app_state, "browser_panel_clients", {})
+    last_used: dict[str, float] = getattr(app_state, "browser_panel_client_last_used", {})
+    agora = time.time()
+    ociosos = [
+        key
+        for key in list(clients)
+        if agora - last_used.get(key, agora) > PANEL_CLIENT_IDLE_TTL_SECONDS
+    ]
+    for key in ociosos:
+        clients.pop(key, None)
+        last_used.pop(key, None)
+    return len(ociosos)
+
+
+async def run_panel_client_purge_reaper(app_state: Any, *, interval_seconds: int = 900) -> None:
+    """Laço de limpeza periódica, mesmo padrão de
+    `AuthService.run_session_purge_reaper`."""
+    while True:
+        try:
+            await asyncio.sleep(interval_seconds)
+            removidos = await purge_idle_panel_clients(app_state)
+            if removidos:
+                log.info("browser.panel_clients.purge_completed", removed=removidos)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            log.warning("browser.panel_clients.purge_reaper_iteration_failed", error=str(exc)[:200])
 
 
 class BrowserActionRequest(BaseModel):
@@ -103,6 +161,12 @@ async def browser_action(payload: BrowserActionRequest, request: Request) -> dic
                 "y": payload.y,
                 "text": payload.text,
                 "engine": payload.engine,
+                # Painel manual: um humano está olhando, ao contrário do
+                # agente (que navega em sequência sem precisar de imagem a
+                # cada passo, ver `capture_screenshot` em `ActionRequest` no
+                # serviço) — sempre captura em `navigate` (ignorado pelas
+                # outras ações).
+                "capture_screenshot": payload.action == "navigate",
             }
         )
     except BrowserUnavailableError as exc:
@@ -198,19 +262,31 @@ async def browser_stream_socket(websocket: WebSocket, session_id: str) -> None:
 async def close_browser_session(session_id: str, request: Request) -> dict[str, Any]:
     clients: dict[str, BrowserClient] = request.app.state.browser_panel_clients
     client = clients.pop(f"panel-{session_id}", None)
+    getattr(request.app.state, "browser_panel_client_last_used", {}).pop(
+        f"panel-{session_id}", None
+    )
     if client is None:
         # Nenhuma ação foi feita nesta sessão — nada existe do lado do
         # serviço para fechar, então nem vale o DELETE.
         return {"closed": False}
     payload = await client.stop()
+    redis = getattr(request.app.state, "redis", None)
     replay = await store_replay(
         blob=getattr(request.app.state, "blob", None),
-        redis=getattr(request.app.state, "redis", None),
+        redis=redis,
         session_id=session_id,
         project=None,
         payload=payload,
     )
-    return {"closed": True, "replay": bool(replay)}
+    resultado: dict[str, Any] = {"closed": True, "replay": bool(replay)}
+    if not replay and payload and payload.get("expired_by_ttl"):
+        # `services/browser` já descartou a sessão por TTL antes deste DELETE
+        # chegar (ver `expired_by_ttl` em `close_session`, `services/browser/
+        # app.py`) — sem este marcador, `GET /replays/{id}` devolveria um 404
+        # indistinguível de "nunca houve replay nesta sessão".
+        resultado["replay_lost"] = True
+        await mark_replay_expired(redis, session_id)
+    return resultado
 
 
 @router.get("/replays")
@@ -225,6 +301,11 @@ async def get_browser_replay(session_id: str, request: Request) -> dict[str, Any
     blob = getattr(request.app.state, "blob", None)
     entrada = await get_replay(redis, session_id)
     if entrada is None:
+        if await was_replay_expired(redis, session_id):
+            raise HTTPException(
+                status.HTTP_410_GONE,
+                "sessão expirou por inatividade (30min) antes de ser fechada — replay perdido",
+            )
         raise HTTPException(status.HTTP_404_NOT_FOUND, "replay não encontrado ou expirado")
     if blob is not None:
         if entrada.get("video_key"):

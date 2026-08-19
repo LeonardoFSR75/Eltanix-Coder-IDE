@@ -7,7 +7,7 @@ mesmo padrão já usado para leitura/parse bloqueante em `context/indexer.py`.
 from __future__ import annotations
 
 import asyncio
-from datetime import timedelta
+from datetime import datetime, timedelta
 from io import BytesIO
 
 from minio import Minio
@@ -111,6 +111,19 @@ class BlobStore:
 
     async def remove_object(self, key: str) -> None:
         await asyncio.to_thread(self._client.remove_object, self.bucket, key)
+
+    async def list_object_keys(self, prefix: str) -> list[tuple[str, datetime | None]]:
+        """Chave + data de modificação de cada objeto sob `prefix` — usado só
+        pela rotina de limpeza de replays órfãos (`browser/replay.py`), nunca
+        pelo caminho normal de upload/leitura de documentos."""
+
+        def _list() -> list[tuple[str, datetime | None]]:
+            return [
+                (obj.object_name, obj.last_modified)
+                for obj in self._client.list_objects(self.bucket, prefix=prefix, recursive=True)
+            ]
+
+        return await asyncio.to_thread(_list)
 
     async def presigned_put_url(self, key: str, *, expires_seconds: int = 3600) -> str:
         return await asyncio.to_thread(

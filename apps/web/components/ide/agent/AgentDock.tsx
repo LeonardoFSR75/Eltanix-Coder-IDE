@@ -12,7 +12,6 @@ import { AgentDockHeader } from "./AgentDockHeader";
 import { AgentManager } from "./AgentManager";
 import { TodoCard } from "./cards";
 import { CustomizationsPopover } from "./CustomizationsPopover";
-import type { Mode } from "./modes";
 import type { NotifyKind } from "./sessionRuntime";
 import { useAgentSessions } from "./useAgentSessions";
 
@@ -64,7 +63,7 @@ export function AgentDock({
 
   const [task, setTask] = useState("");
   const [images, setImages] = useState<string[]>([]);
-  const [mode, setMode] = useState<Mode>("auto");
+  const [mode, setMode] = useState<string>("auto");
   const [profile, setProfile] = useState<string | null>(null);
   const [focusFiles, setFocusFiles] = useState<string[]>([]);
   const [focusFolder, setFocusFolder] = useState<string | null>(null);
@@ -318,6 +317,7 @@ export function AgentDock({
             recentActivities={active?.recentActivities ?? []}
             readOnly={active?.readOnly}
             onDecide={(decisions) => void active?.decide(decisions)}
+            onRewind={(iteration) => void active?.rewind(iteration)}
             onPresetSelect={handlePresetSelect}
           />
           <TodoCard todos={active?.todos ?? []} />

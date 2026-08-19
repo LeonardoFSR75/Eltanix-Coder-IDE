@@ -21,10 +21,12 @@ para sessões de agente, `None` para o painel).
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import json
 import time
 from contextlib import suppress
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 from sicoobito.logging_setup import get_logger
@@ -41,6 +43,21 @@ _REDIS_HASH_PREFIX = "browser:replay:"
 _REDIS_INDEX_KEY = "browser:replays"
 _REDIS_TTL_SECONDS = 7 * 24 * 3600
 _MAX_INDEXED = 200
+
+# Sinal de curta duração (não registro de auditoria — por isso um TTL curto,
+# ao contrário do índice de replay de 7 dias acima): quando o reaper TTL de
+# `services/browser` descarta uma sessão com trace/vídeo em andamento, os
+# bytes já foram jogados fora ali mesmo (aquele serviço não alcança o MinIO,
+# ver docstring do módulo) — sem isto, a próxima consulta a
+# `GET /replays/{id}` via 404 fica indistinguível de "nunca existiu".
+_REDIS_EXPIRED_PREFIX = "browser:replay-expired:"
+_REDIS_EXPIRED_TTL_SECONDS = 24 * 3600
+
+# Blobs recém-enviados ficam de fora da varredura de órfãos por esta margem —
+# `store_replay` sobe os bytes ANTES de indexar no Redis (linhas abaixo),
+# então uma sessão pega no meio dessa janela pareceria "sem índice" sem
+# realmente estar órfã.
+_PURGE_GRACE_SECONDS = 3600
 
 
 async def store_replay(
@@ -144,3 +161,92 @@ async def get_replay(redis: Redis | None, session_id: str) -> dict[str, Any] | N
         return json.loads(bruto)
     except Exception:
         return None
+
+
+async def mark_replay_expired(redis: Redis | None, session_id: str) -> None:
+    """Registra que o replay desta sessão foi perdido por TTL — ver
+    `_REDIS_EXPIRED_PREFIX` acima. Chamado pelos dois pontos que fecham uma
+    sessão de navegador (`api/routes/browser.py` para o painel manual,
+    `agent/runner.py::AgentRunner.close_session` para o agente) quando
+    `BrowserClient.stop()` volta com `expired_by_ttl=True` e sem bytes."""
+    if redis is None:
+        return
+    with suppress(Exception):
+        await redis.set(
+            f"{_REDIS_EXPIRED_PREFIX}{session_id}", "1", ex=_REDIS_EXPIRED_TTL_SECONDS
+        )
+
+
+async def was_replay_expired(redis: Redis | None, session_id: str) -> bool:
+    if redis is None:
+        return False
+    try:
+        return bool(await redis.get(f"{_REDIS_EXPIRED_PREFIX}{session_id}"))
+    except Exception as exc:
+        log.warning("browser.replay.expired_check_failed", session=session_id, error=str(exc))
+        return False
+
+
+async def purge_orphaned_replay_blobs(*, blob: BlobStore | None, redis: Redis | None) -> int:
+    """Remove do MinIO trace.zip/video.webm cujo índice Redis (TTL de 7 dias,
+    `_REDIS_HASH_PREFIX`) já expirou — `store_replay` sobe os bytes mas nunca
+    os apaga sozinho (o índice é só um atalho de navegação, ver docstring do
+    módulo), então sem isto o bucket cresce para sempre. Roda periodicamente
+    via `run_replay_purge_reaper`, nunca de dentro de `services/browser`
+    (aquele serviço não alcança o MinIO — invariante da rede `browser_net`).
+
+    Degrada, não derruba: `blob`/`redis` indisponível ou qualquer falha
+    pontual só faz este ciclo remover menos, nunca lançar. Retorna quantos
+    objetos foram removidos."""
+    if blob is None or redis is None:
+        return 0
+    try:
+        objetos = await blob.list_object_keys(f"{_KEY_PREFIX}/")
+    except Exception as exc:
+        log.warning("browser.replay.purge_list_failed", error=str(exc))
+        return 0
+
+    agora = datetime.now(UTC)
+    por_sessao: dict[str, list[str]] = {}
+    for chave, modificado_em in objetos:
+        # `browser-sessions/<session_id>/<started_at>/trace.zip` (ou
+        # `video.webm`) — ver `store_replay` abaixo para o formato da chave.
+        partes = chave.split("/")
+        if len(partes) < 2:
+            continue
+        idade_segundos = (agora - modificado_em).total_seconds() if modificado_em else None
+        if idade_segundos is not None and idade_segundos < _PURGE_GRACE_SECONDS:
+            continue  # upload recente demais — pode ainda não estar indexado
+        por_sessao.setdefault(partes[1], []).append(chave)
+
+    removidos = 0
+    for session_id, chaves_sessao in por_sessao.items():
+        try:
+            ainda_indexado = await redis.exists(f"{_REDIS_HASH_PREFIX}{session_id}")
+        except Exception as exc:
+            log.warning("browser.replay.purge_check_failed", session=session_id, error=str(exc))
+            continue
+        if ainda_indexado:
+            continue
+        for chave in chaves_sessao:
+            with suppress(Exception):
+                await blob.remove_object(chave)
+                removidos += 1
+    return removidos
+
+
+async def run_replay_purge_reaper(
+    *, blob: BlobStore | None, redis: Redis | None, interval_seconds: int = 6 * 3600
+) -> None:
+    """Laço de limpeza periódica, mesmo padrão de
+    `AuthService.run_session_purge_reaper`."""
+    while True:
+        try:
+            await asyncio.sleep(interval_seconds)
+            removidos = await purge_orphaned_replay_blobs(blob=blob, redis=redis)
+            if removidos:
+                log.info("browser.replay.purge_completed", removed=removidos)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            log.warning("browser.replay.purge_reaper_iteration_failed", error=str(exc)[:200])

@@ -669,6 +669,19 @@ textarea:focus-visible,
   word-break: break-word;
 }
 
+/* Aviso informativo, não bloqueante — ex.: URL resolvida internamente pelo
+   serviço de navegador (ver EditorBrowserView.tsx / Panels.tsx::BrowserPanel). */
+.panel-hint {
+  margin: 10px 12px;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--accent-dim, color-mix(in srgb, var(--accent) 12%, transparent));
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+  color: var(--text-dim);
+  font-size: 12px;
+  word-break: break-word;
+}
+
 .ide-main {
   flex: 1;
   display: flex;
@@ -2657,6 +2670,66 @@ textarea:focus-visible,
   text-transform: uppercase;
   color: var(--text-dim);
   white-space: nowrap;
+}
+
+.agent-checkpoints-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+  padding-top: 4px;
+}
+
+.agent-checkpoints-empty {
+  font-size: 10.5px;
+  color: var(--text-dim);
+  padding: 2px 0;
+}
+
+.agent-checkpoint-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 0;
+}
+
+.agent-checkpoint-iteration {
+  font-size: 9.5px;
+  font-family: var(--font-mono, monospace);
+  color: var(--text-dim);
+  flex-shrink: 0;
+}
+
+.agent-checkpoint-summary {
+  flex: 1;
+  font-size: 10.5px;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.agent-checkpoint-restore {
+  flex-shrink: 0;
+  font-size: 9.5px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text-dim);
+  cursor: pointer;
+}
+
+.agent-checkpoint-restore:hover:not(:disabled) {
+  background: rgba(56, 189, 248, 0.1);
+  border-color: rgba(56, 189, 248, 0.35);
+  color: var(--text);
+}
+
+.agent-checkpoint-restore:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .agent-messages-scroll,
@@ -5235,6 +5308,67 @@ button.primary:hover:not(:disabled) {
   padding: 3px 6px;
 }
 
+.approval-plan-review {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border-radius: 6px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+}
+
+.approval-plan-review-title {
+  margin: 0;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.approval-plan-review-hint {
+  margin: 0;
+  font-size: 9.5px;
+  color: var(--text-muted);
+}
+
+.approval-plan-items {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.approval-plan-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  font-size: 10px;
+  color: var(--text-dim);
+}
+
+.approval-plan-item-status {
+  flex-shrink: 0;
+  width: 14px;
+  text-align: center;
+  font-family: var(--font-mono);
+  color: var(--text-muted);
+}
+
+.approval-plan-item.status-completed .approval-plan-item-status {
+  color: var(--accent-emerald);
+}
+
+.approval-plan-item.status-in_progress .approval-plan-item-status {
+  color: var(--accent);
+}
+
+.approval-plan-item.status-completed .approval-plan-item-content {
+  color: var(--text-muted);
+  text-decoration: line-through;
+}
+
 .approval-diff-preview {
   display: flex;
   flex-direction: column;
@@ -7103,24 +7237,126 @@ button.primary:hover:not(:disabled) {
   animation-delay: 0.4s;
 }
 
-.slash-hint {
-  font-size: 10px;
-  color: var(--text-muted);
-  padding: 2px 4px 4px;
+.slash-menu {
   display: flex;
-  align-items: center;
-  gap: 4px;
-  flex-wrap: wrap;
+  flex-direction: column;
+  gap: 1px;
+  padding: 4px;
+  margin: 0 4px 4px;
+  max-height: 220px;
+  overflow-y: auto;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
 }
 
-.slash-hint kbd {
+.slash-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border: none;
+  background: transparent;
+  border-radius: 4px;
+  cursor: pointer;
+  text-align: left;
+  font-size: 11.5px;
+  color: var(--text-dim);
+}
+
+.slash-menu-item.active,
+.slash-menu-item:hover {
+  background: var(--surface-3, rgba(255, 255, 255, 0.06));
+  color: var(--text);
+}
+
+.slash-menu-item kbd {
   font-family: var(--font-mono);
   font-size: 9.5px;
   padding: 1px 5px;
   border-radius: 3px;
+  background: var(--surface-1, var(--bg));
+  border: 1px solid var(--border);
+  color: inherit;
+  flex-shrink: 0;
+}
+
+.slash-menu-desc {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.slash-menu-mode {
+  flex-shrink: 0;
+  font-size: 9.5px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(56, 189, 248, 0.12);
+  color: #38bdf8;
+}
+
+.slash-mode-hint {
+  font-size: 10px;
+  color: var(--text-muted);
+  padding: 2px 8px 4px;
+}
+
+.mention-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 4px;
+  margin: 0 4px 4px;
+  max-height: 220px;
+  overflow-y: auto;
   background: var(--surface-2);
   border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.mention-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border: none;
+  background: transparent;
+  border-radius: 4px;
+  cursor: pointer;
+  text-align: left;
+  font-size: 11.5px;
   color: var(--text-dim);
+}
+
+.mention-menu-item.active,
+.mention-menu-item:hover {
+  background: var(--surface-3, rgba(255, 255, 255, 0.06));
+  color: var(--text);
+}
+
+.mention-menu-icon {
+  flex-shrink: 0;
+  font-size: 12px;
+}
+
+.mention-menu-label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+}
+
+.mention-menu-desc {
+  flex-shrink: 0;
+  font-size: 9.5px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 45%;
 }
 
 .inline-code {
@@ -7854,6 +8090,22 @@ button.primary:hover:not(:disabled) {
 .pt-2 { padding-top: 8px; }
 .pl-4 { padding-left: 16px; }
 
+/* Rótulo presente no DOM/acessível a leitor de tela, mas fora da tela
+   visualmente — para `<label>`s associados a inputs que já têm um ícone ou
+   placeholder cumprindo o papel visual (item 16 do plano de robustez do
+   navegador interno). */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 .text-xs { font-size: 11.5px; }
 .text-sm { font-size: 12.5px; }
 .text-base { font-size: 14px; }
@@ -8107,6 +8359,69 @@ button.primary:hover:not(:disabled) {
   top: 10px;
   right: 20px;
   z-index: 50;
+}
+
+/* Edição inline estilo Cmd+K (Fase 7) — card flutuante à esquerda, oposto ao
+   pill de alterações do agente (à direita), para nunca sobrepor os dois. */
+.inline-edit-prompt-overlay {
+  position: absolute;
+  top: 10px;
+  left: 20px;
+  z-index: 50;
+  width: 320px;
+  max-width: calc(100% - 40px);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: rgba(15, 23, 42, 0.94);
+  backdrop-filter: blur(8px);
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  border-radius: 8px;
+  padding: 8px 10px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
+}
+
+.inline-edit-prompt-header {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-dim);
+}
+
+.inline-edit-prompt-input {
+  width: 100%;
+  min-height: 44px;
+  resize: vertical;
+  font-size: 12px;
+  font-family: inherit;
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  color: var(--text);
+}
+
+.inline-edit-prompt-error {
+  font-size: 11px;
+  color: var(--danger);
+}
+
+.inline-edit-prompt-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.inline-edit-review-banner {
+  position: absolute;
+  top: 10px;
+  left: 20px;
+  z-index: 50;
+  font-size: 11px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  background: rgba(15, 23, 42, 0.92);
+  backdrop-filter: blur(8px);
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  color: var(--text-dim);
 }
 
 /* --------------------------------------------------------------------------

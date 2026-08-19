@@ -198,6 +198,7 @@ Uma tarefa NÃO está concluída apenas com a escrita de arquivos. O ciclo de va
 - **Segundo Cérebro (`search_notes`, `save_note`)**: Recupere convenções e registre novas decisões arquiteturais relevantes no cofre do projeto.
 - **Skills (`list_skills`, `load_skill`, `propose_skill`)**: Consulte habilidades locais para adotar padrões específicos do projeto e proponha novas habilidades aprendidas.
 - **Pesquisa & Scraping Web (`web_scrape`, `web_search`, `crawl_and_index_docs`, `clone_web_ui`, `deep_research`)**: Utilize as ferramentas do Firecrawl para obter documentações técnicas atualizadas ou blueprints de UI em Markdown.
+- **Menções `@` de contexto**: `@caminho/arquivo` e `@pasta/` na tarefa do usuário já chegam resolvidas como foco da sessão (arquivos/pasta anexados) — não precisam de ferramenta extra, só leia o conteúdo normalmente. Já `@docs <consulta>` e `@web <consulta>` são marcadores literais que você resolve sozinho: para `@docs <consulta>`, chame `search_notes` com `<consulta>` antes de responder; para `@web <consulta>`, chame `web_search` (ou `web_scrape`/`deep_research` se a consulta pedir uma página específica) com `<consulta>`.
 
 ---
 
@@ -216,6 +217,7 @@ def build_task_prompt(
     mode: str = "agent",
     focus_files: list[str] | None = None,
     focus_folder: str | None = None,
+    custom_mode_prompt_block: str | None = None,
 ) -> str:
     """Monta a mensagem inicial da tarefa com diretrizes específicas por modo de execução."""
     partes: list[str] = []
@@ -252,6 +254,7 @@ def build_task_prompt(
             "1. Analise a arquitetura do projeto, schemas de dados, endpoints e componentes de interface.\n"
             "2. Defina o framework visual/extensão prioritário (Tailwind, Lucide, Alpine, Shadcn, etc.).\n"
             "3. PASSO OBRIGATÓRIO Nº 1: Chame `write_todos` no seu primeiro turno com o plano em 5 fases (isso registrará o plano e desbloqueará as ferramentas de criação/edição de arquivos).\n"
+            "   Essa primeira chamada pausa a execução para o usuário revisar e aprovar o plano — é esperado, não um erro. Continue normalmente assim que a aprovação chegar.\n"
             "4. Crie/atualize os arquivos necessários e apresente ao usuário uma síntese clara do escopo proposto."
         )
     elif mode == "auto":
@@ -267,7 +270,7 @@ def build_task_prompt(
         partes.append(
             "## 🎻 MODO ORQUESTRA ATIVO (TDD Estrito + Revisão de Código Independente):\n"
             "⚠️ ATENÇÃO OBRIGATÓRIA: As ferramentas de escrita e execução de comandos estão bloqueadas até que o plano seja registrado.\n"
-            "PASSO OBRIGATÓRIO Nº 1: Comece chamando `write_todos` com o plano detalhado em etapas pequenas para desbloquear as demais ferramentas. Para CADA item do plano, siga este ciclo à risca, sem pular passos:\n"
+            "PASSO OBRIGATÓRIO Nº 1: Comece chamando `write_todos` com o plano detalhado em etapas pequenas para desbloquear as demais ferramentas. Essa primeira chamada pausa a execução para o usuário revisar e aprovar o plano — é esperado, não um erro. Para CADA item do plano, siga este ciclo à risca, sem pular passos:\n"
             "1. Escreva um teste que cubra o comportamento esperado e rode com `run_command` — confirme que ele FALHA antes de implementar.\n"
             "2. Implemente a solução completa, limpa e robusta que faz o teste passar, com acabamento visual de alto padrão.\n"
             "3. Rode os testes de novo com `run_command` e confirme que passam sem regressões.\n"
@@ -295,6 +298,13 @@ def build_task_prompt(
             "/ `find_orphan_modules` para avaliar a saúde arquitetural. "
             "Toda afirmação na resposta final precisa citar a ferramenta e o resultado que a sustenta (arquivo, símbolo, aresta)."
         )
+    elif custom_mode_prompt_block:
+        # `mode` não bateu com nenhum dos 7 embutidos acima — id de modo
+        # customizado (Fase 6) já resolvido em `ToolContext.custom_mode_prompt_block`
+        # na criação da sessão (`AgentRunner._resolve_custom_mode`). Sem
+        # resolução (id inválido/deletado), nenhuma seção extra é adicionada —
+        # a tarefa ainda roda com o fluxo genérico acima.
+        partes.append(f"## 🧩 MODO CUSTOMIZADO ATIVO:\n\n{custom_mode_prompt_block}")
 
     partes.append(f"## Tarefa Solicitada:\n{task}")
     return "\n\n".join(partes)

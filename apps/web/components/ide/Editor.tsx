@@ -10,6 +10,7 @@ import { useIde } from "@/lib/ide-store";
 
 import { acceptFile, revertFile } from "@/lib/api/agent";
 import { logAuditEvent } from "@/lib/api/audit";
+import { requestInlineEdit, type InlineEditResult } from "@/lib/api/inlineEdit";
 import { readFile, readFileOrNull, writeFile } from "@/lib/api/workspace";
 import {
   discardChanges as discardGitChanges,
@@ -118,6 +119,20 @@ export function Editor({
     const browserUrl = path.slice("browser:".length);
     return <EditorBrowserView initialUrl={browserUrl} sessionId={activeSessionId || undefined} />;
   }
+  // Mesma coisa, mas força o modo 🤖 Agente na primeira aba — usado para
+  // URLs que só o serviço de navegador consegue resolver (ex.: porta de um
+  // sandbox via `sicoobito-<sessionId>`), nunca alcançáveis por um iframe
+  // direto no navegador real (ver StatusBar.tsx, botões de porta do sandbox).
+  if (path && path.startsWith("browser-agent:")) {
+    const browserUrl = path.slice("browser-agent:".length);
+    return (
+      <EditorBrowserView
+        initialUrl={browserUrl}
+        sessionId={activeSessionId || undefined}
+        initialMode="headless"
+      />
+    );
+  }
 
   const reveal = globalReveal?.path === path ? globalReveal : null;
   const syncVersion = path ? fileSyncVersion[path] ?? 0 : 0;
@@ -135,6 +150,119 @@ export function Editor({
   const [headContent, setHeadContent] = useState<string | null>(null);
   const originalRef = useRef("");
   const editorInstanceRef = useRef<any>(null);
+
+  // Edição inline (Fase 7, estilo Cmd+K) — independente do fluxo de sessão
+  // do agente acima: `inlineEditSelection` guarda o trecho selecionado
+  // enquanto o usuário digita a instrução; `inlineEditResult` chega depois
+  // da chamada ao backend e só fica preenchido quando a edição NÃO foi
+  // auto-aprovada (precisa da revisão manual via DiffView).
+  const [inlineEditSelection, setInlineEditSelection] = useState<{
+    selectedText: string;
+    contextBefore: string;
+    contextAfter: string;
+  } | null>(null);
+  const [inlineEditInstruction, setInlineEditInstruction] = useState("");
+  const [inlineEditBusy, setInlineEditBusy] = useState(false);
+  const [inlineEditError, setInlineEditError] = useState<string | null>(null);
+  const [inlineEditResult, setInlineEditResult] = useState<InlineEditResult | null>(null);
+
+  const openInlineEdit = useCallback(() => {
+    const editor = editorInstanceRef.current;
+    if (!editor) return;
+    const selection = editor.getSelection();
+    if (!selection || selection.isEmpty()) return;
+    const model = editor.getModel();
+    if (!model) return;
+
+    const contextStartLine = Math.max(1, selection.startLineNumber - 15);
+    const contextEndLine = Math.min(model.getLineCount(), selection.endLineNumber + 15);
+
+    setInlineEditSelection({
+      selectedText: model.getValueInRange(selection),
+      contextBefore: model.getValueInRange({
+        startLineNumber: contextStartLine,
+        startColumn: 1,
+        endLineNumber: selection.startLineNumber,
+        endColumn: selection.startColumn,
+      }),
+      contextAfter: model.getValueInRange({
+        startLineNumber: selection.endLineNumber,
+        startColumn: selection.endColumn,
+        endLineNumber: contextEndLine,
+        endColumn: model.getLineMaxColumn(contextEndLine),
+      }),
+    });
+    setInlineEditInstruction("");
+    setInlineEditError(null);
+    setInlineEditResult(null);
+  }, []);
+
+  const cancelInlineEdit = useCallback(() => {
+    setInlineEditSelection(null);
+    setInlineEditInstruction("");
+    setInlineEditError(null);
+  }, []);
+
+  const applyInlineEditContent = useCallback(
+    (novo: string) => {
+      if (!path || !project) return;
+      setContent(novo);
+      originalRef.current = novo;
+      setDirty(false);
+      markDirty(path, false, groupId);
+      setBuffer(project, path, { content: novo, original: novo, language: rawLanguage });
+    },
+    [path, project, groupId, markDirty, rawLanguage],
+  );
+
+  const submitInlineEdit = useCallback(async () => {
+    if (!inlineEditSelection || !project || !path || !inlineEditInstruction.trim()) return;
+    setInlineEditBusy(true);
+    setInlineEditError(null);
+    try {
+      const result = await requestInlineEdit({
+        project,
+        path,
+        selected_text: inlineEditSelection.selectedText,
+        instruction: inlineEditInstruction.trim(),
+        context_before: inlineEditSelection.contextBefore,
+        context_after: inlineEditSelection.contextAfter,
+      });
+      if (result.applied) {
+        // Já escrita no arquivo (bateu numa regra de auto-aprovação) — só
+        // recarrega o buffer local, sem passar pela revisão manual.
+        applyInlineEditContent(result.after);
+        setInlineEditSelection(null);
+      } else {
+        setInlineEditResult(result);
+      }
+    } catch (err) {
+      setInlineEditError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setInlineEditBusy(false);
+    }
+  }, [inlineEditSelection, project, path, inlineEditInstruction, applyInlineEditContent]);
+
+  const acceptInlineEdit = useCallback(async () => {
+    if (!inlineEditResult || !project || !path) return;
+    setInlineEditBusy(true);
+    setInlineEditError(null);
+    try {
+      await writeFile(project, path, inlineEditResult.after);
+      applyInlineEditContent(inlineEditResult.after);
+      setInlineEditResult(null);
+      setInlineEditSelection(null);
+    } catch (err) {
+      setInlineEditError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setInlineEditBusy(false);
+    }
+  }, [inlineEditResult, project, path, applyInlineEditContent]);
+
+  const rejectInlineEdit = useCallback(() => {
+    setInlineEditResult(null);
+    setInlineEditSelection(null);
+  }, []);
 
   const acceptAgentCode = useCallback(async () => {
     if (!path || !activeSessionId) return;
@@ -372,11 +500,35 @@ export function Editor({
           event.preventDefault();
           void rejectAgentCode();
         }
+      } else if ((event.ctrlKey || event.metaKey) && event.code === "KeyK") {
+        // Só o painel com foco responde — senão Ctrl+K abriria o prompt em
+        // todo grupo de editor aberto ao mesmo tempo (mesmo cuidado da ponte
+        // de inserção de código do chat, acima).
+        if (groupId === activeGroupId) {
+          const editor = editorInstanceRef.current;
+          const selection = editor?.getSelection?.();
+          if (selection && !selection.isEmpty()) {
+            event.preventDefault();
+            openInlineEdit();
+          }
+        }
+      } else if (event.key === "Escape" && inlineEditSelection) {
+        cancelInlineEdit();
       }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [save, activeSessionId, acceptAgentCode, rejectAgentCode]);
+  }, [
+    save,
+    activeSessionId,
+    acceptAgentCode,
+    rejectAgentCode,
+    groupId,
+    activeGroupId,
+    openInlineEdit,
+    inlineEditSelection,
+    cancelInlineEdit,
+  ]);
 
 
   if (!path) {
@@ -608,6 +760,22 @@ export function Editor({
           onReject={activeSessionId ? () => void rejectAgentCode() : undefined}
           zebra={showZebra}
         />
+      ) : inlineEditResult ? (
+        <div className="editor-container-grid">
+          <div className="inline-edit-review-banner">
+            ✨ Edição inline — {inlineEditResult.changed_lines} linha(s) alterada(s). Revise antes
+            de gravar no projeto.
+          </div>
+          <DiffView
+            original={inlineEditResult.before}
+            modified={inlineEditResult.after}
+            language={rawLanguage}
+            onAccept={() => void acceptInlineEdit()}
+            onReject={rejectInlineEdit}
+            busy={inlineEditBusy}
+            zebra={showZebra}
+          />
+        </div>
       ) : (
         <div className="editor-container-grid">
           {activeSessionId && headContent !== null && headContent !== content && (
@@ -619,6 +787,47 @@ export function Editor({
                 isSideBySide={showDiff}
                 busy={loading || saving}
               />
+            </div>
+          )}
+          {inlineEditSelection && (
+            <div className="inline-edit-prompt-overlay">
+              <div className="inline-edit-prompt-header">✨ Editar seleção</div>
+              <textarea
+                autoFocus
+                className="inline-edit-prompt-input"
+                placeholder="O que mudar nesse trecho? (Esc cancela)"
+                value={inlineEditInstruction}
+                disabled={inlineEditBusy}
+                onChange={(e) => setInlineEditInstruction(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    void submitInlineEdit();
+                  } else if (e.key === "Escape") {
+                    e.preventDefault();
+                    cancelInlineEdit();
+                  }
+                }}
+              />
+              {inlineEditError && <div className="inline-edit-prompt-error">{inlineEditError}</div>}
+              <div className="inline-edit-prompt-actions">
+                <button
+                  type="button"
+                  className="theme-btn primary"
+                  disabled={inlineEditBusy || !inlineEditInstruction.trim()}
+                  onClick={() => void submitInlineEdit()}
+                >
+                  {inlineEditBusy ? "gerando…" : "Gerar (↵)"}
+                </button>
+                <button
+                  type="button"
+                  className="theme-btn"
+                  disabled={inlineEditBusy}
+                  onClick={cancelInlineEdit}
+                >
+                  cancelar (Esc)
+                </button>
+              </div>
             </div>
           )}
           <div className="editor-pane">
@@ -700,6 +909,19 @@ export function DiffView({
 }) {
   const { theme } = useTheme();
   const [sideBySide, setSideBySide] = useState(false);
+  const diffEditorRef = useRef<any>(null);
+
+  useEffect(() => {
+    return () => {
+      if (diffEditorRef.current) {
+        try {
+          diffEditorRef.current.setModel(null);
+        } catch {
+          // ignore
+        }
+      }
+    };
+  }, []);
 
   return (
     <div className={`editor-diff-wrapper ${zebra ? "zebra-stripes" : ""}`}>
@@ -724,6 +946,9 @@ export function DiffView({
           ...EDITOR_OPTIONS,
           readOnly: true,
           renderSideBySide: sideBySide,
+        }}
+        onMount={(editor) => {
+          diffEditorRef.current = editor;
         }}
       />
     </div>

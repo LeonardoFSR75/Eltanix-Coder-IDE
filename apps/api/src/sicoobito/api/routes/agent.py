@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any, Literal
@@ -12,9 +13,14 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from sicoobito.agent import session_store
+from sicoobito.agent.approval_policy import evaluate_policy
+from sicoobito.agent.approval_policy_config import load_approval_policy
 from sicoobito.agent.runner import AgentRunner, AgentSession
-from sicoobito.agent.state import AgentMode
+from sicoobito.agent.slash_commands import SLASH_COMMANDS
+from sicoobito.agent.state import AgentMode, PendingApproval
 from sicoobito.agent.tools import registry
+from sicoobito.agent.tools.base import ToolContext
+from sicoobito.agent.tools.diffing import compute_proposed_diff
 from sicoobito.api.deps import AuthDep, DbSessionDep, EngineDep, SettingsDep
 from sicoobito.auth.rbac import require_role_by_slug
 from sicoobito.db.session import session_scope
@@ -22,7 +28,7 @@ from sicoobito.logging_setup import get_logger
 from sicoobito.telemetry import flight_recorder
 from sicoobito.workspace import git as git_ops
 from sicoobito.workspace import projects as project_ops
-from sicoobito.workspace.fs import PathEscapeError
+from sicoobito.workspace.fs import FileTooLargeError, PathEscapeError, WorkspaceFS
 from sicoobito.workspace.git import GitError
 from sicoobito.workspace.projects import ProjectError
 
@@ -69,6 +75,185 @@ async def list_tools() -> dict[str, Any]:
             }
             for tool in registry.all()
         ]
+    }
+
+
+@router.get("/slash-commands")
+async def list_slash_commands() -> dict[str, Any]:
+    """Catálogo de slash commands reconhecidos (Fase 2 do upgrade do agente) —
+    fonte única do lado do servidor, consumida pelo autocomplete de
+    `AgentChatInput.tsx` (mesmo espírito de `modes.ts` ser fonte única no
+    frontend para os 7 modos)."""
+    return {
+        "commands": [
+            {
+                "command": c.command,
+                "skill_name": c.skill_name,
+                "suggested_mode": c.suggested_mode,
+                "description": c.description,
+            }
+            for c in SLASH_COMMANDS.values()
+        ]
+    }
+
+
+_INLINE_EDIT_SYSTEM_PROMPT = """Você é um editor de código cirúrgico, chamado a partir de um \
+atalho de edição inline (estilo Cmd+K) no editor de um desenvolvedor. Vai receber um trecho de \
+código selecionado, o contexto imediatamente antes/depois dele no arquivo, e uma instrução do \
+que mudar.
+
+Devolva **apenas** o texto substituto para o trecho selecionado — sem markdown, sem crases \
+(```), sem explicação, sem comentário sobre a mudança em si. Preserve a indentação e o estilo \
+do trecho original. O texto devolvido substitui exatamente o trecho selecionado, então precisa \
+continuar sintaticamente válido encaixado no contexto ao redor."""
+
+_FENCE_RE = re.compile(r"^```[a-zA-Z0-9_+-]*\r?\n(?P<body>.*)\r?\n```\s*$", re.DOTALL)
+
+
+def _strip_fence(texto: str) -> str:
+    """Modelos às vezes envolvem a resposta em crases mesmo quando instruídos a
+    não fazer isso — melhor tolerar do que devolver a substituição com lixo.
+
+    Ao contrário de `skills/promotion.py::_strip_fence` (que despe JSON e pode
+    usar `.strip()` sem dó), o conteúdo aqui é código que vai substituir a
+    seleção ao pé da letra: um `.strip()` cego destruiria a indentação inicial
+    de uma resposta sem fence (o caso comum), então só o fence em si é
+    removido — o corpo entre as crases sai intocado."""
+    match = _FENCE_RE.match(texto.strip("\n"))
+    return match.group("body") if match else texto
+
+
+class InlineEditRequest(BaseModel):
+    project: str = Field(min_length=1)
+    path: str = Field(min_length=1)
+    selected_text: str = Field(min_length=1, max_length=20_000)
+    instruction: str = Field(min_length=1, max_length=2000)
+    context_before: str = Field(default="", max_length=4000)
+    context_after: str = Field(default="", max_length=4000)
+
+
+@router.post("/inline-edit")
+async def inline_edit(
+    payload: InlineEditRequest, request: Request, settings: SettingsDep, engine: EngineDep
+) -> dict[str, Any]:
+    """Edição inline (Fase 7 do upgrade do agente, estilo Cmd+K) — fora do
+    grafo do LangGraph de propósito: uma seleção pontual não precisa de
+    sessão/checkpoint completo, só de uma chamada de LLM isolada (mesmo
+    padrão de `agent/review_common.py`) sobre o trecho selecionado.
+
+    Reaproveita `ApprovalPolicy`/`evaluate_policy` já existentes: se o
+    caminho editado bate numa regra de auto-aprovação, escreve direto;
+    senão, nunca escreve — devolve o diff para o frontend mostrar a barra de
+    aceitar/rejeitar (mesmo componente `InlineDiffApprovalBar` já usado para
+    revisar o diff de uma sessão do agente).
+    """
+    raiz = settings.effective_projects_root
+    if raiz is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Defina PROJECTS_ROOT para editar arquivos.",
+        )
+    try:
+        root = project_ops.resolve(Path(raiz), payload.project)
+    except ProjectError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    async with session_scope() as session:
+        await require_role_by_slug(
+            session, request, project_slug=payload.project, min_role="editor"
+        )
+
+    fs = WorkspaceFS(root)
+    try:
+        atual = fs.read(payload.path)
+    except (PathEscapeError, FileNotFoundError, FileTooLargeError, ValueError) as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    atual_norm = atual.replace("\r\n", "\n")
+    selecao_norm = payload.selected_text.replace("\r\n", "\n")
+    if atual_norm.count(selecao_norm) != 1:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "A seleção não aparece de forma inequívoca no arquivo atual — "
+                "o arquivo pode ter mudado. Recarregue e tente de novo."
+            ),
+        )
+
+    try:
+        resultado = await engine.complete(
+            requested_model="coding",
+            params={
+                "messages": [
+                    {"role": "system", "content": _INLINE_EDIT_SYSTEM_PROMPT},
+                    {
+                        "role": "user",
+                        "content": (
+                            f"Arquivo: {payload.path}\n\n"
+                            f"Contexto antes:\n{payload.context_before}\n\n"
+                            f"Trecho selecionado:\n{payload.selected_text}\n\n"
+                            f"Contexto depois:\n{payload.context_after}\n\n"
+                            f"Instrução: {payload.instruction}"
+                        ),
+                    },
+                ],
+                "temperature": 0,
+            },
+            source="ide:inline_edit",
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Falha ao chamar o modelo: {exc}"
+        ) from exc
+
+    escolha = (resultado.payload.get("choices") or [{}])[0]
+    novo_texto = _strip_fence((escolha.get("message") or {}).get("content") or "")
+    if not novo_texto.strip():
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="O modelo não devolveu uma substituição válida.",
+        )
+
+    ctx = ToolContext(session_id="inline-edit", workspace_root=root, fs=fs)
+    proposto = compute_proposed_diff(
+        ctx,
+        "edit_file",
+        {"path": payload.path, "old_text": payload.selected_text, "new_text": novo_texto},
+    )
+    if proposto is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Não foi possível calcular o diff da edição proposta.",
+        )
+
+    policy = load_approval_policy(root)
+    pending: PendingApproval = {
+        "tool_call_id": "inline-edit",
+        "tool": "edit_file",
+        "risk": "write",
+        "arguments": {
+            "path": payload.path,
+            "old_text": payload.selected_text,
+            "new_text": novo_texto,
+        },
+        "summary": payload.instruction[:200],
+    }
+    motivo_auto_aprovacao = evaluate_policy(policy, ctx, pending)
+
+    aplicado = motivo_auto_aprovacao is not None
+    if aplicado:
+        fs.write(payload.path, proposto.after)
+
+    return {
+        "path": payload.path,
+        "old_text": payload.selected_text,
+        "new_text": novo_texto,
+        "before": proposto.before,
+        "after": proposto.after,
+        "diff": proposto.diff,
+        "changed_lines": proposto.changed_lines,
+        "applied": aplicado,
+        "auto_approved_reason": motivo_auto_aprovacao,
     }
 
 
@@ -316,6 +501,48 @@ async def session_diff(session_id: str, request: Request) -> dict[str, Any]:
         "files": [{"path": f.path, "status": f.status} for f in estado.files],
         "diff": diff,
     }
+
+
+@router.get("/sessions/{session_id}/checkpoints")
+async def list_checkpoints(session_id: str, request: Request) -> dict[str, Any]:
+    """Pontos de restauração (Fase 8 do upgrade do agente) — um por chamada
+    ao modelo (`AgentState["iterations"]`) já concluída nesta sessão."""
+    sessao = await _session(request, session_id)
+    pontos = await _runner(request).list_checkpoints(sessao)
+    return {"checkpoints": pontos}
+
+
+class RewindRequest(BaseModel):
+    iteration: int = Field(ge=0)
+
+
+@router.post("/sessions/{session_id}/rewind")
+async def rewind_session(
+    session_id: str, payload: RewindRequest, request: Request
+) -> dict[str, Any]:
+    """Restaura a sessão para o fim de uma iteração anterior — trunca o
+    histórico do grafo e reverte no worktree todo arquivo escrito depois
+    dela (Fase 8 do upgrade do agente). Ação explícita e destrutiva do
+    usuário: mesmo nível de acesso de `revert_file`/`accept_file`, mas com
+    RBAC (o mesmo `min_role="editor"` de `create_session`) porque, ao
+    contrário daquelas duas, isto pode reverter várias escritas de uma vez."""
+    sessao = await _session(request, session_id)
+
+    async with session_scope() as db:
+        await require_role_by_slug(
+            db, request, project_slug=sessao.context.project_slug or None, min_role="editor"
+        )
+
+    try:
+        resultado = await _runner(request).rewind_to(sessao, iteration=payload.iteration)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)
+        ) from exc
+
+    return resultado
 
 
 class RevertFileRequest(BaseModel):

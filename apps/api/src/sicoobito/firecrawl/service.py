@@ -6,8 +6,6 @@ e rotinas para raspar, buscar e indexar conteúdos da web na base vetorial (pgve
 
 from __future__ import annotations
 
-import ipaddress
-import urllib.parse
 from typing import Any
 
 from sicoobito.config import Settings
@@ -21,66 +19,11 @@ from sicoobito.firecrawl.client import (
 )
 from sicoobito.logging_setup import get_logger
 from sicoobito.router.engine import RouterEngine
+from sicoobito.security.url_safety import validate_target_url
 
 log = get_logger(__name__)
 
-# Hosts e endereços internos que nunca devem ser alvos de scraping/crawling
-_BLOCKED_HOSTNAMES = {
-    "localhost",
-    "127.0.0.1",
-    "0.0.0.0",
-    "host.docker.internal",
-    "metadata.google.internal",
-    "169.254.169.254",
-    "postgres",
-    "redis",
-    "minio",
-    "executor",
-    "browser",
-    "api",
-    "web",
-    "mcp-scanner",
-}
-
-
-def validate_target_url(url: str) -> None:
-    """Valida se a URL é segura e não aponta para a infraestrutura interna (SSRF)."""
-    if not url or not isinstance(url, str):
-        raise ValueError("URL não pode ser vazia.")
-
-    url_clean = url.strip()
-    if not url_clean.startswith(("http://", "https://")):
-        raise ValueError("URL deve começar com http:// ou https://.")
-
-    try:
-        parsed = urllib.parse.urlparse(url_clean)
-    except Exception as exc:
-        raise ValueError(f"URL inválida: {exc}") from exc
-
-    hostname = (parsed.hostname or "").lower()
-    if not hostname:
-        raise ValueError("URL não contém um hostname válido.")
-
-    if hostname in _BLOCKED_HOSTNAMES or hostname.startswith("sicoobito-"):
-        raise ValueError(
-            f"Acesso ao host '{hostname}' bloqueado por política de segurança (SSRF)."
-        )
-
-    # Verifica se é um IP privado ou reservado
-    ip = None
-    try:
-        ip = ipaddress.ip_address(hostname)
-    except ValueError:
-        # Não é IP literal (é um domínio como docs.python.org), tudo bem
-        pass
-
-    if ip is not None and (
-        ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved
-    ):
-        raise ValueError(
-            f"Acesso ao IP privado/reservado '{hostname}' "
-            "bloqueado por política de segurança (SSRF)."
-        )
+__all__ = ["FirecrawlService", "validate_target_url"]
 
 
 class FirecrawlService:

@@ -14,11 +14,15 @@ from redis.asyncio import Redis
 
 from sicoobito import __version__
 from sicoobito.agent.coordinator import AgentCoordinator
+from sicoobito.analytics.worker import run_analytics_batch_reaper
+from sicoobito.agent.custom_modes import CustomModeService
 from sicoobito.agent.runner import AgentRunner
+from sicoobito.agent.snapshot_store import SnapshotService
 from sicoobito.agent.tools import registry as tool_registry
 from sicoobito.api.middleware import CorrelationIdMiddleware
 from sicoobito.api.routes import (
     agent_router,
+    analytics_router,
     approval_policy_router,
     audit_router,
     auth_router,
@@ -26,6 +30,8 @@ from sicoobito.api.routes import (
     browser_ws_router,
     containers_router,
     context_router,
+    context_rules_router,
+    custom_modes_router,
     documents_router,
     extensions_router,
     firecrawl_router,
@@ -46,11 +52,13 @@ from sicoobito.api.routes import (
     workspace_router,
     workspace_ws_router,
 )
+from sicoobito.api.routes.browser import run_panel_client_purge_reaper
 from sicoobito.api.tickets import TicketStore
 from sicoobito.api.v1 import router as openai_router
 from sicoobito.audit.service import AuditService
 from sicoobito.auth.service import AuthService
 from sicoobito.browser.client import BrowserConfig
+from sicoobito.browser.replay import run_replay_purge_reaper
 from sicoobito.config import get_settings
 from sicoobito.context.indexer import ContextIndexer
 from sicoobito.db.session import init_engine, session_scope, shutdown_engine
@@ -163,8 +171,12 @@ async def lifespan(app: FastAPI):
     notes = NoteService(settings=settings, engine=engine, trace_recorder=trace_recorder)
     firecrawl = FirecrawlService(settings=settings, engine=engine)
     skills = SkillService()
+    custom_modes = CustomModeService()
+    snapshots = SnapshotService()
     try:
-        imported_skills = await seed_agent_skills(Path(".agents"))
+        imported_skills = await seed_agent_skills(
+            Path(".agents"), engine=engine, embedding_profile=settings.embedding_profile
+        )
         if imported_skills > 0:
             log.info("skills.agent_skills.seeded", count=imported_skills)
     except Exception as exc:
@@ -253,6 +265,8 @@ async def lifespan(app: FastAPI):
     app.state.notes = notes
     app.state.firecrawl = firecrawl
     app.state.skills = skills
+    app.state.custom_modes = custom_modes
+    app.state.snapshots = snapshots
     app.state.extensions_manager = extensions_manager
     app.state.audit = audit
     app.state.auth = auth
@@ -272,6 +286,10 @@ async def lifespan(app: FastAPI):
     # clique no painel manual pagava um `POST /sessions` extra antes da própria
     # ação, porque uma instância nova sempre nasce com `_started=False`.
     app.state.browser_panel_clients = {}
+    # Última vez que cada `BrowserClient` do painel foi usado — só para
+    # `run_panel_client_purge_reaper` saber quais entradas ociosas descartar
+    # (item 11 do plano de robustez do navegador interno).
+    app.state.browser_panel_client_last_used = {}
     app.state.agent_runner = AgentRunner(
         settings=settings,
         engine=engine,
@@ -281,6 +299,8 @@ async def lifespan(app: FastAPI):
         documents=documents,
         notes=notes,
         skills=skills,
+        custom_modes=custom_modes,
+        snapshots=snapshots,
         audit=audit,
         firecrawl=firecrawl,
         extensions_manager=extensions_manager,
@@ -296,6 +316,15 @@ async def lifespan(app: FastAPI):
     session_purge_reaper = asyncio.create_task(auth.run_session_purge_reaper())
     zombie_session_reaper = asyncio.create_task(
         app.state.agent_runner.run_zombie_session_reaper()
+    )
+    replay_purge_reaper = asyncio.create_task(
+        run_replay_purge_reaper(blob=blob, redis=redis)
+    )
+    panel_client_purge_reaper = asyncio.create_task(
+        run_panel_client_purge_reaper(app.state)
+    )
+    analytics_batch_reaper = asyncio.create_task(
+        run_analytics_batch_reaper(engine)
     )
 
     log.info(
@@ -316,6 +345,15 @@ async def lifespan(app: FastAPI):
         zombie_session_reaper.cancel()
         with suppress(asyncio.CancelledError):
             await zombie_session_reaper
+        replay_purge_reaper.cancel()
+        with suppress(asyncio.CancelledError):
+            await replay_purge_reaper
+        panel_client_purge_reaper.cancel()
+        with suppress(asyncio.CancelledError):
+            await panel_client_purge_reaper
+        analytics_batch_reaper.cancel()
+        with suppress(asyncio.CancelledError):
+            await analytics_batch_reaper
         # Containers da sessão não podem sobreviver ao processo que os criou:
         # ficariam órfãos consumindo memória até alguém notar.
         await sandboxes.shutdown()
@@ -357,6 +395,8 @@ def create_app() -> FastAPI:
     app.include_router(health_router)
     app.include_router(metrics_router)
     app.include_router(context_router)
+    app.include_router(context_rules_router)
+    app.include_router(custom_modes_router)
     app.include_router(documents_router)
     app.include_router(extensions_router)
     app.include_router(firecrawl_router)
@@ -366,6 +406,7 @@ def create_app() -> FastAPI:
     app.include_router(audit_router)
     app.include_router(mcp_router)
     app.include_router(telemetry_router)
+    app.include_router(analytics_router)
     app.include_router(agent_router)
     app.include_router(approval_policy_router)
     app.include_router(workspace_router)

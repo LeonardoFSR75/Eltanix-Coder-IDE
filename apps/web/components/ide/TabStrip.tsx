@@ -35,8 +35,13 @@ export function TabStrip({ groupId }: { groupId: string }) {
       }}
     >
       {group.tabs.map((tab) => {
-        const isBrowserTab = tab.startsWith("browser:");
-        const browserUrl = isBrowserTab ? tab.slice("browser:".length) : "";
+        const browserPrefix = tab.startsWith("browser-agent:")
+          ? "browser-agent:"
+          : tab.startsWith("browser:")
+            ? "browser:"
+            : null;
+        const isBrowserTab = browserPrefix !== null;
+        const browserUrl = browserPrefix ? tab.slice(browserPrefix.length) : "";
         const cleanHost = browserUrl.replace(/^https?:\/\//, "").split("/")[0] || "localhost";
         const filename = isBrowserTab ? `🌐 ${cleanHost}` : (tab.split("/").pop() ?? tab);
         return (

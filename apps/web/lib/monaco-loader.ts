@@ -29,6 +29,15 @@ if (typeof window !== "undefined") {
     const isDiffModelError = (msg?: string | null) =>
       Boolean(msg && msg.includes("TextModel got disposed before DiffEditorWidget model got reset"));
 
+    const origConsoleError = console.error;
+    console.error = (...args: unknown[]) => {
+      const msg = args.map((a) => (typeof a === "string" ? a : (a as any)?.message || "")).join(" ");
+      if (isDiffModelError(msg)) {
+        return;
+      }
+      origConsoleError.apply(console, args);
+    };
+
     window.addEventListener("error", (event) => {
       if (isDiffModelError(event.message) || isDiffModelError(event.error?.message)) {
         event.preventDefault();

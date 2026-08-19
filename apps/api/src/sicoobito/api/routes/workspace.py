@@ -163,6 +163,8 @@ async def read_file(
         runner = getattr(request.app.state, "agent_runner", None)
         if runner:
             sessao = runner.get_session(session_id)
+            if sessao is None:
+                sessao = await runner.reconnect_session(session_id)
             if sessao and sessao.worktree_path.exists():
                 target_fs = WorkspaceFS(sessao.worktree_path)
 
@@ -367,6 +369,8 @@ async def terminal(websocket: WebSocket, session_id: str) -> None:
 
     runner = getattr(websocket.app.state, "agent_runner", None)
     sessao = runner.get_session(session_id) if runner else None
+    if sessao is None and runner:
+        sessao = await runner.reconnect_session(session_id)
     if sessao is None:
         await websocket.send_json({"type": "error", "message": f"sessão {session_id} não existe"})
         await websocket.close(code=4404)

@@ -1,10 +1,12 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { useTheme } from "@/lib/theme";
 import { useIde } from "@/lib/ide-store";
-import { getSandboxStats, toggleWebApp, type SandboxStats } from "@/lib/api/sandbox";
+import { toggleWebApp } from "@/lib/api/sandbox";
+import { getProjectPackages, resolvePackagesSyncStatus, type PackagesSyncStatus } from "@/lib/api/packages";
 import type { LspStatus } from "@/lib/use-lsp";
+import { refreshSandboxStats, useSandboxStats } from "@/lib/use-sandbox-stats";
 
 interface StatusBarProps {
   lspStatus: LspStatus;
@@ -43,34 +45,18 @@ function Sep() {
 }
 
 function SandboxStatusItem({ sessionId }: { sessionId: string }) {
-  const [stats, setStats] = useState<SandboxStats | null>(null);
+  // Poller compartilhado com o painel de navegador central — ver comentário
+  // em `lib/use-sandbox-stats.ts` (item 14 do plano de robustez do
+  // navegador interno).
+  const stats = useSandboxStats(sessionId);
   const [isPrewarming, setIsPrewarming] = useState(false);
   const { openFile } = useIde();
-
-  useEffect(() => {
-    let ativo = true;
-    const load = async () => {
-      try {
-        const s = await getSandboxStats(sessionId);
-        if (ativo && s) setStats(s);
-      } catch {
-        // Ignora
-      }
-    };
-    void load();
-    const timer = setInterval(load, 4000);
-    return () => {
-      ativo = false;
-      clearInterval(timer);
-    };
-  }, [sessionId]);
 
   const handleTogglePrewarm = async () => {
     setIsPrewarming(true);
     try {
       await toggleWebApp(sessionId, true);
-      const s = await getSandboxStats(sessionId);
-      if (s) setStats(s);
+      await refreshSandboxStats(sessionId);
     } catch {
       // Ignora
     } finally {
@@ -109,8 +95,12 @@ function SandboxStatusItem({ sessionId }: { sessionId: string }) {
           key={porta}
           type="button"
           className="statusbar-item"
-          title={`Abrir http://localhost:${porta} no Navegador Central`}
-          onClick={() => openFile(`browser:http://localhost:${porta}`)}
+          title={`Abrir localhost:${porta} no Navegador Central (modo Agente — a porta do sandbox só é alcançável pelo serviço de navegador, nunca por um iframe direto)`}
+          // Modo Agente, não Live: a porta do sandbox só entra na rede
+          // `browser_net` (nunca publicada no host) — um iframe apontado
+          // pra `localhost:<porta>` falharia sempre. O serviço de
+          // navegador sabe resolver via `sicoobito-<sessionId>:<porta>`.
+          onClick={() => openFile(`browser-agent:http://localhost:${porta}`)}
           style={{
             cursor: "pointer",
             background: "rgba(56, 189, 248, 0.15)",
@@ -126,6 +116,59 @@ function SandboxStatusItem({ sessionId }: { sessionId: string }) {
         </button>
       ))}
     </div>
+  );
+}
+
+const SYNC_LABEL: Record<PackagesSyncStatus, string> = {
+  ok: "Pacotes sincronizados",
+  warning: "Pacotes fora do manifesto",
+  idle: "Sem pacotes instalados",
+};
+
+function PackagesStatusItem({ project }: { project: string }) {
+  const { setPanel, sidebarOpen, toggleSidebar } = useIde();
+  const [status, setStatus] = useState<PackagesSyncStatus | null>(null);
+
+  const load = useCallback(async () => {
+    try {
+      const data = await getProjectPackages(project);
+      setStatus(resolvePackagesSyncStatus(data.packages, data.requirements_map ?? {}));
+    } catch {
+      setStatus(null);
+    }
+  }, [project]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  // Mesmo evento disparado por `sessionRuntime.ts` (tool `manage_packages` do
+  // agente) e por `PackagesPanel` (instalar/remover/sincronizar pelo próprio
+  // usuário) — este indicador não faz polling próprio, só reage a ele.
+  useEffect(() => {
+    const handleChanged = () => void load();
+    window.addEventListener("sicoobito:packages:changed", handleChanged);
+    return () => window.removeEventListener("sicoobito:packages:changed", handleChanged);
+  }, [load]);
+
+  if (!status) return null;
+
+  return (
+    <button
+      type="button"
+      className="statusbar-item"
+      title={SYNC_LABEL[status]}
+      onClick={() => {
+        if (!sidebarOpen) toggleSidebar();
+        setPanel("packages");
+      }}
+      style={{ cursor: "pointer", background: "none", border: "none", color: "inherit" }}
+    >
+      <span
+        className={`pulse-dot ${status === "ok" ? "ok" : status === "warning" ? "err" : ""}`}
+      />
+      {status === "warning" ? "⚠️" : "📦"} {SYNC_LABEL[status]}
+    </button>
   );
 }
 
@@ -182,6 +225,13 @@ export function StatusBar({ lspStatus, cursorPosition }: StatusBarProps) {
           <>
             <Sep />
             <SandboxStatusItem sessionId={activeSessionId} />
+          </>
+        )}
+
+        {project && (
+          <>
+            <Sep />
+            <PackagesStatusItem project={project} />
           </>
         )}
       </div>
