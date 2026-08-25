@@ -233,7 +233,7 @@ services:
     environment:
       DATABASE_URL: postgresql+asyncpg://eltanix:eltanix@postgres:5432/eltanix
       REDIS_URL: redis://redis:6379/0
-      ELTANIX_API_KEY: ${ELTANIX_API_KEY:?defina ELTANIX_API_KEY no .env}
+      ELTANIX_API_KEY: ${ELTANIX_API_KEY:-eltanix-local-dev-key}
       # Raiz onde os projetos editáveis vivem, do ponto de vista do container.
       PROJECTS_ROOT: /projects
       # O mesmo caminho visto pelo host. O executor precisa dele para montar
@@ -309,7 +309,7 @@ services:
     environment:
       # O browser fala com o Next; o Next fala com a API pela rede interna.
       ELTANIX_API_URL: http://api:5401
-      ELTANIX_API_KEY: ${ELTANIX_API_KEY:?defina ELTANIX_API_KEY no .env}
+      ELTANIX_API_KEY: ${ELTANIX_API_KEY:-eltanix-local-dev-key}
       # Usado só para montar a URL do WebSocket, que o browser abre direto.
       NEXT_PUBLIC_API_ORIGIN: ${PUBLIC_API_ORIGIN:-http://localhost:5401}
       PORT: "5400"
@@ -335,8 +335,8 @@ services:
       - browser_net
     environment:
       VITE_API_ORIGIN: ${PUBLIC_API_ORIGIN:-http://localhost:5401}
-      VITE_ELTANIX_API_KEY: ${ELTANIX_API_KEY:?defina ELTANIX_API_KEY no .env}
-      ELTANIX_API_KEY: ${ELTANIX_API_KEY:?defina ELTANIX_API_KEY no .env}
+      VITE_ELTANIX_API_KEY: ${ELTANIX_API_KEY:-eltanix-local-dev-key}
+      ELTANIX_API_KEY: ${ELTANIX_API_KEY:-eltanix-local-dev-key}
       PORT: "5409"
     ports:
       - "127.0.0.1:5409:5409"

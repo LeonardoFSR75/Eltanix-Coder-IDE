@@ -1,5 +1,15 @@
 # Eltanix Coder IDE
 
+<p align="center">
+  <a href="https://github.com/LeonardoFSR75/Eltanix-Coder-IDE/actions/workflows/ci.yml"><img src="https://github.com/LeonardoFSR75/Eltanix-Coder-IDE/actions/workflows/ci.yml/badge.svg" alt="CI Status" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache_2.0-blue.svg" alt="License" /></a>
+  <a href="https://www.python.org/"><img src="https://img.shields.io/badge/python-3.12+-blue.svg" alt="Python 3.12+" /></a>
+  <a href="https://nextjs.org/"><img src="https://img.shields.io/badge/Next.js-15-black.svg" alt="Next.js 15" /></a>
+  <a href="https://svelte.dev/"><img src="https://img.shields.io/badge/Svelte-5-orange.svg" alt="Svelte 5" /></a>
+  <a href="https://github.com/LeonardoFSR75/Eltanix-Coder-IDE/discussions"><img src="https://img.shields.io/badge/Discussions-Join-purple.svg" alt="GitHub Discussions" /></a>
+  <a href="CONTRIBUTING.md"><img src="https://img.shields.io/badge/PRs-welcome-brightgreen.svg" alt="PRs Welcome" /></a>
+</p>
+
 **Plataforma local-first de codificação agêntica.** Um IDE web completo estilo VS Code — editor
 Monaco, terminal, navegador interno e chat com um agente autônomo que lê, edita e executa
 comandos sobre o seu próprio repositório, sempre com aprovação humana nas ações de risco.
@@ -12,6 +22,39 @@ O princípio que sustenta tudo: **nenhum módulo fala com um provedor de LLM dir
 chamada passa por um único router (`RouterEngine`), e cada provedor entra como adaptador
 plugável — trocar de modelo ou de nuvem é mudança de configuração, não de código ([ADR
 0001](docs/adr/0001-camada-unica-de-llm.md)).
+
+```mermaid
+flowchart TD
+    subgraph Clients[" 🖥️ Clientes Front-End "]
+        Web["Web IDE (Next.js 15 + Monaco)"]
+        Desktop["App Desktop (Tauri 2.0 + Svelte 5)"]
+    end
+
+    subgraph Core[" ⚡ Eltanix Core Gateway (FastAPI) "]
+        Router["RouterEngine (Multi-Model Gateway)"]
+        Agent["LangGraph Agent (Think / Approve / Act)"]
+        Graphify["Graphify & GraphRAG"]
+        AnyDoc["AnyDoc (Rust/Calamine RAG)"]
+        SecBERT["SecureBERT (SAST & Vulnerability Audit)"]
+    end
+
+    subgraph Sandbox[" 🛡️ Ambiente Isolado "]
+        Exec["Container Sandbox (Docker Executor)"]
+        Browser["Chromium Headless / Lightpanda"]
+        MCP["Cisco AI Defense MCP Scanner"]
+    end
+
+    subgraph Data[" 💾 Armazenamento Local "]
+        PG[("PostgreSQL 17 + pgvector")]
+        Redis[("Redis 7 (Cache & Queues)")]
+        MinIO[("MinIO (Blob & Artifacts)")]
+    end
+
+    Web -->|REST / SSE / WS| Core
+    Desktop -->|REST / SSE / IPC| Core
+    Core --> Sandbox
+    Core --> Data
+```
 
 ---
 
