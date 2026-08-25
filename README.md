@@ -26,25 +26,28 @@ plugável — trocar de modelo ou de nuvem é mudança de configuração, não d
 - [Segurança](#-segurança)
 - [Testes & qualidade de código](#-testes--qualidade-de-código)
 - [Documentação de arquitetura](#-documentação-de-arquitetura)
+- [Contribuindo](#-contribuindo)
+- [Licença](#-licença)
 
 ---
 
 ## 🌟 Recursos & Módulos Principais
 
-| Módulo | Escopo & Capacidades | Status |
+| Módulo | Escopo & Capacidades | Maturidade |
 |---|---|---|
-| **Navegador Interno Completo** | Modo **Tela Cheia (`F11`)**, múltiplas abas dinâmicas, histórico completo, emuladores de dispositivos (Desktop, Tablet, Mobile SE, Mobile Max), favoritos rápidos (`:3000`, `:5173`, `:8000/docs`, `:5000`), modo híbrido **Live Iframe** + **Headless CDP** compatível com **Lightpanda** | ✅ Validado |
-| **RAG Multi-Formato Universal** | Extração ultrarrápida em Rust via **AnyDoc** (motor **Calamine**) para Word (`.docx`, `.odt`), Excel (`.xlsx`, `.xls`, `.xlsb`, `.ods`), PowerPoint (`.pptx`, `.odp`), EPUB, RTF e CSV + classificação inteligente de PDFs via **PDF Inspector** | ✅ Validado |
-| **Web Scraping & Deep Research (Firecrawl)** | Web scrape limpo em Markdown, crawling recursivo de documentações, clonagem de UI React (`clone_web_ui`), pesquisa profunda com citações (`deep_research`) e **proteção anti-SSRF** | ✅ Validado |
-| **Gateway Multi-Modelo** | Roteamento unificado (Ollama, Azure, Databricks, Anthropic, Groq, OpenAI), fallback automático, circuit breaker e contabilidade de tokens/custos | ✅ Validado |
-| **Agente LangGraph** | Loop autônomo (*think → approve → act*), sandbox isolado de execução, ferramentas por classe de risco (`RiskClass`), modos `ask`, `edit`, `agent`, `plan`, `auto` e `orchestra`, orquestração multiagente (`spawn_agent`) | ✅ Validado |
-| **IDE Web Agêntica** | Editor Monaco (split-pane), explorador de arquivos com drag-and-drop, terminal integrado, cards de ferramentas estruturados e Agent Dock/Manager | ✅ Validado |
-| **Segundo Cérebro & Obsidian** | Base de notas interligadas com `[[wikilinks]]`, busca híbrida vetorial + BM25 e Graph View 2D/3D interativo | ✅ Validado |
-| **GraphRAG (Graphify)** | Base de conhecimento em grafo de código (nós/arestas L1–L3), expansão semântica CTE/GQL e visualização 360° | ✅ Validado |
-| **Catálogo de Agent Skills** | Habilidades declarativas (`SKILL.md`) cobrindo WordPress moderno (Gutenberg, REST API, Performance), FastAPI, Playwright e Firecrawl, com auto-aprimoramento | ✅ Validado |
-| **Sanitização de PII** | Mascaramento dinâmico de CPF, e-mail, cartão e chaves de API em prompts antes do envio a modelos remotos | ✅ Validado |
-| **Auditoria & Segurança** | Trilha imutável no Postgres para aprovações `WRITE`/`EXEC`, RBAC por projeto e autenticação segura com cookies httpOnly | ✅ Validado |
-| **MCP (Model Context Protocol)** | Suporte completo a servidores MCP (stdio/HTTP), com scanner de segurança integrado (Cisco MCP Scanner) | ✅ Validado |
+| **Navegador Interno Completo** | Modo **Tela Cheia (`F11`)**, múltiplas abas dinâmicas, histórico completo, emuladores de dispositivos (Desktop, Tablet, Mobile SE, Mobile Max), favoritos rápidos (`:3000`, `:5173`, `:8000/docs`, `:5000`), modo híbrido **Live Iframe** + **Headless CDP** compatível com **Lightpanda** | 🟢 Stable |
+| **RAG Multi-Formato Universal** | Extração ultrarrápida em Rust via **AnyDoc** (motor **Calamine**) para Word (`.docx`, `.odt`), Excel (`.xlsx`, `.xls`, `.xlsb`, `.ods`), PowerPoint (`.pptx`, `.odp`), EPUB, RTF e CSV + classificação inteligente de PDFs via **PDF Inspector** | 🟢 Stable |
+| **Web Scraping & Deep Research (Firecrawl)** | Web scrape limpo em Markdown, crawling recursivo de documentações, clonagem de UI React (`clone_web_ui`), pesquisa profunda com citações (`deep_research`) e **proteção anti-SSRF** | 🟢 Stable |
+| **Gateway Multi-Modelo** | Roteamento unificado (Ollama, Azure, Databricks, Anthropic, Groq, OpenAI), fallback automático, circuit breaker e contabilidade de tokens/custos | 🟢 Stable |
+| **Agente LangGraph** | Loop autônomo (*think → approve → act*), sandbox isolado de execução, ferramentas por classe de risco (`RiskClass`), modos `ask`, `edit`, `agent`, `plan`, `auto` e `orchestra`, orquestração multiagente (`spawn_agent`) | 🟢 Stable |
+| **Sandbox & Executor** | Isolamento de comandos em container dedicado com privilégios reduzidos (`cap_drop: ALL`, sem root, rede restrita) | 🟢 Stable |
+| **IDE Web Agêntica** | Editor Monaco (split-pane), explorador de arquivos com drag-and-drop, terminal integrado, cards de ferramentas estruturados e Agent Dock/Manager | 🟡 Beta |
+| **Extensões (Open VSX)** | 6 Suítes Nativas de extensões com persistência no PostgreSQL e auto-update com degradação graciosa | 🟡 Beta |
+| **GraphRAG (Graphify)** | Base de conhecimento em grafo de código (nós/arestas L1–L3), expansão semântica CTE/GQL e visualização 360° | 🟡 Beta |
+| **MCP (Model Context Protocol)** | Suporte completo a servidores MCP (stdio/HTTP), com scanner de segurança integrado (Cisco MCP Scanner) | 🟡 Beta |
+| **Segundo Cérebro & Obsidian** | Base de notas interligadas com `[[wikilinks]]`, busca híbrida vetorial + BM25 e Graph View 2D/3D interativo | 🔴 Experimental |
+| **Auto-Diagnóstico & Anomalias** | Agrupamento semântico não-supervisionado por similaridade de cosseno de embeddings e heurísticas de correção | 🔴 Experimental |
+| **App Desktop (Tauri + Svelte 5)** | Shell desktop nativo com Svelte 5 e Tauri | 🔴 Experimental *(Ajuda bem-vinda)* |
 
 ---
 
@@ -193,3 +196,19 @@ Para mais detalhes sobre as decisões de design, consulte:
 - [ADR 0009 — Sistema de 6 Suítes de Extensões e Auto-Update Open VSX](docs/adr/0009-sistema-de-extensoes-e-auto-update-open-vsx.md)
 - [ADR 0010 — Segurança de Servidores MCP e Cisco AI Defense Scanner](docs/adr/0010-seguranca-mcp-e-cisco-scanner.md)
 - [ADR 0011 — Sanitização Dinâmica de Prompts e Mascaramento de PII](docs/adr/0011-sanitizacao-dinamica-pii.md)
+
+---
+
+## 🤝 Contribuindo
+
+Este projeto está em fase **beta** e aceita contribuições. Veja
+[`CONTRIBUTING.md`](CONTRIBUTING.md) para o fluxo de PR, convenções de código e como rodar os
+testes. Participantes concordam em seguir o [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md).
+Vulnerabilidades de segurança têm um processo próprio — veja [`SECURITY.md`](SECURITY.md), não
+abra uma issue pública.
+
+---
+
+## 📄 Licença
+
+Licenciado sob [Apache License 2.0](LICENSE).

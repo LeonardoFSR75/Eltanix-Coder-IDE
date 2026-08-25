@@ -45,7 +45,8 @@ Um serviço `executor` separado, e só ele com o socket montado.
 
 Consequência que só aparece na prática: o daemon do Docker resolve bind mounts
 contra o **host**, não contra o container que pediu. A API enxerga o projeto em
-`/projects/meu-app`; o daemon precisa de `C:/Users/leona/Documents/Projetos/meu-app`.
+`/projects/meu-app`; o daemon precisa de `C:/Users/dev/Projetos/meu-app` (ou o caminho
+absoluto real no host, em qualquer SO).
 
 Por isso o executor recebe os dois lados (`PROJECTS_ROOT_CONTAINER` e
 `PROJECTS_ROOT_HOST`) e traduz. Um caminho que não comece pela raiz de projetos

@@ -1,7 +1,7 @@
 # 📘 Dossiê Técnico Unificado Completo & Plano Estratégico — Eltanix Coder IDE
 
 **Data da Avaliação**: 19 de Agosto de 2026  
-**Repositório**: [`Eltanix Coder IDE`](file:///c:/Users/leona/Documents/Projetos/SicoobitoCode)  
+**Repositório**: [`Eltanix Coder IDE`](../README.md)  
 **Veredito Global**: **9.6 / 10 — Nível de Excelência Enterprise & Local-First**  
 **Status da Suíte de Testes**:  
 - **Backend (FastAPI / Pytest)**: ✅ **830 Aprovados** | 47 Skipped | 1 Teste E2E HTTP (`test_git_config_api_routes`)  
@@ -36,7 +36,7 @@ O **Eltanix Coder IDE** é uma plataforma **local-first de codificação agênti
 
 ### Princípio Arquitetural Mestre
 > **"Nenhum módulo fala com um provedor de LLM diretamente."**  
-> Toda e qualquer chamada de inteligência artificial ou embeddings passa obrigatoriamente pelo **`RouterEngine`** (`eltanix.router`), garantindo desacoplamento total, fallback transparente entre modelos, circuit breaker e controle fino de orçamento ([ADR 0001](file:///c:/Users/leona/Documents/Projetos/SicoobitoCode/docs/adr/0001-camada-unica-de-llm.md)).
+> Toda e qualquer chamada de inteligência artificial ou embeddings passa obrigatoriamente pelo **`RouterEngine`** (`eltanix.router`), garantindo desacoplamento total, fallback transparente entre modelos, circuit breaker e controle fino de orçamento ([ADR 0001](adr/0001-camada-unica-de-llm.md)).
 
 ---
 
@@ -244,7 +244,7 @@ Rust AnyDoc/Calamine)    Wikilinks [[nota]])              via Tree-sitter)      
 
 ## 🗄️ 7. Modelagem ER do Banco de Dados & Schemas Persistidos
 
-O Eltanix Coder IDE adota um modelo de dados enxuto e derivado no PostgreSQL em [`models.py`](file:///c:/Users/leona/Documents/Projetos/SicoobitoCode/apps/api/src/eltanix/db/models.py):
+O Eltanix Coder IDE adota um modelo de dados enxuto e derivado no PostgreSQL em [`models.py`](../apps/api/src/eltanix/db/models.py):
 
 ```
 ┌──────────────────────────────────────┐          ┌──────────────────────────────────────┐
@@ -336,7 +336,7 @@ O Eltanix Coder IDE adota um modelo de dados enxuto e derivado no PostgreSQL em 
 
 ## 🐳 9. Topologia de Rede Docker & Isolamento de Contêineres
 
-O arquivo [`docker-compose.yml`](file:///c:/Users/leona/Documents/Projetos/SicoobitoCode/docker-compose.yml) divide a aplicação em redes virtuais isoladas:
+O arquivo [`docker-compose.yml`](../docker-compose.yml) divide a aplicação em redes virtuais isoladas:
 
 ```
  ┌────────────────────────────────────────────────────────────────────────────────────────┐
@@ -370,7 +370,7 @@ O módulo `eltanix.analytics` oferece diagnósticos de auto-causa raiz:
 
 ## 🔌 11. Ecossistema das 6 Suítes de Extensões & Auto-Update Open VSX (ADR 0009)
 
-Localizado em [`eltanix.extensions`](file:///c:/Users/leona/Documents/Projetos/SicoobitoCode/apps/api/src/eltanix/extensions/catalog.py), o Eltanix Coder IDE implementa um gerenciador dinâmico de extensões agrupadas em **6 Suítes Nativas**:
+Localizado em [`eltanix.extensions`](../apps/api/src/eltanix/extensions/catalog.py), o Eltanix Coder IDE implementa um gerenciador dinâmico de extensões agrupadas em **6 Suítes Nativas**:
 
 1. **Frontend & Visual**: Shadcn, DaisyUI, Lucide Icons, Live Server, Chart.js Preview.
 2. **IA & Web Scraping**: Firecrawl Workflow Builder, Data Connectors, MCP Marketplace.
@@ -380,14 +380,14 @@ Localizado em [`eltanix.extensions`](file:///c:/Users/leona/Documents/Projetos/S
 6. **Segundo Cérebro & Arquitetura**: Graphify Live Canvas, ADR Assistant, Git Smart Blame.
 
 ### Mecânica do Auto-Update Open VSX
-- O [`OpenVSXClient`](file:///c:/Users/leona/Documents/Projetos/SicoobitoCode/apps/api/src/eltanix/extensions/client.py) conecta-se à API pública do **Open VSX Registry** (`https://open-vsx.org/api`).
+- O [`OpenVSXClient`](../apps/api/src/eltanix/extensions/client.py) conecta-se à API pública do **Open VSX Registry** (`https://open-vsx.org/api`).
 - O `ExtensionManager` compara a versão instalada localmente com os metadados remotos e permite atualizações em lote com **1-clique**.
 
 ---
 
 ## 🛡️ 12. Cisco AI Defense Scanner & Gestão MCP (`eltanix.mcp`)
 
-Localizado em [`eltanix.mcp.scanner`](file:///c:/Users/leona/Documents/Projetos/SicoobitoCode/apps/api/src/eltanix/mcp/scanner.py), o módulo executa varreduras de segurança estáticas e dinâmicas antes de disponibilizar uma ferramenta MCP ao Agente:
+Localizado em [`eltanix.mcp.scanner`](../apps/api/src/eltanix/mcp/scanner.py), o módulo executa varreduras de segurança estáticas e dinâmicas antes de disponibilizar uma ferramenta MCP ao Agente:
 - **Analisadores YARA & Rulesets**: Detectam padrões de comandos maliciosos, vazamento de credenciais e chamadas não autorizadas.
 - **LLM-as-a-Judge**: Avalia schemas JSON e descrições em busca de **Prompt Injection** indireto.
 - **Mapeamento de Risco Padrão**: Toda ferramenta MCP nasce com `RiskClass.WRITE` por padrão (exigindo confirmação do usuário). Só é convertida para `RiskClass.READ` se o servidor contiver `trust_annotations: true` e a ferramenta indicar `read_only_hint: true`.
@@ -418,14 +418,14 @@ O acesso ao sistema de arquivos do projeto é gerenciado por `WorkspaceFS` em `e
 
 ### Pilar 1: Arquitetura & Infraestrutura (Concluído)
 - **1.1. Automação de CI/CD para Releases**:
-  - Adicionado `eltanix_deploy.zip` e `releases/` ao [`.gitignore`](file:///c:/Users/leona/Documents/Projetos/SicoobitoCode/.gitignore).
-  - Criado o workflow [`.github/workflows/release.yml`](file:///c:/Users/leona/Documents/Projetos/SicoobitoCode/.github/workflows/release.yml) para automação de pacotes de release via `pack_release.py`.
+  - Adicionado `eltanix_deploy.zip` e `releases/` ao [`.gitignore`](../.gitignore).
+  - Criado o workflow [`.github/workflows/release.yml`](../.github/workflows/release.yml) para automação de pacotes de release via `pack_release.py`.
 - **1.2. Políticas de Evicção e Namespaces no Redis**:
-  - Configurados `--maxmemory 256mb` e `--maxmemory-policy volatile-lru` no [`docker-compose.yml`](file:///c:/Users/leona/Documents/Projetos/SicoobitoCode/docker-compose.yml).
+  - Configurados `--maxmemory 256mb` e `--maxmemory-policy volatile-lru` no [`docker-compose.yml`](../docker-compose.yml).
 
 ### Pilar 2: Observabilidade & Telemetria Distribuída (OpenTelemetry - Concluído)
 - **2.1. Exportador OTLP / gRPC Nativo**:
-  - Adicionada formatação OTLP v1 via método `to_otlp_json()` em [`tracer.py`](file:///c:/Users/leona/Documents/Projetos/SicoobitoCode/apps/api/src/eltanix/telemetry/tracer.py) para emissão de spans distribuídos.
+  - Adicionada formatação OTLP v1 via método `to_otlp_json()` em [`tracer.py`](../apps/api/src/eltanix/telemetry/tracer.py) para emissão de spans distribuídos.
 
 ### Pilar 3: Evolução de IA & RAG Multi-Modal
 - **3.1. RAG Multi-Modal com Visão Computacional**:
@@ -435,13 +435,13 @@ O acesso ao sistema de arquivos do projeto é gerenciado por `WorkspaceFS` em `e
 
 ### Pilar 4: Segurança & Conformidade Enterprise (Concluído)
 - **4.1. Máscara Dinâmica de Dados Sensíveis (PII Redaction)**:
-  - Criada a classe `PIIRedactor` em [`pii_redactor.py`](file:///c:/Users/leona/Documents/Projetos/SicoobitoCode/apps/api/src/eltanix/security/pii_redactor.py) para sanitizar CPFs, cartões, e-mails e API keys.
+  - Criada a classe `PIIRedactor` em [`pii_redactor.py`](../apps/api/src/eltanix/security/pii_redactor.py) para sanitizar CPFs, cartões, e-mails e API keys.
 - **4.2. Secret Scanning no Pre-Commit**:
-  - Adicionado arquivo de regras [`.gitleaks.toml`](file:///c:/Users/leona/Documents/Projetos/SicoobitoCode/.gitleaks.toml) para auditoria automatizada de chaves de API.
+  - Adicionado arquivo de regras [`.gitleaks.toml`](../.gitleaks.toml) para auditoria automatizada de chaves de API.
 
 ### Pilar 5: Experiência do Desenvolvedor (DX) & Ecossistema (Concluído)
 - **5.1. Hot-Reloading de Agent Skills (`SKILL.md`)**:
-  - Atualizada a sincronização em [`seed.py`](file:///c:/Users/leona/Documents/Projetos/SicoobitoCode/apps/api/src/eltanix/skills/seed.py) para recarga dinâmica de habilidades quando modificadas no disco.
+  - Atualizada a sincronização em [`seed.py`](../apps/api/src/eltanix/skills/seed.py) para recarga dinâmica de habilidades quando modificadas no disco.
 
 ---
 

@@ -15,12 +15,12 @@ cases:
   - source: context
     query: "onde fica o registro de ferramentas do agente"
     expected_keywords: ["ToolRegistry"]
-    root: "C:/Users/leona/Documents/Projetos/SicoobitoCode/apps/api/src/eltanix"
+    root: "/caminho/para/seu/eltanix-coder-ide/apps/api/src/eltanix"
 
   - source: context
     query: "como funciona o Reciprocal Rank Fusion na busca híbrida"
     expected_keywords: ["RRF", "rank"]
-    root: "C:/Users/leona/Documents/Projetos/SicoobitoCode/apps/api/src/eltanix"
+    root: "/caminho/para/seu/eltanix-coder-ide/apps/api/src/eltanix"
 
   # Exemplos de documents/notes — precisam de um PDF/nota real já indexado no
   # ambiente para fazer sentido; ajuste a query e o expected_keywords para

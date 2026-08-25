@@ -39,7 +39,7 @@ O ecossistema de agentes opera com uma taxonomia hierárquica baseada em **Skill
 Para garantir que a inteligência do agente atue com precisão cirúrgica sem gerar redundâncias ou prolixidade:
 
 1. **Investigação Baseada no Código Existente**:
-   - Inspeção obrigatória do repositório real, ADRs (`docs/adr/`) e [`CLAUDE.md`](file:///c:/Users/leona/Documents/Projetos/SicoobitoCode/CLAUDE.md) antes de qualquer proposta.
+   - Inspeção obrigatória do repositório real, ADRs (`docs/adr/`) e [`CLAUDE.md`](../CLAUDE.md) antes de qualquer proposta.
 2. **Propostas Objetivas e Sem Snippets Genéricos**:
    - Mapeamento explícito dos arquivos afetados (`[MODIFY]`, `[NEW]`, `[DELETE]`), evitando trechos teóricos ou boilerplate desnecessário no plano.
 3. **Bloqueio de Ferramentas de Escrita até o Registro do Plano**:
@@ -65,6 +65,6 @@ Para garantir que a inteligência do agente atue com precisão cirúrgica sem ge
 ---
 
 ## 🔗 Referências & ADRs Relacionados
-- [`CLAUDE.md`](file:///c:/Users/leona/Documents/Projetos/SicoobitoCode/CLAUDE.md) — Guia geral de engenharia e protocolo de consulta.
-- [`docs/ide_capabilities.md`](file:///c:/Users/leona/Documents/Projetos/SicoobitoCode/docs/ide_capabilities.md) — Estratificação de capacidades e ferramentas da IDE agêntica.
-- [`docs/adr/0004-orquestracao-multiagente.md`](file:///c:/Users/leona/Documents/Projetos/SicoobitoCode/docs/adr/0004-orquestracao-multiagente.md) — ADR de Orquestração Multiagente.
+- [`CLAUDE.md`](../CLAUDE.md) — Guia geral de engenharia e protocolo de consulta.
+- [`docs/ide_capabilities.md`](ide_capabilities.md) — Estratificação de capacidades e ferramentas da IDE agêntica.
+- [`docs/adr/0004-orquestracao-multiagente.md`](adr/0004-orquestracao-multiagente.md) — ADR de Orquestração Multiagente.

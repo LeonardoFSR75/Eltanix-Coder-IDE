@@ -50,7 +50,7 @@ Mecanismos de extensão modular do comportamento agêntico através de Skills, s
   - **`master-ai`**: RAG vetorial/grafo, engenharia de prompts e orquestração.
   - **`master-creativity`**: UI/UX design, copywriting e diagramação Mermaid.
 - **Ecossistema MCP (`config/mcp.yaml`)**: Protocolo de contexto padronizado (Model Context Protocol). Servidores externos conectam-se dinamicamente declarando `trust_annotations` e sugestões de permissão.
-- **Motor Open-VSX**: Suporte a extensões e atualizações automáticas via manifesto ([ADR 0009](file:///c:/Users/leona/Documents/Projetos/SicoobitoCode/docs/adr/0009-sistema-de-extensoes-e-auto-update-open-vsx.md)).
+- **Motor Open-VSX**: Suporte a extensões e atualizações automáticas via manifesto ([ADR 0009](adr/0009-sistema-de-extensoes-e-auto-update-open-vsx.md)).
 
 ---
 
@@ -59,10 +59,10 @@ Mecanismos de extensão modular do comportamento agêntico através de Skills, s
 Infraestrutura de navegação híbrida para automação, captura de telas e visualização de páginas web.
 
 - **Ferramentas**: `browser_subagent`, `read_url_content`, scraping via Firecrawl.
-- **Modo Híbrido ([ADR 0007](file:///c:/Users/leona/Documents/Projetos/SicoobitoCode/docs/adr/0007-navegador-interno-e-emulacao-visual.md))**:
+- **Modo Híbrido ([ADR 0007](adr/0007-navegador-interno-e-emulacao-visual.md))**:
   - **Modo Live**: Iframe em sandbox com suporte a HMR (Hot Module Replacement) para pré-visualização em tempo real.
   - **Modo Headless**: Automação com Playwright/CDP e emulação ultrarrápida via Lightpanda para inspeção de DOM pelo agente.
-- **Proteção Anti-SSRF ([ADR 0006](file:///c:/Users/leona/Documents/Projetos/SicoobitoCode/docs/adr/0006-integracao-firecrawl-web-rag.md))**: Validação de URLs por `validate_target_url()`, bloqueando endereços IP privados (RFC 1918), loopback, metadados cloud e redes de contêineres Docker.
+- **Proteção Anti-SSRF ([ADR 0006](adr/0006-integracao-firecrawl-web-rag.md))**: Validação de URLs por `validate_target_url()`, bloqueando endereços IP privados (RFC 1918), loopback, metadados cloud e redes de contêineres Docker.
 
 ---
 
@@ -84,8 +84,8 @@ Workflow rigoroso de 5 etapas para execução segura de alterações de software
 
 Arquitetura de inteligência agêntica baseada em LangGraph e roteamento centralizado de modelos.
 
-- **Gate de LLM Único ([ADR 0001](file:///c:/Users/leona/Documents/Projetos/SicoobitoCode/docs/adr/0001-camada-unica-de-llm.md))**: NENHUM módulo consome APIs diretas de provedores (OpenAI, Anthropic, Gemini). Todo o tráfego passa obrigatoriamente por `eltanix.router` (`RouterEngine.complete()` / `.embed()`).
-- **Orquestração Multiagente ([ADR 0004](file:///c:/Users/leona/Documents/Projetos/SicoobitoCode/docs/adr/0004-orquestracao-multiagente.md))**:
+- **Gate de LLM Único ([ADR 0001](adr/0001-camada-unica-de-llm.md))**: NENHUM módulo consome APIs diretas de provedores (OpenAI, Anthropic, Gemini). Todo o tráfego passa obrigatoriamente por `eltanix.router` (`RouterEngine.complete()` / `.embed()`).
+- **Orquestração Multiagente ([ADR 0004](adr/0004-orquestracao-multiagente.md))**:
   - Despacho de subagentes autônomos para tarefas paralelas e isoladas.
   - Persistência do estado do agente no PostgreSQL.
   - Interrupção configurada para controle humano de passos críticos.
@@ -108,7 +108,7 @@ Interface de diálogo interativo para eliminação de ambiguidades e aprovação
 Ambiente isolado para execução de comandos do sistema operacional, tarefas contínuas e temporizadores.
 
 - **Ferramentas**: `run_command`, `manage_task`, `schedule`.
-- **Isolamento de Execução ([ADR 0002](file:///c:/Users/leona/Documents/Projetos/SicoobitoCode/docs/adr/0002-executor-isolado.md))**:
+- **Isolamento de Execução ([ADR 0002](adr/0002-executor-isolado.md))**:
   - O daemon Docker da API não executa comandos do usuário diretamente.
   - As chamadas de terminal são encaminhadas para o serviço `executor` isolado.
   - Sandbox configurado com usuário não-root, `cap_drop: ALL`, rede desabilitada e autenticação via `EXECUTOR_TOKEN`.
@@ -134,9 +134,9 @@ Ferramentas e protocolos para resolução de problemas e manutenção da qualida
 
 Sistema de recuperação de informação multi-modal e grafo de conhecimento integrados ao Obsidian.
 
-- **Fontes Obrigatórias ([CLAUDE.md](file:///c:/Users/leona/Documents/Projetos/SicoobitoCode/CLAUDE.md))**:
-  - **Grafo de Conhecimento**: `graphify-out/obsidian/` com MOCs, Painel Central e Mapa Arquitetural ([ADR 0003](file:///c:/Users/leona/Documents/Projetos/SicoobitoCode/docs/adr/0003-grafo-de-conhecimento-graphify.md)). Ferramenta `graph_search` para travessia de grafos em N-hops.
-- **RAG Multi-Formato ([ADR 0008](file:///c:/Users/leona/Documents/Projetos/SicoobitoCode/docs/adr/0008-rag-multi-formato-anydoc-e-pdf-inspector.md))**:
+- **Fontes Obrigatórias ([CLAUDE.md](../CLAUDE.md))**:
+  - **Grafo de Conhecimento**: `graphify-out/obsidian/` com MOCs, Painel Central e Mapa Arquitetural ([ADR 0003](adr/0003-grafo-de-conhecimento-graphify.md)). Ferramenta `graph_search` para travessia de grafos em N-hops.
+- **RAG Multi-Formato ([ADR 0008](adr/0008-rag-multi-formato-anydoc-e-pdf-inspector.md))**:
   - Ingestão de arquivos de escritório (Word, Excel, PowerPoint) via motor `calamine` (`firecrawl-anydoc`).
   - Inspeção de PDFs por `pdf-inspector` em Rust com fallback para `pypdf`.
 
@@ -150,13 +150,13 @@ Modelagem de ameaças e controle de privilégios em todas as operações agênti
   - `READ`: Operações idempotentes de leitura e consulta de informações (liberadas automaticamente).
   - `WRITE`: Alterações de código, arquivos ou banco de dados (exigem validação do plano ou Human-in-the-Loop).
   - `EXEC`: Execução de comandos de terminal, mutação de infraestrutura ou instalações (exigem aprovação explícita do usuário).
-- **Autenticação Obrigatória ([ADR 0005](file:///c:/Users/leona/Documents/Projetos/SicoobitoCode/docs/adr/0005-login-obrigatorio.md))**: Toda rota HTTP exige `AuthDep` (sessão via cookie HttpOnly ou chave `ELTANIX_API_KEY`).
+- **Autenticação Obrigatória ([ADR 0005](adr/0005-login-obrigatorio.md))**: Toda rota HTTP exige `AuthDep` (sessão via cookie HttpOnly ou chave `ELTANIX_API_KEY`).
 - **Prevenção contra Perda de Dados (`accidental-data-loss-prevention`)**: Confirmação mandatória antes de comandos destrutivos (`DROP TABLE`, `rm -rf`, deleção de projetos/buckets).
 
 ---
 
 ## 🔗 Referências Cruzadas
 
-- [`CLAUDE.md`](file:///c:/Users/leona/Documents/Projetos/SicoobitoCode/CLAUDE.md) — Guia mestre de engenharia e diretrizes de desenvolvimento.
-- [`docs/skills_hub.md`](file:///c:/Users/leona/Documents/Projetos/SicoobitoCode/docs/skills_hub.md) — Arquitetura de Skills e governança dos agentes.
-- [`docs/adr/`](file:///c:/Users/leona/Documents/Projetos/SicoobitoCode/docs/adr/) — Registros de Decisões Arquiteturais.
+- [`CLAUDE.md`](../CLAUDE.md) — Guia mestre de engenharia e diretrizes de desenvolvimento.
+- [`docs/skills_hub.md`](skills_hub.md) — Arquitetura de Skills e governança dos agentes.
+- [`docs/adr/`](adr/) — Registros de Decisões Arquiteturais.

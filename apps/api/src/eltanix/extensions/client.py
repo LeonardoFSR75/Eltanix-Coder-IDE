@@ -110,7 +110,7 @@ class OpenVSXClient:
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
         updates: dict[str, dict[str, Any]] = {}
-        for ext, res in zip(current_extensions, results):
+        for ext, res in zip(current_extensions, results, strict=False):
             if isinstance(res, dict) and res.get("latest_version"):
                 cur_ver = ext.get("version", "0.0.0")
                 latest_ver = res["latest_version"]

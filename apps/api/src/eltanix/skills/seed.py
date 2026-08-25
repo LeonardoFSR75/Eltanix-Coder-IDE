@@ -76,6 +76,7 @@ async def seed_agent_skills(
     count = 0
     novas: list[tuple[str, str]] = []  # (skill_id, description) — embedado fora da transação
     async with session_scope() as session:
+        existing_skills = await store.list_skills(session)
         existing_map = {s.name: s for s in existing_skills}
 
         for skill_md in sorted(skills_dir.rglob("SKILL.md")):  # noqa: ASYNC240

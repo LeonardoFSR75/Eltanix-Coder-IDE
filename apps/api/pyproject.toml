@@ -2,6 +2,7 @@
 name = "eltanix-api"
 version = "0.1.0"
 description = "Gateway multi-modelo e backend agêntico do Eltanix Coder IDE"
+license = "Apache-2.0"
 # Sem `readme`: apontar para ../../README.md quebra qualquer build em que só
 # este diretório entra no contexto — o caso da imagem Docker. O pacote não é
 # publicado, então não há o que perder.

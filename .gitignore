@@ -30,10 +30,11 @@ apps/web/blob-report/
 *.pem
 *.key
 
-# Dados locais
+# Dados locais / estado de runtime
 data/
 *.db
 *.sqlite3
+config/extensions_state.json
 
 # Workspaces e worktrees do agente
 .eltanix/

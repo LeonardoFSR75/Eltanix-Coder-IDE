@@ -52,7 +52,7 @@ API sem escrever `curl` — abra a pasta como coleção, selecione o ambiente `l
 | `evals/` | Harness de hit@k/MRR contra os buscadores reais — `uv run eltanix-eval-rag` |
 | `db/` | `session.py` (engine/session_scope), `models.py`, migrações Alembic em `alembic/versions/` |
 | `sandbox/` | `container.py` (Docker local) / `executor.py` (cliente do serviço isolado, ver ADR 0002) |
-| `analytics/` | Subsistema de ML & Auto-Diagnóstico — clusterização K-Means/DBScan de trajetórias de falhas, gerador de correções e propostas de diffs |
+| `analytics/` | Subsistema de Diagnóstico e Anomalias — clusterização não-supervisionada de trajetórias por similaridade de cosseno de embeddings e heurísticas de regras |
 | `api/routes/` | Uma rota por domínio, sempre `dependencies=[AuthDep]`, sempre registrada em `api/routes/__init__.py` + `main.py::create_app` |
 
 ## Uso Obrigatório do Conhecimento por Agentes de IA

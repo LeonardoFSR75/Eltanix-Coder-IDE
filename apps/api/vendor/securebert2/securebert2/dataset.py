@@ -6,9 +6,10 @@ import importlib.util
 import sys
 from pathlib import Path
 
+_repo_root = Path(__file__).resolve().parents[4]
 _CANDIDATES = [
     Path(__file__).resolve().parent.parent / "dataset.py",
-    Path(r"C:\Users\leona\Documents\Projetos\SicoobitoCode\vendor\securebert2\dataset.py"),
+    _repo_root / "vendor" / "securebert2" / "dataset.py",
 ]
 
 for _candidate in _CANDIDATES:

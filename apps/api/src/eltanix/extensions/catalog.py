@@ -323,7 +323,7 @@ MASTER_EXTENSIONS_CATALOG: list[ExtensionDefinition] = [
         downloads="190K",
         rating=4.93,
         upstream_id="eltanix.flight-recorder",
-        repository_url="https://github.com/LeonardoFSR75/Eltanix",
+        repository_url="https://github.com/LeonardoFSR75/Eltanix-Coder-IDE",
         features=[
             "Visualização de custos por modelo e sessão",
             "Replay cronológico de tool-calls",
@@ -397,7 +397,7 @@ MASTER_EXTENSIONS_CATALOG: list[ExtensionDefinition] = [
         downloads="210K",
         rating=4.99,
         upstream_id="eltanix.graphify",
-        repository_url="https://github.com/LeonardoFSR75/Eltanix",
+        repository_url="https://github.com/LeonardoFSR75/Eltanix-Coder-IDE",
         features=[
             "Visualização 2D/3D com física de clustering",
             "Navegação multi-hop e blast radius",
@@ -415,7 +415,7 @@ MASTER_EXTENSIONS_CATALOG: list[ExtensionDefinition] = [
         downloads="140K",
         rating=4.92,
         upstream_id="eltanix.adr-tools",
-        repository_url="https://github.com/LeonardoFSR75/Eltanix",
+        repository_url="https://github.com/LeonardoFSR75/Eltanix-Coder-IDE",
         features=[
             "Geração de ADRs com numeração automática",
             "Exportação para o índice de MOC do Obsidian",
@@ -433,7 +433,7 @@ MASTER_EXTENSIONS_CATALOG: list[ExtensionDefinition] = [
         downloads="560K",
         rating=4.95,
         upstream_id="eltanix.git-intelligence",
-        repository_url="https://github.com/LeonardoFSR75/Eltanix",
+        repository_url="https://github.com/LeonardoFSR75/Eltanix-Coder-IDE",
         features=[
             "Detecção de co-change (arquivos que mudam juntos)",
             "Blame contextual com autor e PR associado",

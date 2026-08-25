@@ -3,6 +3,7 @@ name = "eltanix-desktop"
 version = "0.1.0"
 description = "Plataforma agêntica de codificação local-first — Desktop Edition"
 authors = ["Eltanix Team"]
+license = "Apache-2.0"
 edition = "2021"
 
 [build-dependencies]
