@@ -1,0 +1,23 @@
+# Configuração de auditoria de segredos do Gitleaks para o NovaAI Studio
+
+title = "gitleaks config"
+
+[[rules]]
+id = "novaai-studio-api-key"
+description = "NovaAI Studio API Key identificada"
+regex = '''(?i)(novaai_studio_api_key|executor_token)\s*[:=]\s*['"]?[a-zA-Z0-9_\-]{20,}['"]?'''
+keywords = ["novaai_studio_api_key", "executor_token"]
+
+[[rules]]
+id = "generic-api-key"
+description = "Chave de API genérica ou Bearer Token"
+regex = '''(?i)(api_key|secret_key|auth_token)\s*[:=]\s*['"]?[a-zA-Z0-9_\-]{20,}['"]?'''
+keywords = ["api_key", "secret_key", "auth_token"]
+
+[allowlist]
+description = "Arquivos de exemplo e mocks permitidos"
+paths = [
+    '''^\.env\.example$''',
+    '''^apps/api/tests/.*''',
+    '''^docs/.*'''
+]

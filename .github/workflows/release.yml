@@ -1,0 +1,31 @@
+name: Release Packaging
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Build Release Package
+        run: |
+          python scripts/pack_release.py --output novaai_studio_deploy.zip
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: novaai_studio_deploy.zip
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
