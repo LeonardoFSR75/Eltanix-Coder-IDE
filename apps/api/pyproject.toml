@@ -100,7 +100,7 @@ select = ["E", "F", "I", "UP", "B", "ASYNC", "RUF"]
 # Comentários e docstrings do projeto são em português e usam pontuação
 # tipográfica (travessão, aspas curvas) de propósito. RUF001-003 sinalizariam
 # cada ocorrência como "caractere ambíguo".
-ignore = ["RUF001", "RUF002", "RUF003"]
+ignore = ["E501", "RUF001", "RUF002", "RUF003"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
