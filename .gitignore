@@ -36,8 +36,18 @@ data/
 *.sqlite3
 config/extensions_state.json
 
-# Workspaces e worktrees do agente
+# Rust / Tauri build
+apps/desktop/src-tauri/target/
+src-tauri/target/
+target/
+
+# Logs
+*.log
+
+# Workspaces, worktrees e sessões locais
 .eltanix/
+.sicoobito/
+.claude/worktrees/
 
 # Saída gerada pelo graphify (ferramenta de dev, grafo de conhecimento do repo)
 graphify-out/
@@ -49,7 +59,7 @@ Thumbs.db
 .vscode/*
 !.vscode/extensions.json
 
-# Pakages & Releases
+# Packages & Releases
 eltanix_deploy.zip
 releases/
 
