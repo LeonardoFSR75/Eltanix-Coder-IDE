@@ -40,7 +40,7 @@ jobs:
           cache: "npm"
           cache-dependency-path: apps/web/package-lock.json
       - name: Instalar dependências
-        run: npm ci
+        run: npm install
       - name: Typecheck
         run: npm run typecheck
       - name: Testes
@@ -121,5 +121,5 @@ jobs:
       - name: npm audit (Node, falha em high/critical)
         working-directory: apps/web
         run: |
-          npm ci --no-audit --no-fund
+          npm install --no-audit --no-fund
           npm audit --omit=dev --audit-level=high
