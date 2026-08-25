@@ -19,12 +19,12 @@ jobs:
 
       - name: Build Release Package
         run: |
-          python scripts/pack_release.py --output novaai_studio_deploy.zip
+          python scripts/pack_release.py --output eltanix_deploy.zip
 
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
-          files: novaai_studio_deploy.zip
+          files: eltanix_deploy.zip
           draft: false
           prerelease: false
         env:

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from novaai_studio.config import Settings
-from novaai_studio.router.adapters import build_adapters
+from eltanix.config import Settings
+from eltanix.router.adapters import build_adapters
 
 
 def test_catalog_loads_models_and_profiles(catalog):

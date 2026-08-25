@@ -1,11 +1,11 @@
-"""Round-trip de `.novaai_studio/approval_policy.yaml` via `approval_policy_editor`."""
+"""Round-trip de `.eltanix/approval_policy.yaml` via `approval_policy_editor`."""
 
 from __future__ import annotations
 
 import pytest
 
-from novaai_studio.agent import approval_policy_editor as editor
-from novaai_studio.agent.approval_policy_config import load_approval_policy
+from eltanix.agent import approval_policy_editor as editor
+from eltanix.agent.approval_policy_config import load_approval_policy
 
 
 def test_load_on_missing_file_returns_defaults(tmp_path):

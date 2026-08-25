@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import asyncio
 
-from novaai_studio.sandbox.concurrency import SandboxConcurrencyGate
+from eltanix.sandbox.concurrency import SandboxConcurrencyGate
 
 
 async def test_acquire_under_max_returns_immediately():

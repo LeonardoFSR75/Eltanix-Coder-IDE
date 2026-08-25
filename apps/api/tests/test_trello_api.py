@@ -4,15 +4,15 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-os.environ["NOVAAI_STUDIO_API_KEY"] = "chave-de-teste"
+os.environ["ELTANIX_API_KEY"] = "chave-de-teste"
 
-from novaai_studio.main import app
+from eltanix.main import app
 
 client = TestClient(app)
 
 
 def test_trello_api_crud(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.setattr("novaai_studio.api.routes.trello._projects_root", lambda req: tmp_path)
+    monkeypatch.setattr("eltanix.api.routes.trello._projects_root", lambda req: tmp_path)
 
     project_dir = tmp_path / "test-proj"
     project_dir.mkdir()

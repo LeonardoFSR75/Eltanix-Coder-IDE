@@ -50,7 +50,7 @@
         <div class="login-logo-ring">
           <span class="login-logo-text">S</span>
         </div>
-        <h3>Acesso ao NovaAI Studio</h3>
+        <h3>Acesso ao Eltanix Coder IDE</h3>
         <p class="hint">Plataforma local-first — login obrigatório por usuário e senha.</p>
         {#if dismissible}
           <button class="btn-close" onclick={() => onSaved?.()} aria-label="Fechar">×</button>

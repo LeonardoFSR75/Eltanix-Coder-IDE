@@ -6,8 +6,8 @@ um humano reconheceria, e nenhuma função é cortada ao meio sem aviso.
 
 from __future__ import annotations
 
-from novaai_studio.context.chunker import MAX_CHUNK_TOKENS, chunk_file
-from novaai_studio.context.languages import detect_language, supports_symbols
+from eltanix.context.chunker import MAX_CHUNK_TOKENS, chunk_file
+from eltanix.context.languages import detect_language, supports_symbols
 
 PYTHON_SOURCE = '''
 import os

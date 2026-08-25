@@ -15,9 +15,9 @@ from types import SimpleNamespace
 import pytest
 from fastapi import HTTPException
 
-from novaai_studio.auth import store
-from novaai_studio.auth.rbac import get_role, require_role, require_role_by_slug
-from novaai_studio.db.models import AppUser, ProjectRecord
+from eltanix.auth import store
+from eltanix.auth.rbac import get_role, require_role, require_role_by_slug
+from eltanix.db.models import AppUser, ProjectRecord
 
 
 def _request(*, user_id: uuid.UUID | None = None, is_admin: bool = False, is_service: bool = False):

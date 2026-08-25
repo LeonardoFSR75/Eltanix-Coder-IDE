@@ -74,10 +74,10 @@ export function GitSetupGuideCard() {
               style={{ background: "var(--surface-2)", border: "1px solid var(--border)" }}
             >
               <h4 className="m-0 text-sm font-semibold mb-1" style={{ color: "var(--text)" }}>
-                Por que configurar o Git e o GitHub no NovaAI Studio?
+                Por que configurar o Git e o GitHub no Eltanix Coder IDE?
               </h4>
               <p className="m-0 text-muted leading-relaxed">
-                O NovaAI Studio integra o desenvolvimento local com a inteligência do Agente de IA. Para que o
+                O Eltanix Coder IDE integra o desenvolvimento local com a inteligência do Agente de IA. Para que o
                 Agente consiga efetuar commits em seu nome, sincronizar repositórios, criar Pull Requests e consultar
                 Issues, a ferramenta precisa de duas configurações principais:
               </p>
@@ -161,7 +161,7 @@ export function GitSetupGuideCard() {
               <li>
                 <strong>Passo 1:</strong> Acesse o GitHub e vá em{" "}
                 <a
-                  href="https://github.com/settings/tokens/new?scopes=repo,read:user,user:email,workflow&description=NovaAI Studio+IDE"
+                  href="https://github.com/settings/tokens/new?scopes=repo,read:user,user:email,workflow&description=Eltanix Coder IDE+IDE"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-blue-400 hover:underline font-semibold"
@@ -202,7 +202,7 @@ export function GitSetupGuideCard() {
         {activeTab === "agent" && (
           <div className="flex flex-col gap-3">
             <p className="m-0 text-muted leading-relaxed">
-              Após configurar sua identidade e o token do GitHub, o Agente de IA e a IDE do NovaAI Studio ganham superpoderes:
+              Após configurar sua identidade e o token do GitHub, o Agente de IA e a IDE do Eltanix Coder IDE ganham superpoderes:
             </p>
 
             <div className="grid grid-2 gap-3">

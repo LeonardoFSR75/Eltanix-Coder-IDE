@@ -99,7 +99,7 @@ function SandboxStatusItem({ sessionId }: { sessionId: string }) {
           // Modo Agente, não Live: a porta do sandbox só entra na rede
           // `browser_net` (nunca publicada no host) — um iframe apontado
           // pra `localhost:<porta>` falharia sempre. O serviço de
-          // navegador sabe resolver via `novaai-studio-<sessionId>:<porta>`.
+          // navegador sabe resolver via `eltanix-<sessionId>:<porta>`.
           onClick={() => openFile(`browser-agent:http://localhost:${porta}`)}
           style={{
             cursor: "pointer",
@@ -147,8 +147,8 @@ function PackagesStatusItem({ project }: { project: string }) {
   // usuário) — este indicador não faz polling próprio, só reage a ele.
   useEffect(() => {
     const handleChanged = () => void load();
-    window.addEventListener("novaai_studio:packages:changed", handleChanged);
-    return () => window.removeEventListener("novaai_studio:packages:changed", handleChanged);
+    window.addEventListener("eltanix:packages:changed", handleChanged);
+    return () => window.removeEventListener("eltanix:packages:changed", handleChanged);
   }, [load]);
 
   if (!status) return null;

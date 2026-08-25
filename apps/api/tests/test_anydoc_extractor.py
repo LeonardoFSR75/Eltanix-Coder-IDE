@@ -7,7 +7,7 @@ import io
 import pytest
 from pypdf import PdfWriter
 
-from novaai_studio.documents.service import (
+from eltanix.documents.service import (
     _detect_format_from_filename_or_content_type,
     _extract_document_content,
 )

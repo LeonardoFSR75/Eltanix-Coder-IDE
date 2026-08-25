@@ -54,14 +54,14 @@ const TOOL_UI_EVENTS: Record<
     const resolved = typeof data.url === "string" ? data.url : "";
     const navUrl = (isFallback ? original : resolved) || resolved || original;
     if (!navUrl) return null;
-    return { name: "novaai_studio:browser:open", detail: { url: navUrl, sessionId } };
+    return { name: "eltanix:browser:open", detail: { url: navUrl, sessionId } };
   },
   manage_packages: (_message, sessionId) => ({
-    name: "novaai_studio:packages:changed",
+    name: "eltanix:packages:changed",
     detail: { sessionId },
   }),
   manage_extensions: (_message, sessionId) => ({
-    name: "novaai_studio:extensions:changed",
+    name: "eltanix:extensions:changed",
     detail: { sessionId },
   }),
 };

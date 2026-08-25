@@ -6,8 +6,8 @@
  * cookie de resposta).
  */
 
-const BASE_URL = process.env.NOVAAI_STUDIO_API_URL ?? "http://localhost:8000";
-const COOKIE_NAME = "novaai_studio_session";
+const BASE_URL = process.env.ELTANIX_API_URL ?? "http://localhost:8000";
+const COOKIE_NAME = "eltanix_session";
 
 function cookieAttrs(expires?: string): string {
   const parts = ["Path=/", "HttpOnly", "SameSite=Lax"];

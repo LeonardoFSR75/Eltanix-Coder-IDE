@@ -22,7 +22,7 @@
 <header class="header">
   <div class="brand">
     <span class="logo">⚡</span>
-    <span class="title">NovaAI Studio <span class="badge">Desktop Svelte 5</span></span>
+    <span class="title">Eltanix Coder IDE <span class="badge">Desktop Svelte 5</span></span>
   </div>
 
   <nav class="nav">

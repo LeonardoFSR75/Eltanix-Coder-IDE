@@ -121,7 +121,7 @@ export function Editor({
   }
   // Mesma coisa, mas força o modo 🤖 Agente na primeira aba — usado para
   // URLs que só o serviço de navegador consegue resolver (ex.: porta de um
-  // sandbox via `novaai-studio-<sessionId>`), nunca alcançáveis por um iframe
+  // sandbox via `eltanix-<sessionId>`), nunca alcançáveis por um iframe
   // direto no navegador real (ver StatusBar.tsx, botões de porta do sandbox).
   if (path && path.startsWith("browser-agent:")) {
     const browserUrl = path.slice("browser-agent:".length);
@@ -723,7 +723,7 @@ export function Editor({
                   : language === "javascript" || language === "typescript"
                   ? `node ${path}`
                   : `./${path}`;
-              const evt = new CustomEvent("novaai_studio:terminal:exec", { detail: { command: cmd } });
+              const evt = new CustomEvent("eltanix:terminal:exec", { detail: { command: cmd } });
               window.dispatchEvent(evt);
             }}
             style={{

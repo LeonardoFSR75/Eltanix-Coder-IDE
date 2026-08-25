@@ -1,11 +1,11 @@
-# Coleção Bruno — NovaAI Studio API
+# Coleção Bruno — Eltanix Coder IDE API
 
 Abra esta pasta (`apps/api/bruno`) como coleção no [Bruno](https://www.usebruno.com/).
 
 ## Configurar
 
 1. Selecione o ambiente **local** (canto superior direito do Bruno).
-2. Preencha `apiKey` com o valor de `NOVAAI_STUDIO_API_KEY` do seu `.env` — é o
+2. Preencha `apiKey` com o valor de `ELTANIX_API_KEY` do seu `.env` — é o
    mesmo canal de serviço que CI/cline/continue/aider/cursor usam (ver
    `docs/adr/0005-login-obrigatorio.md`), não a sessão de usuário do browser.
 3. Se a API estiver rodando fora do `docker compose` padrão, ajuste `baseUrl`.

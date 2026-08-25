@@ -17,7 +17,7 @@ fornecedor uma refatoração.
 
 ## Decisão
 
-Existe **exatamente uma** porta de saída para LLM: `novaai_studio.router`. Nenhum outro módulo
+Existe **exatamente uma** porta de saída para LLM: `eltanix.router`. Nenhum outro módulo
 importa `litellm`, `openai`, `anthropic`, SDK do Databricks ou do Azure.
 
 Consequências práticas:

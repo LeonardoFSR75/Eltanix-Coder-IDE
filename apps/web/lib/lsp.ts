@@ -74,7 +74,7 @@ export class LspConnection {
   private estadoListeners = new Set<(pronto: boolean, erro: string | null) => void>();
   private fechando = false;
 
-  /** Contadores de diagnóstico, lidos pela janela `__novaai_studioLsp`. */
+  /** Contadores de diagnóstico, lidos pela janela `__eltanixLsp`. */
   readonly stats = { enviadas: 0, recebidas: 0, diagnosticos: 0, ouvintes: 0 };
 
   /** Capacidades anunciadas pelo servidor no `initialize`. */
@@ -114,7 +114,7 @@ export class LspConnection {
       // A ponte preenche rootUri e workspaceFolders: só ela conhece o caminho
       // do projeto dentro do container.
       capabilities: CAPACIDADES_DO_CLIENTE,
-      clientInfo: { name: "NovaAI Studio", version: "0.1.0" },
+      clientInfo: { name: "Eltanix Coder IDE", version: "0.1.0" },
     })) as Json;
 
     this.capabilities = (resultado?.capabilities as Json) ?? {};
@@ -235,7 +235,7 @@ export class LspConnection {
       return;
     }
 
-    if (method === "novaai_studio/error") {
+    if (method === "eltanix/error") {
       this.error = String(mensagem.params ?? "falha no language server");
       this.emitirEstado();
     }

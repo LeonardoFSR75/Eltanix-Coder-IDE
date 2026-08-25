@@ -10,9 +10,9 @@ os.environ["REQUESTS_CA_BUNDLE"] = certifi.where()
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
-from novaai_studio.config import REPO_ROOT, Settings, get_settings
-from novaai_studio.router.catalog import load_catalog
-from novaai_studio.router.pricing import PriceTable
+from eltanix.config import REPO_ROOT, Settings, get_settings
+from eltanix.router.catalog import load_catalog
+from eltanix.router.pricing import PriceTable
 
 # O catálogo real é a melhor fixture disponível: se um teste quebra porque o
 # providers.yaml mudou, é exatamente isso que se quer saber.

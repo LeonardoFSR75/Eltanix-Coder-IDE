@@ -8,7 +8,7 @@ from unittest.mock import MagicMock
 import pytest
 from pypdf import PdfWriter
 
-from novaai_studio.documents.service import _extract_pages, _extract_pdf
+from eltanix.documents.service import _extract_pages, _extract_pdf
 
 
 def _create_synthetic_pdf(text: str | None = None) -> bytes:

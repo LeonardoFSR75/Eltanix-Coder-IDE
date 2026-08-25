@@ -5,8 +5,8 @@ from __future__ import annotations
 import pytest
 from fastapi.testclient import TestClient
 
-from novaai_studio.config import get_settings
-from novaai_studio.main import create_app
+from eltanix.config import get_settings
+from eltanix.main import create_app
 
 
 @pytest.fixture(scope="module")

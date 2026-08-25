@@ -207,7 +207,7 @@ export function GitHubAccountCard() {
                 <div className="flex justify-between items-center mb-1">
                   <label htmlFor="github-token-input">GitHub Personal Access Token (PAT)</label>
                   <a
-                    href="https://github.com/settings/tokens/new?scopes=repo,read:user,user:email,workflow&description=NovaAI Studio+IDE"
+                    href="https://github.com/settings/tokens/new?scopes=repo,read:user,user:email,workflow&description=Eltanix Coder IDE+IDE"
                     target="_blank"
                     rel="noopener noreferrer"
                     className="text-xs text-blue-400 hover:underline"

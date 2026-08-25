@@ -91,7 +91,7 @@ export class LspConnection {
 
     const resultado = (await this.request("initialize", {
       capabilities: CAPACIDADES_DO_CLIENTE,
-      clientInfo: { name: "NovaAI Studio Lite", version: "0.1.0" },
+      clientInfo: { name: "Eltanix Coder IDE Lite", version: "0.1.0" },
     })) as Json;
 
     this.capabilities = (resultado?.capabilities as Json) ?? {};
@@ -203,7 +203,7 @@ export class LspConnection {
       return;
     }
 
-    if (method === "novaai_studio/error") {
+    if (method === "eltanix/error") {
       this.error = String(mensagem.params ?? "falha no language server");
       this.emitirEstado();
     }

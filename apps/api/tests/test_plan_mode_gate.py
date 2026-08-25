@@ -12,9 +12,9 @@ from pathlib import Path
 
 import pytest
 
-from novaai_studio.agent.tools.base import RiskClass, ToolContext, ToolRegistry, tool
-from novaai_studio.agent.tools.plan import _todos_risk, write_todos
-from novaai_studio.workspace.fs import WorkspaceFS
+from eltanix.agent.tools.base import RiskClass, ToolContext, ToolRegistry, tool
+from eltanix.agent.tools.plan import _todos_risk, write_todos
+from eltanix.workspace.fs import WorkspaceFS
 
 
 def _ctx(tmp_path: Path, *, mode: str = "agent") -> ToolContext:

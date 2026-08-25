@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import pytest
 
-from novaai_studio.agent.tools import RiskClass, ToolContext, registry
-from novaai_studio.config import Settings
-from novaai_studio.firecrawl.service import FirecrawlService
-from novaai_studio.workspace.fs import WorkspaceFS
+from eltanix.agent.tools import RiskClass, ToolContext, registry
+from eltanix.config import Settings
+from eltanix.firecrawl.service import FirecrawlService
+from eltanix.workspace.fs import WorkspaceFS
 
 
 @pytest.fixture

@@ -12,9 +12,9 @@ from typing import Any
 
 import pytest
 
-from novaai_studio.optimizer import semantic_cache as semantic_cache_module
-from novaai_studio.optimizer.cache import CachedResponse, ResponseCache
-from novaai_studio.optimizer.semantic_cache import SemanticCache, _extract_query_text
+from eltanix.optimizer import semantic_cache as semantic_cache_module
+from eltanix.optimizer.cache import CachedResponse, ResponseCache
+from eltanix.optimizer.semantic_cache import SemanticCache, _extract_query_text
 
 
 class _FakeRedis:

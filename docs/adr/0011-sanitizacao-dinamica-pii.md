@@ -11,7 +11,7 @@ Para atender aos requisitos corporativos de privacidade (LGPD / GDPR) e prevenir
 ## Decisão
 
 1. **Sanitização Preventiva no Gateway (`PIIRedactor`)**:
-   - Todo texto de prompt direcionado a provedores de LLM remotos passa obrigatoriamente pelo sanitizador `novaai_studio.security.pii_redactor.PIIRedactor`.
+   - Todo texto de prompt direcionado a provedores de LLM remotos passa obrigatoriamente pelo sanitizador `eltanix.security.pii_redactor.PIIRedactor`.
    - O sanitizador substitui padrões sensíveis detectados por marcadores genéricos seguros:
      - CPFs `000.000.000-00` ──► `[REDACTED_CPF]`
      - E-mails `usuario@dominio.com` ──► `[REDACTED_EMAIL]`

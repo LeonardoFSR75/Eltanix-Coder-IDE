@@ -14,11 +14,11 @@ item 1) se comporta certo sob carga moderada e concorrente:
 - nenhuma sessão falha por causa da fila em si (timeout de espera à parte).
 
 Requer a stack rodando (`docker compose up -d`) e um projeto já criado.
-Usa o canal de serviço (NOVAAI_STUDIO_API_KEY, ver docs/adr/0005-login-obrigatorio.md)
+Usa o canal de serviço (ELTANIX_API_KEY, ver docs/adr/0005-login-obrigatorio.md)
 em vez de login de usuário — é ferramenta externa, não sessão de browser.
 
 Uso:
-  NOVAAI_STUDIO_API_KEY=... uv run python scripts/load_test_sandbox_queue.py \
+  ELTANIX_API_KEY=... uv run python scripts/load_test_sandbox_queue.py \
       --project e2e-smoke-test --sessions 10 --base-url http://localhost:5401
 """
 
@@ -92,9 +92,9 @@ async def main() -> int:
     parser.add_argument("--base-url", default="http://localhost:5401")
     args = parser.parse_args()
 
-    api_key = os.environ.get("NOVAAI_STUDIO_API_KEY", "")
+    api_key = os.environ.get("ELTANIX_API_KEY", "")
     if not api_key:
-        print("NOVAAI_STUDIO_API_KEY não definida no ambiente.", file=sys.stderr)
+        print("ELTANIX_API_KEY não definida no ambiente.", file=sys.stderr)
         return 1
     headers = {"X-Api-Key": api_key}
 

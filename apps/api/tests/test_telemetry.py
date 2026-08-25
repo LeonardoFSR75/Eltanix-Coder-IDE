@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from novaai_studio.telemetry.tracer import TraceRecorder
+from eltanix.telemetry.tracer import TraceRecorder
 
 
 def test_recent_is_empty_without_records():

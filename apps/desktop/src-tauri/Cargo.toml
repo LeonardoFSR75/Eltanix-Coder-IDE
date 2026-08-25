@@ -1,8 +1,8 @@
 [package]
-name = "novaai-studio-desktop"
+name = "eltanix-desktop"
 version = "0.1.0"
 description = "Plataforma agêntica de codificação local-first — Desktop Edition"
-authors = ["NovaAI Studio Team"]
+authors = ["Eltanix Team"]
 edition = "2021"
 
 [build-dependencies]

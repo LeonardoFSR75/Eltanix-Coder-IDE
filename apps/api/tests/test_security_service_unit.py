@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from novaai_studio.security.service import (
+from eltanix.security.service import (
     SecureBertService,
     _classify,
     _has_imperative_context,
@@ -186,7 +186,7 @@ def test_analyze_score_raw_gte_score(svc: SecureBertService):
 
 def test_analyze_mode_is_heuristic_without_torch(svc: SecureBertService):
     """Sem torch instalado, o modo reportado deve ser 'heuristic'."""
-    from novaai_studio.security import service as svc_module
+    from eltanix.security import service as svc_module
 
     if not svc_module._HF_AVAILABLE:
         result = svc.analyze("test text")

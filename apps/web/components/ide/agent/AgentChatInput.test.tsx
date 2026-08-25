@@ -96,7 +96,7 @@ describe("AgentChatInput — slash commands reais", () => {
 
   it("Enter com o menu aberto seleciona o comando em vez de enviar a mensagem", async () => {
     const { setTask, onSubmit } = renderInput({ task: "/te" });
-    const textarea = await screen.findByPlaceholderText(/Pergunte ao NovaAI Studio Agente/);
+    const textarea = await screen.findByPlaceholderText(/Pergunte ao Eltanix Coder IDE Agente/);
     await waitFor(() => expect(screen.getByRole("listbox")).toBeInTheDocument());
 
     await userEvent.type(textarea, "{Enter}");
@@ -128,8 +128,8 @@ describe("AgentChatInput — slash commands reais", () => {
 });
 
 const WORKSPACE_FILES = [
-  { path: "apps/api/src/novaai_studio/main.py" },
-  { path: "apps/api/src/novaai_studio/agent/runner.py" },
+  { path: "apps/api/src/eltanix/main.py" },
+  { path: "apps/api/src/eltanix/agent/runner.py" },
   { path: "apps/web/components/ide/AgentPanel.tsx" },
 ];
 
@@ -151,13 +151,13 @@ describe("AgentChatInput — menções @ de contexto (Fase 5)", () => {
     expect(await screen.findByRole("listbox")).toBeInTheDocument();
     expect(screen.getByText("@docs")).toBeInTheDocument();
     expect(screen.getByText("@web")).toBeInTheDocument();
-    expect(screen.getByText("apps/api/src/novaai_studio/main.py")).toBeInTheDocument();
+    expect(screen.getByText("apps/api/src/eltanix/main.py")).toBeInTheDocument();
   });
 
   it("filtra arquivos pelo termo digitado após o '@'", async () => {
     renderInput({ task: "corrija o @runner" });
     await screen.findByRole("listbox");
-    expect(screen.getByText("apps/api/src/novaai_studio/agent/runner.py")).toBeInTheDocument();
+    expect(screen.getByText("apps/api/src/eltanix/agent/runner.py")).toBeInTheDocument();
     expect(screen.queryByText("apps/web/components/ide/AgentPanel.tsx")).not.toBeInTheDocument();
     expect(screen.queryByText("@docs")).not.toBeInTheDocument();
   });
@@ -167,12 +167,12 @@ describe("AgentChatInput — menções @ de contexto (Fase 5)", () => {
     const { setTask } = renderInput({ task: "corrija o @runner", setFocusFiles });
     await screen.findByRole("listbox");
 
-    await userEvent.click(screen.getByText("apps/api/src/novaai_studio/agent/runner.py"));
+    await userEvent.click(screen.getByText("apps/api/src/eltanix/agent/runner.py"));
 
-    expect(setTask).toHaveBeenCalledWith("corrija o @apps/api/src/novaai_studio/agent/runner.py ");
+    expect(setTask).toHaveBeenCalledWith("corrija o @apps/api/src/eltanix/agent/runner.py ");
     expect(setFocusFiles).toHaveBeenCalled();
     const updater = setFocusFiles.mock.calls[0][0] as (prev: string[]) => string[];
-    expect(updater([])).toEqual(["apps/api/src/novaai_studio/agent/runner.py"]);
+    expect(updater([])).toEqual(["apps/api/src/eltanix/agent/runner.py"]);
   });
 
   it("clicar em @docs insere o marcador de texto sem tocar em focusFiles/focusFolder", async () => {
@@ -194,7 +194,7 @@ describe("AgentChatInput — menções @ de contexto (Fase 5)", () => {
 
   it("Escape com o menu de menções aberto remove o token parcial", async () => {
     const { setTask, onSubmit } = renderInput({ task: "corrija o @run" });
-    const textarea = await screen.findByPlaceholderText(/Pergunte ao NovaAI Studio Agente/);
+    const textarea = await screen.findByPlaceholderText(/Pergunte ao Eltanix Coder IDE Agente/);
     await waitFor(() => expect(screen.getByRole("listbox")).toBeInTheDocument());
 
     await userEvent.type(textarea, "{Escape}");

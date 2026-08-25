@@ -388,7 +388,7 @@ export function AgentChatInput({
           onChange={(e) => setTask(e.target.value)}
           onPaste={handlePaste}
           onKeyDown={handleKeyDown}
-          placeholder="Pergunte ao NovaAI Studio Agente, cole imagens (Ctrl+V), use / para comandos ou @ para menções..."
+          placeholder="Pergunte ao Eltanix Coder IDE Agente, cole imagens (Ctrl+V), use / para comandos ou @ para menções..."
           rows={1}
           disabled={running}
         />

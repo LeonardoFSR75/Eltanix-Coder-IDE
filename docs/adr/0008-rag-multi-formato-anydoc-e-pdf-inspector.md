@@ -2,7 +2,7 @@
 
 ## Contexto
 
-Originalmente, o módulo RAG do NovaAI Studio suportava apenas arquivos PDF através do parser básico em Python (`pypdf`). No entanto:
+Originalmente, o módulo RAG do Eltanix Coder IDE suportava apenas arquivos PDF através do parser básico em Python (`pypdf`). No entanto:
 1. Ambientes corporativos dependem massivamente de documentos de escritório: planilhas Excel (`.xlsx`, `.xls`, `.xlsb`, `.ods`), relatórios Word (`.docx`, `.odt`), apresentações PowerPoint (`.pptx`, `.odp`), arquivos CSV, EPUB e RTF.
 2. Parsers tradicionais em Python (`openpyxl`, `python-docx`, `pypdf`) são lentos para arquivos grandes e não preservam tabelas Markdown estruturadas para RAG e LLMs.
 3. PDFs digitalizados/escaneados sem camada vetorial de texto consumiam processamento de embedding sem produzir conteúdo textual útil.

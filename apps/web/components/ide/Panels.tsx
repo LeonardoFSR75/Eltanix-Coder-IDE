@@ -314,14 +314,14 @@ export function Explorer() {
   const iniciarDrag = (e: React.DragEvent, entry: Entry) => {
     const paths = selected.has(entry.path) && selected.size > 1 ? Array.from(selected) : [entry.path];
     e.dataTransfer.effectAllowed = "move";
-    e.dataTransfer.setData("application/x-novaai-studio-paths", JSON.stringify(paths));
+    e.dataTransfer.setData("application/x-eltanix-paths", JSON.stringify(paths));
   };
 
   const soltarEm = async (e: React.DragEvent, destFolder: string) => {
     e.preventDefault();
     e.stopPropagation();
     setDragOverPath(null);
-    const raw = e.dataTransfer.getData("application/x-novaai-studio-paths");
+    const raw = e.dataTransfer.getData("application/x-eltanix-paths");
     if (!raw) return;
     let paths: string[];
     try {
@@ -1036,7 +1036,7 @@ export function DebugPanel() {
   const executeCommandInTerminal = (cmd: string) => {
     setTerminalOpen(true);
     // Dispara via evento global para o terminal capturar e rodar
-    const evt = new CustomEvent("novaai_studio:terminal:exec", { detail: { command: cmd } });
+    const evt = new CustomEvent("eltanix:terminal:exec", { detail: { command: cmd } });
     window.dispatchEvent(evt);
   };
 
@@ -1137,7 +1137,7 @@ export function BrowserPanel() {
   // navegador substitui por um hostname Docker-interno por baixo dos panos
   // (`url_is_internal_fallback`) — é esta, não `currentUrl`, que deve ir
   // para "abrir no editor central" (modo Live roda no navegador REAL do
-  // usuário, que não resolve `novaai-studio-<sid>`/`host.docker.internal`).
+  // usuário, que não resolve `eltanix-<sid>`/`host.docker.internal`).
   const [originalUrl, setOriginalUrl] = useState<string | null>(null);
   const [urlIsInternalFallback, setUrlIsInternalFallback] = useState(false);
   const [title, setTitle] = useState<string | null>(null);

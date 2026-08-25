@@ -6,12 +6,12 @@ import os
 
 from fastapi.testclient import TestClient
 
-os.environ["NOVAAI_STUDIO_API_KEY"] = "chave-de-teste"
+os.environ["ELTANIX_API_KEY"] = "chave-de-teste"
 os.environ["REDIS_URL"] = "redis://localhost:65533/0"
 
-from novaai_studio.agent.tools import registry
-from novaai_studio.config import get_settings
-from novaai_studio.main import create_app
+from eltanix.agent.tools import registry
+from eltanix.config import get_settings
+from eltanix.main import create_app
 
 
 def _client() -> TestClient:

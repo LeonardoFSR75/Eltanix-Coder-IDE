@@ -1,6 +1,6 @@
 """Browser: serviço isolado que roda o Chromium headless para a ferramenta
 de verificação visual do agente (`browser_action`, ver
-`apps/api/src/novaai_studio/agent/tools/browser.py`).
+`apps/api/src/eltanix/agent/tools/browser.py`).
 
 Por que separado do sandbox de execução (`services/executor`): aquele
 sandbox é isolado de rede por padrão (`network_mode=none`) — outras
@@ -48,8 +48,8 @@ MAX_CONCURRENT_SESSIONS = int(os.getenv("BROWSER_MAX_CONCURRENT_SESSIONS", "20")
 # Trace/vídeo por sessão (Fase 4b) — arquivos passam por disco local antes de
 # virar bytes na resposta; `api` é quem de fato sobe pro MinIO (este serviço
 # não alcança `minio`, só `web`/`api`, ver docstring do módulo).
-VIDEO_ROOT = Path(tempfile.gettempdir()) / "novaai-studio-browser-videos"
-TRACE_ROOT = Path(tempfile.gettempdir()) / "novaai-studio-browser-traces"
+VIDEO_ROOT = Path(tempfile.gettempdir()) / "eltanix-browser-videos"
+TRACE_ROOT = Path(tempfile.gettempdir()) / "eltanix-browser-traces"
 VIDEO_ROOT.mkdir(parents=True, exist_ok=True)
 TRACE_ROOT.mkdir(parents=True, exist_ok=True)
 # Teto por blob (trace.zip OU video.webm) antes de base64-codificar e devolver
@@ -245,7 +245,7 @@ async def lifespan(app: FastAPI):
                 await _playwright.stop()
 
 
-app = FastAPI(title="NovaAI Studio Browser (Dual-Engine)", version="1.1.0", lifespan=lifespan)
+app = FastAPI(title="Eltanix Coder IDE Browser (Dual-Engine)", version="1.1.0", lifespan=lifespan)
 
 
 async def _get_playwright() -> Any:
@@ -502,9 +502,9 @@ ALLOWED_SCHEMES = ("http://", "https://")
 
 # Hosts de metadados cloud / link-local — nunca são um alvo legítimo,
 # independente de quem pediu a navegação. Cópia sincronizada (não
-# importada) de `novaai_studio.security.url_safety.BLOCKED_HOSTNAMES`: este
+# importada) de `eltanix.security.url_safety.BLOCKED_HOSTNAMES`: este
 # serviço roda isolado num container mínimo (ver Dockerfile — não instala o
-# pacote `novaai_studio` de propósito, para manter a menor superfície possível
+# pacote `eltanix` de propósito, para manter a menor superfície possível
 # numa rede que já é a mais permissiva do sistema) — ver o addendum do ADR
 # 0007 para o porquê da duplicação ser intencional.
 BLOCKED_HOSTS = {
@@ -515,7 +515,7 @@ BLOCKED_HOSTS = {
 
 # `localhost`/`127.0.0.1`/`0.0.0.0` são o gatilho legítimo da substituição
 # de candidatos logo abaixo em `run_action` (sessão panel-* tenta
-# `novaai-studio-<sid>`/`host.docker.internal` como fallback) — nunca devem ser
+# `eltanix-<sid>`/`host.docker.internal` como fallback) — nunca devem ser
 # bloqueados aqui, mesmo sendo tecnicamente loopback/reservado.
 _LOOPBACK_TRIGGERS = {"localhost", "127.0.0.1", "0.0.0.0"}
 
@@ -527,7 +527,7 @@ _INFRA_HOSTS_ALWAYS_BLOCKED = {"executor", "redis", "minio", "postgres", "mcp-sc
 
 # Hosts Docker-internos que só sessões de AGENTE podem alcançar diretamente
 # (a allowlist correspondente vive em
-# `novaai_studio.agent.tools.browser::is_agent_local_test_target`) — sessões do
+# `eltanix.agent.tools.browser::is_agent_local_test_target`) — sessões do
 # PAINEL MANUAL (`panel-*`) nunca devem, porque o resultado é renderizado
 # num `<iframe>` do navegador REAL do usuário, fora do Docker, que não
 # resolve esses nomes (ver item 2 / `url_is_internal_fallback` abaixo para o
@@ -558,7 +558,7 @@ def validate_url(url: str | None, *, session_id: str = "") -> None:
     is_panel = session_id.startswith("panel-")
     if is_panel and (
         hostname in _DOCKER_INTERNAL_HOSTS_BLOCKED_FOR_PANEL
-        or hostname.startswith("novaai-studio-")
+        or hostname.startswith("eltanix-")
     ):
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST,
@@ -628,7 +628,7 @@ async def _run_action_locked(session_id: str, payload: ActionRequest) -> dict[st
             urls_to_try = [alvo_url]
             if hostname in {"localhost", "127.0.0.1", "0.0.0.0"}:
                 clean_sid = session_id.removeprefix("panel-")
-                sandbox_host = f"novaai-studio-{clean_sid}"
+                sandbox_host = f"eltanix-{clean_sid}"
                 host_gateway = os.getenv("HOST_GATEWAY_HOST", "host.docker.internal")
 
                 candidatos: list[str] = []
@@ -710,7 +710,7 @@ async def _run_action_locked(session_id: str, payload: ActionRequest) -> dict[st
                 raise ultimo_erro
 
             # Sinaliza explicitamente quando a URL efetivamente carregada é
-            # uma substituição Docker-interna (`novaai-studio-<sid>`/
+            # uma substituição Docker-interna (`eltanix-<sid>`/
             # `host.docker.internal`) em vez da URL pedida — sem isto, quem
             # chama (painel manual → iframe "Ao Vivo" no navegador real do
             # usuário) não tinha como saber que recebeu um hostname que só
@@ -870,7 +870,7 @@ async def close_session(session_id: str) -> dict[str, Any]:
         # A sessão não existe mais porque o `_reap_loop` já a descartou por
         # TTL antes deste DELETE chegar — e ela tinha trace/vídeo em
         # andamento quando isso aconteceu (ver `_expired_sessions`). O
-        # chamador (`apps/api/src/novaai_studio/browser/client.py::stop()`)
+        # chamador (`apps/api/src/eltanix/browser/client.py::stop()`)
         # propaga esta flag para marcar o replay como perdido em vez de
         # simplesmente "não havia nada" (item 9 do plano de robustez).
         resultado["expired_by_ttl"] = True

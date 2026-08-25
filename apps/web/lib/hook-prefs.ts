@@ -6,7 +6,7 @@
  * de lib/theme.tsx.
  */
 
-const STORAGE_KEY = "novaai_studio.hookPrefs";
+const STORAGE_KEY = "eltanix.hookPrefs";
 
 export interface HookPrefs {
   notifyApproval: boolean;

@@ -4,7 +4,7 @@
 
 ## Contexto
 
-Até esta etapa, o NovaAI Studio contava exclusivamente com o `browser_action` para interação com navegador web. No entanto, por projeto e segurança (ADR 0002), o `browser_action` opera em um Chromium headless confinado à rede interna isolada (`browser_net`), com a finalidade exclusiva de testar visualmente e inspecionar a aplicação web local rodando no sandbox (`localhost`).
+Até esta etapa, o Eltanix Coder IDE contava exclusivamente com o `browser_action` para interação com navegador web. No entanto, por projeto e segurança (ADR 0002), o `browser_action` opera em um Chromium headless confinado à rede interna isolada (`browser_net`), com a finalidade exclusiva de testar visualmente e inspecionar a aplicação web local rodando no sandbox (`localhost`).
 
 Com isso, o agente e os desenvolvedores não possuíam um canal seguro, estruturado e otimizado para:
 1. Consultar referências e documentações técnicas externas (ex.: Next.js, FastAPI, LangGraph, documentação de SDKs e bibliotecas no npm/PyPI);

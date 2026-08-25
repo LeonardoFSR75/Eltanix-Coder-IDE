@@ -9,8 +9,8 @@ from __future__ import annotations
 
 import uuid
 
-from novaai_studio.db.models import ToolSpan
-from novaai_studio.telemetry import store as telemetry_store
+from eltanix.db.models import ToolSpan
+from eltanix.telemetry import store as telemetry_store
 
 
 async def test_list_spans_returns_most_recent_first(pg_session):

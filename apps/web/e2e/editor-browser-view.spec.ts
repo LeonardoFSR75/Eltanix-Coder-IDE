@@ -8,7 +8,7 @@ import { test, expect } from "@playwright/test";
  *
  * Cobre exatamente o bug original que motivou a Fase 1 deste plano: um
  * hostname que só existe dentro de `browser_net` (`web`, `api`,
- * `novaai-studio-*`, ...) nunca deve virar `src` de um `<iframe>` renderizado no
+ * `eltanix-*`, ...) nunca deve virar `src` de um `<iframe>` renderizado no
  * navegador REAL do usuário sem aviso — a heurística client-side (item 5)
  * precisa barrar isso mesmo digitado direto na barra de endereço, sem
  * depender de nenhuma resposta do backend.

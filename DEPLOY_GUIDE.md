@@ -1,6 +1,6 @@
-# 🚀 Guia de Instalação e Deploy no Servidor — NovaAI Studio
+# 🚀 Guia de Instalação e Deploy no Servidor — Eltanix Coder IDE
 
-Este pacote contém o código-fonte completo e as configurações de infraestrutura necessárias para instalar e executar o **NovaAI Studio** no servidor via Docker Compose.
+Este pacote contém o código-fonte completo e as configurações de infraestrutura necessárias para instalar e executar o **Eltanix Coder IDE** no servidor via Docker Compose.
 
 ---
 
@@ -25,9 +25,9 @@ Este pacote contém o código-fonte completo e as configurações de infraestrut
 No seu servidor, crie um diretório para o projeto e descompacte o arquivo `.zip`:
 
 ```bash
-mkdir -p /opt/novaai_studiocode
-cd /opt/novaai_studiocode
-unzip novaai_studio_deploy.zip
+mkdir -p /opt/eltanixcode
+cd /opt/eltanixcode
+unzip eltanix_deploy.zip
 ```
 
 ---
@@ -44,17 +44,17 @@ Gere chaves seguras e defina os acessos no `.env`:
 
 ```bash
 # Exemplo de geração de chaves randômicas no terminal
-python3 -c "import secrets; print('NOVAAI_STUDIO_API_KEY=' + secrets.token_urlsafe(32))"
+python3 -c "import secrets; print('ELTANIX_API_KEY=' + secrets.token_urlsafe(32))"
 python3 -c "import secrets; print('EXECUTOR_TOKEN=' + secrets.token_urlsafe(32))"
 python3 -c "import secrets; print('AUTH_JWT_SECRET=' + secrets.token_urlsafe(32))"
 ```
 
 Configure os principais valores no seu `.env`:
-- `NOVAAI_STUDIO_API_KEY`: Chave única de serviço para integrações externas (Cline, Cursor, Aider).
+- `ELTANIX_API_KEY`: Chave única de serviço para integrações externas (Cline, Cursor, Aider).
 - `EXECUTOR_TOKEN`: Chave de autenticação do sandbox de execução.
 - `AUTH_JWT_SECRET`: Segredo de assinatura de tokens de sessão.
-- `NOVAAI_STUDIO_ADMIN_USERNAME`: Usuário admin inicial da Web UI.
-- `NOVAAI_STUDIO_ADMIN_PASSWORD`: Senha admin inicial da Web UI.
+- `ELTANIX_ADMIN_USERNAME`: Usuário admin inicial da Web UI.
+- `ELTANIX_ADMIN_PASSWORD`: Senha admin inicial da Web UI.
 - `OLLAMA_BASE_URL` ou Provedores Cloud (`OPENAI_API_KEY`, `AZURE_OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, etc.): Conexão com os provedores de LLM desejados.
 
 ---
@@ -88,16 +88,16 @@ docker compose ps
 ```
 
 Serão inicializados os seguintes serviços:
-- `novaai-studio-web` (Interface Web Next.js - Porta 5400)
-- `novaai-studio-api` (Backend FastAPI - Porta 5401)
-- `novaai-studio-postgres` (PostgreSQL com pgvector - Porta 5403)
-- `novaai-studio-redis` (Redis 7 - Porta 5404)
-- `novaai-studio-executor` (Sandbox de Execução Segura - Porta 5402)
-- `novaai-studio-browser` (Navegador CDP Headless - Porta 5406)
-- `novaai-studio-minio` (Armazenamento S3 Compatible - Porta 5407/5408)
-- `novaai-studio-desktop` (Motor Desktop VNC - Porta 5409)
-- `novaai-studio-mcp-scanner` (Scanner de Segurança MCP Cisco - Porta 5410)
-- `novaai-studio-lightpanda` (Browser Headless Ultrarrápido - Porta 9222)
+- `eltanix-web` (Interface Web Next.js - Porta 5400)
+- `eltanix-api` (Backend FastAPI - Porta 5401)
+- `eltanix-postgres` (PostgreSQL com pgvector - Porta 5403)
+- `eltanix-redis` (Redis 7 - Porta 5404)
+- `eltanix-executor` (Sandbox de Execução Segura - Porta 5402)
+- `eltanix-browser` (Navegador CDP Headless - Porta 5406)
+- `eltanix-minio` (Armazenamento S3 Compatible - Porta 5407/5408)
+- `eltanix-desktop` (Motor Desktop VNC - Porta 5409)
+- `eltanix-mcp-scanner` (Scanner de Segurança MCP Cisco - Porta 5410)
+- `eltanix-lightpanda` (Browser Headless Ultrarrápido - Porta 9222)
 
 ---
 

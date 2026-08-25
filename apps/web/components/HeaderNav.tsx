@@ -100,7 +100,7 @@ export function HeaderNav() {
         <Link href="/projects" className="brand-link">
           <div className="brand-logo">S</div>
           <span className="brand-name">
-            NovaAI Studio<span className="brand-highlight">Code</span>
+            Eltanix Coder IDE<span className="brand-highlight">Code</span>
           </span>
         </Link>
       </div>

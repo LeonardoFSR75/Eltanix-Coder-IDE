@@ -8,10 +8,10 @@ from __future__ import annotations
 
 import pytest
 
-from novaai_studio.config import Settings
-from novaai_studio.router.adapters import build_adapters
-from novaai_studio.router.health import HealthTracker
-from novaai_studio.router.policy import RoutingPolicy
+from eltanix.config import Settings
+from eltanix.router.adapters import build_adapters
+from eltanix.router.health import HealthTracker
+from eltanix.router.policy import RoutingPolicy
 
 
 @pytest.fixture

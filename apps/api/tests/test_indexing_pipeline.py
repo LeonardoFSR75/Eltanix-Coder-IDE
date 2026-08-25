@@ -15,15 +15,15 @@ from pathlib import Path
 
 import pytest
 
-import novaai_studio
-from novaai_studio.context.chunker import chunk_file
-from novaai_studio.context.scanner import read_text, scan
+import eltanix
+from eltanix.context.chunker import chunk_file
+from eltanix.context.scanner import read_text, scan
 
 # Localizado pelo próprio pacote, e não contado a partir da raiz do repositório:
-# no checkout ele fica em `apps/api/src/novaai_studio`, na imagem em `/app/src/
-# novaai_studio`. Contar níveis fixos faria estes testes sumirem em silêncio dentro
+# no checkout ele fica em `apps/api/src/eltanix`, na imagem em `/app/src/
+# eltanix`. Contar níveis fixos faria estes testes sumirem em silêncio dentro
 # do container — sem falhar, sem pular, apenas varrendo um diretório vazio.
-API_SRC = Path(novaai_studio.__file__).resolve().parent.parent
+API_SRC = Path(eltanix.__file__).resolve().parent.parent
 
 
 @pytest.fixture(scope="module")

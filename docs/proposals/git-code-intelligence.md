@@ -6,7 +6,7 @@
 > foram totalmente construídas e validadas no repositório. O estado real de cada item está
 > marcado inline com ✅ e os respectivos módulos de código.
 >
-> Escopo: evolução do NovaAI Studio nas frentes de Git Intelligence,
+> Escopo: evolução do Eltanix Coder IDE nas frentes de Git Intelligence,
 > exploração de projeto, Code Knowledge Graph, ExplorerAgent, Git-Aware RAG,
 > visualizações e benchmarking. Três frentes (Smart Blame + Histórico
 > Semântico, Code Knowledge Graph, ExplorerAgent) são detalhadas a nível de
@@ -15,7 +15,7 @@
 >
 > **Não-objetivo declarado**: este documento não projeta para escala
 > enterprise (100M+ LOC, milhares de repositórios, multi-tenant). O
-> NovaAI Studio é local-first, single-workspace, um repositório por vez —
+> Eltanix Coder IDE é local-first, single-workspace, um repositório por vez —
 > a arquitetura abaixo é dimensionada para esse uso real, não para uma
 > meta hipotética que exigiria reescrever o storage e o modelo de sessão
 > do zero.
@@ -24,14 +24,14 @@
 
 **Git** já tem uma camada funcional, mas rasa:
 
-- `apps/api/src/novaai_studio/workspace/git.py` — GitPython: `status`, `diff`,
+- `apps/api/src/eltanix/workspace/git.py` — GitPython: `status`, `diff`,
   `commit`, `push`, `log_recent` (lista plana de sha/autor/data/mensagem),
   `create_worktree`/`remove_worktree` (worktree isolado por sessão de agente
-  em `.novaai_studio/worktrees`, branch `novaai_studio/<session_id>`).
-- `apps/api/src/novaai_studio/api/routes/git.py` — `/api/git/*`: `status`,
+  em `.eltanix/worktrees`, branch `eltanix/<session_id>`).
+- `apps/api/src/eltanix/api/routes/git.py` — `/api/git/*`: `status`,
   `diff`, `file-versions` (para o `DiffEditor` do Monaco), `stage`,
   `unstage`, `commit`, `branches`, `checkout`, `log`, `discard`.
-- `apps/api/src/novaai_studio/agent/tools/vcs.py` — tools do agente:
+- `apps/api/src/eltanix/agent/tools/vcs.py` — tools do agente:
   `git_status`/`git_diff` (`RiskClass.READ`), `git_commit`/
   `open_pull_request` (`RiskClass.WRITE`), mais `read_issue` (GitHub).
 - Frontend: `apps/web/lib/api/git.ts`, `components/ide/agent/cards/
@@ -178,7 +178,7 @@ Planejado originalmente vs. o que de fato existe hoje (ver nota de status no
 topo do documento):
 
 ```
-apps/api/src/novaai_studio/
+apps/api/src/eltanix/
 ├── workspace/git.py            (alterado: + blame, + co_change)      ✅
 ├── context/
 │   ├── languages.py            (alterado: + import query por linguagem)  ✅
@@ -390,7 +390,7 @@ final de cada fase, sem métrica vaga:
 
 ## Benchmarking (visão contínua)
 
-| Capacidade | Cursor/Windsurf | Sourcegraph | Copilot Workspace | NovaAI Studio antes (pré 2026-08-08) | NovaAI Studio hoje (pós Fases 1-3) |
+| Capacidade | Cursor/Windsurf | Sourcegraph | Copilot Workspace | Eltanix Coder IDE antes (pré 2026-08-08) | Eltanix Coder IDE hoje (pós Fases 1-3) |
 |---|---|---|---|---|---|
 | Blame com contexto de intenção | Parcial | Sim | Não | Não | ✅ Sim (`code_history`) |
 | Grafo de símbolos cross-file | Não | Sim | Não | Não | ✅ Sim (contains+imports) |

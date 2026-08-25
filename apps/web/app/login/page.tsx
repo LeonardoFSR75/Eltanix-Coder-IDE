@@ -39,7 +39,7 @@ export default function LoginPage() {
           <div className="login-logo-ring">
             <span className="login-logo-text">S</span>
           </div>
-          <h1>Acesso ao NovaAI Studio</h1>
+          <h1>Acesso ao Eltanix Coder IDE</h1>
           <p className="login-subtitle">
             Plataforma local-first — login obrigatório por usuário e senha.
           </p>

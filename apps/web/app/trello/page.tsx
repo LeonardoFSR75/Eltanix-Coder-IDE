@@ -60,7 +60,7 @@ export default function TrelloPage() {
       setCards(res.cards as TrelloCard[]);
     } catch {
       // Fallback local
-      const storageKey = `novaai_studio_trello_${currentProject}`;
+      const storageKey = `eltanix_trello_${currentProject}`;
       try {
         const stored = localStorage.getItem(storageKey);
         if (stored) setCards(JSON.parse(stored));

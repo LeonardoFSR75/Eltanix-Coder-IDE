@@ -50,7 +50,7 @@ ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONDONTWRITEBYTECODE=1 \
     LITELLM_LOCAL_MODEL_COST_MAP=True \
     HF_HOME=/root/.cache/huggingface \
-    NOVAAI_STUDIO_CONFIG_DIR=/app/config
+    ELTANIX_CONFIG_DIR=/app/config
 
 # O git recusa operar num diretório de outro dono, e os projetos montados vêm
 # do host com uid diferente.
@@ -60,4 +60,4 @@ EXPOSE 5401
 
 # `--reload` aqui é deliberado: o compose monta o código do host, e o ciclo de
 # desenvolvimento é o caso de uso desta imagem.
-CMD ["uvicorn", "novaai_studio.main:app", "--host", "0.0.0.0", "--port", "5401", "--reload", "--reload-dir", "/app/src"]
+CMD ["uvicorn", "eltanix.main:app", "--host", "0.0.0.0", "--port", "5401", "--reload", "--reload-dir", "/app/src"]

@@ -221,7 +221,7 @@ interface IdeState {
 
 const Ctx = createContext<IdeState | null>(null);
 
-const STORAGE_KEY = "novaai_studio.ide";
+const STORAGE_KEY = "eltanix.ide";
 
 interface Persisted {
   project?: string | null;

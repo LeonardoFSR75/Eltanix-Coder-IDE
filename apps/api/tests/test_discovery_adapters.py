@@ -13,11 +13,11 @@ from typing import Any
 import httpx
 import pytest
 
-from novaai_studio.config import Settings
-from novaai_studio.router.adapters.base import DiscoveryError
-from novaai_studio.router.adapters.databricks import DatabricksAdapter
-from novaai_studio.router.adapters.direct import AnthropicAdapter, GroqAdapter, OpenAIAdapter
-from novaai_studio.router.adapters.ollama import OllamaAdapter
+from eltanix.config import Settings
+from eltanix.router.adapters.base import DiscoveryError
+from eltanix.router.adapters.databricks import DatabricksAdapter
+from eltanix.router.adapters.direct import AnthropicAdapter, GroqAdapter, OpenAIAdapter
+from eltanix.router.adapters.ollama import OllamaAdapter
 
 
 class _FakeResponse:

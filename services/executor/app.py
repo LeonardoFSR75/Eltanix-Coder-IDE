@@ -28,7 +28,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException, status
 from pydantic import BaseModel, Field
 
 WORKDIR = "/workspace"
-LABEL = "novaai_studio.session"
+LABEL = "eltanix.session"
 
 TOKEN = os.getenv("EXECUTOR_TOKEN", "")
 # Os dois lados do mesmo diretório: o caminho que a API enxerga dentro do seu
@@ -43,7 +43,7 @@ NETWORK_ENABLED = os.getenv("SANDBOX_NETWORK", "false").lower() in {"1", "true",
 PIDS_LIMIT = int(os.getenv("SANDBOX_PIDS_LIMIT", "512"))
 CPU_QUOTA = int(os.getenv("SANDBOX_CPU_QUOTA", "100000"))
 
-app = FastAPI(title="NovaAI Studio Executor", version="1.0.0")
+app = FastAPI(title="Eltanix Coder IDE Executor", version="1.0.0")
 _client: docker.DockerClient | None = None
 
 
@@ -130,16 +130,16 @@ async def health() -> dict[str, Any]:
 def _ensure_bootstrap(container: Any) -> None:
     bootstrap_script = r"""
 import os, stat
-os.makedirs('/tmp/novaai_studio_bootstrap', exist_ok=True)
-with open('/tmp/novaai_studio_bootstrap/sitecustomize.py', 'w') as f:
+os.makedirs('/tmp/eltanix_bootstrap', exist_ok=True)
+with open('/tmp/eltanix_bootstrap/sitecustomize.py', 'w') as f:
     f.write('''import socket
 _orig_bind = socket.socket.bind
-def _novaai_studio_bind(self, address):
+def _eltanix_bind(self, address):
     if isinstance(address, tuple) and len(address) >= 2:
         if address[0] in ('127.0.0.1', 'localhost'):
             address = ('0.0.0.0', address[1], *address[2:])
     return _orig_bind(self, address)
-socket.socket.bind = _novaai_studio_bind
+socket.socket.bind = _eltanix_bind
 ''')
 pkill_code = '''#!/usr/bin/env python3
 import sys, os, signal, glob
@@ -167,8 +167,8 @@ for p in glob.glob('/proc/[0-9]*'):
     except Exception: pass
 sys.exit(0)
 '''
-with open('/tmp/novaai_studio_bootstrap/pkill', 'w') as f: f.write(pkill_code)
-with open('/tmp/novaai_studio_bootstrap/killall', 'w') as f: f.write(pkill_code)
+with open('/tmp/eltanix_bootstrap/pkill', 'w') as f: f.write(pkill_code)
+with open('/tmp/eltanix_bootstrap/killall', 'w') as f: f.write(pkill_code)
 
 ps_code = '''#!/usr/bin/env python3
 import sys, os, glob
@@ -184,7 +184,7 @@ for p in sorted(glob.glob('/proc/[0-9]*'), key=lambda x: int(os.path.basename(x)
         print(f"{pid:>5} {cmd}")
     except Exception: pass
 '''
-with open('/tmp/novaai_studio_bootstrap/ps', 'w') as f: f.write(ps_code)
+with open('/tmp/eltanix_bootstrap/ps', 'w') as f: f.write(ps_code)
 
 fuser_code = '''#!/usr/bin/env python3
 import sys, os, signal, glob
@@ -227,11 +227,11 @@ for pid in pids:
     else:
         print(pid)
 '''
-with open('/tmp/novaai_studio_bootstrap/fuser', 'w') as f: f.write(fuser_code)
-with open('/tmp/novaai_studio_bootstrap/lsof', 'w') as f: f.write(fuser_code)
-with open('/tmp/novaai_studio_bootstrap/netstat', 'w') as f: f.write(fuser_code)
+with open('/tmp/eltanix_bootstrap/fuser', 'w') as f: f.write(fuser_code)
+with open('/tmp/eltanix_bootstrap/lsof', 'w') as f: f.write(fuser_code)
+with open('/tmp/eltanix_bootstrap/netstat', 'w') as f: f.write(fuser_code)
 for name in ('pkill', 'killall', 'ps', 'fuser', 'lsof', 'netstat'):
-    path = f'/tmp/novaai_studio_bootstrap/{name}'
+    path = f'/tmp/eltanix_bootstrap/{name}'
     os.chmod(path, os.stat(path).st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
 """
     try:
@@ -257,7 +257,7 @@ def _cache_container_id(session_id: str, container_id: str) -> None:
 
 
 def _create_sandbox_sync(payload: CreateRequest, host_path: str) -> dict[str, Any]:
-    nome = f"novaai-studio-{payload.session_id}"
+    nome = f"eltanix-{payload.session_id}"
 
     cid = _container_cache.get(payload.session_id)
     if cid:
@@ -281,7 +281,7 @@ def _create_sandbox_sync(payload: CreateRequest, host_path: str) -> dict[str, An
 
     # As flags de segurança abaixo (user, cap_drop, security_opt, privileged,
     # mem/cpu/pids limit) espelham as mesmas restrições em
-    # apps/api/src/novaai_studio/sandbox/container.py — aquele é o caminho local/dev,
+    # apps/api/src/eltanix/sandbox/container.py — aquele é o caminho local/dev,
     # este é o serviço isolado de produção (ADR 0002). Mudou uma flag aqui,
     # mude a mesma lá.
     vols = {host_path: {"bind": WORKDIR, "mode": "rw"}}
@@ -303,7 +303,7 @@ def _create_sandbox_sync(payload: CreateRequest, host_path: str) -> dict[str, An
         "PIP_DEFAULT_TIMEOUT": "2",
         "VIRTUAL_ENV": "/workspace/.venv",
         "PYTHONPATH": (
-            "/tmp/novaai_studio_bootstrap:"
+            "/tmp/eltanix_bootstrap:"
             "/workspace:"
             "/workspace/.venv/lib/python3.12/site-packages:"
             "/workspace/.venv/lib/python3.11/site-packages:"
@@ -312,7 +312,7 @@ def _create_sandbox_sync(payload: CreateRequest, host_path: str) -> dict[str, An
             "/workspace/.venv/lib/site-packages"
         ),
         "PATH": (
-            "/tmp/novaai_studio_bootstrap:"
+            "/tmp/eltanix_bootstrap:"
             "/usr/local/sbin:/usr/local/bin:"
             "/usr/sbin:/usr/bin:/sbin:/bin:"
             "/workspace/.venv/bin:/workspace/.venv/Scripts:"
@@ -326,7 +326,7 @@ def _create_sandbox_sync(payload: CreateRequest, host_path: str) -> dict[str, An
     if not NETWORK_ENABLED:
         try:
             for net in client().networks.list():
-                if net.name in ("browser_net", "novaai_studio_browser_net") or (
+                if net.name in ("browser_net", "eltanix_browser_net") or (
                     net.name and net.name.endswith("_browser_net")
                 ):
                     sandbox_network = net.name
@@ -371,7 +371,7 @@ async def create_sandbox(payload: CreateRequest) -> dict[str, Any]:
 
 @app.post("/sandboxes/{session_id}/exec", dependencies=[Auth])
 async def exec_command(session_id: str, payload: ExecRequest) -> dict[str, Any]:
-    nome = f"novaai-studio-{session_id}"
+    nome = f"eltanix-{session_id}"
     cid = _container_cache.get(session_id)
     if cid is None:
         try:
@@ -394,8 +394,8 @@ async def exec_command(session_id: str, payload: ExecRequest) -> dict[str, Any]:
         "PYTHONDONTWRITEBYTECODE=1",
         "PIP_DISABLE_PIP_VERSION_CHECK=1",
         "VIRTUAL_ENV=/workspace/.venv",
-        "PYTHONPATH=/tmp/novaai_studio_bootstrap:/workspace:/workspace/.venv/lib/python3.12/site-packages:/workspace/.venv/lib/python3.11/site-packages:/workspace/.venv/lib/python3.10/site-packages:/workspace/.venv/Lib/site-packages:/workspace/.venv/lib/site-packages",
-        "PATH=/tmp/novaai_studio_bootstrap:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/workspace/.venv/bin:/workspace/.venv/Scripts:/workspace/node_modules/.bin",
+        "PYTHONPATH=/tmp/eltanix_bootstrap:/workspace:/workspace/.venv/lib/python3.12/site-packages:/workspace/.venv/lib/python3.11/site-packages:/workspace/.venv/lib/python3.10/site-packages:/workspace/.venv/Lib/site-packages:/workspace/.venv/lib/site-packages",
+        "PATH=/tmp/eltanix_bootstrap:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/workspace/.venv/bin:/workspace/.venv/Scripts:/workspace/node_modules/.bin",
     ]
 
     def _run() -> tuple[int, bytes, bytes]:
@@ -447,7 +447,7 @@ async def exec_command(session_id: str, payload: ExecRequest) -> dict[str, Any]:
 def _destroy_sandbox_sync(session_id: str) -> dict[str, Any]:
     _container_cache.pop(session_id, None)
     _port_scan_cache.pop(session_id, None)
-    nome = f"novaai-studio-{session_id}"
+    nome = f"eltanix-{session_id}"
     try:
         container = client().containers.get(nome)
     except docker.errors.NotFound:
@@ -541,7 +541,7 @@ def _get_container_cached(session_id: str, nome: str) -> Any:
 
 
 def _get_sandbox_stats_sync(session_id: str) -> dict[str, Any]:
-    nome = f"novaai-studio-{session_id}"
+    nome = f"eltanix-{session_id}"
     container = _get_container_cached(session_id, nome)
 
     ports = _scan_listening_ports(container, session_id)
@@ -576,11 +576,11 @@ async def get_sandbox_stats(session_id: str) -> dict[str, Any]:
 
 
 def _get_server_logs_sync(session_id: str, tail: int) -> dict[str, Any]:
-    nome = f"novaai-studio-{session_id}"
+    nome = f"eltanix-{session_id}"
     container = _get_container_cached(session_id, nome)
 
     try:
-        res = container.exec_run(["tail", f"-n{tail}", "/tmp/novaai_studio_server.log"])
+        res = container.exec_run(["tail", f"-n{tail}", "/tmp/eltanix_server.log"])
         log_text = res.output.decode("utf-8", "replace") if res.exit_code == 0 else ""
     except Exception:
         log_text = ""

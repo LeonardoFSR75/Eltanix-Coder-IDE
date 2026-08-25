@@ -13,7 +13,7 @@
     type GitStatus,
   } from "../api/git";
 
-  let { project = "novaai-studio-code", onOpenFile } = $props<{
+  let { project = "eltanix-code", onOpenFile } = $props<{
     project?: string;
     /** Abre o arquivo no editor ao clicar numa linha (opcional). */
     onOpenFile?: (path: string) => void;

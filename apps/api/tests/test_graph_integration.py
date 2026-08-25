@@ -17,10 +17,10 @@ import pytest
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.types import Command
 
-from novaai_studio.agent.approval_policy import ApprovalPolicy, EditPathRule, ExecCommandRule
-from novaai_studio.agent.graph import build_graph
-from novaai_studio.agent.tools import ToolContext
-from novaai_studio.workspace.fs import WorkspaceFS
+from eltanix.agent.approval_policy import ApprovalPolicy, EditPathRule, ExecCommandRule
+from eltanix.agent.graph import build_graph
+from eltanix.agent.tools import ToolContext
+from eltanix.workspace.fs import WorkspaceFS
 
 
 @dataclass
@@ -530,8 +530,8 @@ class _FakeRunnerForHeadless:
 
 
 async def test_headless_burst_pauses_at_interrupt_for_uncovered_write(ctx, tmp_path):
-    from novaai_studio.agent.coordinator import AgentCoordinator
-    from novaai_studio.agent.headless import run_headless_burst
+    from eltanix.agent.coordinator import AgentCoordinator
+    from eltanix.agent.headless import run_headless_burst
 
     # Sem regra de política — o WRITE do filho não tem cobertura nenhuma,
     # exatamente o caso que precisa continuar pausando mesmo sem humano
@@ -552,9 +552,9 @@ async def test_headless_burst_pauses_at_interrupt_for_uncovered_write(ctx, tmp_p
 
 
 async def test_headless_burst_completes_when_policy_covers_the_write(ctx, tmp_path):
-    from novaai_studio.agent.approval_policy import EditPathRule
-    from novaai_studio.agent.coordinator import AgentCoordinator
-    from novaai_studio.agent.headless import run_headless_burst
+    from eltanix.agent.approval_policy import EditPathRule
+    from eltanix.agent.coordinator import AgentCoordinator
+    from eltanix.agent.headless import run_headless_burst
 
     ctx.approval_policy = ApprovalPolicy(
         rules=[EditPathRule(tools=["write_file"], path_glob="*.py", max_changed_lines=50)]

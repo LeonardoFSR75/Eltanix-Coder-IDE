@@ -10,11 +10,11 @@ from __future__ import annotations
 
 import pytest
 
-from novaai_studio.agent.runner import validate_project_runtime
-from novaai_studio.agent.tools import RiskClass, Tool, ToolContext, registry
-from novaai_studio.agent.tools.project_manager import manage_project
-from novaai_studio.agent.tools.shell import summarize_output
-from novaai_studio.workspace.fs import WorkspaceFS
+from eltanix.agent.runner import validate_project_runtime
+from eltanix.agent.tools import RiskClass, Tool, ToolContext, registry
+from eltanix.agent.tools.project_manager import manage_project
+from eltanix.agent.tools.shell import summarize_output
+from eltanix.workspace.fs import WorkspaceFS
 
 
 def _tool(name: str) -> Tool:

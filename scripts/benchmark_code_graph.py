@@ -1,4 +1,4 @@
-"""Script de benchmarking contínuo do Code Knowledge Graph do NovaAI Studio.
+"""Script de benchmarking contínuo do Code Knowledge Graph do Eltanix Coder IDE.
 
 Mede a performance de consultas ao grafo de conhecimento (nós, arestas, buscas híbridas RRF e latência de resposta).
 """

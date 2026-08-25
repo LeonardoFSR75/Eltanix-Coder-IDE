@@ -89,7 +89,7 @@ describe("PackagesPanel", () => {
     });
   });
 
-  it("dispara o evento novaai_studio:packages:changed após instalar", async () => {
+  it("dispara o evento eltanix:packages:changed após instalar", async () => {
     mockedApi.getProjectPackages.mockResolvedValue(baseResponse({ packages: [], installed_count: 0 }));
     mockedApi.installProjectPackage.mockResolvedValue({
       ok: true,
@@ -100,7 +100,7 @@ describe("PackagesPanel", () => {
       stdout: "",
     });
     const handler = vi.fn();
-    window.addEventListener("novaai_studio:packages:changed", handler);
+    window.addEventListener("eltanix:packages:changed", handler);
 
     render(<PackagesPanel />);
     await screen.findByPlaceholderText("Pacote...");
@@ -109,10 +109,10 @@ describe("PackagesPanel", () => {
     await userEvent.click(screen.getByRole("button", { name: /Instalar/ }));
 
     await waitFor(() => expect(handler).toHaveBeenCalledTimes(1));
-    window.removeEventListener("novaai_studio:packages:changed", handler);
+    window.removeEventListener("eltanix:packages:changed", handler);
   });
 
-  it("recarrega quando o evento novaai_studio:packages:changed é disparado externamente (ex.: ferramenta do agente)", async () => {
+  it("recarrega quando o evento eltanix:packages:changed é disparado externamente (ex.: ferramenta do agente)", async () => {
     mockedApi.getProjectPackages.mockResolvedValue(baseResponse());
     render(<PackagesPanel />);
     await screen.findByText("requests");
@@ -120,7 +120,7 @@ describe("PackagesPanel", () => {
     mockedApi.getProjectPackages.mockResolvedValue(
       baseResponse({ packages: [{ name: "requests", version: "2.31.0" }, { name: "flask", version: "3.0.0" }] })
     );
-    window.dispatchEvent(new CustomEvent("novaai_studio:packages:changed"));
+    window.dispatchEvent(new CustomEvent("eltanix:packages:changed"));
 
     expect(await screen.findByText("flask")).toBeInTheDocument();
   });

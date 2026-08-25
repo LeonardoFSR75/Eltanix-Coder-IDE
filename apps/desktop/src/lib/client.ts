@@ -1,6 +1,6 @@
 /**
  * Cliente HTTP usado pela versão Svelte / Desktop.
- * Fala com a API do NovaAI Studio via API_ORIGIN e gerencia a autenticação por usuário e senha.
+ * Fala com a API do Eltanix Coder IDE via API_ORIGIN e gerencia a autenticação por usuário e senha.
  */
 
 const API_ORIGIN = import.meta.env.VITE_API_ORIGIN || "http://localhost:5401";
@@ -31,10 +31,10 @@ export function onUnauthorized(handler: () => void): void {
 export function getAuthToken(): string {
   if (typeof window === "undefined") return "";
   return (
-    localStorage.getItem("novaai_studio_session_token") ||
-    localStorage.getItem("NOVAAI_STUDIO_API_KEY") ||
-    localStorage.getItem("novaai_studio_api_key") ||
-    (import.meta.env.VITE_NOVAAI_STUDIO_API_KEY as string | undefined) ||
+    localStorage.getItem("eltanix_session_token") ||
+    localStorage.getItem("ELTANIX_API_KEY") ||
+    localStorage.getItem("eltanix_api_key") ||
+    (import.meta.env.VITE_ELTANIX_API_KEY as string | undefined) ||
     ""
   );
 }
@@ -45,17 +45,17 @@ export function hasAuthToken(): boolean {
 
 export function setAuthToken(token: string): void {
   if (typeof window !== "undefined") {
-    localStorage.setItem("novaai_studio_session_token", token.trim());
-    localStorage.setItem("NOVAAI_STUDIO_API_KEY", token.trim());
+    localStorage.setItem("eltanix_session_token", token.trim());
+    localStorage.setItem("ELTANIX_API_KEY", token.trim());
   }
 }
 
 export function clearAuthToken(): void {
   if (typeof window !== "undefined") {
-    localStorage.removeItem("novaai_studio_session_token");
-    localStorage.removeItem("NOVAAI_STUDIO_API_KEY");
-    localStorage.removeItem("novaai_studio_api_key");
-    localStorage.removeItem("novaai_studio_user");
+    localStorage.removeItem("eltanix_session_token");
+    localStorage.removeItem("ELTANIX_API_KEY");
+    localStorage.removeItem("eltanix_api_key");
+    localStorage.removeItem("eltanix_user");
   }
 }
 
@@ -83,7 +83,7 @@ export interface UserProfile {
 
 export function getAuthUser(): UserProfile | null {
   if (typeof window === "undefined") return null;
-  const stored = localStorage.getItem("novaai_studio_user");
+  const stored = localStorage.getItem("eltanix_user");
   if (!stored) return null;
   try {
     return JSON.parse(stored) as UserProfile;
@@ -117,16 +117,16 @@ export async function login(username: string, password: string): Promise<boolean
       });
       if (meRes.ok) {
         const me = (await meRes.json()) as UserProfile;
-        localStorage.setItem("novaai_studio_user", JSON.stringify(me));
+        localStorage.setItem("eltanix_user", JSON.stringify(me));
       } else {
         localStorage.setItem(
-          "novaai_studio_user",
+          "eltanix_user",
           JSON.stringify({ id: "user", username, display_name: username }),
         );
       }
     } catch {
       localStorage.setItem(
-        "novaai_studio_user",
+        "eltanix_user",
         JSON.stringify({ id: "user", username, display_name: username }),
       );
     }

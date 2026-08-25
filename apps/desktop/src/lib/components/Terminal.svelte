@@ -27,7 +27,7 @@
     term.open(containerEl);
     fitAddon.fit();
 
-    term.writeln("\x1b[1;32mNovaAI Studio Terminal (Desktop Svelte 5)\x1b[0m");
+    term.writeln("\x1b[1;32mEltanix Coder IDE Terminal (Desktop Svelte 5)\x1b[0m");
     term.writeln("Conectado ao executor Docker e sandbox efêmera.");
     term.write("\r\n$ ");
 

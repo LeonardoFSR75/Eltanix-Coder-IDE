@@ -77,7 +77,7 @@ if (typeof window !== "undefined") {
   // Janela de diagnóstico. Sem ela, "o autocomplete não aparece" tem meia dúzia
   // de causas indistinguíveis de fora — documento não anunciado, modelo
   // trocado, conexão caída — e todas produzem exatamente a mesma tela vazia.
-  (window as unknown as Record<string, unknown>).__novaai_studioLsp = () => ({
+  (window as unknown as Record<string, unknown>).__eltanixLsp = () => ({
     abertos: Array.from(documentos.values()).map((d) => ({
       path: d.path,
       pronto: d.connection.ready,
@@ -194,7 +194,7 @@ export function applyDiagnostics(
 
   monaco.editor.setModelMarkers(
     model,
-    "novaai-studio-lsp",
+    "eltanix-lsp",
     itens.map((item) => ({
       ...paraRangeMonaco(item.range),
       message: item.message,
@@ -207,7 +207,7 @@ export function applyDiagnostics(
 
 export function clearDiagnostics(monaco: MonacoNs, model: Monaco.editor.ITextModel): void {
   if (!model || model.isDisposed()) return;
-  monaco.editor.setModelMarkers(model, "novaai-studio-lsp", []);
+  monaco.editor.setModelMarkers(model, "eltanix-lsp", []);
 }
 
 

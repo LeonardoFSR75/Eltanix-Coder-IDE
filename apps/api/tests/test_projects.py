@@ -7,8 +7,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from novaai_studio.agent.tools import RiskClass, ToolContext, registry
-from novaai_studio.workspace.projects import (
+from eltanix.agent.tools import RiskClass, ToolContext, registry
+from eltanix.workspace.projects import (
     list_projects,
     sync_projects_db,
     validate_name,
@@ -24,7 +24,7 @@ def test_validate_name():
 
 
 def test_resolve_case_insensitive(tmp_path: Path):
-    from novaai_studio.workspace.projects import resolve
+    from eltanix.workspace.projects import resolve
     (tmp_path / "Mestrado").mkdir()
     res = resolve(tmp_path, "mestrado")
     assert res.name == "Mestrado"
@@ -73,7 +73,7 @@ async def test_sync_projects_db_with_postgres(pg_session, tmp_path: Path):
 
 @pytest.mark.asyncio
 async def test_audit_service_record_accepts_event_metadata_alias(pg_session):
-    from novaai_studio.audit.service import AuditService
+    from eltanix.audit.service import AuditService
     service = AuditService()
     entry = await service.record(
         actor="test",
@@ -87,8 +87,8 @@ async def test_audit_service_record_accepts_event_metadata_alias(pg_session):
 @pytest.mark.asyncio
 async def test_create_project_endpoint(tmp_path: Path):
     from httpx import ASGITransport, AsyncClient
-    from novaai_studio.api.deps import require_session
-    from novaai_studio.main import create_app
+    from eltanix.api.deps import require_session
+    from eltanix.main import create_app
 
     app = create_app()
     app.state.projects_root = tmp_path

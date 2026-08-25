@@ -7,9 +7,9 @@ from alembic import context
 from sqlalchemy.ext.asyncio import async_engine_from_config
 from sqlalchemy.pool import NullPool
 
-from novaai_studio.config import get_settings
-from novaai_studio.db.base import Base
-from novaai_studio.db import models  # noqa: F401  (registra as tabelas no metadata)
+from eltanix.config import get_settings
+from eltanix.db.base import Base
+from eltanix.db import models  # noqa: F401  (registra as tabelas no metadata)
 
 config = context.config
 

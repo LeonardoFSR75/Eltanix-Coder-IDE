@@ -2,7 +2,7 @@
   import { onMount } from "svelte";
   import { listTree, type WorkspaceEntry } from "../api/workspace";
 
-  let { project = "novaai-studio-code", activeFilePath = "", onSelectFile } = $props<{
+  let { project = "eltanix-code", activeFilePath = "", onSelectFile } = $props<{
     project?: string;
     activeFilePath?: string;
     onSelectFile?: (path: string) => void;

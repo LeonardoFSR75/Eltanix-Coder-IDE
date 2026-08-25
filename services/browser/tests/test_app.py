@@ -34,7 +34,7 @@ def _fake_page() -> MagicMock:
     page.is_closed.return_value = False
     page.url = "http://web:5400/ide"
     page.goto = AsyncMock(return_value=MagicMock(status=200))
-    page.title = AsyncMock(return_value="NovaAI Studio")
+    page.title = AsyncMock(return_value="Eltanix Coder IDE")
     page.click = AsyncMock()
     page.fill = AsyncMock()
     page.screenshot = AsyncMock(return_value=b"\x89PNG\r\n\x1a\nfake")
@@ -144,7 +144,7 @@ def test_navigate_returns_url_title_and_status(monkeypatch):
     assert response.status_code == 200
     data = response.json()
     assert data["ok"] is True
-    assert data["title"] == "NovaAI Studio"
+    assert data["title"] == "Eltanix Coder IDE"
     assert data["status"] == 200
     assert data["url_is_internal_fallback"] is False
     assert data["original_url"] == "http://web:5400/ide"
@@ -381,7 +381,7 @@ def test_navigate_localhost_falls_back_to_host_gateway(monkeypatch):
     assert data["ok"] is True
     assert page.goto.await_count == 2
     # A URL que de fato carregou é uma substituição Docker-interna
-    # (`novaai-studio-<sid>`), nunca alcançável do navegador real do host — o
+    # (`eltanix-<sid>`), nunca alcançável do navegador real do host — o
     # chamador precisa saber disso para não usá-la como `src` de um iframe.
     assert data["url_is_internal_fallback"] is True
     assert data["original_url"] == "http://localhost:5000/app"
@@ -612,7 +612,7 @@ def test_health_reports_dual_engine_support(monkeypatch):
 
 def test_validate_url_battery_agrees_with_shared_ssrf_module(monkeypatch):
     """Bateria de hosts bloqueados/permitidos — mantida em sincronia manual
-    com `novaai_studio.security.url_safety.BLOCKED_HOSTNAMES` (item 1 do plano de
+    com `eltanix.security.url_safety.BLOCKED_HOSTNAMES` (item 1 do plano de
     robustez do navegador interno, item 18c para esta bateria em si). Este
     serviço não importa aquele módulo de propósito — roda num container
     isolado e deliberadamente mínimo (ver o comentário acima de
@@ -643,15 +643,15 @@ def test_validate_url_battery_agrees_with_shared_ssrf_module(monkeypatch):
             assert exc_info.value.status_code == 400
 
     # Só o painel manual bloqueia — o agente pode testar a própria aplicação
-    # (allowlist espelhada em `novaai_studio.agent.tools.browser::
+    # (allowlist espelhada em `eltanix.agent.tools.browser::
     # is_agent_local_test_target`).
-    bloqueados_so_para_painel = ["web", "api", "host.docker.internal", "novaai-studio-outra-sessao"]
+    bloqueados_so_para_painel = ["web", "api", "host.docker.internal", "eltanix-outra-sessao"]
     for hostname in bloqueados_so_para_painel:
         with pytest.raises(app_module.HTTPException):
             app_module.validate_url(f"http://{hostname}/x", session_id="panel-x")
         app_module.validate_url(f"http://{hostname}/x", session_id="agent-x")  # não levanta
 
-    # Gatilho de fallback (`novaai-studio-<sid>`/`host.docker.internal`) e
+    # Gatilho de fallback (`eltanix-<sid>`/`host.docker.internal`) e
     # domínios externos comuns — nunca bloqueados por este validador (o
     # isolamento de rede de `browser_net`, não este código, é quem impede a
     # internet pública).

@@ -14,11 +14,11 @@ from types import SimpleNamespace
 
 import pytest
 
-from novaai_studio.agent.tools.base import RiskClass, ToolRegistry
-from novaai_studio.config import Settings
-from novaai_studio.mcp.client import MCPServerConnection
-from novaai_studio.mcp.config import MCPServerConfig
-from novaai_studio.mcp.manager import MCPManager, _classify_risk
+from eltanix.agent.tools.base import RiskClass, ToolRegistry
+from eltanix.config import Settings
+from eltanix.mcp.client import MCPServerConnection
+from eltanix.mcp.config import MCPServerConfig
+from eltanix.mcp.manager import MCPManager, _classify_risk
 
 
 def _cfg(

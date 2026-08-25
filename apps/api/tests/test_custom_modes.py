@@ -12,12 +12,12 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from novaai_studio.agent.graph import _tool_schemas
-from novaai_studio.agent.prompts import build_task_prompt
-from novaai_studio.agent.runner import AgentRunner
-from novaai_studio.agent.state import BUILTIN_MODES
-from novaai_studio.agent.tools.base import ToolContext
-from novaai_studio.workspace.fs import WorkspaceFS
+from eltanix.agent.graph import _tool_schemas
+from eltanix.agent.prompts import build_task_prompt
+from eltanix.agent.runner import AgentRunner
+from eltanix.agent.state import BUILTIN_MODES
+from eltanix.agent.tools.base import ToolContext
+from eltanix.workspace.fs import WorkspaceFS
 
 
 def _make_runner(*, custom_modes) -> AgentRunner:

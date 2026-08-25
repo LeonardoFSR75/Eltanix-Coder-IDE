@@ -1,6 +1,6 @@
-# 🛠️ Capacidades e Estratificação da IDE Agêntica (NovaAI Studio)
+# 🛠️ Capacidades e Estratificação da IDE Agêntica (Eltanix Coder IDE)
 
-Este documento estratifica a arquitetura, ferramentas, classes de risco, fluxos de trabalho e restrições da **IDE Agêntica Local-First NovaAI Studio** por tipo de funcionalidade.
+Este documento estratifica a arquitetura, ferramentas, classes de risco, fluxos de trabalho e restrições da **IDE Agêntica Local-First Eltanix Coder IDE** por tipo de funcionalidade.
 
 ---
 
@@ -84,7 +84,7 @@ Workflow rigoroso de 5 etapas para execução segura de alterações de software
 
 Arquitetura de inteligência agêntica baseada em LangGraph e roteamento centralizado de modelos.
 
-- **Gate de LLM Único ([ADR 0001](file:///c:/Users/leona/Documents/Projetos/SicoobitoCode/docs/adr/0001-camada-unica-de-llm.md))**: NENHUM módulo consome APIs diretas de provedores (OpenAI, Anthropic, Gemini). Todo o tráfego passa obrigatoriamente por `novaai_studio.router` (`RouterEngine.complete()` / `.embed()`).
+- **Gate de LLM Único ([ADR 0001](file:///c:/Users/leona/Documents/Projetos/SicoobitoCode/docs/adr/0001-camada-unica-de-llm.md))**: NENHUM módulo consome APIs diretas de provedores (OpenAI, Anthropic, Gemini). Todo o tráfego passa obrigatoriamente por `eltanix.router` (`RouterEngine.complete()` / `.embed()`).
 - **Orquestração Multiagente ([ADR 0004](file:///c:/Users/leona/Documents/Projetos/SicoobitoCode/docs/adr/0004-orquestracao-multiagente.md))**:
   - Despacho de subagentes autônomos para tarefas paralelas e isoladas.
   - Persistência do estado do agente no PostgreSQL.
@@ -150,7 +150,7 @@ Modelagem de ameaças e controle de privilégios em todas as operações agênti
   - `READ`: Operações idempotentes de leitura e consulta de informações (liberadas automaticamente).
   - `WRITE`: Alterações de código, arquivos ou banco de dados (exigem validação do plano ou Human-in-the-Loop).
   - `EXEC`: Execução de comandos de terminal, mutação de infraestrutura ou instalações (exigem aprovação explícita do usuário).
-- **Autenticação Obrigatória ([ADR 0005](file:///c:/Users/leona/Documents/Projetos/SicoobitoCode/docs/adr/0005-login-obrigatorio.md))**: Toda rota HTTP exige `AuthDep` (sessão via cookie HttpOnly ou chave `NOVAAI_STUDIO_API_KEY`).
+- **Autenticação Obrigatória ([ADR 0005](file:///c:/Users/leona/Documents/Projetos/SicoobitoCode/docs/adr/0005-login-obrigatorio.md))**: Toda rota HTTP exige `AuthDep` (sessão via cookie HttpOnly ou chave `ELTANIX_API_KEY`).
 - **Prevenção contra Perda de Dados (`accidental-data-loss-prevention`)**: Confirmação mandatória antes de comandos destrutivos (`DROP TABLE`, `rm -rf`, deleção de projetos/buckets).
 
 ---

@@ -21,7 +21,7 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "NovaAI Studio — Agente, RAG & Segundo Cérebro",
+  title: "Eltanix Coder IDE — Agente, RAG & Segundo Cérebro",
   description: "Plataforma IA local-first com Segundo Cérebro Obsidian, RAG, Skills, MCP e Auditoria",
 };
 

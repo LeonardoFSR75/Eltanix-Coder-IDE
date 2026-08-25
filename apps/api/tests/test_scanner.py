@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from novaai_studio.context.scanner import MAX_FILE_BYTES, read_text, scan
+from eltanix.context.scanner import MAX_FILE_BYTES, read_text, scan
 
 
 def _build_repo(tmp_path: Path) -> Path:

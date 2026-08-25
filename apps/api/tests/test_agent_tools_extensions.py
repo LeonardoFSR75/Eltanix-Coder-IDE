@@ -12,9 +12,9 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from novaai_studio.agent.tools import RiskClass, Tool, ToolContext, registry
-from novaai_studio.extensions.manager import ExtensionsManager
-from novaai_studio.workspace.fs import WorkspaceFS
+from eltanix.agent.tools import RiskClass, Tool, ToolContext, registry
+from eltanix.extensions.manager import ExtensionsManager
+from eltanix.workspace.fs import WorkspaceFS
 
 
 def _tool(name: str) -> Tool:
@@ -93,8 +93,8 @@ async def test_manage_extensions_toggle_requires_extension_id(ctx):
 
 async def test_manage_extensions_toggle_unknown_id(ctx):
     with (
-        patch("novaai_studio.agent.tools.extensions.session_scope", _fake_session_scope),
-        patch("novaai_studio.extensions.manager.store.upsert_state", new=AsyncMock()),
+        patch("eltanix.agent.tools.extensions.session_scope", _fake_session_scope),
+        patch("eltanix.extensions.manager.store.upsert_state", new=AsyncMock()),
     ):
         resultado = await _tool("manage_extensions").handler(
             ctx, {"action": "toggle", "extension_id": "nao.existe"}
@@ -105,8 +105,8 @@ async def test_manage_extensions_toggle_unknown_id(ctx):
 async def test_manage_extensions_toggle_known_id(ctx):
     ext_id = ctx.extensions_manager.get_catalog()["extensions"][0]["id"]
     with (
-        patch("novaai_studio.agent.tools.extensions.session_scope", _fake_session_scope),
-        patch("novaai_studio.extensions.manager.store.upsert_state", new=AsyncMock()),
+        patch("eltanix.agent.tools.extensions.session_scope", _fake_session_scope),
+        patch("eltanix.extensions.manager.store.upsert_state", new=AsyncMock()),
     ):
         resultado = await _tool("manage_extensions").handler(
             ctx, {"action": "toggle", "extension_id": ext_id, "active": False}
@@ -117,9 +117,9 @@ async def test_manage_extensions_toggle_known_id(ctx):
 
 async def test_manage_extensions_sync(ctx):
     with (
-        patch("novaai_studio.agent.tools.extensions.session_scope", _fake_session_scope),
-        patch("novaai_studio.extensions.manager.store.upsert_state", new=AsyncMock()),
-        patch("novaai_studio.extensions.manager.store.update_settings", new=AsyncMock()),
+        patch("eltanix.agent.tools.extensions.session_scope", _fake_session_scope),
+        patch("eltanix.extensions.manager.store.upsert_state", new=AsyncMock()),
+        patch("eltanix.extensions.manager.store.update_settings", new=AsyncMock()),
         patch.object(
             ctx.extensions_manager.client, "check_updates_batch", new=AsyncMock(return_value={})
         ),

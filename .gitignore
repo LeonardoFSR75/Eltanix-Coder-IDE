@@ -36,7 +36,7 @@ data/
 *.sqlite3
 
 # Workspaces e worktrees do agente
-.novaai_studio/
+.eltanix/
 
 # Saída gerada pelo graphify (ferramenta de dev, grafo de conhecimento do repo)
 graphify-out/
@@ -49,6 +49,6 @@ Thumbs.db
 !.vscode/extensions.json
 
 # Pakages & Releases
-novaai_studio_deploy.zip
+eltanix_deploy.zip
 releases/
 

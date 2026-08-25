@@ -1,8 +1,8 @@
 {
   "$schema": "https://raw.githubusercontent.com/tauri-apps/tauri/dev/crates/tauri-config-schema/schema.json",
-  "productName": "NovaAI Studio",
+  "productName": "Eltanix Coder IDE",
   "version": "0.1.0",
-  "identifier": "com.novaaistudio.desktop",
+  "identifier": "com.eltanix.desktop",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:5409",
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "NovaAI Studio — Agêntico IDE",
+        "title": "Eltanix Coder IDE",
         "width": 1280,
         "height": 800,
         "resizable": true,

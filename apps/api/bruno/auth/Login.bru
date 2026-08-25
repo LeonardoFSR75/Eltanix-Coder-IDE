@@ -24,8 +24,8 @@ vars:post-response {
 docs {
   Fora de AuthDep de propósito — é o único jeito de entrar (ver
   auth.py). Devolve `{token, expires_at}`: esse token é o valor cru que
-  vai no cookie `novaai_studio_session`, não é a `NOVAAI_STUDIO_API_KEY` de
+  vai no cookie `eltanix_session`, não é a `ELTANIX_API_KEY` de
   serviço (são duas credenciais com dois propósitos, ver ADR 0005).
   Guarda em `sessionToken` para as próximas requests desta pasta, que
-  mandam `Cookie: novaai_studio_session={{sessionToken}}`.
+  mandam `Cookie: eltanix_session={{sessionToken}}`.
 }

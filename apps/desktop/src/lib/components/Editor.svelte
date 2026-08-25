@@ -203,7 +203,7 @@
     });
 
     editor.addAction({
-      id: "novaai_studio.gotoDefinition",
+      id: "eltanix.gotoDefinition",
       label: "Ir para definição",
       keybindings: [monaco.KeyCode.F12],
       contextMenuGroupId: "navigation",

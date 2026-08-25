@@ -1,4 +1,4 @@
-"""Script para empacotar o release de deploy do NovaAI Studio em formato ZIP."""
+"""Script para empacotar o release de deploy do Eltanix Coder IDE em formato ZIP."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from pathlib import Path
 
 # Diretório raiz do projeto
 ROOT_DIR = Path(__file__).parent.parent.resolve()
-OUTPUT_ZIP = ROOT_DIR / "novaai_studio_deploy.zip"
+OUTPUT_ZIP = ROOT_DIR / "eltanix_deploy.zip"
 
 EXCLUDE_DIRS = {
     "node_modules",
@@ -26,7 +26,7 @@ EXCLUDE_DIRS = {
 
 EXCLUDE_FILES = {
     ".env",
-    "novaai_studio_deploy.zip",
+    "eltanix_deploy.zip",
     ".DS_Store",
 }
 

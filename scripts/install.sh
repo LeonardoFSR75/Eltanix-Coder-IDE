@@ -2,7 +2,7 @@
 set -e
 
 echo "================================================="
-echo "🚀 NovaAI Studio - Script de Instalação e Deploy"
+echo "🚀 Eltanix Coder IDE - Script de Instalação e Deploy"
 echo "================================================="
 
 if ! command -v docker &> /dev/null; then

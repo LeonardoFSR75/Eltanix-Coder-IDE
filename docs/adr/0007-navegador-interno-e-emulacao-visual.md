@@ -9,7 +9,7 @@ A verificação visual e o teste interativo de aplicações web desenvolvidas pe
 
 ## Decisão
 
-Adotar uma arquitetura de **Navegador Interno Híbrido** no NovaAI Studio composto por:
+Adotar uma arquitetura de **Navegador Interno Híbrido** no Eltanix Coder IDE composto por:
 
 1. **Modo Híbrido de Renderização**:
    - **⚡ Modo Live (Iframe Interativo)**: Iframe em sandbox seguro (`allow-scripts allow-same-origin allow-forms allow-popups allow-modals`) para renderização direta da aplicação local em tempo real, com suporte nativo a cliques, digitação, WebSockets e HMR.
@@ -59,7 +59,7 @@ O serviço Lightpanda (`lightpanda-io/browser`, item 5 da Decisão acima) está 
 `docker-compose.yml`, não mais planejado — ambos os domínios de risco o alcançam via `engine="auto"`.
 
 **Sinal `url_is_internal_fallback`.** Quando `services/browser` substitui a URL pedida por um hostname
-Docker-interno (`novaai-studio-<session_id>`, `host.docker.internal`) porque o hostname original não resolve
+Docker-interno (`eltanix-<session_id>`, `host.docker.internal`) porque o hostname original não resolve
 de dentro do container, o retorno de `navigate` inclui `url_is_internal_fallback: true` + `original_url`.
 Sem esse sinal explícito, a URL substituída podia vazar como `src` de um `<iframe>` renderizado no
 navegador REAL do usuário (modo Live) — que não resolve nomes Docker-internos, resultando numa tela em
@@ -91,9 +91,9 @@ perdido" consultável via `GET /replays/{id}` → `410 Gone`, em vez de um `404`
 existiu". Um reaper periódico (`run_replay_purge_reaper`) remove do MinIO blobs órfãos cujo índice Redis
 já expirou, respeitando uma margem de 1h para não competir com um upload em andamento.
 
-**Validação SSRF compartilhada.** `novaai_studio.security.url_safety` é o módulo único consumido por
+**Validação SSRF compartilhada.** `eltanix.security.url_safety` é o módulo único consumido por
 `firecrawl/service.py` (scraping/crawling externo) e `agent/tools/browser.py` (allowlist de alvos locais
 do agente). `services/browser/app.py` mantém deliberadamente uma cópia sincronizada, não importada — o
-serviço roda isolado, sem o pacote `novaai_studio` instalado, para manter a menor superfície possível numa
+serviço roda isolado, sem o pacote `eltanix` instalado, para manter a menor superfície possível numa
 rede que já é a mais permissiva do sistema (ver docstring de `security/url_safety.py`).
 

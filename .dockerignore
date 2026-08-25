@@ -1,5 +1,5 @@
 .git
-.novaai_studio
+.eltanix
 **/node_modules
 **/.next
 **/.venv

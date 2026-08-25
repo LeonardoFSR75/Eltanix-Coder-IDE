@@ -8,16 +8,16 @@ import json
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
-from novaai_studio.analytics.ingestion import TrajectoryIngestor, sanitize_text
-from novaai_studio.analytics.models.classifier import TrajectoryClassifier, FailureCategory
-from novaai_studio.analytics.models.clustering import UnsupervisedClusterer, cosine_distance
-from novaai_studio.analytics.diagnostics.rca_engine import RCAEngine
-from novaai_studio.analytics.diagnostics.correction_generator import CorrectionProposalGenerator
+from eltanix.analytics.ingestion import TrajectoryIngestor, sanitize_text
+from eltanix.analytics.models.classifier import TrajectoryClassifier, FailureCategory
+from eltanix.analytics.models.clustering import UnsupervisedClusterer, cosine_distance
+from eltanix.analytics.diagnostics.rca_engine import RCAEngine
+from eltanix.analytics.diagnostics.correction_generator import CorrectionProposalGenerator
 
 
 def run_pipeline_demo():
     print("==========================================================================")
-    print("🤖 TESTE DA ENGINE DE MACHINE LEARNING E AUTO-DIAGNÓSTICO DO NOVAAI STUDIO")
+    print("🤖 TESTE DA ENGINE DE MACHINE LEARNING E AUTO-DIAGNÓSTICO DO ELTANIX CODER IDE")
     print("==========================================================================\n")
 
     # 1. Teste de Sanitização de Credenciais
@@ -52,7 +52,7 @@ def run_pipeline_demo():
         session_id=session_id,
         user_prompt=sanitized,
         steps=raw_steps,
-        project_slug="novaai-studio-code"
+        project_slug="eltanix-code"
     )
 
     print("2. 📊 INGESTÃO E EXTRAÇÃO DE MÉTRICAS DA TRAJETÓRIA:")

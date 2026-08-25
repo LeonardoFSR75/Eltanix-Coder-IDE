@@ -1,5 +1,5 @@
-# Casos de avaliação de qualidade do RAG — usado por `novaai-studio-eval-rag`
-# (`novaai_studio/evals/runner.py`). Cada caso testa se a busca híbrida (RRF)
+# Casos de avaliação de qualidade do RAG — usado por `eltanix-eval-rag`
+# (`eltanix/evals/runner.py`). Cada caso testa se a busca híbrida (RRF)
 # traz um resultado relevante nos primeiros `limit` hits.
 #
 # `expected_keywords`: substring (case-insensitive) procurada no conteúdo dos
@@ -9,18 +9,18 @@
 #
 # `source: context` exige `root` (caminho absoluto do workspace já indexado
 # via `POST /api/context/index` ou pela IDE) — os exemplos abaixo apontam
-# para o próprio backend do NovaAI Studio, ajuste para o seu ambiente.
+# para o próprio backend do Eltanix Coder IDE, ajuste para o seu ambiente.
 
 cases:
   - source: context
     query: "onde fica o registro de ferramentas do agente"
     expected_keywords: ["ToolRegistry"]
-    root: "C:/Users/leona/Documents/Projetos/SicoobitoCode/apps/api/src/novaai_studio"
+    root: "C:/Users/leona/Documents/Projetos/SicoobitoCode/apps/api/src/eltanix"
 
   - source: context
     query: "como funciona o Reciprocal Rank Fusion na busca híbrida"
     expected_keywords: ["RRF", "rank"]
-    root: "C:/Users/leona/Documents/Projetos/SicoobitoCode/apps/api/src/novaai_studio"
+    root: "C:/Users/leona/Documents/Projetos/SicoobitoCode/apps/api/src/eltanix"
 
   # Exemplos de documents/notes — precisam de um PDF/nota real já indexado no
   # ambiente para fazer sentido; ajuste a query e o expected_keywords para

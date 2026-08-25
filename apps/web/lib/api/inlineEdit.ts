@@ -27,7 +27,7 @@ export interface InlineEditResult {
   diff: string;
   changed_lines: number;
   // true quando a edição já foi escrita no arquivo (bateu numa regra de
-  // auto-aprovação de `.novaai_studio/approval_policy.yaml`) — nesse caso o
+  // auto-aprovação de `.eltanix/approval_policy.yaml`) — nesse caso o
   // frontend só recarrega o buffer, não chama writeFile de novo.
   applied: boolean;
   auto_approved_reason: string | null;

@@ -1,7 +1,7 @@
 {
   "installed": {
-    "novaai_studio.shadcn-radix-studio": {
-      "id": "novaai_studio.shadcn-radix-studio",
+    "eltanix.shadcn-radix-studio": {
+      "id": "eltanix.shadcn-radix-studio",
       "name": "Shadcn UI & Radix Component Registry",
       "publisher": "shadcn",
       "version": "1.4.0",
@@ -21,8 +21,8 @@
         "Acessibilidade WCAG AA via Radix Primitives"
       ]
     },
-    "novaai_studio.daisyui-theme-explorer": {
-      "id": "novaai_studio.daisyui-theme-explorer",
+    "eltanix.daisyui-theme-explorer": {
+      "id": "eltanix.daisyui-theme-explorer",
       "name": "DaisyUI & Tailwind Theme Explorer",
       "publisher": "saadeghi",
       "version": "4.12.10",
@@ -42,8 +42,8 @@
         "Preview interativo em tempo real"
       ]
     },
-    "novaai_studio.lucide-tabler-icons": {
-      "id": "novaai_studio.lucide-tabler-icons",
+    "eltanix.lucide-tabler-icons": {
+      "id": "eltanix.lucide-tabler-icons",
       "name": "Lucide & Tabler Icon Studio",
       "publisher": "lucide",
       "version": "0.460.0",
@@ -63,8 +63,8 @@
         "CDN de carregamento rápido para templates Flask/FastAPI"
       ]
     },
-    "novaai_studio.live-server-templates": {
-      "id": "novaai_studio.live-server-templates",
+    "eltanix.live-server-templates": {
+      "id": "eltanix.live-server-templates",
       "name": "Live Server & Hot-Reload para Templates",
       "publisher": "ritwickdey",
       "version": "5.7.9",
@@ -84,8 +84,8 @@
         "Suporte a templates Jinja e Alpine.js"
       ]
     },
-    "novaai_studio.chart-dataviz-studio": {
-      "id": "novaai_studio.chart-dataviz-studio",
+    "eltanix.chart-dataviz-studio": {
+      "id": "eltanix.chart-dataviz-studio",
       "name": "Chart.js & ApexCharts Data Viz Studio",
       "publisher": "chartjs",
       "version": "4.4.4",
@@ -105,8 +105,8 @@
         "Preview dinâmico com dados de teste"
       ]
     },
-    "novaai_studio.firecrawl-workflow-builder": {
-      "id": "novaai_studio.firecrawl-workflow-builder",
+    "eltanix.firecrawl-workflow-builder": {
+      "id": "eltanix.firecrawl-workflow-builder",
       "name": "Firecrawl Visual Workflow Builder (Open Agent Builder)",
       "publisher": "firecrawl",
       "version": "1.2.0",
@@ -126,8 +126,8 @@
         "Proteção Anti-SSRF integrada"
       ]
     },
-    "novaai_studio.llm-data-connectors": {
-      "id": "novaai_studio.llm-data-connectors",
+    "eltanix.llm-data-connectors": {
+      "id": "eltanix.llm-data-connectors",
       "name": "LLM Data Connectors (Firecrawl Connectors)",
       "publisher": "firecrawl",
       "version": "1.1.0",
@@ -147,10 +147,10 @@
         "Sincronização incremental periódica"
       ]
     },
-    "novaai_studio.mcp-marketplace-scanner": {
-      "id": "novaai_studio.mcp-marketplace-scanner",
+    "eltanix.mcp-marketplace-scanner": {
+      "id": "eltanix.mcp-marketplace-scanner",
       "name": "MCP Marketplace & Security Inspector",
-      "publisher": "novaai_studio",
+      "publisher": "eltanix",
       "version": "2.0.0",
       "description": "Gerenciador de servidores Model Context Protocol (MCP) com varredura contínua de segurança contra Tool Poisoning.",
       "category": "IA & Web Scraping",
@@ -160,7 +160,7 @@
       "isRecommended": true,
       "downloads": "310K",
       "rating": 4.96,
-      "upstream_id": "novaai_studio.mcp-inspector",
+      "upstream_id": "eltanix.mcp-inspector",
       "repository_url": "https://github.com/cisco-open/cisco-mcp-scanner",
       "features": [
         "Scan automatizado via cisco-mcp-scanner",
@@ -168,8 +168,8 @@
         "Classificação de risco de ferramentas (READ, WRITE, EXEC)"
       ]
     },
-    "novaai_studio.pgvector-semantic-studio": {
-      "id": "novaai_studio.pgvector-semantic-studio",
+    "eltanix.pgvector-semantic-studio": {
+      "id": "eltanix.pgvector-semantic-studio",
       "name": "pgvector & Semantic RAG Studio",
       "publisher": "postgres",
       "version": "2.5.0",
@@ -189,8 +189,8 @@
         "Visualização de scores Reciprocal Rank Fusion (RRF)"
       ]
     },
-    "novaai_studio.redis-commander": {
-      "id": "novaai_studio.redis-commander",
+    "eltanix.redis-commander": {
+      "id": "eltanix.redis-commander",
       "name": "Redis Commander & Cache Inspector",
       "publisher": "redis",
       "version": "3.1.0",
@@ -210,8 +210,8 @@
         "Inspeção de chaves e TTL em tempo real"
       ]
     },
-    "novaai_studio.minio-storage-explorer": {
-      "id": "novaai_studio.minio-storage-explorer",
+    "eltanix.minio-storage-explorer": {
+      "id": "eltanix.minio-storage-explorer",
       "name": "MinIO & S3 Object Storage Explorer",
       "publisher": "minio",
       "version": "2.2.0",
@@ -231,8 +231,8 @@
         "Geração de URLs assinadas seguras"
       ]
     },
-    "novaai_studio.sast-security-scanner": {
-      "id": "novaai_studio.sast-security-scanner",
+    "eltanix.sast-security-scanner": {
+      "id": "eltanix.sast-security-scanner",
       "name": "SAST Security Scanner (Semgrep & Bandit)",
       "publisher": "semgrep",
       "version": "1.85.0",
@@ -252,8 +252,8 @@
         "Auditoria automática de diffs do agente"
       ]
     },
-    "novaai_studio.dependency-cve-auditor": {
-      "id": "novaai_studio.dependency-cve-auditor",
+    "eltanix.dependency-cve-auditor": {
+      "id": "eltanix.dependency-cve-auditor",
       "name": "Dependency & License Auditor (Pip-Audit / AuditJS)",
       "publisher": "safety",
       "version": "2.4.0",
@@ -273,10 +273,10 @@
         "Relatórios de compatibilidade de licenças (GPL, MIT, Apache)"
       ]
     },
-    "novaai_studio.token-cost-profiler": {
-      "id": "novaai_studio.token-cost-profiler",
+    "eltanix.token-cost-profiler": {
+      "id": "eltanix.token-cost-profiler",
       "name": "Token Cost & Latency Profiler",
-      "publisher": "novaai_studio",
+      "publisher": "eltanix",
       "version": "2.1.0",
       "description": "Gráficos de telemetria de consumo de tokens, custo em USD por modelo e replay passo a passo do Flight Recorder.",
       "category": "Segurança & Auditoria",
@@ -286,16 +286,16 @@
       "isRecommended": true,
       "downloads": "190K",
       "rating": 4.93,
-      "upstream_id": "novaai_studio.flight-recorder",
-      "repository_url": "https://github.com/LeonardoFSR75/SicoobitoCode",
+      "upstream_id": "eltanix.flight-recorder",
+      "repository_url": "https://github.com/LeonardoFSR75/Eltanix",
       "features": [
         "Visualização de custos por modelo e sessão",
         "Replay cronológico de tool-calls",
         "Alertas de limite de orçamento (BudgetGuard)"
       ]
     },
-    "novaai_studio.playwright-visual-studio": {
-      "id": "novaai_studio.playwright-visual-studio",
+    "eltanix.playwright-visual-studio": {
+      "id": "eltanix.playwright-visual-studio",
       "name": "Playwright Visual E2E Studio",
       "publisher": "ms-playwright",
       "version": "1.48.0",
@@ -315,8 +315,8 @@
         "Relatórios de regressão visual"
       ]
     },
-    "novaai_studio.bruno-thunder-client": {
-      "id": "novaai_studio.bruno-thunder-client",
+    "eltanix.bruno-thunder-client": {
+      "id": "eltanix.bruno-thunder-client",
       "name": "Bruno & Thunder Client API Runner",
       "publisher": "usebruno",
       "version": "1.30.0",
@@ -336,8 +336,8 @@
         "Variáveis de ambiente isoladas"
       ]
     },
-    "novaai_studio.coverage-heatmap-viewer": {
-      "id": "novaai_studio.coverage-heatmap-viewer",
+    "eltanix.coverage-heatmap-viewer": {
+      "id": "eltanix.coverage-heatmap-viewer",
       "name": "Coverage Heatmap & Mutation Testing",
       "publisher": "coverage",
       "version": "1.6.0",
@@ -357,10 +357,10 @@
         "Cálculo de percentual de cobertura por módulo"
       ]
     },
-    "novaai_studio.graphify-3d-canvas": {
-      "id": "novaai_studio.graphify-3d-canvas",
+    "eltanix.graphify-3d-canvas": {
+      "id": "eltanix.graphify-3d-canvas",
       "name": "Graphify 3D Live Canvas",
-      "publisher": "novaai_studio",
+      "publisher": "eltanix",
       "version": "2.4.0",
       "description": "Visualizador de grafo de dependências e comunidades acoplado ao editor que se atualiza conforme arquivos são editados.",
       "category": "Segundo Cérebro & Arquitetura",
@@ -370,18 +370,18 @@
       "isRecommended": true,
       "downloads": "210K",
       "rating": 4.99,
-      "upstream_id": "novaai_studio.graphify",
-      "repository_url": "https://github.com/LeonardoFSR75/SicoobitoCode",
+      "upstream_id": "eltanix.graphify",
+      "repository_url": "https://github.com/LeonardoFSR75/Eltanix",
       "features": [
         "Visualização 2D/3D com física de clustering",
         "Navegação multi-hop e blast radius",
         "Sincronização com o cofre do Obsidian"
       ]
     },
-    "novaai_studio.adr-architecture-assistant": {
-      "id": "novaai_studio.adr-architecture-assistant",
+    "eltanix.adr-architecture-assistant": {
+      "id": "eltanix.adr-architecture-assistant",
       "name": "ADR Architecture Assistant",
-      "publisher": "novaai_studio",
+      "publisher": "eltanix",
       "version": "1.5.0",
       "description": "Assistente guiado para redigir, validar e catalogar Decisões Arquiteturais com templates padronizados.",
       "category": "Segundo Cérebro & Arquitetura",
@@ -391,18 +391,18 @@
       "isRecommended": true,
       "downloads": "140K",
       "rating": 4.92,
-      "upstream_id": "novaai_studio.adr-tools",
-      "repository_url": "https://github.com/LeonardoFSR75/SicoobitoCode",
+      "upstream_id": "eltanix.adr-tools",
+      "repository_url": "https://github.com/LeonardoFSR75/Eltanix",
       "features": [
         "Geração de ADRs com numeração automática",
         "Exportação para o índice de MOC do Obsidian",
         "Análise de impacto em componentes do grafo"
       ]
     },
-    "novaai_studio.git-smart-blame": {
-      "id": "novaai_studio.git-smart-blame",
+    "eltanix.git-smart-blame": {
+      "id": "eltanix.git-smart-blame",
       "name": "Git Smart Blame & Co-Change Matrix",
-      "publisher": "novaai_studio",
+      "publisher": "eltanix",
       "version": "2.0.0",
       "description": "Análise preditiva de acoplamento temporal e histórico semântico de commits por autor e símbolo.",
       "category": "Segundo Cérebro & Arquitetura",
@@ -412,8 +412,8 @@
       "isRecommended": true,
       "downloads": "560K",
       "rating": 4.95,
-      "upstream_id": "novaai_studio.git-intelligence",
-      "repository_url": "https://github.com/LeonardoFSR75/SicoobitoCode",
+      "upstream_id": "eltanix.git-intelligence",
+      "repository_url": "https://github.com/LeonardoFSR75/Eltanix",
       "features": [
         "Detecção de co-change (arquivos que mudam juntos)",
         "Blame contextual com autor e PR associado",
@@ -459,7 +459,7 @@
       "name": "Python Debugger",
       "publisher": "ms-python",
       "version": "2026.2.0",
-      "description": "Python Debugger extension using debugpy & NovaAI Studio container executor.",
+      "description": "Python Debugger extension using debugpy & Eltanix Coder IDE container executor.",
       "category": "LSP & Linguagens",
       "icon": "🐞",
       "installed": true,
@@ -558,26 +558,26 @@
     }
   },
   "enabled": {
-    "novaai_studio.shadcn-radix-studio": true,
-    "novaai_studio.daisyui-theme-explorer": true,
-    "novaai_studio.lucide-tabler-icons": true,
-    "novaai_studio.live-server-templates": true,
-    "novaai_studio.chart-dataviz-studio": true,
-    "novaai_studio.firecrawl-workflow-builder": true,
-    "novaai_studio.llm-data-connectors": true,
-    "novaai_studio.mcp-marketplace-scanner": true,
-    "novaai_studio.pgvector-semantic-studio": true,
-    "novaai_studio.redis-commander": true,
-    "novaai_studio.minio-storage-explorer": true,
-    "novaai_studio.sast-security-scanner": true,
-    "novaai_studio.dependency-cve-auditor": true,
-    "novaai_studio.token-cost-profiler": true,
-    "novaai_studio.playwright-visual-studio": true,
-    "novaai_studio.bruno-thunder-client": true,
-    "novaai_studio.coverage-heatmap-viewer": true,
-    "novaai_studio.graphify-3d-canvas": true,
-    "novaai_studio.adr-architecture-assistant": true,
-    "novaai_studio.git-smart-blame": true,
+    "eltanix.shadcn-radix-studio": true,
+    "eltanix.daisyui-theme-explorer": true,
+    "eltanix.lucide-tabler-icons": true,
+    "eltanix.live-server-templates": true,
+    "eltanix.chart-dataviz-studio": true,
+    "eltanix.firecrawl-workflow-builder": true,
+    "eltanix.llm-data-connectors": true,
+    "eltanix.mcp-marketplace-scanner": true,
+    "eltanix.pgvector-semantic-studio": true,
+    "eltanix.redis-commander": true,
+    "eltanix.minio-storage-explorer": true,
+    "eltanix.sast-security-scanner": true,
+    "eltanix.dependency-cve-auditor": true,
+    "eltanix.token-cost-profiler": true,
+    "eltanix.playwright-visual-studio": true,
+    "eltanix.bruno-thunder-client": true,
+    "eltanix.coverage-heatmap-viewer": true,
+    "eltanix.graphify-3d-canvas": true,
+    "eltanix.adr-architecture-assistant": true,
+    "eltanix.git-smart-blame": true,
     "meta.pyrefly": true,
     "ms-python.python": true,
     "ms-python.debugpy": true,

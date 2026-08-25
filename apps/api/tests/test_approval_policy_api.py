@@ -1,6 +1,6 @@
 """Rota da política de auto-aprovação — GET/PUT /api/agent/approval-policy.
 
-`.novaai_studio/approval_policy.yaml` já tinha editor de round-trip
+`.eltanix/approval_policy.yaml` já tinha editor de round-trip
 (`agent/approval_policy_editor.py`) sem rota nenhuma — este é o teste da
 ligação (agent/approval_policy_config.py::load_approval_policy já tem
 cobertura própria em test_approval_policy_config.py).
@@ -13,11 +13,11 @@ import os
 import pytest
 from fastapi.testclient import TestClient
 
-os.environ["NOVAAI_STUDIO_API_KEY"] = "chave-de-teste"
+os.environ["ELTANIX_API_KEY"] = "chave-de-teste"
 os.environ["REDIS_URL"] = "redis://localhost:65533/0"
 
-from novaai_studio.config import get_settings
-from novaai_studio.main import create_app
+from eltanix.config import get_settings
+from eltanix.main import create_app
 
 AUTH = {"Authorization": "Bearer chave-de-teste"}
 

@@ -5,9 +5,9 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, MagicMock
 import pytest
 
-from novaai_studio.agent.tools.base import ToolContext
-from novaai_studio.agent.tools.browser import browser_action
-from novaai_studio.browser.client import BrowserClient, BrowserConfig
+from eltanix.agent.tools.base import ToolContext
+from eltanix.agent.tools.browser import browser_action
+from eltanix.browser.client import BrowserClient, BrowserConfig
 
 
 @pytest.fixture
@@ -17,7 +17,7 @@ def mock_browser_client():
         return_value={
             "ok": True,
             "url": "http://localhost:5000",
-            "title": "NovaAI Studio App",
+            "title": "Eltanix Coder IDE App",
             "status": 200,
             "engine_used": "lightpanda",
             "duration_ms": 25,

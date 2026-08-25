@@ -42,7 +42,7 @@ interface ProjectContextType {
 }
 
 const Ctx = createContext<ProjectContextType | undefined>(undefined);
-const STORAGE_KEY = "novaai_studio_current_project";
+const STORAGE_KEY = "eltanix_current_project";
 
 export function ProjectProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();

@@ -1,4 +1,4 @@
-# Arquitetura — NovaAI Studio
+# Arquitetura — Eltanix Coder IDE
 
 ## Visão Geral
 
@@ -89,7 +89,7 @@
 - **Emulador de Dispositivos**: Presets responsivos com moldura de Desktop, Laptop, Tablet e Mobile.
 
 ### 5. Catálogo de Agent Skills & Auto-Aprimoramento
-- Skills declarativas em `.agents/agent-skills/` e `.novaai_studio/skills/` com padrão aberto `SKILL.md`.
+- Skills declarativas em `.agents/agent-skills/` e `.eltanix/skills/` com padrão aberto `SKILL.md`.
 - Conhecimento especializado para WordPress moderno (Gutenberg, REST API, Performance), FastAPI, Playwright e Firecrawl.
 - Ferramentas `list_skills`, `get_skill` e `propose_skill` para descoberta e evolução autônoma de convenções técnicas.
 

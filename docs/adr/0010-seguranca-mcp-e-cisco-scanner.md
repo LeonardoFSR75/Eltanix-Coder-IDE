@@ -4,12 +4,12 @@
 
 ## Contexto
 
-A plataforma NovaAI Studio suporta o protocolo aberto Model Context Protocol (MCP) para conectar servidores de ferramentas externos (via processos `stdio` ou requisições HTTP). Como servidores MCP externos podem ser mantidos por terceiros ou expor ações com potencial de alteração do workspace, é indispensável estabelecer um modelo estrito de segurança, auditoria e classificação de risco para evitar injeções de prompt indiretas (*Prompt Injection*), exfiltração de dados ou chamadas maliciosas.
+A plataforma Eltanix Coder IDE suporta o protocolo aberto Model Context Protocol (MCP) para conectar servidores de ferramentas externos (via processos `stdio` ou requisições HTTP). Como servidores MCP externos podem ser mantidos por terceiros ou expor ações com potencial de alteração do workspace, é indispensável estabelecer um modelo estrito de segurança, auditoria e classificação de risco para evitar injeções de prompt indiretas (*Prompt Injection*), exfiltração de dados ou chamadas maliciosas.
 
 ## Decisão
 
 1. **Varredura Preventiva com Cisco AI Defense Scanner**:
-   - Todo servidor MCP cadastrado é submetido à varredura estática e dinâmica pelo módulo `novaai_studio.mcp.scanner` (utilizando analisadores YARA, regras estáticas e motores *LLM-as-a-Judge*).
+   - Todo servidor MCP cadastrado é submetido à varredura estática e dinâmica pelo módulo `eltanix.mcp.scanner` (utilizando analisadores YARA, regras estáticas e motores *LLM-as-a-Judge*).
    - Servidores ou ferramentas marcados com severidade `high` ou `critical` são automaticamente desativados e bloqueados de execução.
 
 2. **Atribuição Padrão de RiskClass**:

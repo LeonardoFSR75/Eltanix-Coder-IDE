@@ -14,6 +14,6 @@ Esta skill mestra gerencia o ciclo de vida de soluções baseadas em Modelos de 
 
 ## Princípios de Integração de IA
 
-1. **Camada Única de Roteamento**: Centralizar requisições a LLMs em uma única fachada/router (`novaai_studio.router`).
+1. **Camada Única de Roteamento**: Centralizar requisições a LLMs em uma única fachada/router (`eltanix.router`).
 2. **Contexto Relevante e Denso**: Maximizar a precisão da recuperação antes de injetar informações no prompt.
 3. **Resiliência e Fallback**: Prever timeouts, rate limits e fallback transparente entre provedores de modelos.

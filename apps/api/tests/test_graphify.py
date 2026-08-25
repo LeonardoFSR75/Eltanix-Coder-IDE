@@ -4,15 +4,15 @@ import pytest
 from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from novaai_studio.graphify.api.router import _derive_workspace
-from novaai_studio.graphify.engine import MAX_MULTI_WORKSPACE_FANOUT, GraphifyEngine
-from novaai_studio.graphify.pipeline.l1_wikilinks import (
+from eltanix.graphify.api.router import _derive_workspace
+from eltanix.graphify.engine import MAX_MULTI_WORKSPACE_FANOUT, GraphifyEngine
+from eltanix.graphify.pipeline.l1_wikilinks import (
     extract_python_imports,
     extract_tags,
     extract_wikilinks,
 )
-from novaai_studio.graphify.schema import GraphEdgeCreate, GraphNodeCreate
-from novaai_studio.graphify.store import GraphStore
+from eltanix.graphify.schema import GraphEdgeCreate, GraphNodeCreate
+from eltanix.graphify.store import GraphStore
 
 
 def test_derive_workspace_defaults_to_project():
@@ -20,7 +20,7 @@ def test_derive_workspace_defaults_to_project():
 
 
 def test_derive_workspace_defaults_when_project_missing():
-    assert _derive_workspace({}) == "NovaAI Studio"
+    assert _derive_workspace({}) == "Eltanix Coder IDE"
 
 
 def test_derive_workspace_accepts_matching_workspace():
@@ -46,11 +46,11 @@ def test_extract_tags():
 
 
 def test_extract_python_imports():
-    code = "import os\nfrom fastapi import FastAPI\nimport novaai_studio.db"
+    code = "import os\nfrom fastapi import FastAPI\nimport eltanix.db"
     imports = extract_python_imports(code)
     assert "os" in imports
     assert "fastapi" in imports
-    assert "novaai_studio" in imports
+    assert "eltanix" in imports
 
 
 async def test_graph_store_crud(pg_session: AsyncSession):

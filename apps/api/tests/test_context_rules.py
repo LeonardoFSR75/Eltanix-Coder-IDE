@@ -3,14 +3,14 @@ estilo `.cursor/rules`)."""
 
 from __future__ import annotations
 
-from novaai_studio.agent.context_rules import (
+from eltanix.agent.context_rules import (
     ContextRule,
     ContextRulesConfig,
     build_context_rules_prompt,
     match_context_rules,
 )
-from novaai_studio.agent.context_rules_config import load_context_rules
-from novaai_studio.agent.runner import _load_context_rules_prompt
+from eltanix.agent.context_rules_config import load_context_rules
+from eltanix.agent.runner import _load_context_rules_prompt
 
 
 class TestMatchContextRules:
@@ -22,7 +22,7 @@ class TestMatchContextRules:
         regra = ContextRule(glob="apps/api/**/*.py", instructions="Use Pydantic v2.")
         config = ContextRulesConfig(rules=[regra])
         resultado = match_context_rules(
-            config, focus_files=["apps/api/src/novaai_studio/main.py"], focus_folder=None
+            config, focus_files=["apps/api/src/eltanix/main.py"], focus_folder=None
         )
         assert resultado == [regra]
 
@@ -36,7 +36,7 @@ class TestMatchContextRules:
         regra = ContextRule(glob="apps/web/**", instructions="Use Tailwind.")
         config = ContextRulesConfig(rules=[regra])
         resultado = match_context_rules(
-            config, focus_files=["apps/api/src/novaai_studio/main.py"], focus_folder=None
+            config, focus_files=["apps/api/src/eltanix/main.py"], focus_folder=None
         )
         assert resultado == []
 
@@ -44,7 +44,7 @@ class TestMatchContextRules:
         regra = ContextRule(glob="apps/api/**/*.py", instructions="x")
         config = ContextRulesConfig(rules=[regra])
         resultado = match_context_rules(
-            config, focus_files=["apps\\api\\src\\novaai_studio\\main.py"], focus_folder=None
+            config, focus_files=["apps\\api\\src\\eltanix\\main.py"], focus_folder=None
         )
         assert resultado == [regra]
 
@@ -97,8 +97,8 @@ class TestLoadContextRules:
         assert config == ContextRulesConfig()
 
     def test_reads_valid_yaml(self, tmp_path):
-        (tmp_path / ".novaai_studio").mkdir()
-        (tmp_path / ".novaai_studio" / "context_rules.yaml").write_text(
+        (tmp_path / ".eltanix").mkdir()
+        (tmp_path / ".eltanix" / "context_rules.yaml").write_text(
             "version: 1\nrules:\n  - glob: apps/api/**\n    instructions: use pydantic v2\n",
             encoding="utf-8",
         )
@@ -108,15 +108,15 @@ class TestLoadContextRules:
         assert config.rules[0].instructions == "use pydantic v2"
 
     def test_malformed_yaml_degrades_to_empty_config(self, tmp_path):
-        (tmp_path / ".novaai_studio").mkdir()
-        (tmp_path / ".novaai_studio" / "context_rules.yaml").write_text(
+        (tmp_path / ".eltanix").mkdir()
+        (tmp_path / ".eltanix" / "context_rules.yaml").write_text(
             "rules: [glob: sem fechar", encoding="utf-8"
         )
         assert load_context_rules(tmp_path) == ContextRulesConfig()
 
     def test_invalid_schema_degrades_to_empty_config(self, tmp_path):
-        (tmp_path / ".novaai_studio").mkdir()
-        (tmp_path / ".novaai_studio" / "context_rules.yaml").write_text(
+        (tmp_path / ".eltanix").mkdir()
+        (tmp_path / ".eltanix" / "context_rules.yaml").write_text(
             "rules:\n  - instructions: falta o glob\n", encoding="utf-8"
         )
         assert load_context_rules(tmp_path) == ContextRulesConfig()
@@ -134,8 +134,8 @@ class TestLoadContextRulesPrompt:
         )
 
     def test_matching_rule_renders_prompt(self, tmp_path):
-        (tmp_path / ".novaai_studio").mkdir()
-        (tmp_path / ".novaai_studio" / "context_rules.yaml").write_text(
+        (tmp_path / ".eltanix").mkdir()
+        (tmp_path / ".eltanix" / "context_rules.yaml").write_text(
             "rules:\n  - glob: 'app.py'\n    instructions: sempre use type hints\n",
             encoding="utf-8",
         )
@@ -148,8 +148,8 @@ class TestLoadContextRulesPrompt:
         assert "sempre use type hints" in resultado
 
     def test_non_matching_rule_returns_none(self, tmp_path):
-        (tmp_path / ".novaai_studio").mkdir()
-        (tmp_path / ".novaai_studio" / "context_rules.yaml").write_text(
+        (tmp_path / ".eltanix").mkdir()
+        (tmp_path / ".eltanix" / "context_rules.yaml").write_text(
             "rules:\n  - glob: 'apps/web/**'\n    instructions: use Tailwind\n",
             encoding="utf-8",
         )

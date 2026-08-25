@@ -11,8 +11,8 @@ from typing import Any
 
 import pytest
 
-from novaai_studio.agent.coordinator import AgentCoordinator
-from novaai_studio.agent.headless import run_headless_burst
+from eltanix.agent.coordinator import AgentCoordinator
+from eltanix.agent.headless import run_headless_burst
 
 
 @dataclass

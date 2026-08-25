@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-from novaai_studio.router.pricing import PriceTable, Usage
+from eltanix.router.pricing import PriceTable, Usage
 
 
 def test_local_models_cost_nothing(prices):

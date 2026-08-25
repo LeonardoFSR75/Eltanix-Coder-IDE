@@ -32,8 +32,8 @@ export function TopMenuBar({
 
   const activeFilename = active ? active.split("/").pop() : null;
   const windowTitle = activeFilename
-    ? `NovaAI Studio - Antigravity IDE - ${activeFilename}`
-    : `NovaAI Studio - Antigravity IDE ${project ? `(${project})` : ""}`;
+    ? `Eltanix Coder IDE - Antigravity IDE - ${activeFilename}`
+    : `Eltanix Coder IDE - Antigravity IDE ${project ? `(${project})` : ""}`;
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -241,7 +241,7 @@ export function TopMenuBar({
           {activeMenu === "ajuda" && (
             <div className="top-menu-dropdown">
               <button type="button" onClick={() => handleAction(() => window.open("/docs", "_blank"))}>
-                <span>Documentação do NovaAI Studio</span>
+                <span>Documentação do Eltanix Coder IDE</span>
               </button>
               <button type="button" onClick={() => handleAction(() => onOpenCommandPalette?.())}>
                 <span>Mostrar Todos os Comandos</span>

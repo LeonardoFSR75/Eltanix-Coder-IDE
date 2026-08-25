@@ -6,11 +6,11 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from novaai_studio.analytics.diagnostics.correction_generator import CorrectionProposalGenerator
-from novaai_studio.analytics.diagnostics.rca_engine import RCAEngine
-from novaai_studio.analytics.ingestion import TrajectoryIngestor, sanitize_text
-from novaai_studio.analytics.models.classifier import FailureCategory, TrajectoryClassifier
-from novaai_studio.analytics.models.clustering import UnsupervisedClusterer, cosine_distance
+from eltanix.analytics.diagnostics.correction_generator import CorrectionProposalGenerator
+from eltanix.analytics.diagnostics.rca_engine import RCAEngine
+from eltanix.analytics.ingestion import TrajectoryIngestor, sanitize_text
+from eltanix.analytics.models.classifier import FailureCategory, TrajectoryClassifier
+from eltanix.analytics.models.clustering import UnsupervisedClusterer, cosine_distance
 
 
 def test_sanitize_text_credentials() -> None:
@@ -115,7 +115,7 @@ async def test_rca_and_proposal_generation() -> None:
 
 @pytest.mark.asyncio
 async def test_analytics_batch_worker(monkeypatch: pytest.MonkeyPatch) -> None:
-    from novaai_studio.analytics.worker import AnalyticsBatchWorker
+    from eltanix.analytics.worker import AnalyticsBatchWorker
 
     mock_session = AsyncMock()
     mock_res = MagicMock()
@@ -130,7 +130,7 @@ async def test_analytics_batch_worker(monkeypatch: pytest.MonkeyPatch) -> None:
             pass
 
     monkeypatch.setattr(
-        "novaai_studio.analytics.worker.session_scope", lambda: DummyAsyncContextManager()
+        "eltanix.analytics.worker.session_scope", lambda: DummyAsyncContextManager()
     )
 
     mock_router = MagicMock()

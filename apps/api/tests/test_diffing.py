@@ -7,9 +7,9 @@ from __future__ import annotations
 
 import pytest
 
-from novaai_studio.agent.tools import ToolContext
-from novaai_studio.agent.tools.diffing import compute_proposed_diff
-from novaai_studio.workspace.fs import WorkspaceFS
+from eltanix.agent.tools import ToolContext
+from eltanix.agent.tools.diffing import compute_proposed_diff
+from eltanix.workspace.fs import WorkspaceFS
 
 
 @pytest.fixture

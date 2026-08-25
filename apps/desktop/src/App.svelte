@@ -18,9 +18,9 @@
   import { listProjects, getProjectSummary, type ProjectRecord } from "./lib/api/projects";
   import { hasAuthToken, onUnauthorized } from "./lib/client";
 
-  const STORAGE_KEY = "novaai_studio_current_project";
+  const STORAGE_KEY = "eltanix_current_project";
 
-  let currentProject = $state("novaai-studio-code");
+  let currentProject = $state("eltanix-code");
   let projects = $state<{ slug: string; name: string }[]>([]);
   let profile = $state("auto");
 
@@ -41,7 +41,7 @@
   ]);
   let activeTabPath = $state("apps/desktop/src/App.svelte");
   let fileContents = $state<Record<string, string>>({
-    "apps/desktop/src/App.svelte": `<!-- NovaAI Studio Lite — Svelte 5 Agentic IDE -->\n<script lang="ts">\n  console.log("NovaAI Studio Lite pronto!");\n<\/script>`,
+    "apps/desktop/src/App.svelte": `<!-- Eltanix Coder IDE Lite — Svelte 5 Agentic IDE -->\n<script lang="ts">\n  console.log("Eltanix Coder IDE Lite pronto!");\n<\/script>`,
   });
 
   let pendingAgentDiff = $state<{

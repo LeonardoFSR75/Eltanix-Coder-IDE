@@ -71,7 +71,7 @@ const CATEGORIAS: { id: CategoriaId; label: string; enabled: boolean }[] = [
   { id: "tools", label: "Ferramentas", enabled: true },
 ];
 
-const INSTRUCTIONS_PATH = ".novaai_studio/instructions.md";
+const INSTRUCTIONS_PATH = ".eltanix/instructions.md";
 
 export function CustomizationsPopover({
   anchorRef,
@@ -558,7 +558,7 @@ export function CustomizationsPopover({
                 <p className="customizations-item-desc" style={{ marginBottom: 8 }}>
                   Instruções extras injetadas no agente só quando o arquivo/pasta em foco da
                   sessão bate no glob (estilo <code>.cursor/rules</code>). Avaliado uma vez no
-                  início da sessão. Guardado em <code>.novaai_studio/context_rules.yaml</code>.
+                  início da sessão. Guardado em <code>.eltanix/context_rules.yaml</code>.
                 </p>
                 {contextRulesErro && <PanelState kind="error" message={contextRulesErro} />}
                 {contextRulesMsg && (
@@ -808,7 +808,7 @@ export function CustomizationsPopover({
                 <p className="customizations-item-desc" style={{ marginBottom: 8 }}>
                   Regras opt-in que dispensam a pausa de aprovação para ações WRITE/EXEC — restritas ao
                   que descrevem explicitamente, qualquer ambiguidade continua pausando como sempre.
-                  Guardado em <code>.novaai_studio/approval_policy.yaml</code>.
+                  Guardado em <code>.eltanix/approval_policy.yaml</code>.
                 </p>
                 {approvalErro && <PanelState kind="error" message={approvalErro} />}
                 {approvalMsg && (

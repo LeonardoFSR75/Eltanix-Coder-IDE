@@ -1,7 +1,7 @@
-# 📘 Dossiê Técnico Unificado Completo & Plano Estratégico — NovaAI Studio
+# 📘 Dossiê Técnico Unificado Completo & Plano Estratégico — Eltanix Coder IDE
 
 **Data da Avaliação**: 19 de Agosto de 2026  
-**Repositório**: [`NovaAI Studio`](file:///c:/Users/leona/Documents/Projetos/SicoobitoCode)  
+**Repositório**: [`Eltanix Coder IDE`](file:///c:/Users/leona/Documents/Projetos/SicoobitoCode)  
 **Veredito Global**: **9.6 / 10 — Nível de Excelência Enterprise & Local-First**  
 **Status da Suíte de Testes**:  
 - **Backend (FastAPI / Pytest)**: ✅ **830 Aprovados** | 47 Skipped | 1 Teste E2E HTTP (`test_git_config_api_routes`)  
@@ -32,11 +32,11 @@
 
 ## 🌐 1. Visão Geral & Princípio Arquitetural Mestre
 
-O **NovaAI Studio** é uma plataforma **local-first de codificação agêntica e IDE web/desktop**. Trata-se de um ambiente integrado que combina o poder de um editor moderno (estilo VS Code / Monaco), chat agêntico autônomo com LangGraph, motor de RAG multi-formato universal, navegador de desenvolvimento integrado (Live + Headless CDP) e um gateway de LLM resiliência-first com contabilidade rigorosa de custos.
+O **Eltanix Coder IDE** é uma plataforma **local-first de codificação agêntica e IDE web/desktop**. Trata-se de um ambiente integrado que combina o poder de um editor moderno (estilo VS Code / Monaco), chat agêntico autônomo com LangGraph, motor de RAG multi-formato universal, navegador de desenvolvimento integrado (Live + Headless CDP) e um gateway de LLM resiliência-first com contabilidade rigorosa de custos.
 
 ### Princípio Arquitetural Mestre
 > **"Nenhum módulo fala com um provedor de LLM diretamente."**  
-> Toda e qualquer chamada de inteligência artificial ou embeddings passa obrigatoriamente pelo **`RouterEngine`** (`novaai_studio.router`), garantindo desacoplamento total, fallback transparente entre modelos, circuit breaker e controle fino de orçamento ([ADR 0001](file:///c:/Users/leona/Documents/Projetos/SicoobitoCode/docs/adr/0001-camada-unica-de-llm.md)).
+> Toda e qualquer chamada de inteligência artificial ou embeddings passa obrigatoriamente pelo **`RouterEngine`** (`eltanix.router`), garantindo desacoplamento total, fallback transparente entre modelos, circuit breaker e controle fino de orçamento ([ADR 0001](file:///c:/Users/leona/Documents/Projetos/SicoobitoCode/docs/adr/0001-camada-unica-de-llm.md)).
 
 ---
 
@@ -44,17 +44,17 @@ O **NovaAI Studio** é uma plataforma **local-first de codificação agêntica e
 
 | ADR | Título | Módulo Responsável | Status | Descrição & Mecanismos de Controle |
 |---|---|---|---|---|
-| **ADR 0001** | Camada Única de LLM | `novaai_studio.router` | ✅ Conforme | Ponto de saída único para LLMs/Embeddings (Ollama, Azure, Databricks, Anthropic, Groq, OpenAI). |
+| **ADR 0001** | Camada Única de LLM | `eltanix.router` | ✅ Conforme | Ponto de saída único para LLMs/Embeddings (Ollama, Azure, Databricks, Anthropic, Groq, OpenAI). |
 | **ADR 0002** | Executor Isolado | `services/executor` | ✅ Conforme | Execução de comandos desacoplada da API principal, via container isolado, não-root, `cap_drop: ALL`, autenticado por `EXECUTOR_TOKEN`. |
 | **ADR 0003** | Grafo de Conhecimento (Graphify) | `graphify-out/obsidian` | ✅ Conforme | Grafo de dependências e vault Obsidian sincronizado para contexto em $N$-hops e MOCs de arquitetura. |
 | **ADR 0004** | Orquestração Multiagente | `agent/coordinator.py` | ✅ Conforme | Malha de subagentes com despacho, inbox assíncrono e controle humano via `interrupt()`. |
-| **ADR 0005** | Login Obrigatório & Sessão | `api/deps.py` (`AuthDep`) | ✅ Conforme | Todas as rotas protegidas por cookie `httpOnly` ou `NOVAAI_STUDIO_API_KEY`. |
-| **ADR 0006** | Integração Firecrawl & Anti-SSRF | `novaai_studio.firecrawl` | ✅ Conforme | Web scraping em Markdown, Deep Research citado e guardião anti-SSRF bloqueando IP privado/cloud metadata. |
+| **ADR 0005** | Login Obrigatório & Sessão | `api/deps.py` (`AuthDep`) | ✅ Conforme | Todas as rotas protegidas por cookie `httpOnly` ou `ELTANIX_API_KEY`. |
+| **ADR 0006** | Integração Firecrawl & Anti-SSRF | `eltanix.firecrawl` | ✅ Conforme | Web scraping em Markdown, Deep Research citado e guardião anti-SSRF bloqueando IP privado/cloud metadata. |
 | **ADR 0007** | Navegador Interno Híbrido | `services/browser` | ✅ Conforme | Suporte duplo a **Live Iframe** (HMR/dev) e **Headless CDP** (Chromium / Lightpanda) com emulador de telas. |
-| **ADR 0008** | RAG Multi-Formato Universal | `novaai_studio.documents` | ✅ Conforme | Extração Rust via `firecrawl-anydoc` (motor `calamine` para Excel/ODS) + `pdf-inspector` para PDFs. |
-| **ADR 0009** | 6 Suítes de Extensões & Open VSX | `novaai_studio.extensions` | ✅ Conforme | Ecossistema de extensões divididas em 6 suítes nativas com auto-update do Open VSX Registry. |
-| **ADR 0010** | Segurança de Servidores MCP & Cisco Scanner | `novaai_studio.mcp.scanner` | ✅ Conforme | Varredura estática/dinâmica YARA + LLM-as-a-judge e atribuição de RiskClass.WRITE por padrão em tools MCP. |
-| **ADR 0011** | Sanitização Dinâmica de Prompts & PII | `novaai_studio.security.pii_redactor` | ✅ Conforme | Mascaramento automático preventivo de CPFs, cartões, e-mails e API keys antes do envio para LLMs em nuvem pública. |
+| **ADR 0008** | RAG Multi-Formato Universal | `eltanix.documents` | ✅ Conforme | Extração Rust via `firecrawl-anydoc` (motor `calamine` para Excel/ODS) + `pdf-inspector` para PDFs. |
+| **ADR 0009** | 6 Suítes de Extensões & Open VSX | `eltanix.extensions` | ✅ Conforme | Ecossistema de extensões divididas em 6 suítes nativas com auto-update do Open VSX Registry. |
+| **ADR 0010** | Segurança de Servidores MCP & Cisco Scanner | `eltanix.mcp.scanner` | ✅ Conforme | Varredura estática/dinâmica YARA + LLM-as-a-judge e atribuição de RiskClass.WRITE por padrão em tools MCP. |
+| **ADR 0011** | Sanitização Dinâmica de Prompts & PII | `eltanix.security.pii_redactor` | ✅ Conforme | Mascaramento automático preventivo de CPFs, cartões, e-mails e API keys antes do envio para LLMs em nuvem pública. |
 
 ---
 
@@ -107,7 +107,7 @@ O **NovaAI Studio** é uma plataforma **local-first de codificação agêntica e
 
 ## 🔬 4. Detalhamento do Funcionamento dos 7 Módulos Principais
 
-### 4.1. Router Engine (`novaai_studio.router` — ADR 0001)
+### 4.1. Router Engine (`eltanix.router` — ADR 0001)
 
 ```
 Requisição de LLM ──► [RouterEngine] ──► Consulta Redis (Cache Exato/Semântico)
@@ -127,7 +127,7 @@ Requisição de LLM ──► [RouterEngine] ──► Consulta Redis (Cache Exa
 
 ---
 
-### 4.2. Agente Autônomo LangGraph & Segurança (`novaai_studio.agent` — ADR 0002 & 0004)
+### 4.2. Agente Autônomo LangGraph & Segurança (`eltanix.agent` — ADR 0002 & 0004)
 
 ```
 [Prompt do Usuário] ──► [Nó Think (LLM)] ──► Escolhe Ferramenta
@@ -157,7 +157,7 @@ Requisição de LLM ──► [RouterEngine] ──► Consulta Redis (Cache Exa
 
 ---
 
-### 4.3. Motor de Ingestão Multi-Formato & Quad-RAG (`novaai_studio.documents` — ADR 0008)
+### 4.3. Motor de Ingestão Multi-Formato & Quad-RAG (`eltanix.documents` — ADR 0008)
 
 ```
                                  ┌───────────────────────────────┐
@@ -173,7 +173,7 @@ Rust AnyDoc/Calamine)    Wikilinks [[nota]])              via Tree-sitter)      
 
 ---
 
-### 4.4. Web Scraping, Deep Research & Anti-SSRF (`novaai_studio.firecrawl` — ADR 0006)
+### 4.4. Web Scraping, Deep Research & Anti-SSRF (`eltanix.firecrawl` — ADR 0006)
 
 - **`web_scrape` & `web_search`**: Extração de conteúdo limpo sem scripts nem anúncios em formato Markdown.
 - **`deep_research`**: Executa um ciclo autônomo multi-etapa de pesquisa com citações numéricas (`[[1]]`, `[[2]]`).
@@ -195,7 +195,7 @@ Rust AnyDoc/Calamine)    Wikilinks [[nota]])              via Tree-sitter)      
 
 ---
 
-### 4.7. ML Analytics & RCA Engine (`novaai_studio.analytics`)
+### 4.7. ML Analytics & RCA Engine (`eltanix.analytics`)
 
 - **Clustering K-Means**: Identifica padrões de erros e categorias de intenções dos usuários.
 - **Engine RCA (`RCAEngine`)**: Diagnostica automaticamente causas raízes de falhas entre Sandbox, Prompt, Tool, RAG ou Router.
@@ -230,7 +230,7 @@ Rust AnyDoc/Calamine)    Wikilinks [[nota]])              via Tree-sitter)      
 
 ### Matriz Comparativa de Mercado
 
-| Recurso / Capacidade | **NovaAI Studio** | Cursor / VS Code | Continue.dev | Devin / Replit Agent |
+| Recurso / Capacidade | **Eltanix Coder IDE** | Cursor / VS Code | Continue.dev | Devin / Replit Agent |
 |---|---|---|---|---|
 | **Arquitetura 100% Local-First** | ✅ **Sim** | ❌ Não (Nuvem) | ⚠️ Parcial | ❌ Não (Nuvem) |
 | **Parsing RAG de Planilhas/PDFs em Rust** | ✅ **Sim (<5ms)** | ❌ Não | ❌ Não | ❌ Não |
@@ -244,7 +244,7 @@ Rust AnyDoc/Calamine)    Wikilinks [[nota]])              via Tree-sitter)      
 
 ## 🗄️ 7. Modelagem ER do Banco de Dados & Schemas Persistidos
 
-O NovaAI Studio adota um modelo de dados enxuto e derivado no PostgreSQL em [`models.py`](file:///c:/Users/leona/Documents/Projetos/SicoobitoCode/apps/api/src/novaai_studio/db/models.py):
+O Eltanix Coder IDE adota um modelo de dados enxuto e derivado no PostgreSQL em [`models.py`](file:///c:/Users/leona/Documents/Projetos/SicoobitoCode/apps/api/src/eltanix/db/models.py):
 
 ```
 ┌──────────────────────────────────────┐          ┌──────────────────────────────────────┐
@@ -340,7 +340,7 @@ O arquivo [`docker-compose.yml`](file:///c:/Users/leona/Documents/Projetos/Sicoo
 
 ```
  ┌────────────────────────────────────────────────────────────────────────────────────────┐
- │ Rede `novaai_studio_net` (Rede de Aplicação Principal)                                    │
+ │ Rede `eltanix_net` (Rede de Aplicação Principal)                                    │
  │ ┌──────────────┐   ┌──────────────┐   ┌──────────────┐   ┌──────────────┐              │
  │ │  web (5400)  ├──►│  api (5401)  ├──►│  postgres    │   │  redis       │              │
  │ └──────────────┘   └──────┬───────┘   └──────────────┘   └──────────────┘              │
@@ -351,7 +351,7 @@ O arquivo [`docker-compose.yml`](file:///c:/Users/leona/Documents/Projetos/Sicoo
  │ Rede `browser_net` (Rede de Sandbox & Automação Isolada)                              │
  │ ┌────────────────────────────────────────┐   ┌───────────────────────────────────────┐ │
  │ │ executor (Sandbox Comandos SO)         │   │ browser (Chromium / Lightpanda CDP)   │ │
- │ │ cap_drop: ALL · read_only: true        │   │ Sem acesso à rede `novaai_studio_net`     │ │
+ │ │ cap_drop: ALL · read_only: true        │   │ Sem acesso à rede `eltanix_net`     │ │
  │ └────────────────────────────────────────┘   └───────────────────────────────────────┘ │
  └────────────────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -360,7 +360,7 @@ O arquivo [`docker-compose.yml`](file:///c:/Users/leona/Documents/Projetos/Sicoo
 
 ## 🤖 10. Pipeline de Machine Learning & Diagnostic RCA
 
-O módulo `novaai_studio.analytics` oferece diagnósticos de auto-causa raiz:
+O módulo `eltanix.analytics` oferece diagnósticos de auto-causa raiz:
 
 ```
 [Trajetória de Erro do Agente] ──► [features.py (Matriz TF-IDF)] ──► [K-Means (Scikit-Learn)] ──► [RCAEngine]
@@ -370,7 +370,7 @@ O módulo `novaai_studio.analytics` oferece diagnósticos de auto-causa raiz:
 
 ## 🔌 11. Ecossistema das 6 Suítes de Extensões & Auto-Update Open VSX (ADR 0009)
 
-Localizado em [`novaai_studio.extensions`](file:///c:/Users/leona/Documents/Projetos/SicoobitoCode/apps/api/src/novaai_studio/extensions/catalog.py), o NovaAI Studio implementa um gerenciador dinâmico de extensões agrupadas em **6 Suítes Nativas**:
+Localizado em [`eltanix.extensions`](file:///c:/Users/leona/Documents/Projetos/SicoobitoCode/apps/api/src/eltanix/extensions/catalog.py), o Eltanix Coder IDE implementa um gerenciador dinâmico de extensões agrupadas em **6 Suítes Nativas**:
 
 1. **Frontend & Visual**: Shadcn, DaisyUI, Lucide Icons, Live Server, Chart.js Preview.
 2. **IA & Web Scraping**: Firecrawl Workflow Builder, Data Connectors, MCP Marketplace.
@@ -380,14 +380,14 @@ Localizado em [`novaai_studio.extensions`](file:///c:/Users/leona/Documents/Proj
 6. **Segundo Cérebro & Arquitetura**: Graphify Live Canvas, ADR Assistant, Git Smart Blame.
 
 ### Mecânica do Auto-Update Open VSX
-- O [`OpenVSXClient`](file:///c:/Users/leona/Documents/Projetos/SicoobitoCode/apps/api/src/novaai_studio/extensions/client.py) conecta-se à API pública do **Open VSX Registry** (`https://open-vsx.org/api`).
+- O [`OpenVSXClient`](file:///c:/Users/leona/Documents/Projetos/SicoobitoCode/apps/api/src/eltanix/extensions/client.py) conecta-se à API pública do **Open VSX Registry** (`https://open-vsx.org/api`).
 - O `ExtensionManager` compara a versão instalada localmente com os metadados remotos e permite atualizações em lote com **1-clique**.
 
 ---
 
-## 🛡️ 12. Cisco AI Defense Scanner & Gestão MCP (`novaai_studio.mcp`)
+## 🛡️ 12. Cisco AI Defense Scanner & Gestão MCP (`eltanix.mcp`)
 
-Localizado em [`novaai_studio.mcp.scanner`](file:///c:/Users/leona/Documents/Projetos/SicoobitoCode/apps/api/src/novaai_studio/mcp/scanner.py), o módulo executa varreduras de segurança estáticas e dinâmicas antes de disponibilizar uma ferramenta MCP ao Agente:
+Localizado em [`eltanix.mcp.scanner`](file:///c:/Users/leona/Documents/Projetos/SicoobitoCode/apps/api/src/eltanix/mcp/scanner.py), o módulo executa varreduras de segurança estáticas e dinâmicas antes de disponibilizar uma ferramenta MCP ao Agente:
 - **Analisadores YARA & Rulesets**: Detectam padrões de comandos maliciosos, vazamento de credenciais e chamadas não autorizadas.
 - **LLM-as-a-Judge**: Avalia schemas JSON e descrições em busca de **Prompt Injection** indireto.
 - **Mapeamento de Risco Padrão**: Toda ferramenta MCP nasce com `RiskClass.WRITE` por padrão (exigindo confirmação do usuário). Só é convertida para `RiskClass.READ` se o servidor contiver `trust_annotations: true` e a ferramenta indicar `read_only_hint: true`.
@@ -396,7 +396,7 @@ Localizado em [`novaai_studio.mcp.scanner`](file:///c:/Users/leona/Documents/Pro
 
 ## 📁 13. Gerenciamento de WorkspaceFS & Prevenção Path Traversal
 
-O acesso ao sistema de arquivos do projeto é gerenciado por `WorkspaceFS` em `novaai_studio.workspace.fs`:
+O acesso ao sistema de arquivos do projeto é gerenciado por `WorkspaceFS` em `eltanix.workspace.fs`:
 - **Bloqueio de Path Traversal**: Impede que caminhos com `../` ou links simbólicos tentem escapar do diretório raiz do projeto.
 - **Análise Co-Change do Git**: Mantém uma matriz de co-mudanças dos arquivos baseada no histórico de commits para sugerir proativamente arquivos no contexto do RAG.
 
@@ -406,7 +406,7 @@ O acesso ao sistema de arquivos do projeto é gerenciado por `WorkspaceFS` em `n
 
 ```
                        ┌─────────────────────────────────────────┐
-                       │   Roadmap de Evolução NovaAI Studio     │
+                       │   Roadmap de Evolução Eltanix Coder IDE     │
                        └────────────────────┬────────────────────┘
                                             │
        ┌────────────────┬───────────────────┼───────────────────┬────────────────┐
@@ -418,14 +418,14 @@ O acesso ao sistema de arquivos do projeto é gerenciado por `WorkspaceFS` em `n
 
 ### Pilar 1: Arquitetura & Infraestrutura (Concluído)
 - **1.1. Automação de CI/CD para Releases**:
-  - Adicionado `novaai_studio_deploy.zip` e `releases/` ao [`.gitignore`](file:///c:/Users/leona/Documents/Projetos/SicoobitoCode/.gitignore).
+  - Adicionado `eltanix_deploy.zip` e `releases/` ao [`.gitignore`](file:///c:/Users/leona/Documents/Projetos/SicoobitoCode/.gitignore).
   - Criado o workflow [`.github/workflows/release.yml`](file:///c:/Users/leona/Documents/Projetos/SicoobitoCode/.github/workflows/release.yml) para automação de pacotes de release via `pack_release.py`.
 - **1.2. Políticas de Evicção e Namespaces no Redis**:
   - Configurados `--maxmemory 256mb` e `--maxmemory-policy volatile-lru` no [`docker-compose.yml`](file:///c:/Users/leona/Documents/Projetos/SicoobitoCode/docker-compose.yml).
 
 ### Pilar 2: Observabilidade & Telemetria Distribuída (OpenTelemetry - Concluído)
 - **2.1. Exportador OTLP / gRPC Nativo**:
-  - Adicionada formatação OTLP v1 via método `to_otlp_json()` em [`tracer.py`](file:///c:/Users/leona/Documents/Projetos/SicoobitoCode/apps/api/src/novaai_studio/telemetry/tracer.py) para emissão de spans distribuídos.
+  - Adicionada formatação OTLP v1 via método `to_otlp_json()` em [`tracer.py`](file:///c:/Users/leona/Documents/Projetos/SicoobitoCode/apps/api/src/eltanix/telemetry/tracer.py) para emissão de spans distribuídos.
 
 ### Pilar 3: Evolução de IA & RAG Multi-Modal
 - **3.1. RAG Multi-Modal com Visão Computacional**:
@@ -435,16 +435,16 @@ O acesso ao sistema de arquivos do projeto é gerenciado por `WorkspaceFS` em `n
 
 ### Pilar 4: Segurança & Conformidade Enterprise (Concluído)
 - **4.1. Máscara Dinâmica de Dados Sensíveis (PII Redaction)**:
-  - Criada a classe `PIIRedactor` em [`pii_redactor.py`](file:///c:/Users/leona/Documents/Projetos/SicoobitoCode/apps/api/src/novaai_studio/security/pii_redactor.py) para sanitizar CPFs, cartões, e-mails e API keys.
+  - Criada a classe `PIIRedactor` em [`pii_redactor.py`](file:///c:/Users/leona/Documents/Projetos/SicoobitoCode/apps/api/src/eltanix/security/pii_redactor.py) para sanitizar CPFs, cartões, e-mails e API keys.
 - **4.2. Secret Scanning no Pre-Commit**:
   - Adicionado arquivo de regras [`.gitleaks.toml`](file:///c:/Users/leona/Documents/Projetos/SicoobitoCode/.gitleaks.toml) para auditoria automatizada de chaves de API.
 
 ### Pilar 5: Experiência do Desenvolvedor (DX) & Ecossistema (Concluído)
 - **5.1. Hot-Reloading de Agent Skills (`SKILL.md`)**:
-  - Atualizada a sincronização em [`seed.py`](file:///c:/Users/leona/Documents/Projetos/SicoobitoCode/apps/api/src/novaai_studio/skills/seed.py) para recarga dinâmica de habilidades quando modificadas no disco.
+  - Atualizada a sincronização em [`seed.py`](file:///c:/Users/leona/Documents/Projetos/SicoobitoCode/apps/api/src/eltanix/skills/seed.py) para recarga dinâmica de habilidades quando modificadas no disco.
 
 ---
 
 ## 🏁 15. Conclusão Final
 
-O **NovaAI Studio** é uma plataforma de engenharia de software **robusta, confiável e excepcionalmente projetada**. O sistema combina a máxima flexibilidade de LLMs com segurança estrita em sandbox, ingestão ultrarrápida em Rust e soberania local de dados.
+O **Eltanix Coder IDE** é uma plataforma de engenharia de software **robusta, confiável e excepcionalmente projetada**. O sistema combina a máxima flexibilidade de LLMs com segurança estrita em sandbox, ingestão ultrarrápida em Rust e soberania local de dados.

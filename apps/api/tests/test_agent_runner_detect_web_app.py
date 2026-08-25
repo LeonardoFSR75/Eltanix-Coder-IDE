@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from novaai_studio.agent.runner import _detect_web_app
+from eltanix.agent.runner import _detect_web_app
 
 
 def test_detect_web_app_false_for_empty_or_missing_directory(tmp_path: Path):

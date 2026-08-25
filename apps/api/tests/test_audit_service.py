@@ -13,8 +13,8 @@ from contextlib import asynccontextmanager
 
 import pytest
 
-from novaai_studio.audit import service as audit_service_module
-from novaai_studio.audit.service import AuditService
+from eltanix.audit import service as audit_service_module
+from eltanix.audit.service import AuditService
 
 
 class _FakeSession:

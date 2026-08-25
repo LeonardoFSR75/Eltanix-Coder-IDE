@@ -222,8 +222,8 @@ export function TerminalPanel({
         enviarComando(customEvt.detail.command);
       }
     };
-    window.addEventListener("novaai_studio:terminal:exec", handleCustomExec);
-    return () => window.removeEventListener("novaai_studio:terminal:exec", handleCustomExec);
+    window.addEventListener("eltanix:terminal:exec", handleCustomExec);
+    return () => window.removeEventListener("eltanix:terminal:exec", handleCustomExec);
   }, [enviarComando]);
 
   return (

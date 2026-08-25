@@ -18,12 +18,12 @@ from __future__ import annotations
 import time
 import uuid
 
-from novaai_studio.config import get_settings
-from novaai_studio.context import store as context_store
-from novaai_studio.context.chunker import Chunk
-from novaai_studio.documents import store as documents_store
-from novaai_studio.documents.chunker import TextChunk
-from novaai_studio.notes import store as notes_store
+from eltanix.config import get_settings
+from eltanix.context import store as context_store
+from eltanix.context.chunker import Chunk
+from eltanix.documents import store as documents_store
+from eltanix.documents.chunker import TextChunk
+from eltanix.notes import store as notes_store
 
 _VECTOR = [0.1] * get_settings().embedding_dim
 

@@ -8,7 +8,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from novaai_studio.agent.review_common import request_review_verdict
+from eltanix.agent.review_common import request_review_verdict
 
 
 @dataclass
