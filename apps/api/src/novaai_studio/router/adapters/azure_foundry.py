@@ -12,8 +12,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from sicoobito.router.adapters.base import ProviderAdapter
-from sicoobito.router.catalog import ModelSpec
+from novaai_studio.router.adapters.base import ProviderAdapter
+from novaai_studio.router.catalog import ModelSpec
 
 
 class AzureFoundryAdapter(ProviderAdapter):

@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import json
 
-from sicoobito.optimizer.cache import ResponseCache
-from sicoobito.optimizer.tokens import count_text, estimate_prompt_tokens
-from sicoobito.router.errors import FailureKind, classify, extract_failed_tool_call
+from novaai_studio.optimizer.cache import ResponseCache
+from novaai_studio.optimizer.tokens import count_text, estimate_prompt_tokens
+from novaai_studio.router.errors import FailureKind, classify, extract_failed_tool_call
 
 
 class ContextWindowExceededError(Exception):
@@ -70,11 +70,11 @@ def _groq_tool_use_failed(failed_generation: str) -> BadRequestError:
 
 def test_extract_failed_tool_call_recovers_groq_pseudo_xml_format():
     exc = _groq_tool_use_failed(
-        '<function=list_files{"path": "apps/api/src/sicoobito/agent/tools"}</function>'
+        '<function=list_files{"path": "apps/api/src/novaai_studio/agent/tools"}</function>'
     )
     assert extract_failed_tool_call(exc) == (
         "list_files",
-        {"path": "apps/api/src/sicoobito/agent/tools"},
+        {"path": "apps/api/src/novaai_studio/agent/tools"},
     )
 
 

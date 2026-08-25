@@ -1,7 +1,7 @@
 /**
  * Saúde do gateway e dos provedores — `/api/health`, `/api/health/providers`,
  * reset de circuit breaker e limpeza do cache exato. Tipos espelham
- * `RouterEngine.healthcheck()` (apps/api/src/sicoobito/router/engine.py).
+ * `RouterEngine.healthcheck()` (apps/api/src/novaai_studio/router/engine.py).
  */
 
 import { get, post } from "@/lib/client";

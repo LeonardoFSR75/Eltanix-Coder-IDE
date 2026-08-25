@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from sicoobito.agent.tools.base import RiskClass, ToolContext, ToolResult, tool
+from novaai_studio.agent.tools.base import RiskClass, ToolContext, ToolResult, tool
 
 
 def _sem_coordenador() -> ToolResult:

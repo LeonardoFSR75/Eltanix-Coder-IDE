@@ -14,15 +14,15 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from sicoobito.api.deps import AuthDep
-from sicoobito.audit.service import AuditService
-from sicoobito.auth import store as auth_store
-from sicoobito.auth.rbac import ROLE_RANK, require_role_by_slug
-from sicoobito.config import get_settings
-from sicoobito.db.models import ProjectRecord
-from sicoobito.db.session import session_scope
-from sicoobito.logging_setup import get_logger
-from sicoobito.workspace.projects import (
+from novaai_studio.api.deps import AuthDep
+from novaai_studio.audit.service import AuditService
+from novaai_studio.auth import store as auth_store
+from novaai_studio.auth.rbac import ROLE_RANK, require_role_by_slug
+from novaai_studio.config import get_settings
+from novaai_studio.db.models import ProjectRecord
+from novaai_studio.db.session import session_scope
+from novaai_studio.logging_setup import get_logger
+from novaai_studio.workspace.projects import (
     ProjectError,
     _branch_of,
     get_project_summary,
@@ -30,7 +30,7 @@ from sicoobito.workspace.projects import (
     sync_projects_db,
     validate_name,
 )
-from sicoobito.workspace.projects import (
+from novaai_studio.workspace.projects import (
     list_projects as list_disk_projects,
 )
 
@@ -53,7 +53,7 @@ async def _provision_env_background(target_path: Path, language: str | None, slu
     o comentário no chamador. Falha aqui é sempre não-fatal: o pior caso é o
     ambiente ficar pendente até o próximo prewarm ou até a IDE ser aberta."""
     try:
-        from sicoobito.api.routes.packages import ensure_project_env
+        from novaai_studio.api.routes.packages import ensure_project_env
 
         await ensure_project_env(target_path, language)
     except Exception as exc:
@@ -195,7 +195,7 @@ async def create_project(payload: ProjectCreateIn, request: Request) -> dict[str
                 gitignore_path = target_path / ".gitignore"
                 if not gitignore_path.exists():
                     gitignore_path.write_text(
-                        ".sicoobito/\nnode_modules/\n__pycache__/\n", encoding="utf-8"
+                        ".novaai_studio/\nnode_modules/\n__pycache__/\n", encoding="utf-8"
                     )
                 repo.index.add([str(gitignore_path.relative_to(target_path))])
                 repo.index.commit("Initial commit")
@@ -204,7 +204,7 @@ async def create_project(payload: ProjectCreateIn, request: Request) -> dict[str
 
             if payload.create_github_repo and not effective_git_url:
                 try:
-                    from sicoobito.workspace.github import GitHubClient, resolve_token
+                    from novaai_studio.workspace.github import GitHubClient, resolve_token
 
                     settings = get_settings()
                     token = await resolve_token(settings.github_token)
@@ -324,8 +324,8 @@ async def open_absolute_path(payload: OpenPathIn, request: Request) -> dict[str,
     caminho), não `resolve()`. O registro em `ProjectRecord` é o que faz essa
     pasta aparecer na Central de Projetos depois de aberta.
     """
-    from sicoobito.workspace.inspector import ProjectInspector
-    from sicoobito.workspace.path_guard import default_path_guard
+    from novaai_studio.workspace.inspector import ProjectInspector
+    from novaai_studio.workspace.path_guard import default_path_guard
 
     alvo = await asyncio.to_thread(lambda: Path(payload.path).resolve())
     if not alvo.exists() or not alvo.is_dir():
@@ -580,7 +580,7 @@ async def prewarm_project(slug: str, request: Request) -> dict[str, Any]:
 
     # 1. Garante o ambiente de pacotes do projeto (.venv, etc.)
     try:
-        from sicoobito.api.routes.packages import ensure_project_env
+        from novaai_studio.api.routes.packages import ensure_project_env
 
         await ensure_project_env(workspace_root)
     except Exception as exc:

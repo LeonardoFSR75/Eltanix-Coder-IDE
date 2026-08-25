@@ -21,11 +21,11 @@ Para rodar de verdade, localmente:
 
 ```bash
 # uma vez, contra o Postgres do docker-compose (porta 5403):
-docker compose exec postgres psql -U sicoobito -d sicoobito -c "CREATE DATABASE sicoobito_test"
-DATABASE_URL="postgresql+asyncpg://sicoobito:sicoobito@localhost:5403/sicoobito_test" uv run alembic upgrade head
+docker compose exec postgres psql -U novaai_studio -d novaai_studio -c "CREATE DATABASE novaai_studio_test"
+DATABASE_URL="postgresql+asyncpg://novaai_studio:novaai_studio@localhost:5403/novaai_studio_test" uv run alembic upgrade head
 
 # a cada vez que quiser rodar os testes de RRF:
-DATABASE_URL_TEST="postgresql+asyncpg://sicoobito:sicoobito@localhost:5403/sicoobito_test" \
+DATABASE_URL_TEST="postgresql+asyncpg://novaai_studio:novaai_studio@localhost:5403/novaai_studio_test" \
   uv run pytest tests/test_hybrid_search.py -q
 ```
 
@@ -49,7 +49,7 @@ API sem escrever `curl` — abra a pasta como coleção, selecione o ambiente `l
 | `notes/` | Segundo Cérebro: `store.py`, `service.py` (resolução de wikilinks `[[...]]`, fatiamento consciente de prosa e indexação vetorial) |
 | `mcp/` | Cliente MCP real — `config.py`/`config_editor.py` (YAML), `client.py` (conexão stdio/HTTP), `manager.py` (registra tools no `ToolRegistry`) |
 | `telemetry/` | `TraceRecorder` — buffer em memória de spans de tool/RAG (não confundir com `router/telemetry.py`, que é custo de LLM em Postgres) |
-| `evals/` | Harness de hit@k/MRR contra os buscadores reais — `uv run sicoobito-eval-rag` |
+| `evals/` | Harness de hit@k/MRR contra os buscadores reais — `uv run novaai-studio-eval-rag` |
 | `db/` | `session.py` (engine/session_scope), `models.py`, migrações Alembic em `alembic/versions/` |
 | `sandbox/` | `container.py` (Docker local) / `executor.py` (cliente do serviço isolado, ver ADR 0002) |
 | `analytics/` | Subsistema de ML & Auto-Diagnóstico — clusterização K-Means/DBScan de trajetórias de falhas, gerador de correções e propostas de diffs |

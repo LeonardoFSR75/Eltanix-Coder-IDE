@@ -1,6 +1,6 @@
 """Módulo Graphify: Grafo de Conhecimento, GraphRAG e Agente Autônomo."""
 
-from sicoobito.graphify.engine import GraphifyEngine
-from sicoobito.graphify.store import GraphStore
+from novaai_studio.graphify.engine import GraphifyEngine
+from novaai_studio.graphify.store import GraphStore
 
 __all__ = ["GraphStore", "GraphifyEngine"]

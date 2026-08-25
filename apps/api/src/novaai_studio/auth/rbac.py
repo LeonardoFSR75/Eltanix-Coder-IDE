@@ -4,7 +4,7 @@ ver docs/proposals/plano-implementacao-auditoria-arquitetural.md).
 Três papéis, rank crescente: `viewer` (leitura) < `editor` (escrita) < `owner`
 (admin do projeto — atualiza, apaga, gerencia membro). Dois bypasses, os dois
 já estabelecidos em outro lugar do projeto: o canal de serviço
-(`SICOOBITO_API_KEY`, ADR 0005) e o usuário `is_admin` (dono da instância,
+(`NOVAAI_STUDIO_API_KEY`, ADR 0005) e o usuário `is_admin` (dono da instância,
 `AppUser.is_admin`) sempre passam sem consultar `project_member` — nenhum dos
 dois é "membro" de projeto nenhum, mas os dois têm acesso irrestrito por
 desenho, o mesmo espírito de "canal de serviço não é usuário de browser" que
@@ -19,8 +19,8 @@ from fastapi import HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from sicoobito.auth import store
-from sicoobito.db.models import ProjectRecord
+from novaai_studio.auth import store
+from novaai_studio.db.models import ProjectRecord
 
 ROLE_RANK: dict[str, int] = {"viewer": 1, "editor": 2, "owner": 3}
 

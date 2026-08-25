@@ -14,10 +14,10 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from sicoobito.agent.tools.base import RiskClass, ToolContext, ToolResult, tool
-from sicoobito.db.session import session_scope
-from sicoobito.logging_setup import get_logger
-from sicoobito.lsp.extension_bridge import LSP_SERVER_TO_EXTENSION_ID
+from novaai_studio.agent.tools.base import RiskClass, ToolContext, ToolResult, tool
+from novaai_studio.db.session import session_scope
+from novaai_studio.logging_setup import get_logger
+from novaai_studio.lsp.extension_bridge import LSP_SERVER_TO_EXTENSION_ID
 
 log = get_logger(__name__)
 
@@ -43,8 +43,8 @@ _RECOMMEND_BY_FILE_MARKER: tuple[tuple[str, str], ...] = (
     ("tailwind.config.js", "tailwindcss.vscode-tailwindcss"),
     ("tailwind.config.ts", "tailwindcss.vscode-tailwindcss"),
     ("vite.config.ts", "usernamehw.errorlens"),
-    ("playwright.config.ts", "sicoobito.playwright-visual-studio"),
-    ("docker-compose.yml", "sicoobito.minio-storage-explorer"),
+    ("playwright.config.ts", "novaai_studio.playwright-visual-studio"),
+    ("docker-compose.yml", "novaai_studio.minio-storage-explorer"),
 )
 
 
@@ -134,7 +134,7 @@ async def manage_extensions(ctx: ToolContext, args: dict[str, Any]) -> ToolResul
         )
 
     if action == "recommend":
-        from sicoobito.api.routes.packages import detect_ecosystem
+        from novaai_studio.api.routes.packages import detect_ecosystem
 
         project_path = Path(ctx.workspace_root)
         eco = detect_ecosystem(project_path)

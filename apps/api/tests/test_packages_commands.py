@@ -1,4 +1,4 @@
-"""Testes para `sicoobito.packages.commands` — a camada de comando/manifesto
+"""Testes para `novaai_studio.packages.commands` — a camada de comando/manifesto
 compartilhada entre `api/routes/packages.py` (REST) e `agent/tools/packages.py`
 (ferramenta do agente). Cobre as duas coisas que valem a pena testar
 isoladamente: montagem de argv por ecossistema (sem depender do binário estar
@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from sicoobito.packages.commands import (
+from novaai_studio.packages.commands import (
     MissingBinaryError,
     build_ecosystem_command,
     list_python_packages,
@@ -49,7 +49,7 @@ def test_build_ecosystem_command_python_uninstall_is_non_interactive(tmp_path: P
 
 
 def test_build_ecosystem_command_raises_when_binary_missing(tmp_path: Path, monkeypatch):
-    from sicoobito.packages import commands
+    from novaai_studio.packages import commands
 
     monkeypatch.setattr(commands.shutil, "which", lambda _name: None)
     for eco in ("nodejs", "go", "rust", "php"):
@@ -63,7 +63,7 @@ def test_build_ecosystem_command_raises_when_binary_missing(tmp_path: Path, monk
 
 
 def test_build_ecosystem_command_nodejs(tmp_path: Path, monkeypatch):
-    from sicoobito.packages import commands
+    from novaai_studio.packages import commands
 
     monkeypatch.setattr(commands.shutil, "which", lambda _name: "/usr/bin/npm")
     cmd = build_ecosystem_command(
@@ -127,7 +127,7 @@ async def test_run_dependency_audit_unsupported_ecosystem(tmp_path: Path):
 
 
 async def test_run_dependency_audit_python_without_pip_audit(tmp_path: Path, monkeypatch):
-    from sicoobito.packages import commands
+    from novaai_studio.packages import commands
 
     monkeypatch.setattr(commands.shutil, "which", lambda _name: None)
     result = await run_dependency_audit("python", tmp_path, tmp_path / "py")
@@ -137,7 +137,7 @@ async def test_run_dependency_audit_python_without_pip_audit(tmp_path: Path, mon
 
 
 async def test_run_dependency_audit_nodejs_without_npm(tmp_path: Path, monkeypatch):
-    from sicoobito.packages import commands
+    from novaai_studio.packages import commands
 
     monkeypatch.setattr(commands.shutil, "which", lambda _name: None)
     result = await run_dependency_audit("nodejs", tmp_path, tmp_path / "py")

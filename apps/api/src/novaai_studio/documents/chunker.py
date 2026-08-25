@@ -10,7 +10,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-from sicoobito.optimizer.tokens import count_text
+from novaai_studio.optimizer.tokens import count_text
 
 _PARAGRAPH_SPLIT = re.compile(r"\n\s*\n+")
 _SENTENCE_SPLIT = re.compile(r"(?<=[.!?])\s+")

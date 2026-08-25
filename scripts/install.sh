@@ -2,7 +2,7 @@
 set -e
 
 echo "================================================="
-echo "🚀 SicoobitoCode - Script de Instalação e Deploy"
+echo "🚀 NovaAI Studio - Script de Instalação e Deploy"
 echo "================================================="
 
 if ! command -v docker &> /dev/null; then

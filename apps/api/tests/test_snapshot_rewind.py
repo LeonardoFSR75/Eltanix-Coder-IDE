@@ -24,11 +24,11 @@ from pathlib import Path
 import pytest
 from langgraph.checkpoint.memory import MemorySaver
 
-from sicoobito.agent.approval_policy import ApprovalPolicy, EditPathRule
-from sicoobito.agent.graph import build_graph
-from sicoobito.agent.runner import AgentRunner, AgentSession
-from sicoobito.agent.tools import ToolContext
-from sicoobito.workspace.fs import WorkspaceFS
+from novaai_studio.agent.approval_policy import ApprovalPolicy, EditPathRule
+from novaai_studio.agent.graph import build_graph
+from novaai_studio.agent.runner import AgentRunner, AgentSession
+from novaai_studio.agent.tools import ToolContext
+from novaai_studio.workspace.fs import WorkspaceFS
 
 
 @dataclass

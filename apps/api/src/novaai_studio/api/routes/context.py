@@ -8,14 +8,14 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field
 
-from sicoobito.api.deps import AuthDep, SettingsDep
-from sicoobito.auth.rbac import require_role_by_slug
-from sicoobito.context import store as context_store
-from sicoobito.context.indexer import ContextIndexer
-from sicoobito.context.repomap import DEFAULT_TOKEN_BUDGET, build_repo_map
-from sicoobito.db.session import session_scope
-from sicoobito.workspace import projects as project_ops
-from sicoobito.workspace.projects import ProjectError
+from novaai_studio.api.deps import AuthDep, SettingsDep
+from novaai_studio.auth.rbac import require_role_by_slug
+from novaai_studio.context import store as context_store
+from novaai_studio.context.indexer import ContextIndexer
+from novaai_studio.context.repomap import DEFAULT_TOKEN_BUDGET, build_repo_map
+from novaai_studio.db.session import session_scope
+from novaai_studio.workspace import projects as project_ops
+from novaai_studio.workspace.projects import ProjectError
 
 router = APIRouter(prefix="/api/context", tags=["context"], dependencies=[AuthDep])
 

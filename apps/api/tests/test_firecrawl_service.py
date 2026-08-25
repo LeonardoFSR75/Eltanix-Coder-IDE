@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from sicoobito.config import Settings
-from sicoobito.firecrawl.service import FirecrawlService, validate_target_url
+from novaai_studio.config import Settings
+from novaai_studio.firecrawl.service import FirecrawlService, validate_target_url
 
 
 def test_validate_target_url_valid():

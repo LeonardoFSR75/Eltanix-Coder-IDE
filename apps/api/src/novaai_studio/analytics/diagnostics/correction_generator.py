@@ -6,8 +6,8 @@ from typing import Any
 
 import structlog
 
-from sicoobito.analytics.models.classifier import FailureCategory
-from sicoobito.router import RouterEngine
+from novaai_studio.analytics.models.classifier import FailureCategory
+from novaai_studio.router import RouterEngine
 
 logger = structlog.get_logger(__name__)
 
@@ -29,7 +29,7 @@ class CorrectionProposalGenerator:
             return {
                 "title": "Ajuste na Validação de Parâmetros da Ferramenta de Sandbox",
                 "proposal_type": "TOOL_PATCH",
-                "target_file": "apps/api/src/sicoobito/agent/tools/sandbox.py",
+                "target_file": "apps/api/src/novaai_studio/agent/tools/sandbox.py",
                 "explanation": f"Falha na ferramenta detectada. {root_cause}",
                 "diff_content": (
                     "--- a/agent/tools/sandbox.py\n"
@@ -61,7 +61,7 @@ class CorrectionProposalGenerator:
             return {
                 "title": "Ajuste do Limiar de Similaridade Semântica e Indexação do Grafo",
                 "proposal_type": "RAG_TUNING",
-                "target_file": "apps/api/src/sicoobito/context/store.py",
+                "target_file": "apps/api/src/novaai_studio/context/store.py",
                 "explanation": f"Falha de recuperação de documentos no RAG. {root_cause}",
                 "diff_content": (
                     "--- a/context/store.py\n"
@@ -93,7 +93,7 @@ class CorrectionProposalGenerator:
         return {
             "title": f"Ajuste Operacional na IDE ({category})",
             "proposal_type": "CODE_FIX",
-            "target_file": "apps/api/src/sicoobito/agent/runner.py",
+            "target_file": "apps/api/src/novaai_studio/agent/runner.py",
             "explanation": f"Revisão operacional recomendada. {root_cause}",
             "diff_content": "# Revisão recomendada baseada no relatório de telemetria.",
             "confidence_score": 0.75,

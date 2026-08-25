@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import re
 from collections.abc import AsyncIterator
 from pathlib import Path
@@ -12,25 +11,26 @@ from fastapi import APIRouter, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-from sicoobito.agent import session_store
-from sicoobito.agent.approval_policy import evaluate_policy
-from sicoobito.agent.approval_policy_config import load_approval_policy
-from sicoobito.agent.runner import AgentRunner, AgentSession
-from sicoobito.agent.slash_commands import SLASH_COMMANDS
-from sicoobito.agent.state import AgentMode, PendingApproval
-from sicoobito.agent.tools import registry
-from sicoobito.agent.tools.base import ToolContext
-from sicoobito.agent.tools.diffing import compute_proposed_diff
-from sicoobito.api.deps import AuthDep, DbSessionDep, EngineDep, SettingsDep
-from sicoobito.auth.rbac import require_role_by_slug
-from sicoobito.db.session import session_scope
-from sicoobito.logging_setup import get_logger
-from sicoobito.telemetry import flight_recorder
-from sicoobito.workspace import git as git_ops
-from sicoobito.workspace import projects as project_ops
-from sicoobito.workspace.fs import FileTooLargeError, PathEscapeError, WorkspaceFS
-from sicoobito.workspace.git import GitError
-from sicoobito.workspace.projects import ProjectError
+from novaai_studio.agent import session_store
+from novaai_studio.agent.approval_policy import evaluate_policy
+from novaai_studio.agent.approval_policy_config import load_approval_policy
+from novaai_studio.agent.runner import AgentRunner, AgentSession
+from novaai_studio.agent.slash_commands import SLASH_COMMANDS
+from novaai_studio.agent.state import AgentMode, PendingApproval
+from novaai_studio.agent.tools import registry
+from novaai_studio.agent.tools.base import ToolContext
+from novaai_studio.agent.tools.diffing import compute_proposed_diff
+from novaai_studio.api.deps import AuthDep, DbSessionDep, EngineDep, SettingsDep
+from novaai_studio.api.sse import SSE_DONE, sse_event
+from novaai_studio.auth.rbac import require_role_by_slug
+from novaai_studio.db.session import session_scope
+from novaai_studio.logging_setup import get_logger
+from novaai_studio.telemetry import flight_recorder
+from novaai_studio.workspace import git as git_ops
+from novaai_studio.workspace import projects as project_ops
+from novaai_studio.workspace.fs import FileTooLargeError, PathEscapeError, WorkspaceFS
+from novaai_studio.workspace.git import GitError
+from novaai_studio.workspace.projects import ProjectError
 
 log = get_logger(__name__)
 
@@ -461,13 +461,13 @@ async def run_session(session_id: str, payload: RunRequest, request: Request):
             async for evento in runner.stream_run(
                 sessao, resume=resume, message=payload.message, images=payload.images
             ):
-                yield f"data: {json.dumps(evento, default=str, ensure_ascii=False)}\n\n"
+                yield sse_event(evento, default=str, ensure_ascii=False)
         except Exception as exc:
             log.error("agent.run.failed", session=session_id, error=str(exc))
             erro = {"node": "error", "update": {"message": str(exc)}}
-            yield f"data: {json.dumps(erro, ensure_ascii=False)}\n\n"
+            yield sse_event(erro, ensure_ascii=False)
         finally:
-            yield "data: [DONE]\n\n"
+            yield SSE_DONE
 
     return StreamingResponse(
         eventos(),
@@ -611,7 +611,7 @@ async def accept_file(
         ) from exc
 
     try:
-        from sicoobito.workspace.fs import WorkspaceFS
+        from novaai_studio.workspace.fs import WorkspaceFS
 
         main_fs = WorkspaceFS(sessao.workspace_root)
         written = main_fs.write(payload.path, content)
@@ -712,8 +712,8 @@ def _session_view(sessao: AgentSession) -> dict[str, Any]:
         "sandbox_available": sessao.sandbox_available,
         "sandbox_error": sessao.sandbox_error,
         "github_available": sessao.context.github is not None,
-        "is_web_app": getattr(sessao, "is_web_app", False),
-        "web_prewarmed": getattr(sessao, "web_prewarmed", False),
+        "is_web_app": sessao.is_web_app,
+        "web_prewarmed": sessao.web_prewarmed,
         "warnings": sessao.warnings,
         "startup_guard": {
             "project_verified": startup.project_verified,

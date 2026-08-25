@@ -15,7 +15,7 @@ from datetime import datetime
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from sicoobito.db.models import CachedResponseEmbedding
+from novaai_studio.db.models import CachedResponseEmbedding
 
 
 async def find_nearest(

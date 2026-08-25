@@ -16,13 +16,18 @@ from fastapi import APIRouter, HTTPException, Query, Request, status
 from git import GitCommandError
 from pydantic import BaseModel, Field
 
-from sicoobito.api.deps import AuthDep, SettingsDep
-from sicoobito.api.routes.workspace import _fs_from_body, project_fs
-from sicoobito.logging_setup import get_logger
-from sicoobito.router import env_editor
-from sicoobito.workspace import git as git_ops
-from sicoobito.workspace.git import GitError, get_git_user_config, open_repo, update_git_user_config
-from sicoobito.workspace.github import GitHubClient, GitHubError, resolve_token
+from novaai_studio.api.deps import AuthDep, SettingsDep
+from novaai_studio.api.routes.workspace import _fs_from_body, project_fs
+from novaai_studio.logging_setup import get_logger
+from novaai_studio.router import env_editor
+from novaai_studio.workspace import git as git_ops
+from novaai_studio.workspace.git import (
+    GitError,
+    get_git_user_config,
+    open_repo,
+    update_git_user_config,
+)
+from novaai_studio.workspace.github import GitHubClient, GitHubError, resolve_token
 
 log = get_logger(__name__)
 
@@ -205,11 +210,11 @@ async def branches(settings: SettingsDep, project: str = Query(min_length=1)) ->
 
         lista_branches: list[str] = []
         try:
-            # Filtra branches internas de worktrees do agente (sicoobito/*) da listagem da interface
+            # Filtra branches internas de worktrees do agente (novaai_studio/*) da listagem da interface
             lista_branches = sorted(
                 b.name
                 for b in repo.branches
-                if not b.name.startswith("sicoobito/") or b.name == atual
+                if not b.name.startswith("novaai_studio/") or b.name == atual
             )
         except Exception:
             lista_branches = []
@@ -543,3 +548,59 @@ async def update_github_config(
         log.warning("git.github.persist_failed", error=str(exc))
 
     return await get_github_config(settings)
+
+
+@router.get("/ownership-heatmap")
+async def ownership_heatmap(
+    settings: SettingsDep, project: str = Query(min_length=1), max_files: int = 50
+) -> dict[str, Any]:
+    """Retorna estatísticas de propriedade de código, mapa de calor de alterações e atividade Git (Fase 5 Git Intelligence)."""
+    fs = project_fs(settings, project)
+    try:
+
+        def _compute():
+            repo = open_repo(fs.root)
+            file_stats: dict[str, dict[str, Any]] = {}
+            author_commits: dict[str, int] = {}
+
+            commits = list(repo.iter_commits(max_count=200))
+            for c in commits:
+                author_name = str(c.author.name or "Unknown")
+                author_commits[author_name] = author_commits.get(author_name, 0) + 1
+                for stats_path in c.stats.files.keys():
+                    if stats_path not in file_stats:
+                        file_stats[stats_path] = {"commits_count": 0, "authors": {}}
+                    file_stats[stats_path]["commits_count"] += 1
+                    authors_dict = file_stats[stats_path]["authors"]
+                    authors_dict[author_name] = authors_dict.get(author_name, 0) + 1
+
+            sorted_files = sorted(
+                file_stats.items(), key=lambda item: item[1]["commits_count"], reverse=True
+            )[:max_files]
+
+            heatmap_data = []
+            for path, data in sorted_files:
+                top_author = (
+                    max(data["authors"].items(), key=lambda x: x[1])[0]
+                    if data["authors"]
+                    else "Unknown"
+                )
+                heatmap_data.append(
+                    {
+                        "path": path,
+                        "commits_count": data["commits_count"],
+                        "top_author": top_author,
+                        "authors_breakdown": data["authors"],
+                    }
+                )
+
+            return {
+                "total_commits_analyzed": len(commits),
+                "total_files": len(file_stats),
+                "author_distribution": author_commits,
+                "heatmap": heatmap_data,
+            }
+
+        return await asyncio.to_thread(_compute)
+    except Exception as exc:
+        raise _erro(exc) from exc

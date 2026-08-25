@@ -11,10 +11,10 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from sicoobito.agent.review_common import request_review_verdict
-from sicoobito.agent.tools.base import RiskClass, ToolContext, ToolResult, tool
-from sicoobito.workspace import git as git_ops
-from sicoobito.workspace.git import GitError
+from novaai_studio.agent.review_common import request_review_verdict
+from novaai_studio.agent.tools.base import RiskClass, ToolContext, ToolResult, tool
+from novaai_studio.workspace import git as git_ops
+from novaai_studio.workspace.git import GitError
 
 
 @tool(
@@ -54,7 +54,10 @@ async def request_code_review(ctx: ToolContext, args: dict[str, Any]) -> ToolRes
     resumo = args.get("summary", "")
     try:
         veredito = await request_review_verdict(
-            ctx.engine, summary=resumo, diff=diff, source="agent:code_review",
+            ctx.engine,
+            summary=resumo,
+            diff=diff,
+            source="agent:code_review",
             session_id=ctx.session_id,
         )
     except Exception as exc:

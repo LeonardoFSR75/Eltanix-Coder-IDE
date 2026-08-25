@@ -1,4 +1,4 @@
-from sicoobito.sandbox.container import (
+from novaai_studio.sandbox.container import (
     DEFAULT_IMAGE,
     ExecResult,
     Sandbox,

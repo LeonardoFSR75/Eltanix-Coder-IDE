@@ -13,11 +13,11 @@ from urllib.parse import urlparse
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field, field_validator
 
-from sicoobito.api.deps import AuthDep, EngineDep, SettingsDep
-from sicoobito.logging_setup import get_logger
-from sicoobito.router import env_editor, providers_editor, routes_editor
-from sicoobito.router.adapters.base import DiscoveredModel, DiscoveryError
-from sicoobito.router.catalog import ModelSpec, RouteProfile
+from novaai_studio.api.deps import AuthDep, EngineDep, SettingsDep
+from novaai_studio.logging_setup import get_logger
+from novaai_studio.router import env_editor, providers_editor, routes_editor
+from novaai_studio.router.adapters.base import DiscoveredModel, DiscoveryError
+from novaai_studio.router.catalog import ModelSpec, RouteProfile
 
 log = get_logger(__name__)
 
@@ -434,9 +434,7 @@ class UpdateCredentialsRequest(BaseModel):
         # Sem segredo pareado, mas ainda assim não pode virar uma rota para
         # sondar outros serviços internos do compose ou o metadata endpoint.
         if value:
-            _validate_provider_host_url(
-                "base_url", value, require_https=False, allow_private=True
-            )
+            _validate_provider_host_url("base_url", value, require_https=False, allow_private=True)
         return value
 
 

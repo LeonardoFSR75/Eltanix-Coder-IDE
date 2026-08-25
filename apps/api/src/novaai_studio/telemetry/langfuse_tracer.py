@@ -9,8 +9,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from sicoobito.config import Settings, get_settings
-from sicoobito.logging_setup import get_logger
+from novaai_studio.config import Settings, get_settings
+from novaai_studio.logging_setup import get_logger
 
 log = get_logger(__name__)
 
@@ -42,7 +42,7 @@ def _get_callback_class() -> Any:
 
 def get_langfuse_callback(
     session_id: str | None = None,
-    trace_name: str = "sicoobito-agent",
+    trace_name: str = "novaai-studio-agent",
     tags: list[str] | None = None,
     settings: Settings | None = None,
 ) -> Any | None:
@@ -64,7 +64,7 @@ def get_langfuse_callback(
             host=cfg.langfuse_host,
             session_id=session_id,
             trace_name=trace_name,
-            tags=tags or ["sicoobito"],
+            tags=tags or ["novaai_studio"],
         )
         return handler
     except Exception as exc:

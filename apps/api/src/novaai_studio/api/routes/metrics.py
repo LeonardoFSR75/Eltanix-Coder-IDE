@@ -12,9 +12,9 @@ from typing import Any
 from fastapi import APIRouter, Query
 from sqlalchemy import Numeric, case, cast, func, select
 
-from sicoobito.api.deps import AuthDep, EngineDep
-from sicoobito.db.models import RequestLog
-from sicoobito.db.session import session_scope
+from novaai_studio.api.deps import AuthDep, EngineDep
+from novaai_studio.db.models import RequestLog
+from novaai_studio.db.session import session_scope
 
 router = APIRouter(prefix="/api/metrics", tags=["metrics"], dependencies=[AuthDep])
 

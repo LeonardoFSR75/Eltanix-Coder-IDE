@@ -22,7 +22,7 @@ from typing import Any, Literal
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from sicoobito.db.models import AuditLogEntry, RequestLog, ToolSpan
+from novaai_studio.db.models import AuditLogEntry, RequestLog, ToolSpan
 
 TimelineKind = Literal["tool_span", "request_log", "audit_log"]
 

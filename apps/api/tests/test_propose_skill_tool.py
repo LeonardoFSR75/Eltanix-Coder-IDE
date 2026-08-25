@@ -4,10 +4,10 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from sicoobito.agent.tools.base import RiskClass, ToolContext
-from sicoobito.agent.tools.skills import propose_skill
-from sicoobito.db.models import Skill
-from sicoobito.skills.service import SkillService
+from novaai_studio.agent.tools.base import RiskClass, ToolContext
+from novaai_studio.agent.tools.skills import propose_skill
+from novaai_studio.db.models import Skill
+from novaai_studio.skills.service import SkillService
 
 
 def test_propose_skill_risk_class():
@@ -93,7 +93,7 @@ async def test_skill_service_propose_and_save_writes_file(tmp_path: Path, monkey
             parameters_json=parameters_json,
         )
 
-    from sicoobito.skills import service as skills_service_module
+    from novaai_studio.skills import service as skills_service_module
 
     monkeypatch.setattr(skills_service_module, "session_scope", _fake_session_scope)
     monkeypatch.setattr(skills_service_module.store, "create_skill", _fake_create_skill)
@@ -113,7 +113,7 @@ async def test_skill_service_propose_and_save_writes_file(tmp_path: Path, monkey
     assert skill is not None
     assert skill.name == "padrao-teste"
 
-    skill_file = ws_dir / ".sicoobito" / "skills" / "padrao-teste.md"
+    skill_file = ws_dir / ".novaai_studio" / "skills" / "padrao-teste.md"
     assert skill_file.exists()
     conteudo = skill_file.read_text(encoding="utf-8")
     assert "name: padrao-teste" in conteudo
@@ -139,7 +139,7 @@ async def test_skill_service_get_by_name_found(monkeypatch):
         assert name == "revisor-python"
         return esperada
 
-    from sicoobito.skills import service as skills_service_module
+    from novaai_studio.skills import service as skills_service_module
 
     monkeypatch.setattr(skills_service_module, "session_scope", _fake_session_scope)
     monkeypatch.setattr(
@@ -160,7 +160,7 @@ async def test_skill_service_get_by_name_not_found(monkeypatch):
     async def _fake_get_skill_by_name(session, name):
         return None
 
-    from sicoobito.skills import service as skills_service_module
+    from novaai_studio.skills import service as skills_service_module
 
     monkeypatch.setattr(skills_service_module, "session_scope", _fake_session_scope)
     monkeypatch.setattr(

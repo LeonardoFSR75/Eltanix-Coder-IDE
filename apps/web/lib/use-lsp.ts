@@ -119,7 +119,7 @@ export function useLsp({ project, path, language, onNavigate }: Opcoes) {
       setMontado(true);
 
       editor.addAction({
-        id: "sicoobito.gotoDefinition",
+        id: "novaai_studio.gotoDefinition",
         label: "Ir para definição",
         keybindings: [monaco.KeyCode.F12],
         contextMenuGroupId: "navigation",

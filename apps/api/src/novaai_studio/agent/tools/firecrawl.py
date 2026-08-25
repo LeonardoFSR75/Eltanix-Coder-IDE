@@ -9,10 +9,14 @@ from __future__ import annotations
 
 from typing import Any
 
-from sicoobito.agent.tools.base import RiskClass, ToolContext, ToolResult, tool
-from sicoobito.firecrawl.client import FirecrawlAuthError, FirecrawlError, FirecrawlUnavailableError
-from sicoobito.firecrawl.service import validate_target_url
-from sicoobito.logging_setup import get_logger
+from novaai_studio.agent.tools.base import RiskClass, ToolContext, ToolResult, tool
+from novaai_studio.firecrawl.client import (
+    FirecrawlAuthError,
+    FirecrawlError,
+    FirecrawlUnavailableError,
+)
+from novaai_studio.firecrawl.service import validate_target_url
+from novaai_studio.logging_setup import get_logger
 
 log = get_logger(__name__)
 
@@ -444,10 +448,12 @@ async def deep_research(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
         f"{topic} vs alternatives comparison",
     ]
     if depth == "thorough":
-        sub_queries.extend([
-            f"{topic} common issues pitfalls security",
-            f"{topic} production real world case study",
-        ])
+        sub_queries.extend(
+            [
+                f"{topic} common issues pitfalls security",
+                f"{topic} production real world case study",
+            ]
+        )
 
     sources: list[dict[str, Any]] = []
     seen_urls: set[str] = set()
@@ -489,14 +495,16 @@ async def deep_research(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
             report_lines.append(f'> "{snippet}..."')
         report_lines.append("")
 
-    report_lines.extend([
-        "## 💡 Síntese Técnica & Recomendações",
-        f"- **Consistência de Fontes**: {len(sources)} referências indexadas e validadas.",
-        "- **Próximos Passos**: Utilize as evidências acima para apoiar a tomada de decisão "
-        "de arquitetura ou implementação no projeto.",
-        "",
-        "## 📚 Referências & Links Citados",
-    ])
+    report_lines.extend(
+        [
+            "## 💡 Síntese Técnica & Recomendações",
+            f"- **Consistência de Fontes**: {len(sources)} referências indexadas e validadas.",
+            "- **Próximos Passos**: Utilize as evidências acima para apoiar a tomada de decisão "
+            "de arquitetura ou implementação no projeto.",
+            "",
+            "## 📚 Referências & Links Citados",
+        ]
+    )
 
     for idx, s in enumerate(sources, start=1):
         title = s.get("title") or f"Referência {idx}"

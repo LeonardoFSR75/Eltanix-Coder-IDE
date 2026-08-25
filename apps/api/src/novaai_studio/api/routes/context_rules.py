@@ -1,4 +1,4 @@
-"""Rota das regras de contexto por glob (`.sicoobito/context_rules.yaml`) —
+"""Rota das regras de contexto por glob (`.novaai_studio/context_rules.yaml`) —
 Fase 4 do upgrade do agente, estilo `.cursor/rules`.
 
 Mesmo desenho de `api/routes/approval_policy.py`: o PUT substitui a lista de
@@ -14,11 +14,11 @@ from fastapi import APIRouter
 from pydantic import BaseModel, Field
 from ruamel.yaml.comments import CommentedSeq
 
-from sicoobito.agent import context_rules_editor as editor
-from sicoobito.agent.context_rules import ContextRule, ContextRulesConfig
-from sicoobito.agent.context_rules_config import load_context_rules
-from sicoobito.api.deps import AuthDep, SettingsDep
-from sicoobito.api.routes.workspace import project_fs
+from novaai_studio.agent import context_rules_editor as editor
+from novaai_studio.agent.context_rules import ContextRule, ContextRulesConfig
+from novaai_studio.agent.context_rules_config import load_context_rules
+from novaai_studio.api.deps import AuthDep, SettingsDep
+from novaai_studio.api.routes.workspace import project_fs
 
 router = APIRouter(prefix="/api/agent/context-rules", tags=["agent"], dependencies=[AuthDep])
 

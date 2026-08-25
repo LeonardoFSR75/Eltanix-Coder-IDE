@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from sicoobito.agent.tools.base import RiskClass, ToolContext, ToolResult, tool
+from novaai_studio.agent.tools.base import RiskClass, ToolContext, ToolResult, tool
 
 
 @tool(
@@ -46,8 +46,7 @@ async def analyze_prompt_risk(ctx: ToolContext, args: dict[str, Any]) -> ToolRes
                     module="Security",
                     action="Análise de prompt com SecureBERT",
                     details=(
-                        f"classificação={result.get('classification')} "
-                        f"score={result.get('score')}"
+                        f"classificação={result.get('classification')} score={result.get('score')}"
                     ),
                     risk_level="medium"
                     if result.get("classification") in {"suspicious", "unsafe"}
@@ -121,10 +120,10 @@ async def analyze_prompt_risk(ctx: ToolContext, args: dict[str, Any]) -> ToolRes
     summarize=lambda a: f"scan MCP: {a.get('server_name') or 'todos'}",
 )
 async def mcp_security_scan(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
-    from sicoobito.config import get_settings
-    from sicoobito.mcp import config_editor
-    from sicoobito.mcp.config import MCPServerConfig
-    from sicoobito.mcp.scanner import MCPScannerService
+    from novaai_studio.config import get_settings
+    from novaai_studio.mcp import config_editor
+    from novaai_studio.mcp.config import MCPServerConfig
+    from novaai_studio.mcp.scanner import MCPScannerService
 
     settings = get_settings()
     scanner = MCPScannerService(settings)

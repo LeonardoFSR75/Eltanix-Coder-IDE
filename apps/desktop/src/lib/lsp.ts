@@ -91,7 +91,7 @@ export class LspConnection {
 
     const resultado = (await this.request("initialize", {
       capabilities: CAPACIDADES_DO_CLIENTE,
-      clientInfo: { name: "SicoobitoCode Lite", version: "0.1.0" },
+      clientInfo: { name: "NovaAI Studio Lite", version: "0.1.0" },
     })) as Json;
 
     this.capabilities = (resultado?.capabilities as Json) ?? {};
@@ -203,7 +203,7 @@ export class LspConnection {
       return;
     }
 
-    if (method === "sicoobito/error") {
+    if (method === "novaai_studio/error") {
       this.error = String(mensagem.params ?? "falha no language server");
       this.emitirEstado();
     }

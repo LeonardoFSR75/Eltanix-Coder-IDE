@@ -11,8 +11,8 @@ from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock
 
-from sicoobito.agent import session_store
-from sicoobito.skills import promotion
+from novaai_studio.agent import session_store
+from novaai_studio.skills import promotion
 
 
 @dataclass

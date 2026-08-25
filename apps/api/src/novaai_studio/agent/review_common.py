@@ -6,7 +6,7 @@ Duas features usam isto:
   voluntariamente, sobre um diff git de alterações já no worktree.
 - `agent/graph.py::_attach_review_notes` — chamado automaticamente ANTES da
   aprovação humana, sobre um diff PROPOSTO (nada escrito ainda), só quando o
-  projeto liga `second_opinion` em `.sicoobito/approval_policy.yaml`.
+  projeto liga `second_opinion` em `.novaai_studio/approval_policy.yaml`.
 """
 
 from __future__ import annotations
@@ -14,8 +14,8 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-from sicoobito.logging_setup import get_logger
-from sicoobito.router.engine import RouterEngine
+from novaai_studio.logging_setup import get_logger
+from novaai_studio.router.engine import RouterEngine
 
 log = get_logger(__name__)
 

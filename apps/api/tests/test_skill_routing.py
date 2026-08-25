@@ -13,9 +13,9 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from sicoobito.agent.runner import AgentRunner
-from sicoobito.db.models import Skill
-from sicoobito.skills.service import SkillService
+from novaai_studio.agent.runner import AgentRunner
+from novaai_studio.db.models import Skill
+from novaai_studio.skills.service import SkillService
 
 
 @pytest.mark.asyncio
@@ -43,7 +43,7 @@ async def test_find_relevant_delegates_to_store(monkeypatch):
         chamada["min_score"] = min_score
         return esperado
 
-    from sicoobito.skills import service as skills_service_module
+    from novaai_studio.skills import service as skills_service_module
 
     monkeypatch.setattr(skills_service_module, "session_scope", _fake_session_scope)
     monkeypatch.setattr(

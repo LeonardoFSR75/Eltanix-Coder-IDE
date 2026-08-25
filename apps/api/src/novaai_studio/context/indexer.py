@@ -17,14 +17,14 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from sicoobito.config import Settings
-from sicoobito.context import edges, store
-from sicoobito.context.chunker import Chunk, FileChunks, chunk_file
-from sicoobito.context.scanner import ScannedFile, read_text, scan
-from sicoobito.db.models import CodeChunk
-from sicoobito.db.session import session_scope
-from sicoobito.logging_setup import get_logger
-from sicoobito.router.engine import RouterEngine
+from novaai_studio.config import Settings
+from novaai_studio.context import edges, store
+from novaai_studio.context.chunker import Chunk, FileChunks, chunk_file
+from novaai_studio.context.scanner import ScannedFile, read_text, scan
+from novaai_studio.db.models import CodeChunk
+from novaai_studio.db.session import session_scope
+from novaai_studio.logging_setup import get_logger
+from novaai_studio.router.engine import RouterEngine
 
 log = get_logger(__name__)
 

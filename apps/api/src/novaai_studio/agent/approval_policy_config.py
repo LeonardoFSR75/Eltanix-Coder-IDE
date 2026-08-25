@@ -1,5 +1,5 @@
 """Config declarativa da política de auto-aprovação: leitura de
-`.sicoobito/approval_policy.yaml`.
+`.novaai_studio/approval_policy.yaml`.
 
 Mesmo padrão de `mcp/config.py`: leitura simples via `yaml.safe_load` — a
 escrita, que precisa preservar comentários, fica em
@@ -13,17 +13,17 @@ from pathlib import Path
 import yaml
 from pydantic import ValidationError
 
-from sicoobito.agent.approval_policy import ApprovalPolicy
-from sicoobito.logging_setup import get_logger
+from novaai_studio.agent.approval_policy import ApprovalPolicy
+from novaai_studio.logging_setup import get_logger
 
 log = get_logger(__name__)
 
-_RELATIVE_PATH = Path(".sicoobito") / "approval_policy.yaml"
+_RELATIVE_PATH = Path(".novaai_studio") / "approval_policy.yaml"
 
 
 def load_approval_policy(workspace_root: Path) -> ApprovalPolicy:
-    """Lê `.sicoobito/approval_policy.yaml` do projeto (não do worktree da
-    sessão — mesma raiz que `.sicoobito/instructions.md`, ver
+    """Lê `.novaai_studio/approval_policy.yaml` do projeto (não do worktree da
+    sessão — mesma raiz que `.novaai_studio/instructions.md`, ver
     `agent/runner.py::_load_custom_instructions`).
 
     Arquivo ausente, erro de leitura, YAML malformado ou dado que não valida

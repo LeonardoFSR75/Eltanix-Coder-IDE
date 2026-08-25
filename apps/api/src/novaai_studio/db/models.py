@@ -33,8 +33,8 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import JSONB, TSVECTOR, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from sicoobito.config import get_settings
-from sicoobito.db.base import Base
+from novaai_studio.config import get_settings
+from novaai_studio.db.base import Base
 
 JSON_TYPE = JSONB().with_variant(JSON(), "sqlite")
 TSVECTOR_TYPE = TSVECTOR().with_variant(Text(), "sqlite")
@@ -795,7 +795,7 @@ class GraphMetrics(Base):
 
 
 class ProjectRecord(Base):
-    """Cadastro persistido e centralizado de projetos no SicoobitoCode."""
+    """Cadastro persistido e centralizado de projetos no NovaAI Studio."""
 
     __tablename__ = "project_record"
 
@@ -919,7 +919,9 @@ class ChatTrajectory(Base):
     tool_calls_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     tool_errors_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     status: Mapped[str] = mapped_column(String(32), default="success", nullable=False)
-    failure_category: Mapped[str] = mapped_column(String(64), default="NONE", nullable=False, index=True)
+    failure_category: Mapped[str] = mapped_column(
+        String(64), default="NONE", nullable=False, index=True
+    )
     trajectory_data: Mapped[dict] = mapped_column(JSON_TYPE, default=dict, nullable=False)
     metrics: Mapped[dict] = mapped_column(JSON_TYPE, default=dict, nullable=False)
     embedding: Mapped[list | None] = mapped_column(VECTOR_TYPE, nullable=True)
@@ -981,4 +983,3 @@ class CorrectionProposal(Base):
 
     def __repr__(self) -> str:  # pragma: no cover
         return f"<CorrectionProposal title={self.title!r} type={self.proposal_type} status={self.status}>"
-

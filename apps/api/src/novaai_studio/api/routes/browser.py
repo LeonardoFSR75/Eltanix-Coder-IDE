@@ -22,22 +22,22 @@ import websockets.exceptions
 from fastapi import APIRouter, HTTPException, Request, WebSocket, WebSocketDisconnect, status
 from pydantic import BaseModel, Field
 
-from sicoobito.api.deps import AuthDep
-from sicoobito.api.tickets import TICKET_TTL_SECONDS, TicketStore
-from sicoobito.browser.client import (
+from novaai_studio.api.deps import AuthDep
+from novaai_studio.api.tickets import TICKET_TTL_SECONDS, TicketStore
+from novaai_studio.browser.client import (
     BrowserClient,
     BrowserConfig,
     BrowserError,
     BrowserUnavailableError,
 )
-from sicoobito.browser.replay import (
+from novaai_studio.browser.replay import (
     get_replay,
     list_recent_replays,
     mark_replay_expired,
     store_replay,
     was_replay_expired,
 )
-from sicoobito.logging_setup import get_logger
+from novaai_studio.logging_setup import get_logger
 
 log = get_logger(__name__)
 

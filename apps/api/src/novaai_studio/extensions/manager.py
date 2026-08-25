@@ -1,5 +1,4 @@
-"""Gerenciador central de extensões, catálogo, estado de ativação e atualizações automáticas.
-"""
+"""Gerenciador central de extensões, catálogo, estado de ativação e atualizações automáticas."""
 
 from __future__ import annotations
 
@@ -12,15 +11,15 @@ from typing import Any
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from sicoobito.extensions import store
-from sicoobito.extensions.catalog import MASTER_EXTENSIONS_CATALOG
-from sicoobito.extensions.client import OpenVSXClient
-from sicoobito.logging_setup import get_logger
+from novaai_studio.extensions import store
+from novaai_studio.extensions.catalog import MASTER_EXTENSIONS_CATALOG
+from novaai_studio.extensions.client import OpenVSXClient
+from novaai_studio.logging_setup import get_logger
 
 log = get_logger(__name__)
 
 _AUTO_SYNC_INTERVAL_SECONDS = 3600 * 6  # 6 horas
-_SEARCH_CACHE_PREFIX = "sicoobito:cache:extensions:search"
+_SEARCH_CACHE_PREFIX = "novaai_studio:cache:extensions:search"
 _SEARCH_CACHE_TTL_SECONDS = 600  # 10 min — o painel de Extensões busca a cada
 # tecla digitada; o Open VSX não muda rápido o bastante para justificar bater
 # nele a cada busca (mesmo padrão de `optimizer/cache.py`).

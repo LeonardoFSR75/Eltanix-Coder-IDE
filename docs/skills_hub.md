@@ -1,6 +1,6 @@
 # 🌐 Hermes Skills Hub & Governança de Agentes
 
-Documentação oficial da arquitetura de habilidades (Skills), regras de planejamento e governança de agentes no **SicoobitoCode**.
+Documentação oficial da arquitetura de habilidades (Skills), regras de planejamento e governança de agentes no **NovaAI Studio**.
 
 ---
 

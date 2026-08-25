@@ -7,11 +7,11 @@ import pytest
 from fastapi.testclient import TestClient
 from git import Repo
 
-os.environ["SICOOBITO_API_KEY"] = "chave-de-teste"
+os.environ["NOVAAI_STUDIO_API_KEY"] = "chave-de-teste"
 
-from sicoobito.config import get_settings
-from sicoobito.main import create_app
-from sicoobito.workspace import git as git_ops
+from novaai_studio.config import get_settings
+from novaai_studio.main import create_app
+from novaai_studio.workspace import git as git_ops
 
 
 @pytest.fixture
@@ -20,8 +20,8 @@ def repo(tmp_path):
     caminho.mkdir()
     repositorio = Repo.init(caminho, initial_branch="main")
     with repositorio.config_writer() as config:
-        config.set_value("user", "name", "Desenvolvedor Sicoobito")
-        config.set_value("user", "email", "dev@sicoobito.com")
+        config.set_value("user", "name", "Desenvolvedor NovaAI Studio")
+        config.set_value("user", "email", "dev@novaai-studio.com")
         config.set_value("init", "defaultBranch", "main")
     return caminho
 
@@ -40,20 +40,20 @@ def auth_headers():
 
 def test_get_git_user_config_reads_local_repo(repo):
     cfg = git_ops.get_git_user_config(root=repo)
-    assert cfg["local_user_name"] == "Desenvolvedor Sicoobito"
-    assert cfg["local_user_email"] == "dev@sicoobito.com"
+    assert cfg["local_user_name"] == "Desenvolvedor NovaAI Studio"
+    assert cfg["local_user_email"] == "dev@novaai-studio.com"
     assert isinstance(cfg["ssh_keys"], list)
 
 
 def test_update_git_user_config_local_scope(repo):
     novo_cfg = git_ops.update_git_user_config(
         user_name="Novo Nome",
-        user_email="novo@sicoobito.com",
+        user_email="novo@novaai-studio.com",
         scope="local",
         root=repo,
     )
     assert novo_cfg["local_user_name"] == "Novo Nome"
-    assert novo_cfg["local_user_email"] == "novo@sicoobito.com"
+    assert novo_cfg["local_user_email"] == "novo@novaai-studio.com"
 
 
 def test_git_config_api_routes(api_client, auth_headers):

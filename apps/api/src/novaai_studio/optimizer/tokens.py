@@ -16,7 +16,7 @@ import json
 from functools import lru_cache
 from typing import Any
 
-from sicoobito.logging_setup import get_logger
+from novaai_studio.logging_setup import get_logger
 
 log = get_logger(__name__)
 

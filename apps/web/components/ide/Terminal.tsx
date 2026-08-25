@@ -222,8 +222,8 @@ export function TerminalPanel({
         enviarComando(customEvt.detail.command);
       }
     };
-    window.addEventListener("sicoobito:terminal:exec", handleCustomExec);
-    return () => window.removeEventListener("sicoobito:terminal:exec", handleCustomExec);
+    window.addEventListener("novaai_studio:terminal:exec", handleCustomExec);
+    return () => window.removeEventListener("novaai_studio:terminal:exec", handleCustomExec);
   }, [enviarComando]);
 
   return (

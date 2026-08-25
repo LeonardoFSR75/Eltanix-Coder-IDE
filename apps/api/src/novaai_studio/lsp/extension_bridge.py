@@ -5,7 +5,7 @@ Os dois sistemas nasceram sem chave em comum: o LSP registra servidores por
 id de binário ("pyright", "svelte"), o catálogo de extensões por id de
 publisher.nome ("ms-python.python", "svelte.svelte-vscode"). Só os servidores
 com uma extensão de linguagem correspondente no catálogo entram no mapa
-abaixo — desligar `sicoobito.dependency-cve-auditor` ou qualquer extensão sem
+abaixo — desligar `novaai_studio.dependency-cve-auditor` ou qualquer extensão sem
 contraparte de LSP não tem efeito aqui, e um servidor sem entrada neste mapa
 (json, css, html, yaml, bash, clangd, gopls, ruby-lsp, dockerfile, angular,
 typescript) nunca é bloqueado — não faz sentido negar linguagem básica por um

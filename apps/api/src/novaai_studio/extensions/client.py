@@ -1,5 +1,4 @@
-"""Cliente assíncrono para comunicação com Open VSX Registry e VS Code Marketplace APIs.
-"""
+"""Cliente assíncrono para comunicação com Open VSX Registry e VS Code Marketplace APIs."""
 
 from __future__ import annotations
 
@@ -8,7 +7,7 @@ from typing import Any
 
 import httpx
 
-from sicoobito.logging_setup import get_logger
+from novaai_studio.logging_setup import get_logger
 
 log = get_logger(__name__)
 
@@ -38,7 +37,9 @@ class OpenVSXClient:
 
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
-                res = await client.get(url, headers={"User-Agent": "SicoobitoCode-ExtensionManager/2.0"})
+                res = await client.get(
+                    url, headers={"User-Agent": "NovaAI-Studio-ExtensionManager/2.0"}
+                )
                 if res.status_code == 200:
                     data = res.json()
                     return {
@@ -69,7 +70,7 @@ class OpenVSXClient:
                 res = await client.get(
                     url,
                     params=params,
-                    headers={"User-Agent": "SicoobitoCode-ExtensionManager/2.0"},
+                    headers={"User-Agent": "NovaAI-Studio-ExtensionManager/2.0"},
                 )
                 if res.status_code == 200:
                     data = res.json()
@@ -126,6 +127,7 @@ class OpenVSXClient:
 def _is_newer_version(latest: str, current: str) -> bool:
     """Compara versões no formato semântico simplificado (ex.: '1.4.0' vs '1.3.2')."""
     try:
+
         def parse(v: str) -> list[int]:
             clean = "".join(c if c.isdigit() or c == "." else "" for c in v)
             return [int(p) for p in clean.split(".") if p.isdigit()]

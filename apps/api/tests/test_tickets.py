@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import time
 
-from sicoobito.api.tickets import TICKET_TTL_SECONDS, TicketStore
+from novaai_studio.api.tickets import TICKET_TTL_SECONDS, TicketStore
 
 
 async def test_issued_ticket_is_accepted_once():

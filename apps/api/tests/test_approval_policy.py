@@ -11,14 +11,14 @@ from __future__ import annotations
 
 import pytest
 
-from sicoobito.agent.approval_policy import (
+from novaai_studio.agent.approval_policy import (
     ApprovalPolicy,
     EditPathRule,
     ExecCommandRule,
     evaluate_policy,
 )
-from sicoobito.agent.tools import ToolContext
-from sicoobito.workspace.fs import WorkspaceFS
+from novaai_studio.agent.tools import ToolContext
+from novaai_studio.workspace.fs import WorkspaceFS
 
 
 @pytest.fixture
@@ -137,7 +137,7 @@ def test_exec_command_rule_does_not_match_non_exec_tool(ctx):
 def test_exec_command_rule_prefix_does_not_match_partial_token():
     # "npm te" não é prefixo de tokens de "npm test" — token inteiro, não
     # substring, senão "npm te" aprovaria "npm terminate-everything".
-    from sicoobito.agent.approval_policy import _matches_exec_command_rule
+    from novaai_studio.agent.approval_policy import _matches_exec_command_rule
 
     rule = ExecCommandRule(allowed_prefixes=["npm te"])
     pending = _pending("run_command", {"command": "npm test"})
@@ -230,7 +230,7 @@ def test_evaluate_policy_tries_rules_in_order_and_returns_first_match(ctx):
 def test_evaluate_policy_swallows_exception_from_a_single_rule(ctx, monkeypatch):
     # Uma regra que explode na avaliação não deve derrubar as outras nem
     # propagar — só conta como "essa regra não casou".
-    import sicoobito.agent.approval_policy as approval_policy_module
+    import novaai_studio.agent.approval_policy as approval_policy_module
 
     def _broken(rule, ctx, pending):
         raise RuntimeError("boom")

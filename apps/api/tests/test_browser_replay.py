@@ -9,7 +9,7 @@ from __future__ import annotations
 import base64
 from datetime import UTC, datetime, timedelta
 
-from sicoobito.browser.replay import (
+from novaai_studio.browser.replay import (
     _REDIS_HASH_PREFIX,
     mark_replay_expired,
     purge_orphaned_replay_blobs,

@@ -6,7 +6,7 @@ Não entra no `pytest` padrão (`tests/test_evals.py` cobre só a lógica de
 score) — precisa de Postgres+pgvector+embeddings reais no ar, é ferramenta
 de desenvolvedor, não teste de unidade. Uso:
 
-    uv run sicoobito-eval-rag
+    uv run novaai-studio-eval-rag
 """
 
 from __future__ import annotations
@@ -15,19 +15,19 @@ import asyncio
 from pathlib import Path
 from typing import Any
 
-from sicoobito.config import get_settings
-from sicoobito.context.indexer import ContextIndexer
-from sicoobito.db.session import init_engine, shutdown_engine
-from sicoobito.documents.service import DocumentService
-from sicoobito.evals.dataset import EvalCase, load_dataset
-from sicoobito.notes.service import NoteService
-from sicoobito.optimizer.cache import ResponseCache
-from sicoobito.router.budget import BudgetGuard
-from sicoobito.router.catalog import load_catalog
-from sicoobito.router.engine import RouterEngine
-from sicoobito.router.health import HealthTracker
-from sicoobito.router.pricing import PriceTable
-from sicoobito.storage.blob import BlobStore
+from novaai_studio.config import get_settings
+from novaai_studio.context.indexer import ContextIndexer
+from novaai_studio.db.session import init_engine, shutdown_engine
+from novaai_studio.documents.service import DocumentService
+from novaai_studio.evals.dataset import EvalCase, load_dataset
+from novaai_studio.notes.service import NoteService
+from novaai_studio.optimizer.cache import ResponseCache
+from novaai_studio.router.budget import BudgetGuard
+from novaai_studio.router.catalog import load_catalog
+from novaai_studio.router.engine import RouterEngine
+from novaai_studio.router.health import HealthTracker
+from novaai_studio.router.pricing import PriceTable
+from novaai_studio.storage.blob import BlobStore
 
 
 def _first_hit_rank(hits: list[tuple[str, str]], case: EvalCase) -> int | None:

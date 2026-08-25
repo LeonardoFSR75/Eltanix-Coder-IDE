@@ -15,8 +15,8 @@ from __future__ import annotations
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from sicoobito.db.models import SessionFileSnapshot
-from sicoobito.db.session import session_scope
+from novaai_studio.db.models import SessionFileSnapshot
+from novaai_studio.db.session import session_scope
 
 
 async def _record(
@@ -62,9 +62,7 @@ async def _restore_targets(
     return list((await session.execute(stmt)).scalars().all())
 
 
-async def _list_for_session(
-    session: AsyncSession, *, session_id: str
-) -> list[SessionFileSnapshot]:
+async def _list_for_session(session: AsyncSession, *, session_id: str) -> list[SessionFileSnapshot]:
     stmt = (
         select(SessionFileSnapshot)
         .where(SessionFileSnapshot.session_id == session_id)

@@ -17,7 +17,7 @@ import fnmatch
 
 from pydantic import BaseModel, Field
 
-from sicoobito.logging_setup import get_logger
+from novaai_studio.logging_setup import get_logger
 
 log = get_logger(__name__)
 

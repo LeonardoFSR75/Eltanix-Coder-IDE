@@ -1,5 +1,4 @@
-"""Rotas da API para gerenciamento de extensões, catálogo e atualização automática.
-"""
+"""Rotas da API para gerenciamento de extensões, catálogo e atualização automática."""
 
 from __future__ import annotations
 
@@ -8,10 +7,10 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel
 
-from sicoobito.api.deps import AuthDep
-from sicoobito.db.session import session_scope
-from sicoobito.extensions.manager import get_extensions_manager
-from sicoobito.logging_setup import get_logger
+from novaai_studio.api.deps import AuthDep
+from novaai_studio.db.session import session_scope
+from novaai_studio.extensions.manager import get_extensions_manager
+from novaai_studio.logging_setup import get_logger
 
 log = get_logger(__name__)
 

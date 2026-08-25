@@ -1,4 +1,4 @@
-from sicoobito.browser.client import (
+from novaai_studio.browser.client import (
     BrowserClient,
     BrowserConfig,
     BrowserError,

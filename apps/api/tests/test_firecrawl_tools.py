@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import pytest
 
-from sicoobito.agent.tools import RiskClass, ToolContext, registry
-from sicoobito.config import Settings
-from sicoobito.firecrawl.service import FirecrawlService
-from sicoobito.workspace.fs import WorkspaceFS
+from novaai_studio.agent.tools import RiskClass, ToolContext, registry
+from novaai_studio.config import Settings
+from novaai_studio.firecrawl.service import FirecrawlService
+from novaai_studio.workspace.fs import WorkspaceFS
 
 
 @pytest.fixture

@@ -1,4 +1,4 @@
-from sicoobito.notes.service import NoteService
-from sicoobito.notes.store import NoteSearchHit
+from novaai_studio.notes.service import NoteService
+from novaai_studio.notes.store import NoteSearchHit
 
 __all__ = ["NoteSearchHit", "NoteService"]

@@ -29,10 +29,10 @@ from dataclasses import dataclass, field
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from sicoobito.agent import session_store
-from sicoobito.logging_setup import get_logger
-from sicoobito.router.engine import RouterEngine
-from sicoobito.skills.service import SkillService
+from novaai_studio.agent import session_store
+from novaai_studio.logging_setup import get_logger
+from novaai_studio.router.engine import RouterEngine
+from novaai_studio.skills.service import SkillService
 
 log = get_logger(__name__)
 
@@ -108,9 +108,7 @@ async def analyze_recent_sessions(
 ) -> SkillPromotionAnalysis:
     """Uma chamada isolada ao router (mesmo padrão de `agent/review_common.py`)
     — não participa do histórico de nenhuma sessão de agente."""
-    registros = await session_store.list_sessions(
-        db, project=project, status="closed", limit=limit
-    )
+    registros = await session_store.list_sessions(db, project=project, status="closed", limit=limit)
     tasks = [
         (r.session_id, r.task.strip())
         for r in registros

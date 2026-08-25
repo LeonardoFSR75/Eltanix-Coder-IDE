@@ -32,8 +32,8 @@ export function TopMenuBar({
 
   const activeFilename = active ? active.split("/").pop() : null;
   const windowTitle = activeFilename
-    ? `SicoobitoCode - Antigravity IDE - ${activeFilename}`
-    : `SicoobitoCode - Antigravity IDE ${project ? `(${project})` : ""}`;
+    ? `NovaAI Studio - Antigravity IDE - ${activeFilename}`
+    : `NovaAI Studio - Antigravity IDE ${project ? `(${project})` : ""}`;
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -241,7 +241,7 @@ export function TopMenuBar({
           {activeMenu === "ajuda" && (
             <div className="top-menu-dropdown">
               <button type="button" onClick={() => handleAction(() => window.open("/docs", "_blank"))}>
-                <span>Documentação do SicoobitoCode</span>
+                <span>Documentação do NovaAI Studio</span>
               </button>
               <button type="button" onClick={() => handleAction(() => onOpenCommandPalette?.())}>
                 <span>Mostrar Todos os Comandos</span>

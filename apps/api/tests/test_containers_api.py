@@ -4,10 +4,10 @@ import os
 import pytest
 from fastapi.testclient import TestClient
 
-os.environ["SICOOBITO_API_KEY"] = "chave-de-teste"
+os.environ["NOVAAI_STUDIO_API_KEY"] = "chave-de-teste"
 os.environ["REDIS_URL"] = "redis://localhost:65533/0"
 
-from sicoobito.main import app
+from novaai_studio.main import app
 
 client = TestClient(app)
 AUTH = {"Authorization": "Bearer chave-de-teste"}
@@ -29,7 +29,7 @@ def test_containers_tree_endpoint_returns_tree():
 
 def test_container_action_endpoint():
     response = client.post(
-        "/api/containers/sicoobito-executor-1/action",
+        "/api/containers/novaai-studio-executor-1/action",
         json={"action": "restart"},
         headers=AUTH,
     )
@@ -39,7 +39,7 @@ def test_container_action_endpoint():
 
 
 def test_container_logs_endpoint():
-    response = client.get("/api/containers/sicoobito-executor-1/logs", headers=AUTH)
+    response = client.get("/api/containers/novaai-studio-executor-1/logs", headers=AUTH)
     assert response.status_code == 200
     data = response.json()
     assert "logs" in data

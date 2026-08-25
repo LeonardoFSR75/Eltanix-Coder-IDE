@@ -15,11 +15,11 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
-os.environ["SICOOBITO_API_KEY"] = "chave-de-teste"
+os.environ["NOVAAI_STUDIO_API_KEY"] = "chave-de-teste"
 os.environ["REDIS_URL"] = "redis://localhost:65533/0"
 
-from sicoobito.config import get_settings
-from sicoobito.main import create_app
+from novaai_studio.config import get_settings
+from novaai_studio.main import create_app
 
 AUTH = {"Authorization": "Bearer chave-de-teste"}
 
@@ -52,7 +52,7 @@ def _write_app_py(root) -> None:
 def workspace(tmp_path_factory):
     """Raiz de projetos com dois projetos, não um só mutado entre testes:
     `demo` (sem política de auto-aprovação) e `demo-auto` (com uma regra já
-    configurada) — dois projetos em vez de escrever `.sicoobito/` dentro de
+    configurada) — dois projetos em vez de escrever `.novaai_studio/` dentro de
     um teste, para o resultado de um teste nunca depender da ordem em que os
     outros rodaram. Escopo de módulo (mesmo padrão de
     `test_workspace_api.py`): subir o app inteiro (lifespan com retry/backoff
@@ -67,8 +67,8 @@ def workspace(tmp_path_factory):
     demo_auto = projects_root / "demo-auto"
     demo_auto.mkdir()
     _write_app_py(demo_auto)
-    (demo_auto / ".sicoobito").mkdir()
-    (demo_auto / ".sicoobito" / "approval_policy.yaml").write_text(
+    (demo_auto / ".novaai_studio").mkdir()
+    (demo_auto / ".novaai_studio" / "approval_policy.yaml").write_text(
         "version: 1\n"
         "second_opinion: false\n"
         "rules:\n"

@@ -1,33 +1,33 @@
-from sicoobito.api.routes.agent import router as agent_router
-from sicoobito.api.routes.analytics import router as analytics_router
-from sicoobito.api.routes.approval_policy import router as approval_policy_router
-from sicoobito.api.routes.audit import router as audit_router
-from sicoobito.api.routes.auth import router as auth_router
-from sicoobito.api.routes.browser import router as browser_router
-from sicoobito.api.routes.browser import ws_router as browser_ws_router
-from sicoobito.api.routes.containers import router as containers_router
-from sicoobito.api.routes.context import router as context_router
-from sicoobito.api.routes.context_rules import router as context_rules_router
-from sicoobito.api.routes.custom_modes import router as custom_modes_router
-from sicoobito.api.routes.documents import router as documents_router
-from sicoobito.api.routes.extensions import router as extensions_router
-from sicoobito.api.routes.firecrawl import router as firecrawl_router
-from sicoobito.api.routes.git import router as git_router
-from sicoobito.api.routes.health import router as health_router
-from sicoobito.api.routes.lsp import router as lsp_router
-from sicoobito.api.routes.lsp import ws_router as lsp_ws_router
-from sicoobito.api.routes.mcp import router as mcp_router
-from sicoobito.api.routes.metrics import router as metrics_router
-from sicoobito.api.routes.notes import router as notes_router
-from sicoobito.api.routes.packages import router as packages_router
-from sicoobito.api.routes.projects import router as projects_router
-from sicoobito.api.routes.security import router as security_router
-from sicoobito.api.routes.skills import router as skills_router
-from sicoobito.api.routes.telemetry import router as telemetry_router
-from sicoobito.api.routes.trello import router as trello_router
-from sicoobito.api.routes.workspace import router as workspace_router
-from sicoobito.api.routes.workspace import ws_router as workspace_ws_router
-from sicoobito.graphify.api.router import router as graphify_router
+from novaai_studio.api.routes.agent import router as agent_router
+from novaai_studio.api.routes.analytics import router as analytics_router
+from novaai_studio.api.routes.approval_policy import router as approval_policy_router
+from novaai_studio.api.routes.audit import router as audit_router
+from novaai_studio.api.routes.auth import router as auth_router
+from novaai_studio.api.routes.browser import router as browser_router
+from novaai_studio.api.routes.browser import ws_router as browser_ws_router
+from novaai_studio.api.routes.containers import router as containers_router
+from novaai_studio.api.routes.context import router as context_router
+from novaai_studio.api.routes.context_rules import router as context_rules_router
+from novaai_studio.api.routes.custom_modes import router as custom_modes_router
+from novaai_studio.api.routes.documents import router as documents_router
+from novaai_studio.api.routes.extensions import router as extensions_router
+from novaai_studio.api.routes.firecrawl import router as firecrawl_router
+from novaai_studio.api.routes.git import router as git_router
+from novaai_studio.api.routes.health import router as health_router
+from novaai_studio.api.routes.lsp import router as lsp_router
+from novaai_studio.api.routes.lsp import ws_router as lsp_ws_router
+from novaai_studio.api.routes.mcp import router as mcp_router
+from novaai_studio.api.routes.metrics import router as metrics_router
+from novaai_studio.api.routes.notes import router as notes_router
+from novaai_studio.api.routes.packages import router as packages_router
+from novaai_studio.api.routes.projects import router as projects_router
+from novaai_studio.api.routes.security import router as security_router
+from novaai_studio.api.routes.skills import router as skills_router
+from novaai_studio.api.routes.telemetry import router as telemetry_router
+from novaai_studio.api.routes.trello import router as trello_router
+from novaai_studio.api.routes.workspace import router as workspace_router
+from novaai_studio.api.routes.workspace import ws_router as workspace_ws_router
+from novaai_studio.graphify.api.router import router as graphify_router
 
 __all__ = [
     "agent_router",
@@ -61,5 +61,3 @@ __all__ = [
     "workspace_router",
     "workspace_ws_router",
 ]
-
-

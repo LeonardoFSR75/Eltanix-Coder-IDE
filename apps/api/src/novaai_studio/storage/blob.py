@@ -13,8 +13,8 @@ from io import BytesIO
 from minio import Minio
 from minio.error import S3Error
 
-from sicoobito.config import Settings
-from sicoobito.logging_setup import get_logger
+from novaai_studio.config import Settings
+from novaai_studio.logging_setup import get_logger
 
 log = get_logger(__name__)
 

@@ -6,11 +6,11 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from sicoobito.api.routes.packages import (
+from novaai_studio.api.routes.packages import (
     parse_requirements_txt,
     sync_requirements_file,
 )
-from sicoobito.main import app
+from novaai_studio.main import app
 
 client = TestClient(app)
 
@@ -73,7 +73,7 @@ def test_sync_requirements_file_normalizes_case_and_underscores(tmp_path: Path):
 
 
 def test_export_requirements_from_venv_writes_freeze(tmp_path: Path, monkeypatch):
-    from sicoobito.api.routes import packages
+    from novaai_studio.api.routes import packages
 
     venv = tmp_path / ".venv"
     if packages.sys.platform == "win32":

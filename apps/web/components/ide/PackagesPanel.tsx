@@ -66,15 +66,15 @@ export function PackagesPanel() {
   // depois de uma ação do agente ter mudado o venv/requirements.txt.
   useEffect(() => {
     const handlePackagesChanged = () => void carregar();
-    window.addEventListener("sicoobito:packages:changed", handlePackagesChanged);
-    return () => window.removeEventListener("sicoobito:packages:changed", handlePackagesChanged);
+    window.addEventListener("novaai_studio:packages:changed", handlePackagesChanged);
+    return () => window.removeEventListener("novaai_studio:packages:changed", handlePackagesChanged);
   }, [carregar]);
 
   // Dispara o mesmo evento que `sessionRuntime.ts` usa quando o agente mexe
   // em pacotes, para que o indicador na StatusBar (que também escuta esse
   // evento) reflita imediatamente uma ação feita aqui pelo próprio usuário.
   const notifyPackagesChanged = () => {
-    window.dispatchEvent(new CustomEvent("sicoobito:packages:changed"));
+    window.dispatchEvent(new CustomEvent("novaai_studio:packages:changed"));
   };
 
   const handleInstall = async (e?: React.FormEvent) => {

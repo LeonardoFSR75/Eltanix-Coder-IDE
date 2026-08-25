@@ -14,11 +14,11 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from sicoobito.logging_setup import get_logger
+from novaai_studio.logging_setup import get_logger
 
 if TYPE_CHECKING:
-    from sicoobito.agent.coordinator import AgentCoordinator
-    from sicoobito.agent.runner import AgentRunner, AgentSession
+    from novaai_studio.agent.coordinator import AgentCoordinator
+    from novaai_studio.agent.runner import AgentRunner, AgentSession
 
 log = get_logger(__name__)
 
@@ -43,12 +43,25 @@ async def run_headless_burst(
         await coordinator.set_status(session.session_id, "stopped")
         return
 
+    # Import local (não no topo do módulo) para evitar ciclo de import com
+    # `agent/runner.py`, que já importa `run_headless_burst` deste módulo.
+    from novaai_studio.agent.runner import SessionAlreadyRunningError
+
     await coordinator.set_status(session.session_id, "running")
     try:
         interrompeu = False
+        falhou = False
         async for evento in runner.stream_run(session, resume=resume, message=message):
-            if evento.get("node") == "interrupt":
+            no = evento.get("node")
+            if no == "interrupt":
                 interrompeu = True
+            elif no == "error":
+                # `stream_run`/`_run_graph` engolem exceções de execução do
+                # grafo e as traduzem num evento `{"node": "error", ...}` em
+                # vez de relançar — sem checar isto aqui, uma falha real do
+                # burst nunca cai no `except` abaixo e acaba reportada como
+                # `"completed"`, indistinguível de sucesso pro pai/UI.
+                falhou = True
 
         if interrompeu:
             # Correto e esperado: o filho bateu numa ação WRITE/EXEC sem
@@ -56,6 +69,8 @@ async def run_headless_burst(
             # exatamente como qualquer sessão pararia — não é falha, é o
             # invariante de aprovação funcionando pra um chamador sem UI.
             await coordinator.set_status(session.session_id, "waiting_approval")
+        elif falhou:
+            await coordinator.set_status(session.session_id, "failed")
         else:
             # O grafo terminou (o modelo parou de pedir ferramentas, tenha
             # ele chamado `agent_finish` ou não). Se `agent_finish` nunca
@@ -64,6 +79,13 @@ async def run_headless_burst(
             # timeout, sem precisar de um status intermediário só pra essa
             # distinção.
             await coordinator.set_status(session.session_id, "completed")
+    except SessionAlreadyRunningError:
+        # Outra chamada (humano via SSE, ou outro burst) já pegou o lock da
+        # sessão entre a checagem de `_wake_agent` e este burst realmente
+        # rodar — não é uma falha deste agente, é a outra chamada dirigindo a
+        # sessão de verdade. Deixa o status como está (ela mesma vai
+        # atualizar via seu próprio `stream_run`) em vez de marcar "failed".
+        log.info("agent.headless.burst_skipped_already_running", session=session.session_id)
     except Exception as exc:
         log.warning("agent.headless.burst_failed", session=session.session_id, error=str(exc)[:200])
         await coordinator.set_status(session.session_id, "failed")

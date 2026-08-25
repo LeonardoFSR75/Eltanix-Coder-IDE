@@ -2,8 +2,8 @@
 
 from pathlib import Path
 import pytest
-from sicoobito.workspace.path_guard import PathGuard, PathEscapeError
-from sicoobito.workspace.inspector import ProjectInspector
+from novaai_studio.workspace.path_guard import PathGuard, PathEscapeError
+from novaai_studio.workspace.inspector import ProjectInspector
 
 
 def test_path_guard_allow_and_validate(tmp_path: Path):

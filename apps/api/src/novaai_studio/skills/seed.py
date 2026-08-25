@@ -11,12 +11,12 @@ import re
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from sicoobito.db.session import session_scope
-from sicoobito.logging_setup import get_logger
-from sicoobito.skills import store
+from novaai_studio.db.session import session_scope
+from novaai_studio.logging_setup import get_logger
+from novaai_studio.skills import store
 
 if TYPE_CHECKING:
-    from sicoobito.router.engine import RouterEngine
+    from novaai_studio.router.engine import RouterEngine
 
 log = get_logger(__name__)
 
@@ -76,27 +76,44 @@ async def seed_agent_skills(
     count = 0
     novas: list[tuple[str, str]] = []  # (skill_id, description) — embedado fora da transação
     async with session_scope() as session:
-        existing_skills = await store.list_skills(session)
-        existing_names = {s.name for s in existing_skills}
+        existing_map = {s.name: s for s in existing_skills}
 
         for skill_md in sorted(skills_dir.rglob("SKILL.md")):  # noqa: ASYNC240
             parsed = parse_skill_markdown(skill_md)
             if not parsed:
                 continue
 
-            if parsed["name"] not in existing_names:
+            name = parsed["name"]
+            if name not in existing_map:
                 skill = await store.create_skill(
                     session,
-                    name=parsed["name"],
+                    name=name,
                     description=parsed["description"],
                     category=parsed["category"],
                     system_prompt=parsed["system_prompt"],
                     parameters_json=parsed["parameters_json"],
                 )
-                existing_names.add(parsed["name"])
+                existing_map[name] = skill
                 novas.append((str(skill.id), parsed["description"]))
                 count += 1
-                log.info("skills.seed.imported", name=parsed["name"])
+                log.info("skills.seed.imported", name=name)
+            else:
+                existing = existing_map[name]
+                if (
+                    existing.system_prompt != parsed["system_prompt"]
+                    or existing.description != parsed["description"]
+                ):
+                    await store.update_skill(
+                        session,
+                        existing.id,
+                        name=name,
+                        description=parsed["description"],
+                        category=parsed["category"],
+                        system_prompt=parsed["system_prompt"],
+                        parameters_json=parsed["parameters_json"],
+                    )
+                    count += 1
+                    log.info("skills.seed.updated", name=name)
 
     if engine is not None and novas:
         await _embed_new_skills(engine, embedding_profile, novas)

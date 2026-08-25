@@ -4,11 +4,11 @@ from __future__ import annotations
 
 from typing import Any
 
-from sicoobito.graphify.metrics.analytics import GraphAnalytics
-from sicoobito.graphify.pipeline.indexer import GraphIndexer
-from sicoobito.graphify.rag.graph_rag import GraphRAGQueryEngine
-from sicoobito.graphify.store import GraphStore
-from sicoobito.logging_setup import get_logger
+from novaai_studio.graphify.metrics.analytics import GraphAnalytics
+from novaai_studio.graphify.pipeline.indexer import GraphIndexer
+from novaai_studio.graphify.rag.graph_rag import GraphRAGQueryEngine
+from novaai_studio.graphify.store import GraphStore
+from novaai_studio.logging_setup import get_logger
 
 log = get_logger(__name__)
 

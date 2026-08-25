@@ -11,8 +11,8 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime, timedelta
 
-from sicoobito.db.models import AuditLogEntry, RequestLog, ToolSpan
-from sicoobito.telemetry.flight_recorder import session_timeline
+from novaai_studio.db.models import AuditLogEntry, RequestLog, ToolSpan
+from novaai_studio.telemetry.flight_recorder import session_timeline
 
 
 def _session_id() -> str:

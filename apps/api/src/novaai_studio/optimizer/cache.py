@@ -22,11 +22,11 @@ from typing import Any
 
 from redis.asyncio import Redis
 
-from sicoobito.logging_setup import get_logger
+from novaai_studio.logging_setup import get_logger
 
 log = get_logger(__name__)
 
-_PREFIX = "sicoobito:cache:chat"
+_PREFIX = "novaai_studio:cache:chat"
 
 
 @dataclass(slots=True)

@@ -6,8 +6,8 @@ from typing import Any
 
 import structlog
 
-from sicoobito.analytics.models.classifier import FailureCategory
-from sicoobito.router import RouterEngine
+from novaai_studio.analytics.models.classifier import FailureCategory
+from novaai_studio.router import RouterEngine
 
 logger = structlog.get_logger(__name__)
 
@@ -35,7 +35,7 @@ class RCAEngine:
         errors_str = "\n".join(errors) if errors else "Sem exceção explícita no log."
 
         analysis_prompt = (
-            f"Você é o diagnosticador de telemetria da IDE SicoobitoCode.\n"
+            f"Você é o diagnosticador de telemetria da IDE NovaAI Studio.\n"
             f"Analise a falha a seguir:\n"
             f"- Categoria da Falha: {category}\n"
             f"- Intenção do Usuário: {prompt}\n"

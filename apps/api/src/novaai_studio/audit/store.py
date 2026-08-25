@@ -7,7 +7,7 @@ import uuid
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from sicoobito.db.models import AuditLogEntry
+from novaai_studio.db.models import AuditLogEntry
 
 
 async def record(

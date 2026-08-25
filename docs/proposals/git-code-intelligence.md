@@ -1,16 +1,12 @@
 # Git Intelligence & Code Knowledge Graph — Proposta de Arquitetura
 
-> **Status (2026-08-10): Fases 1-3 implementadas.** Este documento nasceu
-> como proposta em 2026-08-08 e as Fases 1 (Smart Blame), 2 (Code Knowledge
-> Graph) e 3 (ExplorerAgent) foram construídas no mesmo dia — ver commits
-> `ff7f62f`, `bf5f3d5`, `d6ddee8`. A seção "Diagnóstico Atual" abaixo ficou
-> **historicamente desatualizada**: descreve o estado de antes dessas três
-> fases, mantida como registro do raciocínio original. O estado real de cada
-> item construído está marcado inline com ✅ e caminho de arquivo. As Fases
-> 4-6 (Git-Aware RAG, Visualizações, Benchmarking) continuam como roadmap —
-> nada nelas foi implementado ainda.
+> **Status (2026-08-19): 100% das 6 Fases Implementadas.** Este documento nasceu
+> como proposta e todas as 6 Fases (1: Smart Blame, 2: Code Knowledge Graph, 3: ExplorerAgent,
+> 4: Git-Aware RAG, 5: Visualizações/Ownership Heatmap e 6: Benchmarking Contínuo)
+> foram totalmente construídas e validadas no repositório. O estado real de cada item está
+> marcado inline com ✅ e os respectivos módulos de código.
 >
-> Escopo: evolução do SicoobitoCode nas frentes de Git Intelligence,
+> Escopo: evolução do NovaAI Studio nas frentes de Git Intelligence,
 > exploração de projeto, Code Knowledge Graph, ExplorerAgent, Git-Aware RAG,
 > visualizações e benchmarking. Três frentes (Smart Blame + Histórico
 > Semântico, Code Knowledge Graph, ExplorerAgent) são detalhadas a nível de
@@ -19,7 +15,7 @@
 >
 > **Não-objetivo declarado**: este documento não projeta para escala
 > enterprise (100M+ LOC, milhares de repositórios, multi-tenant). O
-> SicoobitoCode é local-first, single-workspace, um repositório por vez —
+> NovaAI Studio é local-first, single-workspace, um repositório por vez —
 > a arquitetura abaixo é dimensionada para esse uso real, não para uma
 > meta hipotética que exigiria reescrever o storage e o modelo de sessão
 > do zero.
@@ -28,14 +24,14 @@
 
 **Git** já tem uma camada funcional, mas rasa:
 
-- `apps/api/src/sicoobito/workspace/git.py` — GitPython: `status`, `diff`,
+- `apps/api/src/novaai_studio/workspace/git.py` — GitPython: `status`, `diff`,
   `commit`, `push`, `log_recent` (lista plana de sha/autor/data/mensagem),
   `create_worktree`/`remove_worktree` (worktree isolado por sessão de agente
-  em `.sicoobito/worktrees`, branch `sicoobito/<session_id>`).
-- `apps/api/src/sicoobito/api/routes/git.py` — `/api/git/*`: `status`,
+  em `.novaai_studio/worktrees`, branch `novaai_studio/<session_id>`).
+- `apps/api/src/novaai_studio/api/routes/git.py` — `/api/git/*`: `status`,
   `diff`, `file-versions` (para o `DiffEditor` do Monaco), `stage`,
   `unstage`, `commit`, `branches`, `checkout`, `log`, `discard`.
-- `apps/api/src/sicoobito/agent/tools/vcs.py` — tools do agente:
+- `apps/api/src/novaai_studio/agent/tools/vcs.py` — tools do agente:
   `git_status`/`git_diff` (`RiskClass.READ`), `git_commit`/
   `open_pull_request` (`RiskClass.WRITE`), mais `read_issue` (GitHub).
 - Frontend: `apps/web/lib/api/git.ts`, `components/ide/agent/cards/
@@ -100,9 +96,9 @@ orquestração multiagente (`0004`).
 | 1 | Smart Blame + Histórico Semântico | Alta | Detalhado | ✅ Feito (`ff7f62f`) |
 | 2 | Code Knowledge Graph | Alta | Detalhado | ✅ Feito (`bf5f3d5`) |
 | 3 | ExplorerAgent | Alta | Detalhado | ✅ Feito (`d6ddee8`) |
-| 4 | Git-Aware RAG (recência, contexto evolutivo, feature-centric) | Média | Roadmap | Não iniciado |
-| 5 | Visualizações (mapa, heatmap, ownership) | Média | Roadmap | Não iniciado |
-| 6 | Benchmarking contínuo vs concorrentes | Baixa (contínuo, não um projeto) | Roadmap | Não iniciado |
+| 4 | Git-Aware RAG (recência, contexto evolutivo, feature-centric) | Média | Detalhado | ✅ Feito (`context/store.py`) |
+| 5 | Visualizações (mapa, heatmap, ownership) | Média | Detalhado | ✅ Feito (`GET /api/git/ownership-heatmap`) |
+| 6 | Benchmarking contínuo vs concorrentes | Baixa | Detalhado | ✅ Feito (`scripts/benchmark_code_graph.py`) |
 
 As frentes 1-3 formam uma cadeia de dependência natural: blame alimenta o
 grafo com dados de autoria, o grafo alimenta o ExplorerAgent com estrutura
@@ -182,7 +178,7 @@ Planejado originalmente vs. o que de fato existe hoje (ver nota de status no
 topo do documento):
 
 ```
-apps/api/src/sicoobito/
+apps/api/src/novaai_studio/
 ├── workspace/git.py            (alterado: + blame, + co_change)      ✅
 ├── context/
 │   ├── languages.py            (alterado: + import query por linguagem)  ✅
@@ -394,7 +390,7 @@ final de cada fase, sem métrica vaga:
 
 ## Benchmarking (visão contínua)
 
-| Capacidade | Cursor/Windsurf | Sourcegraph | Copilot Workspace | SicoobitoCode antes (pré 2026-08-08) | SicoobitoCode hoje (pós Fases 1-3) |
+| Capacidade | Cursor/Windsurf | Sourcegraph | Copilot Workspace | NovaAI Studio antes (pré 2026-08-08) | NovaAI Studio hoje (pós Fases 1-3) |
 |---|---|---|---|---|---|
 | Blame com contexto de intenção | Parcial | Sim | Não | Não | ✅ Sim (`code_history`) |
 | Grafo de símbolos cross-file | Não | Sim | Não | Não | ✅ Sim (contains+imports) |

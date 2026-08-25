@@ -17,10 +17,10 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from sicoobito.agent.state import PendingApproval
-from sicoobito.agent.tools.base import ToolContext
-from sicoobito.agent.tools.diffing import compute_proposed_diff
-from sicoobito.logging_setup import get_logger
+from novaai_studio.agent.state import PendingApproval
+from novaai_studio.agent.tools.base import ToolContext
+from novaai_studio.agent.tools.diffing import compute_proposed_diff
+from novaai_studio.logging_setup import get_logger
 
 log = get_logger(__name__)
 

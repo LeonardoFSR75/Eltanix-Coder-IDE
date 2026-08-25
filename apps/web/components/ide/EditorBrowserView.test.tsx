@@ -58,7 +58,7 @@ describe("resultReducer", () => {
 
     const tudoPreenchido: BrowserResultState = {
       urlInput: "http://web:5400/admin",
-      currentUrl: "http://sicoobito-abc123:5400",
+      currentUrl: "http://novaai-studio-abc123:5400",
       title: "Página de teste",
       status: 200,
       durationMs: 842,

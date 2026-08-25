@@ -1,7 +1,7 @@
 """Rotas de integração com o Docker: containers, imagens, redes, volumes e logs.
 
 Permite que a IDE agêntica se comunique diretamente com o daemon Docker do host
-para inspecionar a stack de containers (sicoobito-executor, browser, redis, postgres, minio),
+para inspecionar a stack de containers (novaai-studio-executor, browser, redis, postgres, minio),
 imagens locais, redes, volumes e executar ações de gerenciamento.
 """
 
@@ -12,8 +12,8 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
 
-from sicoobito.api.deps import AuthDep
-from sicoobito.logging_setup import get_logger
+from novaai_studio.api.deps import AuthDep
+from novaai_studio.logging_setup import get_logger
 
 log = get_logger(__name__)
 
@@ -27,52 +27,52 @@ class ContainerActionRequest(BaseModel):
 # Estruturas padrão de fallback caso o Docker daemon não esteja acessível
 FALLBACK_CONTAINERS = [
     {
-        "id": "sicoobito-executor-1",
-        "name": "sicoobito-executor-1",
-        "image": "sicoobito-executor:latest",
+        "id": "novaai-studio-executor-1",
+        "name": "novaai-studio-executor-1",
+        "image": "novaai-studio-executor:latest",
         "state": "running",
         "status": "Up 3 hours",
-        "compose_project": "sicoobito",
+        "compose_project": "novaai_studio",
         "ports": ["5402/tcp -> 5402"],
         "created_at": "2026-08-11T08:00:00Z",
     },
     {
-        "id": "sicoobito-browser-1",
-        "name": "sicoobito-browser-1",
-        "image": "sicoobito-browser:latest",
+        "id": "novaai-studio-browser-1",
+        "name": "novaai-studio-browser-1",
+        "image": "novaai-studio-browser:latest",
         "state": "running",
         "status": "Up 3 hours",
-        "compose_project": "sicoobito",
+        "compose_project": "novaai_studio",
         "ports": ["9222/tcp -> 9222"],
         "created_at": "2026-08-11T08:00:00Z",
     },
     {
-        "id": "sicoobito-minio-1",
-        "name": "sicoobito-minio-1",
+        "id": "novaai-studio-minio-1",
+        "name": "novaai-studio-minio-1",
         "image": "minio/minio:RELEASE.2024-11-07T00-00-00Z",
         "state": "running",
         "status": "Up 3 hours",
-        "compose_project": "sicoobito",
+        "compose_project": "novaai_studio",
         "ports": ["9000/tcp -> 9000", "9001/tcp -> 9001"],
         "created_at": "2026-08-11T08:00:00Z",
     },
     {
-        "id": "sicoobito-postgres-1",
-        "name": "sicoobito-postgres-1",
+        "id": "novaai-studio-postgres-1",
+        "name": "novaai-studio-postgres-1",
         "image": "pgvector/pgvector:pg17",
         "state": "running",
         "status": "Up 3 hours",
-        "compose_project": "sicoobito",
+        "compose_project": "novaai_studio",
         "ports": ["5432/tcp -> 5432"],
         "created_at": "2026-08-11T08:00:00Z",
     },
     {
-        "id": "sicoobito-redis-1",
-        "name": "sicoobito-redis-1",
+        "id": "novaai-studio-redis-1",
+        "name": "novaai-studio-redis-1",
         "image": "redis:7-alpine",
         "state": "running",
         "status": "Up 3 hours",
-        "compose_project": "sicoobito",
+        "compose_project": "novaai_studio",
         "ports": ["6379/tcp -> 6379"],
         "created_at": "2026-08-11T08:00:00Z",
     },
@@ -107,7 +107,7 @@ async def get_container_tree() -> dict[str, Any]:
             "connected": False,
             "daemon_info": {"server_version": "Docker Engine (Modo de Simulação / Host)"},
             "containers_by_project": {
-                "sicoobito": FALLBACK_CONTAINERS,
+                "novaai_studio": FALLBACK_CONTAINERS,
             },
             "images": FALLBACK_IMAGES,
             "registries": [
@@ -116,14 +116,14 @@ async def get_container_tree() -> dict[str, Any]:
                 {"name": "Azure Container Registry", "url": "azurecr.io"},
             ],
             "networks": [
-                {"name": "sicoobito-network", "driver": "bridge"},
+                {"name": "novaai-studio-network", "driver": "bridge"},
                 {"name": "bridge", "driver": "bridge"},
                 {"name": "host", "driver": "host"},
             ],
             "volumes": [
-                {"name": "sicoobito-postgres-data", "driver": "local"},
-                {"name": "sicoobito-minio-data", "driver": "local"},
-                {"name": "sicoobito-redis-data", "driver": "local"},
+                {"name": "novaai-studio-postgres-data", "driver": "local"},
+                {"name": "novaai-studio-minio-data", "driver": "local"},
+                {"name": "novaai-studio-redis-data", "driver": "local"},
             ],
             "contexts": [
                 {"name": "default", "current": True},
@@ -203,7 +203,9 @@ async def get_container_tree() -> dict[str, Any]:
                     "ServerVersion"
                 )
             },
-            "containers_by_project": projetos if projetos else {"sicoobito": FALLBACK_CONTAINERS},
+            "containers_by_project": projetos
+            if projetos
+            else {"novaai_studio": FALLBACK_CONTAINERS},
             "images": images_list if images_list else FALLBACK_IMAGES,
             "registries": [
                 {"name": "Docker Hub", "url": "docker.io"},
@@ -233,11 +235,11 @@ async def get_container_tree() -> dict[str, Any]:
         log.error("docker.query.failed", error=str(exc))
         return {
             "connected": False,
-            "containers_by_project": {"sicoobito": FALLBACK_CONTAINERS},
+            "containers_by_project": {"novaai_studio": FALLBACK_CONTAINERS},
             "images": FALLBACK_IMAGES,
             "registries": [{"name": "Docker Hub", "url": "docker.io"}],
-            "networks": [{"name": "sicoobito-network", "driver": "bridge"}],
-            "volumes": [{"name": "sicoobito-postgres-data", "driver": "local"}],
+            "networks": [{"name": "novaai-studio-network", "driver": "bridge"}],
+            "volumes": [{"name": "novaai-studio-postgres-data", "driver": "local"}],
             "contexts": [{"name": "default", "current": True}],
             "help_and_feedback": [],
         }

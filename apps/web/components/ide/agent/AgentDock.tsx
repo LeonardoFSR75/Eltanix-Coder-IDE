@@ -6,7 +6,7 @@ import { MissionControl } from "@/components/ide/MissionControl";
 import { useToast } from "@/components/Toast";
 import { useIde } from "@/lib/ide-store";
 import { loadHookPrefs } from "@/lib/hook-prefs";
-import { getAgentGraph, listAgentSessions } from "@/lib/api/agent";
+import { getAgentGraph, listAgentSessions, rootsWithChildren } from "@/lib/api/agent";
 import { AgentChatInput } from "./AgentChatInput";
 import { AgentDockHeader } from "./AgentDockHeader";
 import { AgentManager } from "./AgentManager";
@@ -158,9 +158,14 @@ export function AgentDock({
   // subida (`autoOpenTriggeringRef`) pra não reabrir a cada 45s se o usuário
   // fechar o painel manualmente enquanto a condição continua valendo.
   const APPROVAL_STALE_MS = 30_000;
-  const notifiedApprovalsRef = useRef<Set<string>>(new Set());
-  const pendingSinceRef = useRef<Map<string, number>>(new Map());
-  const prevStatusRef = useRef<Map<string, string>>(new Map());
+  // Um `Map` só, chaveado por `session_id`, em vez de três refs paralelos
+  // que precisavam ser lidos/escritos/apagados em conjunto pra cada nó —
+  // o estado dos três (notificado, desde-quando-pendente, status anterior)
+  // sempre viveu e morreu junto por nó, nunca fazia sentido como três
+  // estruturas sincronizadas à mão.
+  const nodeStateRef = useRef<
+    Map<string, { notified: boolean; pendingSince: number | null; prevStatus: string }>
+  >(new Map());
   const autoOpenTriggeringRef = useRef(false);
   useEffect(() => {
     if (!project) return;
@@ -169,40 +174,46 @@ export function AgentDock({
     const poll = async () => {
       try {
         const registros = await listAgentSessions(project);
-        const raizesComFilhos = registros.filter(
-          (r) => !r.parent_session_id && registros.some((f) => f.parent_session_id === r.session_id),
-        );
+        const raizesComFilhos = rootsWithChildren(registros);
 
         let temAprovacaoParada = false;
         let temConclusaoRecente = false;
 
-        for (const raiz of raizesComFilhos) {
-          if (cancelado) return;
-          const grafo = await getAgentGraph(raiz.session_id);
+        const arvores = await Promise.all(
+          raizesComFilhos.map((raiz) => getAgentGraph(raiz.session_id)),
+        );
+        if (cancelado) return;
+
+        for (const grafo of arvores) {
           for (const no of grafo) {
-            const jaNotificado = notifiedApprovalsRef.current.has(no.session_id);
-            if (no.status === "waiting_approval" && !jaNotificado) {
-              notifiedApprovalsRef.current.add(no.session_id);
+            const estado = nodeStateRef.current.get(no.session_id) ?? {
+              notified: false,
+              pendingSince: null,
+              prevStatus: "",
+            };
+
+            if (no.status === "waiting_approval" && !estado.notified) {
+              estado.notified = true;
               handleAgentNotify("approval", `${no.display_name} aguardando aprovação`);
-            } else if (no.status !== "waiting_approval" && jaNotificado) {
+            } else if (no.status !== "waiting_approval" && estado.notified) {
               // Volta a poder notificar se essa sessão parar de esperar
               // aprovação e depois voltar a esperar (ex.: segundo turno).
-              notifiedApprovalsRef.current.delete(no.session_id);
+              estado.notified = false;
             }
 
             if (no.status === "waiting_approval") {
-              const desde = pendingSinceRef.current.get(no.session_id) ?? Date.now();
-              pendingSinceRef.current.set(no.session_id, desde);
-              if (Date.now() - desde > APPROVAL_STALE_MS) temAprovacaoParada = true;
+              estado.pendingSince = estado.pendingSince ?? Date.now();
+              if (Date.now() - estado.pendingSince > APPROVAL_STALE_MS) temAprovacaoParada = true;
             } else {
-              pendingSinceRef.current.delete(no.session_id);
+              estado.pendingSince = null;
             }
 
-            const statusAnterior = prevStatusRef.current.get(no.session_id);
-            if (no.status === "completed" && statusAnterior && statusAnterior !== "completed") {
+            if (no.status === "completed" && estado.prevStatus && estado.prevStatus !== "completed") {
               temConclusaoRecente = true;
             }
-            prevStatusRef.current.set(no.session_id, no.status);
+            estado.prevStatus = no.status;
+
+            nodeStateRef.current.set(no.session_id, estado);
           }
         }
 

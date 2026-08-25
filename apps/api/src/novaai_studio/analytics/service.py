@@ -10,13 +10,13 @@ import structlog
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from sicoobito.analytics.diagnostics.correction_generator import CorrectionProposalGenerator
-from sicoobito.analytics.diagnostics.rca_engine import RCAEngine
-from sicoobito.analytics.features import FeatureExtractor
-from sicoobito.analytics.ingestion import TrajectoryIngestor
-from sicoobito.analytics.models.classifier import FailureCategory, TrajectoryClassifier
-from sicoobito.db.models import ChatTrajectory, CorrectionProposal, FailureCluster
-from sicoobito.router import RouterEngine
+from novaai_studio.analytics.diagnostics.correction_generator import CorrectionProposalGenerator
+from novaai_studio.analytics.diagnostics.rca_engine import RCAEngine
+from novaai_studio.analytics.features import FeatureExtractor
+from novaai_studio.analytics.ingestion import TrajectoryIngestor
+from novaai_studio.analytics.models.classifier import FailureCategory, TrajectoryClassifier
+from novaai_studio.db.models import ChatTrajectory, CorrectionProposal, FailureCluster
+from novaai_studio.router import RouterEngine
 
 logger = structlog.get_logger(__name__)
 

@@ -4,13 +4,13 @@ from __future__ import annotations
 
 from typing import Any
 
-from sicoobito.agent.tools.base import RiskClass, ToolContext, ToolResult, tool
-from sicoobito.db.session import session_scope
-from sicoobito.workspace.projects import (
+from novaai_studio.agent.tools.base import RiskClass, ToolContext, ToolResult, tool
+from novaai_studio.db.session import session_scope
+from novaai_studio.workspace.projects import (
     ProjectError,
     get_project_summary,
 )
-from sicoobito.workspace.projects import (
+from novaai_studio.workspace.projects import (
     list_projects as list_disk_projects,
 )
 

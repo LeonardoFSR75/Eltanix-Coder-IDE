@@ -8,7 +8,7 @@ import uuid
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from sicoobito.db.models import Skill
+from novaai_studio.db.models import Skill
 
 
 async def create_skill(
@@ -133,10 +133,10 @@ async def search_by_similarity(
         LIMIT :top_k
     """
     rows = (
-        await session.execute(
-            text(sql), {"embedding": str(query_embedding), "top_k": top_k}
-        )
-    ).mappings().all()
+        (await session.execute(text(sql), {"embedding": str(query_embedding), "top_k": top_k}))
+        .mappings()
+        .all()
+    )
 
     matched_ids = [row["id"] for row in rows if float(row["score"]) >= min_score]
     if not matched_ids:
@@ -144,9 +144,7 @@ async def search_by_similarity(
 
     skills = {
         s.id: s
-        for s in (
-            await session.execute(select(Skill).where(Skill.id.in_(matched_ids)))
-        ).scalars()
+        for s in (await session.execute(select(Skill).where(Skill.id.in_(matched_ids)))).scalars()
     }
     # Reordena pelo score original (a query `IN` do passo acima não preserva ordem).
     return [skills[i] for i in matched_ids if i in skills]

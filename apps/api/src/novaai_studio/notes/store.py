@@ -14,9 +14,9 @@ from dataclasses import dataclass
 from sqlalchemy import delete, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from sicoobito.db.models import Note, NoteChunk
-from sicoobito.documents.chunker import TextChunk
-from sicoobito.logging_setup import get_logger
+from novaai_studio.db.models import Note, NoteChunk
+from novaai_studio.documents.chunker import TextChunk
+from novaai_studio.logging_setup import get_logger
 
 log = get_logger(__name__)
 

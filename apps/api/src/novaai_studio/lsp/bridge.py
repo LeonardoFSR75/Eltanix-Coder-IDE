@@ -24,8 +24,8 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import quote, unquote
 
-from sicoobito.logging_setup import get_logger
-from sicoobito.lsp.servers import ServerSpec
+from novaai_studio.logging_setup import get_logger
+from novaai_studio.lsp.servers import ServerSpec
 
 log = get_logger(__name__)
 
@@ -41,7 +41,7 @@ class LspError(RuntimeError):
 def _ambiente_limpo() -> dict[str, str]:
     """Ambiente para o language server, sem o virtualenv da própria API.
 
-    A API roda com `/app/.venv/bin` no `PATH` e o pacote `sicoobito` instalado
+    A API roda com `/app/.venv/bin` no `PATH` e o pacote `novaai_studio` instalado
     em modo editável apontando para `/app/src`. Um analisador que herde isso
     resolve os imports do projeto pela **cópia dentro do container** em vez dos
     arquivos que estão abertos no editor — e "ir para definição" leva a

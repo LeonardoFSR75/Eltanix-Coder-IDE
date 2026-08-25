@@ -14,8 +14,8 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field
 
-from sicoobito.api.deps import AuthDep
-from sicoobito.audit.service import AuditService
+from novaai_studio.api.deps import AuthDep
+from novaai_studio.audit.service import AuditService
 
 router = APIRouter(prefix="/api/audit", tags=["audit"], dependencies=[AuthDep])
 

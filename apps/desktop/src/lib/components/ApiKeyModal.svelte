@@ -27,14 +27,14 @@
   >
     <div class="modal-card" role="document" onclick={(e) => e.stopPropagation()}>
       <div class="modal-header">
-        <h3>🔑 Chave de API do SicoobitoCode</h3>
+        <h3>🔑 Chave de API do NovaAI Studio</h3>
         {#if dismissible}
           <button class="btn-close" onclick={() => onSaved?.()}>×</button>
         {/if}
       </div>
 
       <p class="hint">
-        O Lite fala direto com a API (<code>SICOOBITO_API_KEY</code>) — sem chave, nenhuma
+        O Lite fala direto com a API (<code>NOVAAI_STUDIO_API_KEY</code>) — sem chave, nenhuma
         requisição funciona. Cole aqui a mesma chave configurada no <code>.env</code> da
         stack (ou em Configurações → Chaves de API no hub principal).
       </p>
@@ -45,7 +45,7 @@
           <input
             type="password"
             bind:value={key}
-            placeholder="cole a SICOOBITO_API_KEY aqui..."
+            placeholder="cole a NOVAAI_STUDIO_API_KEY aqui..."
             autocomplete="off"
             required
           />

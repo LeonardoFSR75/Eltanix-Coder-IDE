@@ -11,10 +11,10 @@ from unittest.mock import AsyncMock, patch
 
 from httpx import Response
 
-from sicoobito.db.models import ExtensionSettings, ExtensionState
-from sicoobito.extensions.catalog import MASTER_EXTENSIONS_CATALOG
-from sicoobito.extensions.client import OpenVSXClient, _is_newer_version
-from sicoobito.extensions.manager import ExtensionsManager
+from novaai_studio.db.models import ExtensionSettings, ExtensionState
+from novaai_studio.extensions.catalog import MASTER_EXTENSIONS_CATALOG
+from novaai_studio.extensions.client import OpenVSXClient, _is_newer_version
+from novaai_studio.extensions.manager import ExtensionsManager
 
 _FAKE_SESSION = object()  # store é mockado nestes testes — nunca toca o objeto
 
@@ -43,9 +43,9 @@ def test_is_newer_version_comparison():
 
 async def test_extensions_manager_toggle_persists_via_store():
     mgr = ExtensionsManager()
-    ext_id = "sicoobito.shadcn-radix-studio"
+    ext_id = "novaai_studio.shadcn-radix-studio"
 
-    with patch("sicoobito.extensions.manager.store.upsert_state", new=AsyncMock()) as mock_upsert:
+    with patch("novaai_studio.extensions.manager.store.upsert_state", new=AsyncMock()) as mock_upsert:
         new_state = await mgr.toggle_extension(_FAKE_SESSION, ext_id, active=False)
         assert new_state is False
         mock_upsert.assert_awaited_once_with(_FAKE_SESSION, ext_id, active=False)
@@ -59,7 +59,7 @@ async def test_extensions_manager_toggle_persists_via_store():
 
 async def test_extensions_manager_toggle_unknown_id_returns_none():
     mgr = ExtensionsManager()
-    with patch("sicoobito.extensions.manager.store.upsert_state", new=AsyncMock()) as mock_upsert:
+    with patch("novaai_studio.extensions.manager.store.upsert_state", new=AsyncMock()) as mock_upsert:
         result = await mgr.toggle_extension(_FAKE_SESSION, "nao.existe")
         assert result is None
         mock_upsert.assert_not_awaited()
@@ -80,10 +80,10 @@ async def test_extensions_manager_hydrate_loads_overlay_from_store():
 
     with (
         patch(
-            "sicoobito.extensions.manager.store.list_states", new=AsyncMock(return_value=states)
+            "novaai_studio.extensions.manager.store.list_states", new=AsyncMock(return_value=states)
         ),
         patch(
-            "sicoobito.extensions.manager.store.get_settings", new=AsyncMock(return_value=settings)
+            "novaai_studio.extensions.manager.store.get_settings", new=AsyncMock(return_value=settings)
         ),
     ):
         await mgr.hydrate(_FAKE_SESSION)
@@ -98,7 +98,7 @@ async def test_extensions_manager_hydrate_loads_overlay_from_store():
 async def test_extensions_manager_hydrate_degrades_gracefully_on_error():
     mgr = ExtensionsManager()
     with patch(
-        "sicoobito.extensions.manager.store.list_states",
+        "novaai_studio.extensions.manager.store.list_states",
         new=AsyncMock(side_effect=RuntimeError("postgres indisponível")),
     ):
         await mgr.hydrate(_FAKE_SESSION)  # não deve levantar
@@ -111,7 +111,7 @@ async def test_extensions_manager_hydrate_degrades_gracefully_on_error():
 async def test_extensions_manager_sync_and_update():
     mock_client = AsyncMock(spec=OpenVSXClient)
     mock_client.check_updates_batch.return_value = {
-        "sicoobito.shadcn-radix-studio": {
+        "novaai_studio.shadcn-radix-studio": {
             "current_version": "1.4.0",
             "latest_version": "1.5.0",
             "published_at": "2026-08-17T00:00:00Z",
@@ -122,14 +122,14 @@ async def test_extensions_manager_sync_and_update():
     mgr._auto_update_enabled = False  # Para inspecionar o pending update antes de aplicar
 
     with (
-        patch("sicoobito.extensions.manager.store.upsert_state", new=AsyncMock()),
-        patch("sicoobito.extensions.manager.store.update_settings", new=AsyncMock()),
+        patch("novaai_studio.extensions.manager.store.upsert_state", new=AsyncMock()),
+        patch("novaai_studio.extensions.manager.store.update_settings", new=AsyncMock()),
     ):
         catalog = await mgr.sync_with_marketplace(_FAKE_SESSION, force=True)
         assert catalog["pending_updates_count"] == 1
 
         target_ext = next(
-            e for e in catalog["extensions"] if e["id"] == "sicoobito.shadcn-radix-studio"
+            e for e in catalog["extensions"] if e["id"] == "novaai_studio.shadcn-radix-studio"
         )
         assert target_ext["hasUpdate"] is True
         assert target_ext["updateInfo"]["latest_version"] == "1.5.0"
@@ -140,7 +140,7 @@ async def test_extensions_manager_sync_and_update():
     catalog_after = mgr.get_catalog()
     assert catalog_after["pending_updates_count"] == 0
     target_ext_after = next(
-        e for e in catalog_after["extensions"] if e["id"] == "sicoobito.shadcn-radix-studio"
+        e for e in catalog_after["extensions"] if e["id"] == "novaai_studio.shadcn-radix-studio"
     )
     assert target_ext_after["version"] == "1.5.0"
     assert target_ext_after["hasUpdate"] is False

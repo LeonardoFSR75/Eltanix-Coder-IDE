@@ -6,7 +6,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from sicoobito.agent.tools.base import RiskClass, ToolContext, ToolResult, tool
+from novaai_studio.agent.tools.base import RiskClass, ToolContext, ToolResult, tool
 
 
 @tool(
@@ -53,7 +53,7 @@ from sicoobito.agent.tools.base import RiskClass, ToolContext, ToolResult, tool
     ),
 )
 async def trello_manage(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
-    from sicoobito.api.routes.trello import load_kanban_cards, save_kanban_cards
+    from novaai_studio.api.routes.trello import load_kanban_cards, save_kanban_cards
 
     action = args["action"]
     project_path = Path(ctx.workspace_root)

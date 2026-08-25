@@ -19,12 +19,12 @@ from typing import Any
 
 from git import GitCommandError, Repo
 
-from sicoobito.logging_setup import get_logger
+from novaai_studio.logging_setup import get_logger
 
 log = get_logger(__name__)
 
 # Worktrees do agente vivem aqui, fora da árvore de trabalho e ignorados.
-WORKTREE_DIR = ".sicoobito/worktrees"
+WORKTREE_DIR = ".novaai_studio/worktrees"
 
 # `repo.git.push(...)` (rede/SSH) roda sem timeout algum por padrão — uma
 # passphrase SSH pedida interativamente ou um host inalcançável trava o
@@ -92,7 +92,7 @@ def _bootstrap_repo(root: Path, repo: Repo) -> Repo:
         gitignore_path = root / ".gitignore"
         if not gitignore_path.exists():
             gitignore_path.write_text(
-                ".sicoobito/\nnode_modules/\n__pycache__/\n", encoding="utf-8"
+                ".novaai_studio/\nnode_modules/\n__pycache__/\n", encoding="utf-8"
             )
         if repo.head.is_valid():
             return repo
@@ -217,7 +217,7 @@ def _ensure_excluded(repo: Repo) -> None:
     exatamente para isto.
     """
     exclude = Path(repo.git_dir) / "info" / "exclude"
-    entrada = "/.sicoobito/"
+    entrada = "/.novaai_studio/"
     try:
         exclude.parent.mkdir(parents=True, exist_ok=True)
         atual = exclude.read_text(encoding="utf-8") if exclude.exists() else ""
@@ -225,7 +225,7 @@ def _ensure_excluded(repo: Repo) -> None:
             return
         prefixo = "" if not atual or atual.endswith("\n") else "\n"
         with exclude.open("a", encoding="utf-8") as handle:
-            handle.write(f"{prefixo}# worktrees de sessão do SicoobitoCode\n{entrada}\n")
+            handle.write(f"{prefixo}# worktrees de sessão do NovaAI Studio\n{entrada}\n")
         log.debug("git.exclude.added", path=str(exclude))
     except OSError as exc:
         # Não é fatal: o pior caso é o worktree aparecer como untracked.
@@ -264,7 +264,7 @@ def _link_or_share_env(root: Path, target: Path) -> None:
 
 def _sync_uncommitted_state(root: Path, target: Path) -> None:
     """Copia alterações não commitadas e arquivos untracked do projeto raiz para o worktree."""
-    ignored = {".git", ".sicoobito", ".venv", "node_modules", "vendor", "__pycache__"}
+    ignored = {".git", ".novaai_studio", ".venv", "node_modules", "vendor", "__pycache__"}
     try:
         repo_status = status(root)
         for f in repo_status.files:
@@ -295,7 +295,7 @@ def create_worktree(
             gitignore_path = root / ".gitignore"
             if not gitignore_path.exists():
                 gitignore_path.write_text(
-                    ".sicoobito/\nnode_modules/\n__pycache__/\n", encoding="utf-8"
+                    ".novaai_studio/\nnode_modules/\n__pycache__/\n", encoding="utf-8"
                 )
             repo.index.add([str(gitignore_path.relative_to(root))])
             repo.index.commit("Initial commit")
@@ -312,7 +312,7 @@ def create_worktree(
     except TypeError:
         base = repo.head.commit.hexsha
 
-    branch = f"sicoobito/{session_id}"
+    branch = f"novaai_studio/{session_id}"
     target = (root / WORKTREE_DIR / session_id).resolve()
     target.parent.mkdir(parents=True, exist_ok=True)
 
@@ -325,7 +325,7 @@ def create_worktree(
     try:
         # `--` barra qualquer um dos dois argumentos posicionais de ser lido
         # como flag — mesma defesa já aplicada aos outros `repo.git.*` deste
-        # arquivo. Não é explorável hoje (branch é sempre `sicoobito/<uuid>` e
+        # arquivo. Não é explorável hoje (branch é sempre `novaai_studio/<uuid>` e
         # base nunca vem de fora), mas não custa manter a mesma disciplina.
         repo.git.worktree("add", "-b", branch, "--", str(target), base)
     except GitCommandError as exc:
@@ -369,7 +369,7 @@ def remove_worktree(root: Path, session_id: str, *, delete_branch: bool = False)
 
     if delete_branch:
         try:
-            repo.git.branch("-D", f"sicoobito/{session_id}")
+            repo.git.branch("-D", f"novaai_studio/{session_id}")
         except GitCommandError as exc:
             log.warning("git.branch.delete_failed", session=session_id, error=str(exc))
 
@@ -389,7 +389,7 @@ def commit(
         raise GitError("Nada para commitar.")
 
     # Marca a autoria: numa revisão futura importa saber o que veio do agente.
-    author = author_name or "SicoobitoCode Agent"
+    author = author_name or "NovaAI Studio Agent"
     with repo.config_writer() as config:
         config.set_value("user", "name", repo.config_reader().get_value("user", "name", author))
 

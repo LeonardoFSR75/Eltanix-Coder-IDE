@@ -7,8 +7,8 @@ o que se comprime é o que já cumpriu seu papel.
 
 from __future__ import annotations
 
-from sicoobito.optimizer.compressor import ContextCompressor, truncate_output
-from sicoobito.optimizer.tokens import count_text
+from novaai_studio.optimizer.compressor import ContextCompressor, truncate_output
+from novaai_studio.optimizer.tokens import count_text
 
 
 def _historico(n: int) -> list[dict]:

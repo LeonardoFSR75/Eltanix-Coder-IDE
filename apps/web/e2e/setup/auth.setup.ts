@@ -13,7 +13,7 @@ setup("login", async ({ page }) => {
   const password = process.env.E2E_PASSWORD;
   if (!password) {
     throw new Error(
-      "E2E_PASSWORD não definido. Defina a mesma senha de SICOOBITO_ADMIN_PASSWORD do " +
+      "E2E_PASSWORD não definido. Defina a mesma senha de NOVAAI_STUDIO_ADMIN_PASSWORD do " +
         ".env (ver apps/web/CLAUDE.md, seção 'Testes E2E') antes de rodar `npm run test:e2e`.",
     );
   }

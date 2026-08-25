@@ -11,8 +11,8 @@ from contextlib import asynccontextmanager
 
 import pytest
 
-from sicoobito.agent import session_store
-from sicoobito.agent.coordinator import AgentCoordinator
+from novaai_studio.agent import session_store
+from novaai_studio.agent.coordinator import AgentCoordinator
 
 
 def _session_id() -> str:
@@ -228,7 +228,7 @@ async def test_graph_snapshot_falls_back_to_db_when_redis_is_empty(pg_session, m
     async def fake_session_scope():
         yield pg_session
 
-    monkeypatch.setattr("sicoobito.agent.coordinator.session_scope", fake_session_scope)
+    monkeypatch.setattr("novaai_studio.agent.coordinator.session_scope", fake_session_scope)
 
     coordinator_sem_redis = AgentCoordinator(None)
     nos = await coordinator_sem_redis.graph_snapshot(raiz_id)
@@ -252,7 +252,7 @@ async def test_graph_snapshot_db_fallback_unknown_root_is_empty(pg_session, monk
     async def fake_session_scope():
         yield pg_session
 
-    monkeypatch.setattr("sicoobito.agent.coordinator.session_scope", fake_session_scope)
+    monkeypatch.setattr("novaai_studio.agent.coordinator.session_scope", fake_session_scope)
 
     coordinator_sem_redis = AgentCoordinator(None)
     assert await coordinator_sem_redis.graph_snapshot("nao-existe") == []

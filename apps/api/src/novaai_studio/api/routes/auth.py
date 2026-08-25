@@ -8,8 +8,8 @@ from typing import Any
 from fastapi import APIRouter, Cookie, Header, HTTPException, Request, status
 from pydantic import BaseModel, Field
 
-from sicoobito.api.deps import AdminDep, AuthDep
-from sicoobito.auth.service import AuthService
+from novaai_studio.api.deps import AdminDep, AuthDep
+from novaai_studio.auth.service import AuthService
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -80,24 +80,24 @@ async def login(
 @router.post("/logout", dependencies=[AuthDep])
 async def logout(
     request: Request,
-    sicoobito_session: str | None = Cookie(default=None),
+    novaai_studio_session: str | None = Cookie(default=None),
 ) -> dict[str, Any]:
-    if sicoobito_session:
-        await _service(request).revoke_session(sicoobito_session)
+    if novaai_studio_session:
+        await _service(request).revoke_session(novaai_studio_session)
     return {"status": "ok"}
 
 
 @router.get("/me", dependencies=[AuthDep])
 async def me(
     request: Request,
-    sicoobito_session: str | None = Cookie(default=None),
+    novaai_studio_session: str | None = Cookie(default=None),
 ) -> dict[str, Any]:
-    if not sicoobito_session:
+    if not novaai_studio_session:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Sem sessão de usuário (chamada autenticada por chave de API de serviço).",
         )
-    user = await _service(request).validate_session(sicoobito_session)
+    user = await _service(request).validate_session(novaai_studio_session)
     if user is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Sessão inválida.")
     return {"id": str(user.id), "username": user.username, "display_name": user.display_name}
@@ -107,15 +107,15 @@ async def me(
 async def change_password(
     payload: ChangePasswordRequest,
     request: Request,
-    sicoobito_session: str | None = Cookie(default=None),
+    novaai_studio_session: str | None = Cookie(default=None),
 ) -> dict[str, Any]:
-    if not sicoobito_session:
+    if not novaai_studio_session:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Troca de senha requer sessão de usuário.",
         )
     service = _service(request)
-    user = await service.validate_session(sicoobito_session)
+    user = await service.validate_session(novaai_studio_session)
     if user is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Sessão inválida.")
 
@@ -123,7 +123,7 @@ async def change_password(
         user_id=user.id,
         old_password=payload.old_password,
         new_password=payload.new_password,
-        keep_session_token=sicoobito_session,
+        keep_session_token=novaai_studio_session,
     )
     if not success:
         raise HTTPException(
@@ -156,9 +156,7 @@ async def create_user(payload: CreateUserRequest, request: Request) -> dict[str,
         is_admin=payload.is_admin,
     )
     if user is None:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT, detail="Username já está em uso."
-        )
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Username já está em uso.")
     return _user_view(user)
 
 

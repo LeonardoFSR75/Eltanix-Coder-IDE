@@ -16,9 +16,9 @@ from dataclasses import dataclass, field
 
 from sqlalchemy import select
 
-from sicoobito.db.models import CodeChunk
-from sicoobito.db.session import session_scope
-from sicoobito.optimizer.tokens import count_text
+from novaai_studio.db.models import CodeChunk
+from novaai_studio.db.session import session_scope
+from novaai_studio.optimizer.tokens import count_text
 
 # Tipos que valem a pena listar. `block` e `module` são ruído num mapa.
 INTERESTING_KINDS = frozenset({"function", "method", "class", "interface", "enum", "type"})

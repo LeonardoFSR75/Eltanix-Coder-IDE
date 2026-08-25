@@ -4,7 +4,7 @@ Os módulos são importados pelo efeito colateral do decorador `@tool`, que
 registra cada ferramenta em `registry`.
 """
 
-from sicoobito.agent.tools import (  # noqa: F401
+from novaai_studio.agent.tools import (  # noqa: F401
     agents_graph,
     browser,
     documents,
@@ -24,7 +24,7 @@ from sicoobito.agent.tools import (  # noqa: F401
     trello,
     vcs,
 )
-from sicoobito.agent.tools.base import (
+from novaai_studio.agent.tools.base import (
     RiskClass,
     Tool,
     ToolContext,

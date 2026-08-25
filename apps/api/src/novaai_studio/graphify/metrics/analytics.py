@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from sicoobito.graphify.store import GraphStore
+from novaai_studio.graphify.store import GraphStore
 
 
 class GraphAnalytics:

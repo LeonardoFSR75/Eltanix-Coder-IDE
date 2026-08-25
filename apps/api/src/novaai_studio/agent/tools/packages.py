@@ -12,9 +12,9 @@ import asyncio
 from pathlib import Path
 from typing import Any
 
-from sicoobito.agent.tools.base import RiskClass, ToolContext, ToolResult, tool
-from sicoobito.logging_setup import get_logger
-from sicoobito.packages.commands import (
+from novaai_studio.agent.tools.base import RiskClass, ToolContext, ToolResult, tool
+from novaai_studio.logging_setup import get_logger
+from novaai_studio.packages.commands import (
     MissingBinaryError,
     build_ecosystem_command,
     list_python_packages,
@@ -78,7 +78,7 @@ def _packages_risk(args: dict[str, Any], _context: ToolContext | None = None) ->
     ),
 )
 async def manage_packages(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
-    from sicoobito.api.routes.packages import (
+    from novaai_studio.api.routes.packages import (
         detect_ecosystem,
         ensure_project_env,
         ensure_venv,
@@ -100,7 +100,7 @@ async def manage_packages(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
     else:
         cur = project_path.resolve()  # noqa: ASYNC240
         while cur != cur.parent:
-            if cur.name == "worktrees" and cur.parent.name == ".sicoobito":
+            if cur.name == "worktrees" and cur.parent.name == ".novaai_studio":
                 canonical_root = cur.parent.parent
                 break
             cur = cur.parent
@@ -114,7 +114,7 @@ async def manage_packages(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
         and (canonical_root / ".venv").exists()
     ):
         try:
-            from sicoobito.workspace.git import _link_or_share_env
+            from novaai_studio.workspace.git import _link_or_share_env
 
             _link_or_share_env(canonical_root, project_path)
         except Exception as exc:
@@ -429,7 +429,9 @@ async def manage_packages(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
 
     elif action == "clean":
         if eco != "python":
-            return ToolResult.failure("A ação 'clean' atualmente é suportada apenas para o ecossistema Python.")
+            return ToolResult.failure(
+                "A ação 'clean' atualmente é suportada apenas para o ecossistema Python."
+            )
 
         venv_path = get_venv_path(project_path)
         if not venv_path.exists() and (canonical_root / ".venv").exists():
@@ -441,7 +443,18 @@ async def manage_packages(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
         if canonical_root != project_path and (canonical_root / "requirements.txt").exists():
             req_map.update(parse_requirements_txt(canonical_root))
 
-        ignored_base = {"pip", "setuptools", "wheel", "sicoobito", "pip-tools", "uv", "pytest", "ruff", "bandit", "semgrep"}
+        ignored_base = {
+            "pip",
+            "setuptools",
+            "wheel",
+            "novaai_studio",
+            "pip-tools",
+            "uv",
+            "pytest",
+            "ruff",
+            "bandit",
+            "semgrep",
+        }
         to_remove = []
         for p in installed:
             name = p["name"].lower().replace("_", "-")

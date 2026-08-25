@@ -14,20 +14,20 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request, WebSocket, WebSocketDisconnect, status
 
-from sicoobito.api.deps import AuthDep
-from sicoobito.api.tickets import TICKET_TTL_SECONDS, TicketStore
-from sicoobito.config import get_settings
-from sicoobito.extensions.manager import get_extensions_manager
-from sicoobito.logging_setup import get_logger
-from sicoobito.lsp import (
+from novaai_studio.api.deps import AuthDep
+from novaai_studio.api.tickets import TICKET_TTL_SECONDS, TicketStore
+from novaai_studio.config import get_settings
+from novaai_studio.extensions.manager import get_extensions_manager
+from novaai_studio.logging_setup import get_logger
+from novaai_studio.lsp import (
     LanguageServerProcess,
     LspError,
     extension_for_server,
     server_for_language,
     supported_languages,
 )
-from sicoobito.workspace import projects as project_ops
-from sicoobito.workspace.projects import ProjectError
+from novaai_studio.workspace import projects as project_ops
+from novaai_studio.workspace.projects import ProjectError
 
 log = get_logger(__name__)
 
@@ -98,7 +98,7 @@ async def ticket(
 async def lsp_socket(websocket: WebSocket, project: str, language: str) -> None:
     settings = get_settings()
 
-    # Sempre exigido, com ou sem SICOOBITO_API_KEY: o ticket só é emitido por
+    # Sempre exigido, com ou sem NOVAAI_STUDIO_API_KEY: o ticket só é emitido por
     # `POST .../ticket`, atrás de `AuthDep` (`require_session`) — ver mesmo
     # ajuste em `workspace.py::terminal`.
     store: TicketStore | None = getattr(websocket.app.state, "tickets", None)
@@ -138,7 +138,7 @@ async def lsp_socket(websocket: WebSocket, project: str, language: str) -> None:
         # no handshake vira apenas "connection failed" no console do browser.
         await websocket.accept()
         await websocket.send_json(
-            {"jsonrpc": "2.0", "method": "sicoobito/error", "params": str(exc)}
+            {"jsonrpc": "2.0", "method": "novaai_studio/error", "params": str(exc)}
         )
         await websocket.close(code=4503)
         return

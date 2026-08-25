@@ -23,18 +23,36 @@ from typing import Any, Literal
 
 from redis.asyncio import Redis
 
-from sicoobito.agent import session_store
-from sicoobito.db.models import AgentSessionRecord
-from sicoobito.db.session import session_scope
-from sicoobito.logging_setup import get_logger
+from novaai_studio.agent import session_store
+from novaai_studio.db.models import AgentSessionRecord
+from novaai_studio.db.session import session_scope
+from novaai_studio.logging_setup import get_logger
 
 log = get_logger(__name__)
 
-_PREFIX = "sicoobito:agents"
+_PREFIX = "novaai_studio:agents"
 
 AgentStatus = Literal[
     "running", "waiting_approval", "waiting_for_message", "completed", "failed", "stopped"
 ]
+
+
+def _db_status_to_agent_status(db_status: str, pending_approvals: int) -> AgentStatus:
+    """Traduz o vocabulário do Postgres (`AgentSessionRecord.status`: `open`/
+    `closed`/`abandoned`) pro vocabulário mais fino que o Redis normalmente
+    fornece (`AgentStatus`), usado por `_graph_snapshot_from_db` quando o
+    Redis está vazio/indisponível (TTL expirado depois de um restart).
+
+    Sem isto, um nó com status cru `"open"` nunca bate no `=== "waiting_approval"`
+    que o frontend (`AgentDock.tsx`) compara — a UI perde silenciosamente o
+    aviso de que um filho está preso esperando aprovação depois de um restart
+    da API. `pending_approvals` (persistido por `AgentRunner.update_session_summary`)
+    é o único sinal que sobra sem o Redis para recuperar essa distinção."""
+    if db_status == "open":
+        return "waiting_approval" if pending_approvals > 0 else "running"
+    if db_status == "abandoned":
+        return "failed"
+    return "completed"
 
 
 @dataclass(slots=True)
@@ -230,7 +248,7 @@ class AgentCoordinator:
                     AgentNode(
                         session_id=rec.session_id,
                         display_name=(rec.task or rec.session_id)[:80],
-                        status=rec.status,  # type: ignore[arg-type]
+                        status=_db_status_to_agent_status(rec.status, rec.pending_approvals),
                         parent_id=rec.parent_session_id,
                         depth=profundidades.get(rec.session_id, 0),
                         children=sorted(por_pai.get(rec.session_id, [])),

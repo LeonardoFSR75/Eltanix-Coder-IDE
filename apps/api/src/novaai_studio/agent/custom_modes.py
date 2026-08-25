@@ -14,8 +14,8 @@ import uuid
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from sicoobito.db.models import CustomMode
-from sicoobito.db.session import session_scope
+from novaai_studio.db.models import CustomMode
+from novaai_studio.db.session import session_scope
 
 
 async def _create(

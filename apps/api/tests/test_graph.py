@@ -8,7 +8,7 @@ testes de `registry.schemas` em test_agent_tools.py.
 
 from __future__ import annotations
 
-from sicoobito.agent.graph import (
+from novaai_studio.agent.graph import (
     REPETITION_THRESHOLD,
     _is_stuck_repeat,
     _next_repetition_state,

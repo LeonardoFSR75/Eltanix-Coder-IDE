@@ -7,13 +7,13 @@ from typing import Any
 
 import httpx
 
-from sicoobito.router.adapters.base import (
+from novaai_studio.router.adapters.base import (
     DiscoveredModel,
     DiscoveryError,
     HealthResult,
     ProviderAdapter,
 )
-from sicoobito.router.catalog import ModelSpec
+from novaai_studio.router.catalog import ModelSpec
 
 # Pistas no nome que indicam modelo de embedding — o Ollama não expõe essa
 # distinção em /api/tags, então é heurística, não fato (ver DiscoveredModel).

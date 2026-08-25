@@ -9,8 +9,8 @@ from __future__ import annotations
 
 import pytest
 
-from sicoobito.router.catalog import Resilience
-from sicoobito.router.health import HealthTracker
+from novaai_studio.router.catalog import Resilience
+from novaai_studio.router.health import HealthTracker
 
 
 @pytest.fixture

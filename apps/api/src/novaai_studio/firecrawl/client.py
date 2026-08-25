@@ -19,7 +19,7 @@ from typing import Any
 
 import httpx
 
-from sicoobito.logging_setup import get_logger
+from novaai_studio.logging_setup import get_logger
 
 log = get_logger(__name__)
 
@@ -94,8 +94,7 @@ class FirecrawlClient:
             )
         if response.status_code == 429:
             raise FirecrawlRateLimitError(
-                f"Limite de requisições/créditos excedido no Firecrawl (429): "
-                f"{response.text[:200]}"
+                f"Limite de requisições/créditos excedido no Firecrawl (429): {response.text[:200]}"
             )
         if response.status_code >= 500:
             raise FirecrawlUnavailableError(
@@ -104,8 +103,7 @@ class FirecrawlClient:
             )
         if response.status_code >= 400:
             raise FirecrawlError(
-                f"Erro na requisição ao Firecrawl ({response.status_code}): "
-                f"{response.text[:300]}"
+                f"Erro na requisição ao Firecrawl ({response.status_code}): {response.text[:300]}"
             )
 
     async def scrape(

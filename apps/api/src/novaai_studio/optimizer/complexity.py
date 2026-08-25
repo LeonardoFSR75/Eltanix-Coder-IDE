@@ -18,7 +18,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any
 
-from sicoobito.optimizer.tokens import estimate_prompt_tokens
+from novaai_studio.optimizer.tokens import estimate_prompt_tokens
 
 
 class Complexity(StrEnum):

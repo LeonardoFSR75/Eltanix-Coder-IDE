@@ -1,7 +1,7 @@
 [project]
-name = "sicoobito-api"
+name = "novaai-studio-api"
 version = "0.1.0"
-description = "Gateway multi-modelo e backend agêntico do SicoobitoCode"
+description = "Gateway multi-modelo e backend agêntico do NovaAI Studio"
 # Sem `readme`: apontar para ../../README.md quebra qualquer build em que só
 # este diretório entra no contexto — o caso da imagem Docker. O pacote não é
 # publicado, então não há o que perder.
@@ -67,7 +67,7 @@ securebert = [
 ]
 
 [project.scripts]
-sicoobito-eval-rag = "sicoobito.evals.runner:main"
+novaai-studio-eval-rag = "novaai_studio.evals.runner:main"
 
 [dependency-groups]
 dev = [
@@ -85,7 +85,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/sicoobito"]
+packages = ["src/novaai_studio"]
 
 [tool.hatch.metadata]
 allow-direct-references = true

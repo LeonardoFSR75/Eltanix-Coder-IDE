@@ -5,7 +5,7 @@ que não toca banco: formatação e guardas de validação. A busca de verdade
 
 from __future__ import annotations
 
-from sicoobito.agent.tools import graphify
+from novaai_studio.agent.tools import graphify
 
 _format_result = graphify._format_result
 knowledge_graph_search_cross_project = graphify.knowledge_graph_search_cross_project.handler

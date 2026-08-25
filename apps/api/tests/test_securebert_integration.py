@@ -6,12 +6,12 @@ import os
 
 from fastapi.testclient import TestClient
 
-os.environ["SICOOBITO_API_KEY"] = "chave-de-teste"
+os.environ["NOVAAI_STUDIO_API_KEY"] = "chave-de-teste"
 os.environ["REDIS_URL"] = "redis://localhost:65533/0"
 
-from sicoobito.agent.tools import registry
-from sicoobito.config import get_settings
-from sicoobito.main import create_app
+from novaai_studio.agent.tools import registry
+from novaai_studio.config import get_settings
+from novaai_studio.main import create_app
 
 
 def _client() -> TestClient:

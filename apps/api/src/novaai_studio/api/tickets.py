@@ -18,12 +18,12 @@ from dataclasses import dataclass
 
 from redis.asyncio import Redis
 
-from sicoobito.logging_setup import get_logger
+from novaai_studio.logging_setup import get_logger
 
 log = get_logger(__name__)
 
 TICKET_TTL_SECONDS = 60
-_PREFIX = "sicoobito:ws-ticket"
+_PREFIX = "novaai_studio:ws-ticket"
 
 
 @dataclass(slots=True)

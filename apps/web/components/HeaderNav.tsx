@@ -100,7 +100,7 @@ export function HeaderNav() {
         <Link href="/projects" className="brand-link">
           <div className="brand-logo">S</div>
           <span className="brand-name">
-            Sicoobito<span className="brand-highlight">Code</span>
+            NovaAI Studio<span className="brand-highlight">Code</span>
           </span>
         </Link>
       </div>

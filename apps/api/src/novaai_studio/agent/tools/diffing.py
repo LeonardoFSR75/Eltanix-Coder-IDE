@@ -13,9 +13,15 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from sicoobito.agent.tools.base import ToolContext
-from sicoobito.agent.tools.files import unified_diff
-from sicoobito.workspace.fs import FileTooLargeError, PathEscapeError
+from novaai_studio.agent.tools.base import ToolContext
+from novaai_studio.agent.tools.files import unified_diff
+from novaai_studio.workspace.fs import FileTooLargeError, PathEscapeError
+
+# Único lugar que decide quais ferramentas têm conceito de diff — consultado
+# também por `agent/graph.py` (diff preview, segunda opinião, snapshot de
+# rewind), em vez de cada um manter sua própria lista de nomes que precisa
+# ser atualizada em conjunto sempre que uma ferramenta diffável nova aparecer.
+REVIEWABLE_TOOL_NAMES = frozenset({"edit_file", "write_file"})
 
 
 @dataclass(slots=True)
@@ -48,11 +54,11 @@ def compute_proposed_diff(
     if not path:
         return None
 
+    if tool_name not in REVIEWABLE_TOOL_NAMES:
+        return None
     if tool_name == "edit_file":
         return _diff_for_edit_file(ctx, path, arguments)
-    if tool_name == "write_file":
-        return _diff_for_write_file(ctx, path, arguments)
-    return None
+    return _diff_for_write_file(ctx, path, arguments)
 
 
 def _diff_for_edit_file(

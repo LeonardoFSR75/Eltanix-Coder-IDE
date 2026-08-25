@@ -85,7 +85,7 @@ describe("ExtensionsPanel", () => {
     expect(await screen.findByRole("button", { name: "Habilitar" })).toBeInTheDocument();
   });
 
-  it("recarrega quando o evento sicoobito:extensions:changed é disparado (ex.: ferramenta do agente)", async () => {
+  it("recarrega quando o evento novaai_studio:extensions:changed é disparado (ex.: ferramenta do agente)", async () => {
     mockedApi.getExtensionsCatalog.mockResolvedValue(catalog());
     render(<ExtensionsPanel />);
     await screen.findByText("Ruff");
@@ -93,7 +93,7 @@ describe("ExtensionsPanel", () => {
     mockedApi.getExtensionsCatalog.mockResolvedValue(
       catalog({ extensions: [ext(), ext({ id: "biome", name: "Biome" })], total_count: 2 })
     );
-    window.dispatchEvent(new CustomEvent("sicoobito:extensions:changed"));
+    window.dispatchEvent(new CustomEvent("novaai_studio:extensions:changed"));
 
     expect(await screen.findByText("Biome")).toBeInTheDocument();
   });

@@ -12,8 +12,8 @@ import re
 from pathlib import Path
 from typing import Any
 
-from sicoobito.agent.tools.base import RiskClass, ToolContext, ToolResult, tool
-from sicoobito.sandbox.container import SandboxError
+from novaai_studio.agent.tools.base import RiskClass, ToolContext, ToolResult, tool
+from novaai_studio.sandbox.container import SandboxError
 
 HEAD_LINES = 40
 TAIL_LINES = 60
@@ -55,7 +55,7 @@ def project_venv_prefix(workspace_root: str | Path | None) -> str:
     canonical = root
     cur = root.resolve()
     while cur != cur.parent:
-        if cur.name == "worktrees" and cur.parent.name == ".sicoobito":
+        if cur.name == "worktrees" and cur.parent.name == ".novaai_studio":
             canonical = cur.parent.parent
             break
         cur = cur.parent
@@ -64,12 +64,12 @@ def project_venv_prefix(workspace_root: str | Path | None) -> str:
         return ""
 
     paths = (
-        "/tmp/sicoobito_bootstrap:"
+        "/tmp/novaai_studio_bootstrap:"
         "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:"
         "/workspace/.venv/bin:/workspace/.venv/Scripts:/workspace/node_modules/.bin:$PATH"
     )
     pythonpaths = (
-        "/tmp/sicoobito_bootstrap:"
+        "/tmp/novaai_studio_bootstrap:"
         "/workspace:"
         "/workspace/.venv/lib/python3.12/site-packages:"
         "/workspace/.venv/lib/python3.11/site-packages:"
@@ -82,6 +82,18 @@ def project_venv_prefix(workspace_root: str | Path | None) -> str:
         f"export PATH='{paths}'; "
         f"export PYTHONPATH='{pythonpaths}'; "
     )
+
+
+def _run_command_status(resultado: ToolResult) -> str:
+    """`run_command` sempre devolve `ok=True` de propósito (comando que falha
+    é informação pro modelo decidir o próximo passo, não uma falha da
+    ferramenta em si) — sem isto, telemetria/observabilidade (`_telemetry_status`
+    em `agent/graph.py`) mostraria todo `pip install` sem rede como
+    `status="ok"` em `/api/telemetry/recent`, escondendo a falha real."""
+    dados = resultado.data or {}
+    if dados.get("timed_out") or dados.get("exit_code") not in (0, None):
+        return "error"
+    return "ok" if resultado.ok else "error"
 
 
 @tool(
@@ -103,6 +115,7 @@ def project_venv_prefix(workspace_root: str | Path | None) -> str:
         "required": ["command"],
     },
     summarize=lambda a: f"executar: {a.get('command')}",
+    status_from_result=_run_command_status,
 )
 async def run_command(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
     if ctx.sandbox is None and getattr(ctx, "sandboxes", None) is not None:
@@ -166,7 +179,7 @@ async def run_command(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
             ok=True,
             content=(
                 "[saída 1 em 0ms]\n"
-                "ERRO DE AMBIENTE: O sandbox do SicoobitoCode está isolado da rede por segurança.\n"
+                "ERRO DE AMBIENTE: O sandbox do NovaAI Studio está isolado da rede por segurança.\n"
                 "Comandos de instalação de pacotes (pip, npm, go get, cargo add, composer "
                 "require) falham no shell do container.\n"
                 "Para instalar pacotes e dependências no ambiente do projeto de forma "
@@ -245,12 +258,12 @@ async def run_command(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
         comando = (
             f"fuser -k {porta_alvo}/tcp >/dev/null 2>&1 || true; "
             f"sleep 0.2; "
-            f"nohup bash -c '{cmd_escapado}' > /tmp/sicoobito_server.log 2>&1 & "
+            f"nohup bash -c '{cmd_escapado}' > /tmp/novaai_studio_server.log 2>&1 & "
             f"for i in $(seq 1 20); do "
             f"(echo > /dev/tcp/127.0.0.1/{porta_alvo}) >/dev/null 2>&1 && break || sleep 0.3; "
             f"done; "
             f"sleep 0.3; "
-            f"cat /tmp/sicoobito_server.log"
+            f"cat /tmp/novaai_studio_server.log"
         )
 
     try:

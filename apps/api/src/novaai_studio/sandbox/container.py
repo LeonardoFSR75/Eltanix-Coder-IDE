@@ -28,14 +28,14 @@ from io import BytesIO
 from pathlib import Path
 from typing import Any
 
-from sicoobito.logging_setup import get_logger
-from sicoobito.sandbox.concurrency import SandboxConcurrencyGate
+from novaai_studio.logging_setup import get_logger
+from novaai_studio.sandbox.concurrency import SandboxConcurrencyGate
 
 log = get_logger(__name__)
 
 DEFAULT_IMAGE = "python:3.12-slim"
 WORKDIR = "/workspace"
-LABEL = "sicoobito.session"
+LABEL = "novaai_studio.session"
 
 
 class SandboxError(RuntimeError):
@@ -112,7 +112,7 @@ class Sandbox:
 
     @property
     def container_name(self) -> str:
-        return f"sicoobito-{self.session_id}"
+        return f"novaai-studio-{self.session_id}"
 
     @property
     def running(self) -> bool:
@@ -148,7 +148,7 @@ class Sandbox:
         canonical_project = self.workspace
         cur = self.workspace.resolve()
         while cur != cur.parent:
-            if cur.name == "worktrees" and cur.parent.name == ".sicoobito":
+            if cur.name == "worktrees" and cur.parent.name == ".novaai_studio":
                 canonical_project = cur.parent.parent
                 break
             cur = cur.parent
@@ -197,7 +197,7 @@ class Sandbox:
         if not self.config.network_enabled:
             try:
                 for net in client.networks.list():
-                    if net.name in ("browser_net", "sicoobito_browser_net") or (
+                    if net.name in ("browser_net", "novaai_studio_browser_net") or (
                         net.name and net.name.endswith("_browser_net")
                     ):
                         sandbox_network = net.name

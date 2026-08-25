@@ -29,10 +29,10 @@ testes contra a stack inteira (`docker compose up -d`), então rodam via workflo
 ```bash
 npx playwright install --with-deps chromium   # uma vez, baixa o Chromium do Playwright
 docker compose up -d --build                  # a stack precisa estar de pé
-E2E_PASSWORD=<mesma senha de SICOOBITO_ADMIN_PASSWORD no .env> npm run test:e2e
+E2E_PASSWORD=<mesma senha de NOVAAI_STUDIO_ADMIN_PASSWORD no .env> npm run test:e2e
 ```
 
-Sem `SICOOBITO_ADMIN_PASSWORD` fixado no `.env`, a API gera uma senha aleatória por
+Sem `NOVAAI_STUDIO_ADMIN_PASSWORD` fixado no `.env`, a API gera uma senha aleatória por
 processo (só visível no log `auth.seed_user.generated_password`) — fixe a variável antes de
 rodar E2E, senão o setup de login (`e2e/setup/auth.setup.ts`) falha cedo com uma mensagem
 explicando isso. `e2e/setup/project.setup.ts` cria (ou reaproveita, se já existir) um projeto
@@ -69,7 +69,7 @@ A rota `/second-brain` implementa a interface de Segundo Cérebro estilo Obsidia
 - Editor com suporte a **Wikilinks `[[Nome da Nota]]`** e `#hashtags`.
 - Visualização de Grafo 2D em tempo real desenhada via Canvas HTML5.
 - Sincronização direta com a API `/api/notes/*` e `/api/graphify/*`.
-- **Regra para Agentes**: Sempre consultar os MOCs em `graphify-out/obsidian/00 - 🏠 Painel & MOCs/` e o `Mapa Arquitetural SicoobitoCode.canvas` para manter alinhamento com a arquitetura geral da UI.
+- **Regra para Agentes**: Sempre consultar os MOCs em `graphify-out/obsidian/00 - 🏠 Painel & MOCs/` e o `Mapa Arquitetural NovaAI Studio.canvas` para manter alinhamento com a arquitetura geral da UI.
 
 ## Padrões a seguir em página/feature nova
 

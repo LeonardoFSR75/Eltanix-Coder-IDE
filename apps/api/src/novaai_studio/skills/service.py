@@ -6,9 +6,9 @@ from __future__ import annotations
 import uuid
 from pathlib import Path
 
-from sicoobito.db.models import Skill
-from sicoobito.db.session import session_scope
-from sicoobito.skills import store
+from novaai_studio.db.models import Skill
+from novaai_studio.db.session import session_scope
+from novaai_studio.skills import store
 
 
 class SkillService:
@@ -111,7 +111,7 @@ class SkillService:
         parameters_json: str = "{}",
         workspace_root: Path | None = None,
     ) -> Skill:
-        """Cria a skill no banco e opcionalmente grava o arquivo `.sicoobito/skills/<name>.md`
+        """Cria a skill no banco e opcionalmente grava o arquivo `.novaai_studio/skills/<name>.md`
         no repositório do workspace para persistência no Git (Self-Improving Skill)."""
         async with session_scope() as session:
             skill = await store.create_skill(
@@ -126,7 +126,7 @@ class SkillService:
         if workspace_root is not None:
             try:
                 ws_path = Path(workspace_root)
-                skills_dir = ws_path / ".sicoobito" / "skills"
+                skills_dir = ws_path / ".novaai_studio" / "skills"
                 skills_dir.mkdir(parents=True, exist_ok=True)
                 slug_name = "".join(c if c.isalnum() or c in "-_" else "_" for c in name.lower())
                 file_path = skills_dir / f"{slug_name}.md"

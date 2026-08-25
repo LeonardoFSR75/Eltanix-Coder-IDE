@@ -8,18 +8,18 @@ from __future__ import annotations
 
 from typing import Any
 
-from sicoobito.config import Settings
-from sicoobito.db.models import Document, DocumentChunk
-from sicoobito.db.session import session_scope
-from sicoobito.documents.chunker import TextChunk, chunk_text
-from sicoobito.firecrawl.client import (
+from novaai_studio.config import Settings
+from novaai_studio.db.models import Document, DocumentChunk
+from novaai_studio.db.session import session_scope
+from novaai_studio.documents.chunker import TextChunk, chunk_text
+from novaai_studio.firecrawl.client import (
     FirecrawlClient,
     FirecrawlConfig,
     FirecrawlError,
 )
-from sicoobito.logging_setup import get_logger
-from sicoobito.router.engine import RouterEngine
-from sicoobito.security.url_safety import validate_target_url
+from novaai_studio.logging_setup import get_logger
+from novaai_studio.router.engine import RouterEngine
+from novaai_studio.security.url_safety import validate_target_url
 
 log = get_logger(__name__)
 

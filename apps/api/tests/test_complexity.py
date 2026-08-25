@@ -6,7 +6,7 @@ para o modelo caro trabalho que um modelo pequeno resolve.
 
 from __future__ import annotations
 
-from sicoobito.optimizer.complexity import Complexity, classify
+from novaai_studio.optimizer.complexity import Complexity, classify
 
 
 def _user(texto: str) -> list[dict]:

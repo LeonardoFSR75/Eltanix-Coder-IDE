@@ -28,8 +28,8 @@ extensões em [`docs/adr/0009-sistema-de-extensoes-e-auto-update-open-vsx.md`](a
          ┌──────────▼───────────┐          ┌────────────▼────────────┐
          │ PackagesPanel.tsx     │          │ sessionRuntime.ts        │
          │ ExtensionsPanel.tsx   │◄─────────┤ dispatch CustomEvent      │
-         │ StatusBar (indicador) │  window  │ sicoobito:packages:changed│
-         └────────────────────────┘  event  │ sicoobito:extensions:...  │
+         │ StatusBar (indicador) │  window  │ novaai_studio:packages:changed│
+         └────────────────────────┘  event  │ novaai_studio:extensions:...  │
                                               └────────────┬────────────┘
                                                             │
                                               ┌─────────────▼────────────┐
@@ -79,7 +79,7 @@ O que **não** é compartilhado (fica em cada chamador): timeout, resolução de
   `config/extensions_state.json` sem lock (risco de corrupção sob escrita concorrente).
 - `extensions/client.py` (`OpenVSXClient`) — busca no Open VSX Registry (`search_marketplace`,
   `check_updates_batch`). `ExtensionsManager.search_online()` cacheia o resultado em Redis por
-  10 min com chave `sicoobito:cache:extensions:search:<sha256(query)>` (task #8) — sem Redis,
+  10 min com chave `novaai_studio:cache:extensions:search:<sha256(query)>` (task #8) — sem Redis,
   degrada para busca direta, mesmo padrão de `router/health.py`.
 - `ExtensionsManager.is_active(extension_id)` é consultado pelo gateway de LSP
   (`api/routes/lsp.py`) via `lsp/extension_bridge.py::LSP_SERVER_TO_EXTENSION_ID` — desativar
@@ -133,7 +133,7 @@ de `args → RiskClass`), nunca pelo chamador — invariante geral do repositór
 
 **Diferença chave em relação à rota REST**: `manage_packages` resolve *worktree → projeto
 canônico* (`ctx.project_root`, ou heurística subindo diretórios até achar
-`.sicoobito/worktrees/`) antes de agir, porque a sessão do agente frequentemente roda numa
+`.novaai_studio/worktrees/`) antes de agir, porque a sessão do agente frequentemente roda numa
 worktree isolada (branch de trabalho) que não tem `.venv`/`requirements.txt` próprios — nesse
 caso, empresta o ambiente do projeto canônico via `workspace.git._link_or_share_env()` e sincroniza
 `requirements.txt` nos dois lugares quando ambos existem. A rota REST não precisa disso porque
@@ -183,7 +183,7 @@ o painel de pacotes (`setPanel("packages")`).
 ## 5. Frontend — refresh automático entre agente e painel (task #14)
 
 Precedente já existente: o handler SSE do nó `act` em `sessionRuntime.ts` dispara
-`sicoobito:browser:open` quando a ferramenta `browser_action` sucede. Estendido no mesmo padrão:
+`novaai_studio:browser:open` quando a ferramenta `browser_action` sucede. Estendido no mesmo padrão:
 
 ```ts
 // components/ide/agent/sessionRuntime.ts — dentro do handler SSE do nó "act"
@@ -192,8 +192,8 @@ if (
   message.ok !== false
 ) {
   const eventName = message.name === "manage_packages"
-    ? "sicoobito:packages:changed"
-    : "sicoobito:extensions:changed";
+    ? "novaai_studio:packages:changed"
+    : "novaai_studio:extensions:changed";
   window.dispatchEvent(new CustomEvent(eventName, { detail: { sessionId: ... } }));
 }
 ```
@@ -230,8 +230,8 @@ prioridade, seguindo o mesmo padrão de inferência por shape de `data`.
 | Agente — pacotes | `apps/api/tests/test_agent_tools.py` | `manage_packages` (list/install/uninstall/sync/audit/clean) |
 | Agente — extensões | `apps/api/tests/test_agent_tools_extensions.py` | `manage_extensions` (list/search/recommend/toggle/update/sync) |
 | Backend — extensões | testes de `extensions/manager.py` + `extensions/client.py` (task #9) | hydrate, toggle, sync com marketplace, cache Redis |
-| Frontend — painel de pacotes | `apps/web/components/ide/PackagesPanel.test.tsx` | render de lista/vazio/erro, confirmação in-app antes de desinstalar, evento `sicoobito:packages:changed` disparado após install e reagido quando disparado externamente |
-| Frontend — painel de extensões | `apps/web/components/ide/ExtensionsPanel.test.tsx` | render de lista, erro+retry (`PanelState`), toggle ativo/inativo, evento `sicoobito:extensions:changed` reagido quando disparado externamente |
+| Frontend — painel de pacotes | `apps/web/components/ide/PackagesPanel.test.tsx` | render de lista/vazio/erro, confirmação in-app antes de desinstalar, evento `novaai_studio:packages:changed` disparado após install e reagido quando disparado externamente |
+| Frontend — painel de extensões | `apps/web/components/ide/ExtensionsPanel.test.tsx` | render de lista, erro+retry (`PanelState`), toggle ativo/inativo, evento `novaai_studio:extensions:changed` reagido quando disparado externamente |
 
 Rodar: `cd apps/api && uv run pytest tests/test_agent_tools.py tests/test_agent_tools_extensions.py -q`
 e `cd apps/web && bun run typecheck && bun run test`.

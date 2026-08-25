@@ -16,20 +16,20 @@ from __future__ import annotations
 import os
 from unittest.mock import AsyncMock, MagicMock
 
-os.environ["SICOOBITO_API_KEY"] = "chave-de-teste"
+os.environ["NOVAAI_STUDIO_API_KEY"] = "chave-de-teste"
 os.environ.setdefault("REDIS_URL", "redis://localhost:65533/0")
 
 import pytest
 from fastapi.testclient import TestClient
 
-from sicoobito.api.tickets import TicketStore
-from sicoobito.browser.client import (
+from novaai_studio.api.tickets import TicketStore
+from novaai_studio.browser.client import (
     BrowserClient,
     BrowserConfig,
     BrowserError,
     BrowserUnavailableError,
 )
-from sicoobito.main import app
+from novaai_studio.main import app
 
 AUTH = {"Authorization": "Bearer chave-de-teste"}
 
@@ -223,7 +223,7 @@ async def test_stream_ticket_cannot_be_consumed_for_a_different_session(estado):
     `Authorization`) — sem escopo por `session_id`, um ticket vazado/
     adivinhado abriria o screencast de QUALQUER sessão, não só a que o
     pediu."""
-    from sicoobito.api.routes.browser import _escopo_stream
+    from novaai_studio.api.routes.browser import _escopo_stream
 
     ticket = await estado.tickets.issue(_escopo_stream("sess-a"))
 
@@ -289,7 +289,7 @@ def test_close_session_persists_replay_when_service_returns_bytes(client, estado
     estado.browser_panel_clients["panel-s1"] = mock
 
     store_replay = AsyncMock(return_value={"session_id": "s1"})
-    monkeypatch.setattr("sicoobito.api.routes.browser.store_replay", store_replay)
+    monkeypatch.setattr("novaai_studio.api.routes.browser.store_replay", store_replay)
 
     resp = client.delete("/api/browser/sessions/s1", headers=AUTH)
 
@@ -307,10 +307,10 @@ def test_close_session_signals_replay_lost_when_expired_by_ttl(client, estado, m
     estado.browser_panel_clients["panel-s1"] = mock
 
     monkeypatch.setattr(
-        "sicoobito.api.routes.browser.store_replay", AsyncMock(return_value=None)
+        "novaai_studio.api.routes.browser.store_replay", AsyncMock(return_value=None)
     )
     mark_expired = AsyncMock()
-    monkeypatch.setattr("sicoobito.api.routes.browser.mark_replay_expired", mark_expired)
+    monkeypatch.setattr("novaai_studio.api.routes.browser.mark_replay_expired", mark_expired)
 
     resp = client.delete("/api/browser/sessions/s1", headers=AUTH)
 
@@ -326,7 +326,7 @@ def test_close_session_signals_replay_lost_when_expired_by_ttl(client, estado, m
 
 def test_list_replays_passes_through_recent_replays(client, estado, monkeypatch):
     monkeypatch.setattr(
-        "sicoobito.api.routes.browser.list_recent_replays",
+        "novaai_studio.api.routes.browser.list_recent_replays",
         AsyncMock(return_value=[{"session_id": "s1"}]),
     )
 
@@ -338,10 +338,10 @@ def test_list_replays_passes_through_recent_replays(client, estado, monkeypatch)
 
 def test_get_replay_returns_404_when_never_existed(client, estado, monkeypatch):
     monkeypatch.setattr(
-        "sicoobito.api.routes.browser.get_replay", AsyncMock(return_value=None)
+        "novaai_studio.api.routes.browser.get_replay", AsyncMock(return_value=None)
     )
     monkeypatch.setattr(
-        "sicoobito.api.routes.browser.was_replay_expired", AsyncMock(return_value=False)
+        "novaai_studio.api.routes.browser.was_replay_expired", AsyncMock(return_value=False)
     )
 
     resp = client.get("/api/browser/replays/nunca-existiu", headers=AUTH)
@@ -351,10 +351,10 @@ def test_get_replay_returns_404_when_never_existed(client, estado, monkeypatch):
 
 def test_get_replay_returns_410_when_lost_to_ttl_expiry(client, estado, monkeypatch):
     monkeypatch.setattr(
-        "sicoobito.api.routes.browser.get_replay", AsyncMock(return_value=None)
+        "novaai_studio.api.routes.browser.get_replay", AsyncMock(return_value=None)
     )
     monkeypatch.setattr(
-        "sicoobito.api.routes.browser.was_replay_expired", AsyncMock(return_value=True)
+        "novaai_studio.api.routes.browser.was_replay_expired", AsyncMock(return_value=True)
     )
 
     resp = client.get("/api/browser/replays/expirou", headers=AUTH)
@@ -364,7 +364,7 @@ def test_get_replay_returns_410_when_lost_to_ttl_expiry(client, estado, monkeypa
 
 def test_get_replay_returns_entry_with_presigned_urls(client, estado, monkeypatch):
     monkeypatch.setattr(
-        "sicoobito.api.routes.browser.get_replay",
+        "novaai_studio.api.routes.browser.get_replay",
         AsyncMock(
             return_value={
                 "session_id": "s1",

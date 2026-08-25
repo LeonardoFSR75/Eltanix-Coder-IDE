@@ -28,6 +28,44 @@ interface RuntimeOptions {
   onNotify?: (kind: NotifyKind, message: string) => void;
 }
 
+interface ToolUiEvent {
+  name: string;
+  detail: Record<string, unknown>;
+}
+
+// Cada ferramenta que precisa disparar um `CustomEvent` de UI (pra outro
+// painel reagir, ex. abrir o navegador ou recarregar a lista de pacotes)
+// entra aqui como uma linha de dados — quem adiciona uma ferramenta nova
+// não precisa tocar no loop de `consume()` abaixo, só nesta tabela.
+const TOOL_UI_EVENTS: Record<
+  string,
+  (message: Record<string, unknown>, sessionId?: string) => ToolUiEvent | null
+> = {
+  browser_action: (message, sessionId) => {
+    const data = (message.data ?? {}) as Record<string, unknown>;
+    // Prefere a URL original pedida pelo agente quando o serviço de
+    // navegador substituiu por um hostname Docker-interno
+    // (`url_is_internal_fallback`) — nenhuma das duas, porém, é
+    // garantidamente alcançável por um iframe direto no navegador
+    // real (é tipicamente a porta de um sandbox nunca publicada no
+    // host), então o evento abaixo sempre abre em modo Agente.
+    const isFallback = data.url_is_internal_fallback === true;
+    const original = typeof data.original_url === "string" ? data.original_url : "";
+    const resolved = typeof data.url === "string" ? data.url : "";
+    const navUrl = (isFallback ? original : resolved) || resolved || original;
+    if (!navUrl) return null;
+    return { name: "novaai_studio:browser:open", detail: { url: navUrl, sessionId } };
+  },
+  manage_packages: (_message, sessionId) => ({
+    name: "novaai_studio:packages:changed",
+    detail: { sessionId },
+  }),
+  manage_extensions: (_message, sessionId) => ({
+    name: "novaai_studio:extensions:changed",
+    detail: { sessionId },
+  }),
+};
+
 export class AgentSessionRuntime {
   session: Session | null = null;
   task = "";
@@ -152,6 +190,18 @@ export class AgentSessionRuntime {
       return;
     }
 
+    if (node === "approve") {
+      // O nó `approve` do backend só emite este evento quando NADA ficou
+      // pendente (interrupções de verdade vão pelo ramo `interrupt` acima) —
+      // sem tratar isto, uma ação WRITE/EXEC totalmente auto-aprovada pela
+      // política do projeto nunca limpa `this.pending` (setado pelo evento
+      // `think` anterior), e `awaitingApproval`/`canSubmit` ficam presos
+      // "aguardando aprovação" pro resto da sessão.
+      this.pending = (update.pending ?? []) as PendingAction[];
+      this.onChange();
+      return;
+    }
+
     if (node === "think") {
       const messages = (update.messages ?? []) as Array<Record<string, unknown>>;
       for (const message of messages) {
@@ -192,34 +242,12 @@ export class AgentSessionRuntime {
           toolData: (message.data ?? {}) as Record<string, unknown>,
           toolContent: content,
         });
-        if (message.name === "browser_action" && message.ok !== false) {
-          const data = (message.data ?? {}) as Record<string, unknown>;
-          // Prefere a URL original pedida pelo agente quando o serviço de
-          // navegador substituiu por um hostname Docker-interno
-          // (`url_is_internal_fallback`) — nenhuma das duas, porém, é
-          // garantidamente alcançável por um iframe direto no navegador
-          // real (é tipicamente a porta de um sandbox nunca publicada no
-          // host), então o evento abaixo sempre abre em modo Agente.
-          const isFallback = data.url_is_internal_fallback === true;
-          const original = typeof data.original_url === "string" ? data.original_url : "";
-          const resolved = typeof data.url === "string" ? data.url : "";
-          const navUrl = (isFallback ? original : resolved) || resolved || original;
-          if (navUrl && typeof window !== "undefined") {
-            window.dispatchEvent(
-              new CustomEvent("sicoobito:browser:open", {
-                detail: { url: navUrl, sessionId: this.session?.session_id },
-              })
-            );
+        if (message.ok !== false && typeof window !== "undefined") {
+          const factory = TOOL_UI_EVENTS[String(message.name ?? "")];
+          const evt = factory?.(message, this.session?.session_id);
+          if (evt) {
+            window.dispatchEvent(new CustomEvent(evt.name, { detail: evt.detail }));
           }
-        }
-        if (
-          (message.name === "manage_packages" || message.name === "manage_extensions") &&
-          message.ok !== false &&
-          typeof window !== "undefined"
-        ) {
-          const eventName =
-            message.name === "manage_packages" ? "sicoobito:packages:changed" : "sicoobito:extensions:changed";
-          window.dispatchEvent(new CustomEvent(eventName, { detail: { sessionId: this.session?.session_id } }));
         }
       }
       for (const path of (update.files_changed ?? []) as string[]) {

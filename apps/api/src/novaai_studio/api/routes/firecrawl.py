@@ -7,15 +7,15 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Request, status
 from pydantic import BaseModel, Field
 
-from sicoobito.api.deps import AuthDep
-from sicoobito.firecrawl.client import (
+from novaai_studio.api.deps import AuthDep
+from novaai_studio.firecrawl.client import (
     FirecrawlAuthError,
     FirecrawlError,
     FirecrawlRateLimitError,
     FirecrawlUnavailableError,
 )
-from sicoobito.firecrawl.service import FirecrawlService
-from sicoobito.logging_setup import get_logger
+from novaai_studio.firecrawl.service import FirecrawlService
+from novaai_studio.logging_setup import get_logger
 
 router = APIRouter(prefix="/api/firecrawl", tags=["firecrawl"], dependencies=[AuthDep])
 

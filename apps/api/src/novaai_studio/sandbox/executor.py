@@ -15,9 +15,9 @@ from typing import Any
 
 import httpx
 
-from sicoobito.logging_setup import get_logger
-from sicoobito.sandbox.concurrency import SandboxConcurrencyGate
-from sicoobito.sandbox.container import ExecResult, SandboxError, SandboxUnavailableError
+from novaai_studio.logging_setup import get_logger
+from novaai_studio.sandbox.concurrency import SandboxConcurrencyGate
+from novaai_studio.sandbox.container import ExecResult, SandboxError, SandboxUnavailableError
 
 log = get_logger(__name__)
 
@@ -72,7 +72,7 @@ class RemoteSandbox:
         canonical = self.workspace
         cur = self.workspace.resolve()
         while cur != cur.parent:
-            if cur.name == "worktrees" and cur.parent.name == ".sicoobito":
+            if cur.name == "worktrees" and cur.parent.name == ".novaai_studio":
                 canonical = cur.parent.parent
                 break
             cur = cur.parent
@@ -224,9 +224,7 @@ class ExecutorSandboxManager:
         # Sessão nova de verdade: passa pela fila antes de pedir ao executor
         # para criar container — reconexão (branch acima) não compete de novo.
         await self._gate.acquire(session_id)
-        sandbox = RemoteSandbox(
-            session_id, workspace, self._config, client=self._get_http_client()
-        )
+        sandbox = RemoteSandbox(session_id, workspace, self._config, client=self._get_http_client())
         self._sandboxes[session_id] = sandbox
         try:
             await sandbox.start()
@@ -328,4 +326,3 @@ class ExecutorSandboxManager:
             await self.release(sid)
         if self._http_client is not None and not self._http_client.is_closed:
             await self._http_client.aclose()
-

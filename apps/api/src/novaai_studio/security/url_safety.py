@@ -2,12 +2,12 @@
 
 Ponto único de verdade para "isto é um host de infraestrutura interna, nunca
 deveria ser alcançado a partir de uma URL fornecida por fora" — hoje
-consumido por `sicoobito.firecrawl.service` (scraping/crawling externo) e
-`sicoobito.agent.tools.browser` (navegação do agente).
+consumido por `novaai_studio.firecrawl.service` (scraping/crawling externo) e
+`novaai_studio.agent.tools.browser` (navegação do agente).
 
 `services/browser/app.py` **não** importa este módulo: aquele serviço roda
 num container Docker isolado e deliberadamente mínimo (ver seu Dockerfile —
-só instala FastAPI/Playwright/pydantic, nunca o pacote `sicoobito` inteiro,
+só instala FastAPI/Playwright/pydantic, nunca o pacote `novaai_studio` inteiro,
 para manter a menor superfície possível numa rede que já é a mais permissiva
 do sistema). Ele mantém sua própria cópia sincronizada da mesma lista/lógica
 em vez de importar — ver a docstring de `validate_url` lá e o addendum do
@@ -41,8 +41,8 @@ BLOCKED_HOSTNAMES: frozenset[str] = frozenset(
 )
 
 # Prefixo dos hostnames de containers de sandbox por sessão — ver
-# `sicoobito.sandbox.container.Sandbox.container_name`.
-SANDBOX_HOSTNAME_PREFIX = "sicoobito-"
+# `novaai_studio.sandbox.container.Sandbox.container_name`.
+SANDBOX_HOSTNAME_PREFIX = "novaai-studio-"
 
 # Allowlist (não blocklist!) dos alvos locais que a ferramenta de navegação
 # do agente (`browser_action`) pode alcançar para testar a própria aplicação
@@ -65,7 +65,7 @@ AGENT_LOCAL_TEST_HOSTNAMES: frozenset[str] = frozenset(
 def is_agent_local_test_target(hostname: str) -> bool:
     """True se `hostname` é um alvo local legítimo para o agente testar a
     própria aplicação: `AGENT_LOCAL_TEST_HOSTNAMES` ou um container de
-    sandbox (`sicoobito-<session_id>`)."""
+    sandbox (`novaai-studio-<session_id>`)."""
     h = (hostname or "").lower()
     return h in AGENT_LOCAL_TEST_HOSTNAMES or h.startswith(SANDBOX_HOSTNAME_PREFIX)
 
@@ -112,6 +112,4 @@ def validate_target_url(url: str) -> None:
         raise ValueError("URL não contém um hostname válido.")
 
     if is_internal_hostname(hostname):
-        raise ValueError(
-            f"Acesso ao host '{hostname}' bloqueado por política de segurança (SSRF)."
-        )
+        raise ValueError(f"Acesso ao host '{hostname}' bloqueado por política de segurança (SSRF).")

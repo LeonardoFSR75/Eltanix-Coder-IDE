@@ -1,8 +1,8 @@
 [package]
-name = "sicoobito-desktop"
+name = "novaai-studio-desktop"
 version = "0.1.0"
 description = "Plataforma agêntica de codificação local-first — Desktop Edition"
-authors = ["Sicoobito Team"]
+authors = ["NovaAI Studio Team"]
 edition = "2021"
 
 [build-dependencies]

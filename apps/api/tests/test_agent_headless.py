@@ -11,8 +11,8 @@ from typing import Any
 
 import pytest
 
-from sicoobito.agent.coordinator import AgentCoordinator
-from sicoobito.agent.headless import run_headless_burst
+from novaai_studio.agent.coordinator import AgentCoordinator
+from novaai_studio.agent.headless import run_headless_burst
 
 
 @dataclass

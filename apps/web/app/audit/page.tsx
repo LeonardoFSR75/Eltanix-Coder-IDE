@@ -59,7 +59,7 @@ export default function AuditPage() {
     const jsonString = `data:text/json;charset=utf-8,${encodeURIComponent(JSON.stringify(filteredLogs, null, 2))}`;
     const downloadAnchor = document.createElement("a");
     downloadAnchor.setAttribute("href", jsonString);
-    downloadAnchor.setAttribute("download", `sicoobito_audit_logs_${Date.now()}.json`);
+    downloadAnchor.setAttribute("download", `novaai_studio_audit_logs_${Date.now()}.json`);
     document.body.appendChild(downloadAnchor);
     downloadAnchor.click();
     downloadAnchor.remove();
@@ -87,7 +87,7 @@ export default function AuditPage() {
     const csvString = `data:text/csv;charset=utf-8,${encodeURIComponent(headers + rows)}`;
     const downloadAnchor = document.createElement("a");
     downloadAnchor.setAttribute("href", csvString);
-    downloadAnchor.setAttribute("download", `sicoobito_audit_logs_${Date.now()}.csv`);
+    downloadAnchor.setAttribute("download", `novaai_studio_audit_logs_${Date.now()}.csv`);
     document.body.appendChild(downloadAnchor);
     downloadAnchor.click();
     downloadAnchor.remove();

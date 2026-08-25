@@ -10,11 +10,11 @@ from __future__ import annotations
 
 import pytest
 
-from sicoobito.agent.runner import validate_project_runtime
-from sicoobito.agent.tools import RiskClass, Tool, ToolContext, registry
-from sicoobito.agent.tools.project_manager import manage_project
-from sicoobito.agent.tools.shell import summarize_output
-from sicoobito.workspace.fs import WorkspaceFS
+from novaai_studio.agent.runner import validate_project_runtime
+from novaai_studio.agent.tools import RiskClass, Tool, ToolContext, registry
+from novaai_studio.agent.tools.project_manager import manage_project
+from novaai_studio.agent.tools.shell import summarize_output
+from novaai_studio.workspace.fs import WorkspaceFS
 
 
 def _tool(name: str) -> Tool:
@@ -57,7 +57,6 @@ def test_read_tools_do_not_require_approval():
         "git_status",
         "git_diff",
         "read_issue",
-        "write_todos",
         "request_code_review",
         "web_scrape",
         "web_search",
@@ -65,6 +64,20 @@ def test_read_tools_do_not_require_approval():
         ferramenta = _tool(nome)
         assert ferramenta.risk is RiskClass.READ
         assert ferramenta.risk.requires_approval is False
+
+
+def test_write_todos_risk_is_context_dependent():
+    """`write_todos` não é puramente READ como o resto do bloco acima: em
+    modo `plan`/`orchestra`, a primeira chamada que registra um plano vira
+    WRITE (ver `agent/tools/plan.py::_todos_risk`). `.risk` (catálogo
+    informativo de `GET /api/agent/tools`, sem sessão real) por isso reporta
+    o pior caso — WRITE — em vez do `READ` só válido fora desse modo; já
+    `resolve_risk` com o contexto real de uma sessão fora de `plan`/
+    `orchestra` continua READ, igual sempre foi."""
+    ferramenta = _tool("write_todos")
+    assert ferramenta.risk is RiskClass.WRITE
+    assert ferramenta.risk.requires_approval is True
+    assert ferramenta.resolve_risk({"items": [{"content": "x"}]}, None) is RiskClass.READ
 
 
 def test_mutating_tools_require_approval():

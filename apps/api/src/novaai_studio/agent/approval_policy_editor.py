@@ -1,4 +1,4 @@
-"""Edição estrutural de `.sicoobito/approval_policy.yaml` preservando
+"""Edição estrutural de `.novaai_studio/approval_policy.yaml` preservando
 comentários — mesmo padrão de `mcp/config_editor.py` (round-trip via
 `ruamel.yaml`).
 
@@ -20,7 +20,7 @@ _yaml.preserve_quotes = True
 _yaml.indent(mapping=2, sequence=4, offset=2)
 _yaml.width = 4096
 
-_RELATIVE_PATH = Path(".sicoobito") / "approval_policy.yaml"
+_RELATIVE_PATH = Path(".novaai_studio") / "approval_policy.yaml"
 
 
 def policy_path(workspace_root: Path) -> Path:

@@ -1,15 +1,15 @@
-from sicoobito.router.budget import BudgetExceededError, BudgetGuard, BudgetStatus
-from sicoobito.router.catalog import Catalog, ModelSpec, RouteProfile, load_catalog
-from sicoobito.router.engine import CompletionResult, RouterEngine
-from sicoobito.router.errors import (
+from novaai_studio.router.budget import BudgetExceededError, BudgetGuard, BudgetStatus
+from novaai_studio.router.catalog import Catalog, ModelSpec, RouteProfile, load_catalog
+from novaai_studio.router.engine import CompletionResult, RouterEngine
+from novaai_studio.router.errors import (
     AllCandidatesFailedError,
     FailureKind,
     NoCandidatesError,
     classify,
 )
-from sicoobito.router.health import HealthTracker, ModelHealth
-from sicoobito.router.policy import RoutingDecision, RoutingPolicy
-from sicoobito.router.pricing import CostResult, PriceTable, Usage
+from novaai_studio.router.health import HealthTracker, ModelHealth
+from novaai_studio.router.policy import RoutingDecision, RoutingPolicy
+from novaai_studio.router.pricing import CostResult, PriceTable, Usage
 
 __all__ = [
     "AllCandidatesFailedError",

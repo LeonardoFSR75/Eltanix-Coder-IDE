@@ -14,10 +14,10 @@ from decimal import Decimal
 
 from sqlalchemy import func, select
 
-from sicoobito.config import Settings
-from sicoobito.db.models import RequestLog
-from sicoobito.db.session import session_scope
-from sicoobito.logging_setup import get_logger
+from novaai_studio.config import Settings
+from novaai_studio.db.models import RequestLog
+from novaai_studio.db.session import session_scope
+from novaai_studio.logging_setup import get_logger
 
 log = get_logger(__name__)
 

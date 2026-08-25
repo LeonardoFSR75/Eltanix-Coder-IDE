@@ -12,15 +12,15 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from redis.asyncio import Redis
 
-from sicoobito import __version__
-from sicoobito.agent.coordinator import AgentCoordinator
-from sicoobito.analytics.worker import run_analytics_batch_reaper
-from sicoobito.agent.custom_modes import CustomModeService
-from sicoobito.agent.runner import AgentRunner
-from sicoobito.agent.snapshot_store import SnapshotService
-from sicoobito.agent.tools import registry as tool_registry
-from sicoobito.api.middleware import CorrelationIdMiddleware
-from sicoobito.api.routes import (
+from novaai_studio import __version__
+from novaai_studio.agent.coordinator import AgentCoordinator
+from novaai_studio.agent.custom_modes import CustomModeService
+from novaai_studio.agent.runner import AgentRunner
+from novaai_studio.agent.snapshot_store import SnapshotService
+from novaai_studio.agent.tools import registry as tool_registry
+from novaai_studio.analytics.worker import run_analytics_batch_reaper
+from novaai_studio.api.middleware import CorrelationIdMiddleware
+from novaai_studio.api.routes import (
     agent_router,
     analytics_router,
     approval_policy_router,
@@ -52,35 +52,35 @@ from sicoobito.api.routes import (
     workspace_router,
     workspace_ws_router,
 )
-from sicoobito.api.routes.browser import run_panel_client_purge_reaper
-from sicoobito.api.tickets import TicketStore
-from sicoobito.api.v1 import router as openai_router
-from sicoobito.audit.service import AuditService
-from sicoobito.auth.service import AuthService
-from sicoobito.browser.client import BrowserConfig
-from sicoobito.browser.replay import run_replay_purge_reaper
-from sicoobito.config import get_settings
-from sicoobito.context.indexer import ContextIndexer
-from sicoobito.db.session import init_engine, session_scope, shutdown_engine
-from sicoobito.documents.service import DocumentService
-from sicoobito.extensions.manager import get_extensions_manager
-from sicoobito.firecrawl.service import FirecrawlService
-from sicoobito.logging_setup import get_logger, setup_logging
-from sicoobito.mcp.manager import MCPManager
-from sicoobito.notes.service import NoteService
-from sicoobito.optimizer.cache import ResponseCache
-from sicoobito.optimizer.semantic_cache import SemanticCache
-from sicoobito.router.budget import BudgetGuard
-from sicoobito.router.catalog import load_catalog
-from sicoobito.router.engine import RouterEngine
-from sicoobito.router.health import HealthTracker
-from sicoobito.router.pricing import PriceTable
-from sicoobito.sandbox.container import SandboxConfig, SandboxManager
-from sicoobito.sandbox.executor import ExecutorConfig, ExecutorSandboxManager
-from sicoobito.skills.seed import seed_agent_skills
-from sicoobito.skills.service import SkillService
-from sicoobito.storage.blob import BlobStore
-from sicoobito.telemetry.tracer import TraceRecorder
+from novaai_studio.api.routes.browser import run_panel_client_purge_reaper
+from novaai_studio.api.tickets import TicketStore
+from novaai_studio.api.v1 import router as openai_router
+from novaai_studio.audit.service import AuditService
+from novaai_studio.auth.service import AuthService
+from novaai_studio.browser.client import BrowserConfig
+from novaai_studio.browser.replay import run_replay_purge_reaper
+from novaai_studio.config import get_settings
+from novaai_studio.context.indexer import ContextIndexer
+from novaai_studio.db.session import init_engine, session_scope, shutdown_engine
+from novaai_studio.documents.service import DocumentService
+from novaai_studio.extensions.manager import get_extensions_manager
+from novaai_studio.firecrawl.service import FirecrawlService
+from novaai_studio.logging_setup import get_logger, setup_logging
+from novaai_studio.mcp.manager import MCPManager
+from novaai_studio.notes.service import NoteService
+from novaai_studio.optimizer.cache import ResponseCache
+from novaai_studio.optimizer.semantic_cache import SemanticCache
+from novaai_studio.router.budget import BudgetGuard
+from novaai_studio.router.catalog import load_catalog
+from novaai_studio.router.engine import RouterEngine
+from novaai_studio.router.health import HealthTracker
+from novaai_studio.router.pricing import PriceTable
+from novaai_studio.sandbox.container import SandboxConfig, SandboxManager
+from novaai_studio.sandbox.executor import ExecutorConfig, ExecutorSandboxManager
+from novaai_studio.skills.seed import seed_agent_skills
+from novaai_studio.skills.service import SkillService
+from novaai_studio.storage.blob import BlobStore
+from novaai_studio.telemetry.tracer import TraceRecorder
 
 log = get_logger(__name__)
 
@@ -105,7 +105,7 @@ async def lifespan(app: FastAPI):
     if not settings.api_key:
         log.info(
             "auth.no_service_key",
-            detail="SICOOBITO_API_KEY vazia — só login de usuário autentica a UI web.",
+            detail="NOVAAI_STUDIO_API_KEY vazia — só login de usuário autentica a UI web.",
         )
 
     init_engine(settings.database_url)
@@ -211,7 +211,7 @@ async def lifespan(app: FastAPI):
             "auth.seed_user.generated_password",
             username=settings.admin_username,
             generated_password=admin_password,
-            hint="defina SICOOBITO_ADMIN_PASSWORD no .env para fixar a senha do primeiro login",
+            hint="defina NOVAAI_STUDIO_ADMIN_PASSWORD no .env para fixar a senha do primeiro login",
         )
     await auth.ensure_seed_user(username=settings.admin_username, password=admin_password)
     await auth.purge_expired_sessions()
@@ -314,18 +314,10 @@ async def lifespan(app: FastAPI):
     # ninguém mais conhece.
     reaper = asyncio.create_task(sandboxes.run_reaper())
     session_purge_reaper = asyncio.create_task(auth.run_session_purge_reaper())
-    zombie_session_reaper = asyncio.create_task(
-        app.state.agent_runner.run_zombie_session_reaper()
-    )
-    replay_purge_reaper = asyncio.create_task(
-        run_replay_purge_reaper(blob=blob, redis=redis)
-    )
-    panel_client_purge_reaper = asyncio.create_task(
-        run_panel_client_purge_reaper(app.state)
-    )
-    analytics_batch_reaper = asyncio.create_task(
-        run_analytics_batch_reaper(engine)
-    )
+    zombie_session_reaper = asyncio.create_task(app.state.agent_runner.run_zombie_session_reaper())
+    replay_purge_reaper = asyncio.create_task(run_replay_purge_reaper(blob=blob, redis=redis))
+    panel_client_purge_reaper = asyncio.create_task(run_panel_client_purge_reaper(app.state))
+    analytics_batch_reaper = asyncio.create_task(run_analytics_batch_reaper(engine))
 
     log.info(
         "app.started",
@@ -370,7 +362,7 @@ def create_app() -> FastAPI:
     settings = get_settings()
 
     app = FastAPI(
-        title="SicoobitoCode",
+        title="NovaAI Studio",
         description=(
             "Gateway multi-modelo local-first com contabilidade de custo. "
             "Expõe API compatível com a OpenAI em /v1."
@@ -424,7 +416,7 @@ def create_app() -> FastAPI:
     @app.get("/", tags=["meta"])
     async def root() -> dict[str, str]:
         return {
-            "name": "SicoobitoCode",
+            "name": "NovaAI Studio",
             "version": __version__,
             "openai_base_url": "/v1",
             "docs": "/docs",

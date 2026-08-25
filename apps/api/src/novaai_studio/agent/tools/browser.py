@@ -17,9 +17,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from sicoobito.agent.tools.base import RiskClass, ToolContext, ToolResult, tool
-from sicoobito.browser.client import BrowserError, BrowserUnavailableError
-from sicoobito.security.url_safety import is_agent_local_test_target
+from novaai_studio.agent.tools.base import RiskClass, ToolContext, ToolResult, tool
+from novaai_studio.browser.client import BrowserError, BrowserUnavailableError
+from novaai_studio.security.url_safety import is_agent_local_test_target
 
 _ACTIONS = {"navigate", "click", "type", "screenshot", "content"}
 
@@ -44,7 +44,7 @@ def _summarize(args: dict[str, Any]) -> str:
     name="browser_action",
     description=(
         "Controla um navegador de verdade para verificar visualmente uma aplicação web "
-        "rodando (a própria interface do SicoobitoCode, por exemplo). Ações: `navigate` "
+        "rodando (a própria interface do NovaAI Studio, por exemplo). Ações: `navigate` "
         "(abrir uma URL http(s)), `click` (por `selector` CSS ou por `x`/`y`), `type` "
         "(preencher um campo por `selector`), `screenshot` (captura a tela atual) e "
         "`content` (texto visível da página). Use depois de `run_command` subir um "
@@ -115,7 +115,7 @@ async def browser_action(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
             return ToolResult(
                 ok=False,
                 content=(
-                    "ERRO: AVISO DE AMBIENTE: O navegador do SicoobitoCode é isolado da rede pública e "
+                    "ERRO: AVISO DE AMBIENTE: O navegador do NovaAI Studio é isolado da rede pública e "
                     "é destinado EXCLUSIVAMENTE para testar e inspecionar a aplicação web local "
                     "no sandbox (ex.: http://localhost:5000).\n"
                     f"Ele não navega em sites externos da internet como '{hostname}'.\n"
@@ -172,7 +172,9 @@ async def browser_action(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
             linhas.append(f"  - {c_err}")
         aviso_erros = "\n".join(linhas)
 
-    engine_info = f" [motor: {resultado.get('engine_used', engine)}]" if resultado.get("engine_used") else ""
+    engine_info = (
+        f" [motor: {resultado.get('engine_used', engine)}]" if resultado.get("engine_used") else ""
+    )
 
     if acao == "screenshot":
         imagem = resultado.get("image_base64", "")
@@ -196,4 +198,6 @@ async def browser_action(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
         texto = resultado.get("text", "")
         return ToolResult(ok=True, content=f"{texto}{engine_info}{aviso_erros}", data=resultado)
 
-    return ToolResult(ok=True, content=f"{acao} concluído{engine_info}.{aviso_erros}", data=resultado)
+    return ToolResult(
+        ok=True, content=f"{acao} concluído{engine_info}.{aviso_erros}", data=resultado
+    )

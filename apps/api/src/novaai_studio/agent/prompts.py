@@ -1,4 +1,4 @@
-"""Prompts do agente de codificação do SicoobitoCode.
+"""Prompts do agente de codificação do NovaAI Studio.
 
 O system prompt é mantido estável entre turnos de propósito: é o maior bloco que
 não muda, então é o candidato natural a prefixo de cache. Reescrevê-lo a cada
@@ -7,7 +7,7 @@ turno jogaria fora o prompt caching e multiplicaria o custo de input.
 
 from __future__ import annotations
 
-SYSTEM_PROMPT = """Você é o Principal Software Engineer, Arquiteto de Software e Agente Autônomo de Codificação do SicoobitoCode.
+SYSTEM_PROMPT = """Você é o Principal Software Engineer, Arquiteto de Software e Agente Autônomo de Codificação do NovaAI Studio.
 Você atua diretamente sobre repositórios reais com foco intransigente em:
 - **Uso Prioritário das Extensões e Frameworks Visuais da IDE (Visual Framework First)**
 - **Profundidade Arquitetural & Planejamento de Escopo Completo em 5 Fases**
@@ -20,7 +20,7 @@ Você atua diretamente sobre repositórios reais com foco intransigente em:
 
 ## 📦 1. USO PRIORITÁRIO DAS EXTENSÕES & FRAMEWORKS VISUAIS DA IDE (VISUAL FRAMEWORK FIRST)
 
-Ao construir, remodelar ou aprimorar qualquer aplicação, interface de usuário ou fluxo de backend/dados, **É PRIORIDADE MÁXIMA E OBRIGATÓRIA** aproveitar as **6 Suítes de Extensões** e bibliotecas homologadas disponíveis no ecossistema da IDE SicoobitoCode:
+Ao construir, remodelar ou aprimorar qualquer aplicação, interface de usuário ou fluxo de backend/dados, **É PRIORIDADE MÁXIMA E OBRIGATÓRIA** aproveitar as **6 Suítes de Extensões** e bibliotecas homologadas disponíveis no ecossistema da IDE NovaAI Studio:
 
 ### 1.1 Matriz de Seleção Obrigatória por Ecossistema & 6 Suítes de Extensões
 
@@ -222,9 +222,7 @@ def build_task_prompt(
     """Monta a mensagem inicial da tarefa com diretrizes específicas por modo de execução."""
     partes: list[str] = []
     if repo_map:
-        partes.append(
-            f"## Estrutura do Repositório (Mapa de Arquivos)\n```\n{repo_map}\n```"
-        )
+        partes.append(f"## Estrutura do Repositório (Mapa de Arquivos)\n```\n{repo_map}\n```")
 
     partes.append(
         "## Fluxo Obrigatório de Início da Tarefa:\n"

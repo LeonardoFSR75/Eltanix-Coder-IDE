@@ -245,7 +245,7 @@ def test_create_sandbox_runs_new_container_when_none_exists(monkeypatch):
     assert response.status_code == 200
     body = response.json()
     assert body["id"] == "novo-container-id"
-    assert body["name"] == "sicoobito-minha-sessao"
+    assert body["name"] == "novaai-studio-minha-sessao"
     assert body["reused"] is False
     assert body["host_path"] == "/host/projetos/minha-sessao"
     mock_client.containers.run.assert_called_once()
@@ -309,7 +309,7 @@ def test_list_sandboxes_returns_expected_shape(monkeypatch):
     # `name` é um kwarg especial do construtor do Mock (define o repr, não o
     # atributo) — precisa ser atribuído depois de criado.
     container = MagicMock(status="running", labels={app_module.LABEL: "minha-sessao"})
-    container.name = "sicoobito-minha-sessao"
+    container.name = "novaai-studio-minha-sessao"
     container.attrs = {"Created": "2026-07-30T00:00:00Z"}
     mock_client.containers.list.return_value = [container]
     client = TestClient(app_module.app)
@@ -454,7 +454,7 @@ def test_reap_removes_unrecognized_containers_and_clears_their_caches(monkeypatc
     client = TestClient(app_module.app)
 
     # `keep` chega como corpo JSON de lista pura (ver
-    # `apps/api/src/sicoobito/sandbox/executor.py::reap_orphans`,
+    # `apps/api/src/novaai_studio/sandbox/executor.py::reap_orphans`,
     # `json=list(self._sandboxes)`), não como query param.
     response = client.post(
         "/sandboxes/reap", headers=AUTH_HEADERS, json=["sessao-mantida"]

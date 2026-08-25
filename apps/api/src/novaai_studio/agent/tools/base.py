@@ -17,6 +17,7 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from enum import StrEnum
+from types import SimpleNamespace
 from typing import Any
 
 
@@ -28,6 +29,15 @@ class RiskClass(StrEnum):
     @property
     def requires_approval(self) -> bool:
         return self is not RiskClass.READ
+
+
+# Usados só por `Tool.risk` (catálogo informativo) para sondar o pior caso de
+# ferramentas com risco dinâmico, sem precisar de uma sessão real — ver o
+# comentário em `Tool.risk`.
+_WORST_CASE_ARGS: dict[str, Any] = {"action": "install", "items": [{"content": "x"}]}
+_WORST_CASE_CONTEXT = SimpleNamespace(
+    mode="plan", session_state=SimpleNamespace(plan_registered=False)
+)
 
 
 @dataclass(slots=True)
@@ -82,7 +92,7 @@ class ToolContext:
     # RouterEngine — ferramentas que fazem uma segunda chamada de LLM isolada
     # da conversa principal (ex. request_code_review) usam isto.
     engine: Any | None = None
-    # Conteúdo de `.sicoobito/instructions.md` no projeto (não no worktree da
+    # Conteúdo de `.novaai_studio/instructions.md` no projeto (não no worktree da
     # sessão) — texto livre que o usuário escreveu na aba "Instruções" do
     # popover, concatenado ao SYSTEM_PROMPT em `agent/graph.py::think()`.
     custom_instructions: str | None = None
@@ -105,7 +115,7 @@ class ToolContext:
     # renderizadas em texto por `agent/context_rules.py::build_context_rules_prompt`
     # — quarta seção opcional do system prompt, mesmo mecanismo aditivo das
     # três anteriores. `None` quando nenhuma regra casou ou o projeto não
-    # tem `.sicoobito/context_rules.yaml`.
+    # tem `.novaai_studio/context_rules.yaml`.
     context_rules_prompt: str | None = None
     # Modo customizado (Fase 6 do upgrade do agente) resolvido uma única vez
     # na criação da sessão (`AgentRunner._resolve_custom_mode`), quando `mode`
@@ -125,7 +135,7 @@ class ToolContext:
     # em vez de receberem o modo por parâmetro.
     mode: str = "agent"
     # Política de auto-aprovação (`agent/approval_policy.py::ApprovalPolicy`)
-    # carregada de `.sicoobito/approval_policy.yaml` no projeto — consultada
+    # carregada de `.novaai_studio/approval_policy.yaml` no projeto — consultada
     # pelo nó `approve` em `agent/graph.py` antes do `interrupt()`. `None`
     # equivale a uma política vazia (nenhuma regra, tudo pausa como sempre).
     approval_policy: Any | None = None
@@ -205,6 +215,7 @@ class Tool:
     parameters: dict[str, Any]
     handler: Callable[[ToolContext, dict[str, Any]], Awaitable[ToolResult]]
     summarize: Callable[[dict[str, Any]], str] | None = None
+    status_from_result: Callable[[ToolResult], str] | None = None
 
     def __init__(
         self,
@@ -214,6 +225,7 @@ class Tool:
         parameters: dict[str, Any],
         handler: Callable[[ToolContext, dict[str, Any]], Awaitable[ToolResult]],
         summarize: Callable[[dict[str, Any]], str] | None = None,
+        status_from_result: Callable[[ToolResult], str] | None = None,
     ) -> None:
         self.name = name
         self.description = description
@@ -221,11 +233,28 @@ class Tool:
         self.parameters = parameters
         self.handler = handler
         self.summarize = summarize
+        # Override opcional pra telemetria (`agent/graph.py::_telemetry_status`):
+        # ferramentas cujo `ToolResult.ok` não reflete sucesso real (ex.
+        # `run_command`, que sempre devolve `ok=True` de propósito — o modelo
+        # precisa ver comando que falhou, não ferramenta que falhou) declaram
+        # aqui como derivar o status real a partir de `data`, em vez de
+        # `_telemetry_status` precisar de um `if nome == "...":` por ferramenta.
+        self.status_from_result = status_from_result
 
     @property
     def risk(self) -> RiskClass:
+        # Cenário-pior-caso genérico para o catálogo informativo
+        # (`GET /api/agent/tools`): cobre tanto risco por argumento
+        # (`_packages_risk`/`_extensions_risk`, olham `action`) quanto risco
+        # dependente de sessão (`_todos_risk`, olha `context.mode`/
+        # `session_state.plan_registered`) — sem isso, `write_todos` sempre
+        # relatava `read`/`requires_approval: false` no catálogo mesmo
+        # podendo virar `write` de verdade em modo `plan`/`orchestra`.
         if callable(self._risk):
-            return self._risk({"action": "install"}, None)
+            return self._risk(
+                _WORST_CASE_ARGS,
+                _WORST_CASE_CONTEXT,  # type: ignore[arg-type]
+            )
         return self._risk
 
     def resolve_risk(
@@ -308,6 +337,7 @@ def tool(
     risk: RiskClass | Callable[[dict[str, Any]], RiskClass],
     parameters: dict[str, Any],
     summarize: Callable[[dict[str, Any]], str] | None = None,
+    status_from_result: Callable[[ToolResult], str] | None = None,
 ):
     """Decorador de registro."""
 
@@ -322,6 +352,7 @@ def tool(
                 parameters=parameters,
                 handler=handler,
                 summarize=summarize,
+                status_from_result=status_from_result,
             )
         )
 

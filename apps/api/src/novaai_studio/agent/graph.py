@@ -26,19 +26,14 @@ from typing import Any
 from langgraph.graph import END, StateGraph
 from langgraph.types import interrupt
 
-from sicoobito.agent.approval_policy import ApprovalPolicy, evaluate_policy
-from sicoobito.agent.prompts import APPROVAL_DENIED_TEMPLATE, SYSTEM_PROMPT
-from sicoobito.agent.review_common import request_review_verdict
-from sicoobito.agent.state import BUILTIN_MODES, AgentState, PendingApproval
-from sicoobito.agent.tools import RiskClass, ToolContext, registry
-from sicoobito.agent.tools.diffing import compute_proposed_diff
-from sicoobito.logging_setup import get_logger
-from sicoobito.router.engine import RouterEngine
-
-# Só ferramentas com conceito de diff — EXEC (run_command) não tem o que um
-# revisor avalie antes de rodar, e revisar isso adicionaria custo sem cobrir
-# o modo de falha (arquivo/comando errado) que esta feature existe pra pegar.
-_REVIEWABLE_TOOLS = frozenset({"edit_file", "write_file"})
+from novaai_studio.agent.approval_policy import ApprovalPolicy, evaluate_policy
+from novaai_studio.agent.prompts import APPROVAL_DENIED_TEMPLATE, SYSTEM_PROMPT
+from novaai_studio.agent.review_common import request_review_verdict
+from novaai_studio.agent.state import BUILTIN_MODES, AgentState, PendingApproval
+from novaai_studio.agent.tools import RiskClass, Tool, ToolContext, registry
+from novaai_studio.agent.tools.diffing import REVIEWABLE_TOOL_NAMES, compute_proposed_diff
+from novaai_studio.logging_setup import get_logger
+from novaai_studio.router.engine import RouterEngine
 
 log = get_logger(__name__)
 
@@ -80,19 +75,30 @@ def _next_repetition_state(
     return fingerprint, 1
 
 
-def _telemetry_status(nome: str, resultado: Any) -> str:
+def _update_unresolved_failure(context: ToolContext, risk: RiskClass, failed: bool) -> None:
+    """Atualiza `session_state.has_unresolved_failure` com a MESMA regra nos
+    dois pontos que a tocam (exceção do handler e resultado normal da
+    ferramenta) — antes cada um decidia isso com uma regra ligeiramente
+    diferente (a exceção só marcava `True`, nunca limpava; o resultado normal
+    marcava ou limpava conforme `status`), exigindo ler os dois ramos lado a
+    lado pra entender o ciclo de vida real da flag. Ferramentas READ nunca
+    tocam o valor anterior — só uma chamada não-READ resolve ou marca."""
+    if risk is not RiskClass.READ:
+        context.session_state.has_unresolved_failure = failed
+
+
+def _telemetry_status(ferramenta: Tool, resultado: Any) -> str:
     """Status para telemetria/observabilidade — não é o `ok` devolvido ao modelo.
 
-    `run_command` sempre devolve `ToolResult.ok=True` de propósito (comando que
-    falha é informação para o modelo decidir o próximo passo, não uma falha da
-    ferramenta em si) — mas isso fazia todo `pip install` sem rede aparecer como
-    `status="ok"` em `/api/telemetry/recent`, escondendo a falha de quem lê o log.
-    Aqui a telemetria olha o `exit_code`/`timed_out` reais do processo.
+    Ferramentas cujo `ToolResult.ok` não reflete sucesso real (ex.
+    `run_command`, que sempre devolve `ok=True` de propósito — comando que
+    falha é informação para o modelo decidir o próximo passo, não uma falha
+    da ferramenta em si) declaram `status_from_result` na própria definição
+    (`agent/tools/base.py::Tool`), em vez desta função precisar de um
+    `if nome == "...":` por ferramenta com esse padrão.
     """
-    if nome == "run_command":
-        dados = resultado.data or {}
-        if dados.get("timed_out") or dados.get("exit_code") not in (0, None):
-            return "error"
+    if ferramenta.status_from_result is not None:
+        return ferramenta.status_from_result(resultado)
     return "ok" if resultado.ok else "error"
 
 
@@ -123,7 +129,7 @@ def _attach_diffs(context: ToolContext, pendentes: list[PendingApproval]) -> Non
     Muta `pendentes` in place, anexando `diff` a cada item elegível.
     """
     for pendente in pendentes:
-        if pendente["tool"] not in _REVIEWABLE_TOOLS:
+        if pendente["tool"] not in REVIEWABLE_TOOL_NAMES:
             continue
 
         proposto = compute_proposed_diff(context, pendente["tool"], pendente["arguments"])
@@ -150,7 +156,7 @@ async def _attach_review_notes(
     as features.
     """
     for pendente in pendentes:
-        if pendente["tool"] not in _REVIEWABLE_TOOLS:
+        if pendente["tool"] not in REVIEWABLE_TOOL_NAMES:
             continue
 
         diff = pendente.get("diff")
@@ -264,6 +270,42 @@ def build_graph(engine: RouterEngine, context: ToolContext):
     if context.context_rules_prompt:
         system_prompt += f"\n\n{context.context_rules_prompt}"
 
+    # `_tool_schemas` só depende de `(mode, has_plan)` — `context` já é fixo
+    # por sessão (capturado no fechamento). Sem isto, `think()` reconstruía a
+    # lista inteira de schemas (percorrendo todo `registry.all()` e
+    # serializando cada um) a cada uma das até `DEFAULT_MAX_ITERATIONS`
+    # iterações, mesmo quando nada que afeta o resultado mudou desde a
+    # última chamada — `has_plan` só vira `True` uma vez por sessão.
+    _schemas_cache: dict[tuple[str, bool], list[dict[str, Any]]] = {}
+
+    def _tool_schemas_cached(mode: str, has_plan: bool) -> list[dict[str, Any]]:
+        chave = (mode, has_plan)
+        if chave not in _schemas_cache:
+            _schemas_cache[chave] = _tool_schemas(mode, has_plan, context)
+        return _schemas_cache[chave]
+
+    # `state["messages"]` só cresce por append entre iterações — LangGraph
+    # nunca reescreve um item já commitado (é sempre concatenação, nunca
+    # cópia profunda). `_para_api` filtra cada mensagem de forma
+    # independente, sem olhar vizinhas, então o prefixo já limpo pode ser
+    # reaproveitado: sem isto, cada uma das até `DEFAULT_MAX_ITERATIONS`
+    # chamadas de `think()` refiltrava a conversa inteira do zero.
+    _api_messages_cache: dict[str, list[dict[str, Any]]] = {"bruta": [], "limpa": []}
+
+    def _para_api_cached(mensagens_state: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        bruta_anterior = _api_messages_cache["bruta"]
+        n = len(bruta_anterior)
+        mesmo_prefixo = len(mensagens_state) >= n and all(
+            mensagens_state[i] is bruta_anterior[i] for i in range(n)
+        )
+        if mesmo_prefixo:
+            limpas = _api_messages_cache["limpa"] + _para_api(mensagens_state[n:])
+        else:
+            limpas = _para_api(mensagens_state)
+        _api_messages_cache["bruta"] = mensagens_state
+        _api_messages_cache["limpa"] = limpas
+        return limpas
+
     async def think(state: AgentState) -> dict[str, Any]:
         if context.on_activity is not None:
             try:
@@ -279,15 +321,16 @@ def build_graph(engine: RouterEngine, context: ToolContext):
                 pass
 
         mensagens_state = state.get("messages") or []
-        mensagens = _para_api([{"role": "system", "content": system_prompt}, *mensagens_state])
+        mensagens = [
+            {"role": "system", "content": system_prompt},
+            *_para_api_cached(mensagens_state),
+        ]
 
         resultado = await engine.complete(
             requested_model=state.get("model") or "coding",
             params={
                 "messages": mensagens,
-                "tools": _tool_schemas(
-                    state.get("mode", "agent"), bool(state.get("todos")), context
-                ),
+                "tools": _tool_schemas_cached(state.get("mode", "agent"), bool(state.get("todos"))),
                 "temperature": 0,
             },
             source=f"agent:{state.get('mode', 'agent')}",
@@ -493,38 +536,18 @@ def build_graph(engine: RouterEngine, context: ToolContext):
                 continue
 
             argumentos = _parse_arguments(chamada)
-            risk = ferramenta.resolve_risk(argumentos, context)
-
-            if risk.requires_approval and not aprovacoes.get(call_id, False):
-                respostas.append(
-                    _tool_message(
-                        call_id,
-                        nome,
-                        APPROVAL_DENIED_TEMPLATE.format(
-                            tool=nome, reason=motivos.get(call_id) or "não informado"
-                        ),
-                        ok=False,
-                        data={"denied": True, "reason": motivos.get(call_id) or ""},
-                    )
-                )
+            try:
+                risk = ferramenta.resolve_risk(argumentos, context)
+            except Exception as exc:
+                # Sem isto, uma exceção aqui derruba `act()` inteiro antes do
+                # `return atualizacao` — perdendo do checkpoint as chamadas
+                # anteriores deste mesmo turno que já tinham executado
+                # escritas de verdade (`respostas`/`alterados`).
+                log.warning("agent.tool.resolve_risk_failed", tool=nome, error=str(exc)[:200])
+                respostas.append(_tool_message(call_id, nome, f"ERRO: {exc}", ok=False))
                 continue
 
             fingerprint = _tool_fingerprint(nome, argumentos)
-            resumo_chamada = ferramenta.describe_call(argumentos)
-
-            if context.on_activity is not None:
-                try:
-                    await context.on_activity(
-                        {
-                            "stage": "tool_start",
-                            "tool": nome,
-                            "summary": resumo_chamada,
-                            "call_id": call_id,
-                            "timestamp": int(time.time() * 1000),
-                        }
-                    )
-                except Exception:
-                    pass
 
             if _is_stuck_repeat(fingerprint, ultima_falha, contagem_falha):
                 if context.audit is not None:
@@ -562,9 +585,53 @@ def build_graph(engine: RouterEngine, context: ToolContext):
                 )
                 continue
 
+            if risk.requires_approval and not aprovacoes.get(call_id, False):
+                respostas.append(
+                    _tool_message(
+                        call_id,
+                        nome,
+                        APPROVAL_DENIED_TEMPLATE.format(
+                            tool=nome, reason=motivos.get(call_id) or "não informado"
+                        ),
+                        ok=False,
+                        data={"denied": True, "reason": motivos.get(call_id) or ""},
+                    )
+                )
+                # Mesma contabilidade de repetição da falha de execução (ver
+                # o `except` do handler abaixo) — sem isto, uma ação negada
+                # repetidamente nunca engata `_is_stuck_repeat`, e o modelo
+                # pode insistir na mesma chamada já negada até o teto de
+                # iterações em vez de ser barrado depois de
+                # `REPETITION_THRESHOLD` tentativas idênticas.
+                ultima_falha, contagem_falha = _next_repetition_state(
+                    fingerprint, False, ultima_falha, contagem_falha
+                )
+                continue
+
+            try:
+                resumo_chamada = ferramenta.describe_call(argumentos)
+            except Exception as exc:
+                log.warning("agent.tool.describe_call_failed", tool=nome, error=str(exc)[:200])
+                respostas.append(_tool_message(call_id, nome, f"ERRO: {exc}", ok=False))
+                continue
+
+            if context.on_activity is not None:
+                try:
+                    await context.on_activity(
+                        {
+                            "stage": "tool_start",
+                            "tool": nome,
+                            "summary": resumo_chamada,
+                            "call_id": call_id,
+                            "timestamp": int(time.time() * 1000),
+                        }
+                    )
+                except Exception:
+                    pass
+
             snapshot_elegivel = (
                 risk is not RiskClass.READ
-                and nome in _REVIEWABLE_TOOLS
+                and nome in REVIEWABLE_TOOL_NAMES
                 and context.snapshots is not None
             )
             if snapshot_elegivel:
@@ -607,8 +674,7 @@ def build_graph(engine: RouterEngine, context: ToolContext):
                     except Exception:
                         pass
                 log.warning("agent.tool.failed", tool=nome, error=str(exc)[:200])
-                if risk is not RiskClass.READ:
-                    context.session_state.has_unresolved_failure = True
+                _update_unresolved_failure(context, risk, True)
                 if context.trace_recorder is not None:
                     context.trace_recorder.record(
                         kind="tool",
@@ -641,9 +707,8 @@ def build_graph(engine: RouterEngine, context: ToolContext):
                 except Exception:
                     pass
 
-            status_da_ferramenta = _telemetry_status(nome, resultado)
-            if risk is not RiskClass.READ:
-                context.session_state.has_unresolved_failure = status_da_ferramenta == "error"
+            status_da_ferramenta = _telemetry_status(ferramenta, resultado)
+            _update_unresolved_failure(context, risk, status_da_ferramenta == "error")
 
             if context.trace_recorder is not None:
                 context.trace_recorder.record(

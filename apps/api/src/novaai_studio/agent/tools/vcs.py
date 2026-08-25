@@ -6,11 +6,11 @@ import asyncio
 from pathlib import Path
 from typing import Any
 
-from sicoobito.agent.prompts import wrap_untrusted_content
-from sicoobito.agent.tools.base import RiskClass, ToolContext, ToolResult, tool
-from sicoobito.workspace import git as git_ops
-from sicoobito.workspace.git import GitError
-from sicoobito.workspace.github import GitHubError
+from novaai_studio.agent.prompts import wrap_untrusted_content
+from novaai_studio.agent.tools.base import RiskClass, ToolContext, ToolResult, tool
+from novaai_studio.workspace import git as git_ops
+from novaai_studio.workspace.git import GitError
+from novaai_studio.workspace.github import GitHubError
 
 
 @tool(

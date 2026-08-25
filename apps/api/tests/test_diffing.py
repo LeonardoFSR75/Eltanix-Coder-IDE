@@ -7,9 +7,9 @@ from __future__ import annotations
 
 import pytest
 
-from sicoobito.agent.tools import ToolContext
-from sicoobito.agent.tools.diffing import compute_proposed_diff
-from sicoobito.workspace.fs import WorkspaceFS
+from novaai_studio.agent.tools import ToolContext
+from novaai_studio.agent.tools.diffing import compute_proposed_diff
+from novaai_studio.workspace.fs import WorkspaceFS
 
 
 @pytest.fixture

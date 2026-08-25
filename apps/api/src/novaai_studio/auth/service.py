@@ -17,10 +17,10 @@ import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from sicoobito.auth import store
-from sicoobito.db.models import AppUser
-from sicoobito.db.session import session_scope
-from sicoobito.logging_setup import get_logger
+from novaai_studio.auth import store
+from novaai_studio.db.models import AppUser
+from novaai_studio.db.session import session_scope
+from novaai_studio.logging_setup import get_logger
 
 log = get_logger(__name__)
 

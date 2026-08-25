@@ -17,11 +17,11 @@ on:
     branches: [main]
     paths:
       - "apps/web/**"
-      - "apps/api/src/sicoobito/api/routes/projects.py"
-      - "apps/api/src/sicoobito/api/routes/browser.py"
-      - "apps/api/src/sicoobito/browser/**"
-      - "apps/api/src/sicoobito/auth/**"
-      - "apps/api/src/sicoobito/api/deps.py"
+      - "apps/api/src/novaai_studio/api/routes/projects.py"
+      - "apps/api/src/novaai_studio/api/routes/browser.py"
+      - "apps/api/src/novaai_studio/browser/**"
+      - "apps/api/src/novaai_studio/auth/**"
+      - "apps/api/src/novaai_studio/api/deps.py"
       - "docker-compose.yml"
       - ".github/workflows/e2e.yml"
 
@@ -36,9 +36,9 @@ jobs:
       - name: Gerar .env descartável para a stack de CI
         run: |
           cat > .env <<'EOF'
-          SICOOBITO_API_KEY=e2e-ci-key
-          SICOOBITO_ADMIN_USERNAME=admin
-          SICOOBITO_ADMIN_PASSWORD=e2e-ci-password
+          NOVAAI_STUDIO_API_KEY=e2e-ci-key
+          NOVAAI_STUDIO_ADMIN_USERNAME=admin
+          NOVAAI_STUDIO_ADMIN_PASSWORD=e2e-ci-password
           EOF
 
       - name: Subir a stack (sem o profile ollama — os golden paths não chamam LLM)

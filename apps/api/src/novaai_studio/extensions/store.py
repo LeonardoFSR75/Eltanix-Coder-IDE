@@ -8,7 +8,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from sicoobito.db.models import ExtensionSettings, ExtensionState
+from novaai_studio.db.models import ExtensionSettings, ExtensionState
 
 _UNSET: Any = object()
 

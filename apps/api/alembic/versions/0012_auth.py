@@ -1,7 +1,7 @@
 """Autenticação de sessão: app_user, auth_session
 
 Etapa 1 de 2 do login obrigatório: um único usuário seed (criado em
-`main.py::lifespan` a partir de `SICOOBITO_ADMIN_PASSWORD`), sem RBAC ainda.
+`main.py::lifespan` a partir de `NOVAAI_STUDIO_ADMIN_PASSWORD`), sem RBAC ainda.
 `project_member(project_id, user_id, role)` é o próximo passo natural quando
 multiusuário entrar — não criado aqui de propósito.
 

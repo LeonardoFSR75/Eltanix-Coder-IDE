@@ -1,6 +1,6 @@
 """Módulo Firecrawl: cliente HTTP assíncrono e serviço de raspagem, busca e ingestão RAG."""
 
-from sicoobito.firecrawl.client import (
+from novaai_studio.firecrawl.client import (
     FirecrawlAuthError,
     FirecrawlClient,
     FirecrawlConfig,
@@ -8,7 +8,7 @@ from sicoobito.firecrawl.client import (
     FirecrawlRateLimitError,
     FirecrawlUnavailableError,
 )
-from sicoobito.firecrawl.service import FirecrawlService, validate_target_url
+from novaai_studio.firecrawl.service import FirecrawlService, validate_target_url
 
 __all__ = [
     "FirecrawlAuthError",

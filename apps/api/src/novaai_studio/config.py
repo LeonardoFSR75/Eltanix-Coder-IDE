@@ -13,7 +13,7 @@ def _find_repo_root() -> Path:
     """Raiz que contém `config/`, procurando para cima.
 
     Contar níveis fixos (`parents[4]`) só funciona no layout do checkout: numa
-    imagem Docker o pacote fica em `/app/src/sicoobito`, que não tem cinco
+    imagem Docker o pacote fica em `/app/src/novaai_studio`, que não tem cinco
     níveis acima, e a contagem estoura com IndexError no import.
     """
     aqui = Path(__file__).resolve()
@@ -21,7 +21,7 @@ def _find_repo_root() -> Path:
         if (candidato / "config" / "providers.yaml").exists():
             return candidato
     # Sem `config/` em lugar nenhum, resta um palpite razoável; quem manda de
-    # verdade nesse caso é SICOOBITO_CONFIG_DIR.
+    # verdade nesse caso é NOVAAI_STUDIO_CONFIG_DIR.
     return aqui.parents[min(2, len(aqui.parents) - 1)]
 
 
@@ -37,22 +37,22 @@ class Settings(BaseSettings):
     )
 
     # ── Núcleo ──────────────────────────────────────────────────────────────
-    api_key: str = Field(default="", alias="SICOOBITO_API_KEY")
+    api_key: str = Field(default="", alias="NOVAAI_STUDIO_API_KEY")
     # Usuário único do login (etapa 1 — ver `auth/service.py`). Sem senha
     # definida, o lifespan gera uma aleatória e loga uma vez: login continua
     # obrigatório, só a senha do primeiro acesso fica no log em vez do `.env`.
-    admin_username: str = Field(default="admin", alias="SICOOBITO_ADMIN_USERNAME")
-    admin_password: str = Field(default="", alias="SICOOBITO_ADMIN_PASSWORD")
-    log_level: str = Field(default="INFO", alias="SICOOBITO_LOG_LEVEL")
-    log_json: bool = Field(default=False, alias="SICOOBITO_LOG_JSON")
-    config_dir: Path = Field(default=REPO_ROOT / "config", alias="SICOOBITO_CONFIG_DIR")
+    admin_username: str = Field(default="admin", alias="NOVAAI_STUDIO_ADMIN_USERNAME")
+    admin_password: str = Field(default="", alias="NOVAAI_STUDIO_ADMIN_PASSWORD")
+    log_level: str = Field(default="INFO", alias="NOVAAI_STUDIO_LOG_LEVEL")
+    log_json: bool = Field(default=False, alias="NOVAAI_STUDIO_LOG_JSON")
+    config_dir: Path = Field(default=REPO_ROOT / "config", alias="NOVAAI_STUDIO_CONFIG_DIR")
     # Só para testes/deploys incomuns redirecionarem onde a tela de
     # credenciais escreve; no dia a dia o padrão (`.env` da raiz) já basta.
-    env_file_override: Path | None = Field(default=None, alias="SICOOBITO_ENV_FILE")
+    env_file_override: Path | None = Field(default=None, alias="NOVAAI_STUDIO_ENV_FILE")
 
     # ── Infra ───────────────────────────────────────────────────────────────
     database_url: str = Field(
-        default="postgresql+asyncpg://sicoobito:sicoobito@localhost:5433/sicoobito",
+        default="postgresql+asyncpg://novaai_studio:novaai_studio@localhost:5433/novaai_studio",
         alias="DATABASE_URL",
     )
     redis_url: str = Field(default="redis://localhost:6380/0", alias="REDIS_URL")
@@ -195,7 +195,7 @@ class Settings(BaseSettings):
     minio_secret_key: str = Field(default="minioadmin", alias="MINIO_SECRET_KEY")
     minio_secure: bool = Field(default=False, alias="MINIO_SECURE")
     minio_documents_bucket: str = Field(
-        default="sicoobito-documents", alias="MINIO_DOCUMENTS_BUCKET"
+        default="novaai-studio-documents", alias="MINIO_DOCUMENTS_BUCKET"
     )
 
     @property
@@ -228,9 +228,7 @@ class Settings(BaseSettings):
 
     # ── Firecrawl (Web Scraping / Crawling / Search para RAG e Agente) ───────
     firecrawl_api_key: str = Field(default="", alias="FIRECRAWL_API_KEY")
-    firecrawl_api_url: str = Field(
-        default="https://api.firecrawl.dev", alias="FIRECRAWL_API_URL"
-    )
+    firecrawl_api_url: str = Field(default="https://api.firecrawl.dev", alias="FIRECRAWL_API_URL")
 
     # ── Observabilidade (Langfuse) ─────────────────────────────────────────
     langfuse_public_key: str = Field(default="", alias="LANGFUSE_PUBLIC_KEY")

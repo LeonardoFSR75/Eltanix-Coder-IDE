@@ -17,50 +17,60 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
 if TYPE_CHECKING:
-    from sicoobito.audit.service import AuditService
-    from sicoobito.documents.service import DocumentService
-    from sicoobito.firecrawl.service import FirecrawlService
-    from sicoobito.notes.service import NoteService
-    from sicoobito.skills.service import SkillService
-    from sicoobito.telemetry.tracer import TraceRecorder
+    from novaai_studio.audit.service import AuditService
+    from novaai_studio.documents.service import DocumentService
+    from novaai_studio.firecrawl.service import FirecrawlService
+    from novaai_studio.notes.service import NoteService
+    from novaai_studio.skills.service import SkillService
+    from novaai_studio.telemetry.tracer import TraceRecorder
 
 import httpx
 import structlog
 from redis.asyncio import Redis
 
-from sicoobito.agent import session_store
-from sicoobito.agent.approval_policy_config import load_approval_policy
-from sicoobito.agent.context_rules import build_context_rules_prompt, match_context_rules
-from sicoobito.agent.context_rules_config import load_context_rules
-from sicoobito.agent.coordinator import AgentCoordinator
-from sicoobito.agent.custom_modes import CustomModeService
-from sicoobito.agent.graph import DEFAULT_MAX_ITERATIONS, build_graph
-from sicoobito.agent.headless import run_headless_burst
-from sicoobito.agent.prompts import build_task_prompt
-from sicoobito.agent.slash_commands import resolve_slash_command
-from sicoobito.agent.snapshot_store import SnapshotService
-from sicoobito.agent.state import BUILTIN_MODES, AgentMode
-from sicoobito.agent.tools import ToolContext
-from sicoobito.browser.client import BrowserClient, BrowserConfig
-from sicoobito.browser.replay import mark_replay_expired, store_replay
-from sicoobito.config import Settings
-from sicoobito.context.indexer import ContextIndexer
-from sicoobito.context.repomap import build_repo_map
-from sicoobito.db.session import session_scope
-from sicoobito.logging_setup import get_logger
-from sicoobito.router.engine import RouterEngine
-from sicoobito.sandbox.container import SandboxManager, SandboxUnavailableError
-from sicoobito.sandbox.executor import ExecutorSandboxManager
-from sicoobito.security.service import SecureBertService
-from sicoobito.storage.blob import BlobStore
-from sicoobito.workspace import git as git_ops
-from sicoobito.workspace import projects as project_ops
-from sicoobito.workspace.fs import WorkspaceFS
-from sicoobito.workspace.git import GitError
-from sicoobito.workspace.github import GitHubClient, GitHubError, parse_remote, resolve_token
-from sicoobito.workspace.projects import ProjectError
+from novaai_studio.agent import session_store
+from novaai_studio.agent.approval_policy_config import load_approval_policy
+from novaai_studio.agent.context_rules import build_context_rules_prompt, match_context_rules
+from novaai_studio.agent.context_rules_config import load_context_rules
+from novaai_studio.agent.coordinator import AgentCoordinator
+from novaai_studio.agent.custom_modes import CustomModeService
+from novaai_studio.agent.graph import DEFAULT_MAX_ITERATIONS, build_graph
+from novaai_studio.agent.headless import run_headless_burst
+from novaai_studio.agent.prompts import build_task_prompt
+from novaai_studio.agent.slash_commands import resolve_slash_command
+from novaai_studio.agent.snapshot_store import SnapshotService
+from novaai_studio.agent.state import BUILTIN_MODES, AgentMode
+from novaai_studio.agent.tools import ToolContext
+from novaai_studio.browser.client import BrowserClient, BrowserConfig
+from novaai_studio.browser.replay import mark_replay_expired, store_replay
+from novaai_studio.config import Settings
+from novaai_studio.context.indexer import ContextIndexer
+from novaai_studio.context.repomap import build_repo_map
+from novaai_studio.db.session import session_scope
+from novaai_studio.logging_setup import get_logger
+from novaai_studio.router.engine import RouterEngine
+from novaai_studio.sandbox.container import SandboxManager, SandboxUnavailableError
+from novaai_studio.sandbox.executor import ExecutorSandboxManager
+from novaai_studio.security.service import SecureBertService
+from novaai_studio.storage.blob import BlobStore
+from novaai_studio.workspace import git as git_ops
+from novaai_studio.workspace import projects as project_ops
+from novaai_studio.workspace.fs import WorkspaceFS
+from novaai_studio.workspace.git import GitError
+from novaai_studio.workspace.github import GitHubClient, GitHubError, parse_remote, resolve_token
+from novaai_studio.workspace.projects import ProjectError
 
 log = get_logger(__name__)
+
+
+class SessionAlreadyRunningError(RuntimeError):
+    """`stream_run` já está avançando esta sessão em outra chamada.
+
+    Subclasse dedicada (em vez de `RuntimeError` puro) para que
+    `run_headless_burst` (`agent/headless.py`) consiga distinguir esta
+    condição benigna — outra chamada já está dirigindo a sessão, nada
+    quebrou — de uma falha real do grafo, sem depender de casar a mensagem.
+    """
 
 
 async def validate_project_runtime(workspace_root: Path) -> dict[str, Any]:
@@ -95,7 +105,7 @@ async def validate_project_runtime(workspace_root: Path) -> dict[str, Any]:
             "git_ready": False,
         }
 
-    from sicoobito.api.routes.packages import detect_ecosystem, get_manifest_name
+    from novaai_studio.api.routes.packages import detect_ecosystem, get_manifest_name
 
     eco = detect_ecosystem(workspace_root)
     manifest_name = get_manifest_name(eco)
@@ -111,11 +121,11 @@ async def validate_project_runtime(workspace_root: Path) -> dict[str, Any]:
 
 
 def _load_custom_instructions(workspace_root: Path) -> str | None:
-    """Lê `.sicoobito/instructions.md` do projeto (não do worktree da sessão)
+    """Lê `.novaai_studio/instructions.md` do projeto (não do worktree da sessão)
     — best-effort: arquivo ausente ou erro de leitura não deve impedir a
     sessão de começar, mesmo espírito de degradação graciosa do resto do
     projeto (serviço opcional fora do ar não derruba o essencial)."""
-    caminho = workspace_root / ".sicoobito" / "instructions.md"
+    caminho = workspace_root / ".novaai_studio" / "instructions.md"
     try:
         texto = caminho.read_text(encoding="utf-8").strip()
     except FileNotFoundError:
@@ -129,7 +139,7 @@ def _load_custom_instructions(workspace_root: Path) -> str | None:
 def _load_context_rules_prompt(
     workspace_root: Path, *, focus_files: list[str] | None, focus_folder: str | None
 ) -> str | None:
-    """Lê `.sicoobito/context_rules.yaml` do projeto e devolve a seção de prompt
+    """Lê `.novaai_studio/context_rules.yaml` do projeto e devolve a seção de prompt
     já renderizada para as regras que casarem com `focus_files`/`focus_folder`
     (Fase 4 do upgrade do agente, estilo `.cursor/rules`). `load_context_rules`
     já degrada para uma config vazia em qualquer falha de leitura/parse/validação
@@ -149,7 +159,6 @@ class AgentSession:
     mode: AgentMode
     task: str
     context: ToolContext
-    sandbox_available: bool = False
     sandbox_error: str | None = None
     warnings: list[str] = field(default_factory=list)
     # Perfil de roteamento escolhido explicitamente pelo usuário; None mantém a
@@ -160,6 +169,13 @@ class AgentSession:
     images: list[str] = field(default_factory=list)
     is_web_app: bool = False
     web_prewarmed: bool = False
+
+    @property
+    def sandbox_available(self) -> bool:
+        """Derivado de `context.sandbox`, nunca um booleano espelhado à mão —
+        `prewarm_web_app` só precisa atribuir `context.sandbox`, sem também
+        lembrar de manter este campo em sincronia."""
+        return self.context.sandbox is not None
 
 
 def _detect_web_app(workspace_path: Path) -> bool:
@@ -310,6 +326,15 @@ class AgentRunner:
         # cancelar no shutdown. Mesmo idioma de `telemetry/tracer.py::TraceRecorder`.
         self._background_tasks: set[asyncio.Task[Any]] = set()
         self._checkpointer: Any | None = None
+        # Grafo compilado por sessão (LangGraph `StateGraph.compile()`) —
+        # sem isto, `_compiled_graph` reconstruía o grafo inteiro (montagem
+        # do system prompt + registro de nós/arestas + compile) a cada
+        # chamada, mesmo em `get_messages`/`list_checkpoints`/`rewind_to`
+        # (leitura pura de checkpoint) e a cada novo `stream_run` da mesma
+        # sessão — o que também zerava o cache de schemas por `(mode,
+        # has_plan)` de `build_graph` a cada retomada. Limpo em
+        # `close_session`.
+        self._compiled_graphs: dict[str, Any] = {}
         # `AsyncPostgresSaver.from_conn_string` é um @asynccontextmanager: a
         # conexão só existe dentro do `async with` que ele abre internamente.
         # `__aenter__()` devolve o saver, mas o gerenciador de contexto em si
@@ -522,7 +547,7 @@ class AgentRunner:
         # Garante o ambiente de pacotes (.venv, node_modules, etc) no projeto raiz
         # antes de criar o worktree
         try:
-            from sicoobito.api.routes.packages import ensure_project_env
+            from novaai_studio.api.routes.packages import ensure_project_env
 
             await ensure_project_env(workspace_root)
         except Exception as exc:
@@ -563,8 +588,8 @@ class AgentRunner:
                     "vendor\\",
                     "__pycache__/",
                     "__pycache__\\",
-                    ".sicoobito/",
-                    ".sicoobito\\",
+                    ".novaai_studio/",
+                    ".novaai_studio\\",
                 )
                 repo_status = git_ops.status(workspace_root)
                 nao_rastreados = sorted(
@@ -736,7 +761,6 @@ class AgentRunner:
             mode=mode,
             task=task,
             context=contexto,
-            sandbox_available=sandbox is not None,
             sandbox_error=sandbox_error,
             warnings=avisos,
             profile=profile,
@@ -750,9 +774,7 @@ class AgentRunner:
 
         # Se for detectado como Web App, dispara o pré-aquecimento em background sem bloquear
         if is_web:
-            prewarm_task = asyncio.get_running_loop().create_task(
-                self.prewarm_web_app(session_id)
-            )
+            prewarm_task = asyncio.get_running_loop().create_task(self.prewarm_web_app(session_id))
             self._background_tasks.add(prewarm_task)
             prewarm_task.add_done_callback(self._background_tasks.discard)
 
@@ -760,12 +782,22 @@ class AgentRunner:
             # Registrada mesmo sendo raiz (parent_id=None, depth=0) — assim
             # `view_agent_graph`/tetos de profundidade funcionam uniformemente
             # desde a primeira sessão, não só a partir do primeiro spawn.
-            await self.coordinator.register(
+            registrado = await self.coordinator.register(
                 session_id=session_id,
                 display_name=task[:80],
                 parent_id=parent_session_id,
                 depth=depth,
             )
+            # Fail closed só para filhos: sem o registro, o coordenador não
+            # tem como rastrear pai/filho (children_of/view_agent_graph/
+            # tetos de profundidade), então a sessão filha não pode seguir
+            # como se tivesse sido criada com sucesso.
+            if parent_session_id is not None and not registrado:
+                self._sessions.pop(session_id, None)
+                raise RuntimeError(
+                    f"Falha ao registrar o agente filho '{session_id}' no "
+                    "coordenador (Redis indisponível) — sessão descartada."
+                )
 
         # Não-fatal de propósito, mesmo espírito do checkpointer e do sandbox
         # acima: um soluço no banco não pode impedir a criação da sessão, só
@@ -815,7 +847,6 @@ class AgentRunner:
             if self.sandboxes is not None:
                 sb = await self.sandboxes.acquire(session_id, sessao.workspace_root)
                 sessao.context.sandbox = sb
-                sessao.sandbox_available = True
             # 2. Pré-aquecimento da página Playwright no browser service
             if sessao.context.browser is not None:
                 await sessao.context.browser.create_session()
@@ -910,19 +941,31 @@ class AgentRunner:
             )
             return None
 
-        sessao = await self.create_session(
-            task=registro.task,
-            workspace_root=workspace_root,
-            mode=cast("AgentMode", registro.mode),
-            session_id=session_id,
-            profile=registro.profile,
-            parent_session_id=registro.parent_session_id,
-        )
+        try:
+            sessao = await self.create_session(
+                task=registro.task,
+                workspace_root=workspace_root,
+                mode=cast("AgentMode", registro.mode),
+                session_id=session_id,
+                profile=registro.profile,
+                parent_session_id=registro.parent_session_id,
+            )
+        except RuntimeError as exc:
+            # Mesmo fail-closed do coordenador que `_spawn_child_agent` trata
+            # como falha — aqui, na reconexão, degrada pro 404 já existente
+            # em vez de deixar a exceção subir como 500.
+            log.warning(
+                "agent.session.reconnect.coordinator_failed",
+                session=session_id,
+                error=str(exc)[:200],
+            )
+            return None
         log.info("agent.session.reconnected", session=session_id)
         return sessao
 
     async def close_session(self, session_id: str, *, keep_branch: bool = True) -> None:
         sessao = self._sessions.pop(session_id, None)
+        self._compiled_graphs.pop(session_id, None)
         if sessao is None:
             return
         resumo_final = "Sessão encerrada"
@@ -963,9 +1006,20 @@ class AgentRunner:
     # ── Execução ────────────────────────────────────────────────────────────
 
     async def _compiled_graph(self, session: AgentSession):
+        cacheado = self._compiled_graphs.get(session.session_id)
+        if cacheado is not None:
+            return cacheado
         grafo = build_graph(self.engine, session.context)
         checkpointer = await self.checkpointer()
-        return grafo.compile(checkpointer=checkpointer) if checkpointer else grafo.compile()
+        compilado = grafo.compile(checkpointer=checkpointer) if checkpointer else grafo.compile()
+        if checkpointer:
+            # Só cacheia com checkpointer de verdade — sem ele a sessão já
+            # não é durável, e cachear aqui perderia a chance de pegar um
+            # checkpointer que volte a ficar disponível numa chamada
+            # seguinte (`checkpointer()` tenta de novo a cada vez que está
+            # `None`, mesmo espírito de degradação do resto do módulo).
+            self._compiled_graphs[session.session_id] = compilado
+        return compilado
 
     async def _initial_state(self, session: AgentSession) -> dict[str, Any]:
         mapa = None
@@ -1208,7 +1262,7 @@ class AgentRunner:
         """Executa o grafo emitindo eventos. Cede o controle na aprovação."""
         lock = self._session_locks.setdefault(session.session_id, asyncio.Lock())
         if lock.locked():
-            raise RuntimeError(
+            raise SessionAlreadyRunningError(
                 f"Sessão {session.session_id} já está em execução — aguarde terminar "
                 "antes de reenviar (evita executar a mesma aprovação duas vezes)."
             )
@@ -1227,12 +1281,12 @@ class AgentRunner:
                 compilado = await self._compiled_graph(session)
                 config: Any = {"configurable": {"thread_id": session.session_id}}
 
-                from sicoobito.telemetry.langfuse_tracer import get_langfuse_callback
+                from novaai_studio.telemetry.langfuse_tracer import get_langfuse_callback
 
                 langfuse_handler = get_langfuse_callback(
                     session_id=session.session_id,
                     trace_name=f"agent-run:{session.mode}",
-                    tags=["sicoobito", session.mode],
+                    tags=["novaai_studio", session.mode],
                     settings=self.settings,
                 )
                 if langfuse_handler is not None:
@@ -1347,6 +1401,14 @@ class AgentRunner:
                     session.context.on_activity = None
                     if not graph_task.done():
                         graph_task.cancel()
+                        # Espera o cancelamento realmente aterrissar antes do
+                        # `async with lock:` liberar — sem isto, um cliente
+                        # que desconecta e reconecta na hora pode iniciar um
+                        # segundo `stream_run()` no mesmo `thread_id` enquanto
+                        # esta task ainda está desfazendo a chamada de
+                        # ferramenta WRITE/EXEC já aprovada.
+                        with suppress(asyncio.CancelledError):
+                            await graph_task
 
                 estado = await compilado.aget_state(config) if compilado.checkpointer else None
                 if estado is not None:
@@ -1363,6 +1425,16 @@ class AgentRunner:
                         for interrupcao in getattr(tarefa, "interrupts", []) or []
                     ]
                     if interrupcoes:
+                        # Sem isto, o único código que persiste `pending_count`
+                        # é o ramo `no == "approve"` acima — mas `approve()`
+                        # só emite esse evento quando `pending` já está vazio
+                        # (interrupções de verdade não chegam a retornar dali,
+                        # ficam paradas em `interrupt()`) — a listagem de
+                        # sessões (`GET /api/agent/sessions`) nunca mostrava
+                        # quantas ações estavam realmente pendentes.
+                        await self.update_session_summary(
+                            session.session_id, pending_count=len(interrupcoes)
+                        )
                         for interrupcao in interrupcoes:
                             yield {
                                 "node": "interrupt",
@@ -1371,6 +1443,9 @@ class AgentRunner:
                     else:
                         pendentes_no_estado = estado.values.get("pending") or []
                         if pendentes_no_estado and not estado.values.get("finished", False):
+                            await self.update_session_summary(
+                                session.session_id, pending_count=len(pendentes_no_estado)
+                            )
                             yield {
                                 "node": "interrupt",
                                 "update": _serializable(

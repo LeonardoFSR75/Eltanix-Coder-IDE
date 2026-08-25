@@ -6,7 +6,7 @@ import json
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from sicoobito.logging_setup import get_logger
+from novaai_studio.logging_setup import get_logger
 
 log = get_logger(__name__)
 

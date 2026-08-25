@@ -15,13 +15,13 @@ import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
-from sicoobito.context.scanner import (
+from novaai_studio.context.scanner import (
     ALWAYS_IGNORED,
     BINARY_EXTENSIONS,
     MAX_FILE_BYTES,
     read_text,
 )
-from sicoobito.logging_setup import get_logger
+from novaai_studio.logging_setup import get_logger
 
 log = get_logger(__name__)
 

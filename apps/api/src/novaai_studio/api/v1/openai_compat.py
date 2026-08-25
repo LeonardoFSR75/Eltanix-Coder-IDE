@@ -7,7 +7,6 @@ Code funcionarem contra o gateway sem nenhuma adaptação. Toda a lógica está 
 
 from __future__ import annotations
 
-import json
 import time
 from collections.abc import AsyncIterator
 from typing import Any
@@ -15,11 +14,12 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, status
 from fastapi.responses import StreamingResponse
 
-from sicoobito.api.deps import ActorDep, AuthDep, EngineDep, ProjectDep, SourceDep
-from sicoobito.api.schemas import ChatCompletionRequest, EmbeddingRequest, ModelCard, ModelList
-from sicoobito.logging_setup import get_logger
-from sicoobito.router.budget import BudgetExceededError
-from sicoobito.router.errors import AllCandidatesFailedError, NoCandidatesError
+from novaai_studio.api.deps import ActorDep, AuthDep, EngineDep, ProjectDep, SourceDep
+from novaai_studio.api.schemas import ChatCompletionRequest, EmbeddingRequest, ModelCard, ModelList
+from novaai_studio.api.sse import SSE_DONE, sse_event
+from novaai_studio.logging_setup import get_logger
+from novaai_studio.router.budget import BudgetExceededError
+from novaai_studio.router.errors import AllCandidatesFailedError, NoCandidatesError
 
 log = get_logger(__name__)
 
@@ -59,7 +59,7 @@ async def list_models(engine: EngineDep) -> ModelList:
     cards.extend(
         ModelCard(
             id=f"auto/{name}" if name != "auto" else "auto",
-            owned_by="sicoobito-router",
+            owned_by="novaai-studio-router",
             tags=["profile", profile.strategy],
             capabilities=["chat"],
             available=bool(profile.models),
@@ -127,7 +127,7 @@ async def chat_completions(
     # reconhece e o que ele pode pedir de volta explicitamente.
     body = dict(result.payload)
     body["model"] = result.model_id
-    body["x_sicoobito"] = {
+    body["x_novaai_studio"] = {
         "provider": result.provider,
         "cache_hit": result.cache_hit,
         "cost_usd": float(result.cost_usd),
@@ -155,16 +155,16 @@ async def _sse(
             project_slug=project,
             actor=actor,
         ):
-            yield f"data: {json.dumps(chunk, default=str)}\n\n"
+            yield sse_event(chunk, default=str)
     except (NoCandidatesError, AllCandidatesFailedError, BudgetExceededError) as exc:
         # O status HTTP já foi 200 quando o stream abriu; o único canal de erro
         # que resta é um evento no próprio stream.
-        yield f"data: {json.dumps(_error_body(str(exc), type(exc).__name__))}\n\n"
+        yield sse_event(_error_body(str(exc), type(exc).__name__))
     except Exception as exc:
         log.error("stream.failed", error=str(exc), error_type=type(exc).__name__)
-        yield f"data: {json.dumps(_error_body(str(exc), type(exc).__name__))}\n\n"
+        yield sse_event(_error_body(str(exc), type(exc).__name__))
     finally:
-        yield "data: [DONE]\n\n"
+        yield SSE_DONE
 
 
 @router.post("/embeddings")

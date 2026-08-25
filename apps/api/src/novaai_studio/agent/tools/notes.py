@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from sicoobito.agent.tools.base import RiskClass, ToolContext, ToolResult, tool
+from novaai_studio.agent.tools.base import RiskClass, ToolContext, ToolResult, tool
 
 MAX_HITS = 8
 MAX_OUTPUT_CHARS = 24_000

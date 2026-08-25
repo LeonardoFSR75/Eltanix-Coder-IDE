@@ -1,16 +1,16 @@
 from __future__ import annotations
 
-from sicoobito.config import Settings
-from sicoobito.router.adapters.azure_foundry import AzureFoundryAdapter
-from sicoobito.router.adapters.base import (
+from novaai_studio.config import Settings
+from novaai_studio.router.adapters.azure_foundry import AzureFoundryAdapter
+from novaai_studio.router.adapters.base import (
     DiscoveredModel,
     DiscoveryError,
     HealthResult,
     ProviderAdapter,
 )
-from sicoobito.router.adapters.databricks import DatabricksAdapter
-from sicoobito.router.adapters.direct import AnthropicAdapter, GroqAdapter, OpenAIAdapter
-from sicoobito.router.adapters.ollama import OllamaAdapter
+from novaai_studio.router.adapters.databricks import DatabricksAdapter
+from novaai_studio.router.adapters.direct import AnthropicAdapter, GroqAdapter, OpenAIAdapter
+from novaai_studio.router.adapters.ollama import OllamaAdapter
 
 _ADAPTER_TYPES: list[type[ProviderAdapter]] = [
     OllamaAdapter,

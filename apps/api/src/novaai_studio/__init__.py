@@ -1,4 +1,4 @@
-"""SicoobitoCode — gateway multi-modelo e backend agêntico."""
+"""NovaAI Studio — gateway multi-modelo e backend agêntico."""
 
 __all__ = ["__version__"]
 

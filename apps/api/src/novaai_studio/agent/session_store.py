@@ -12,7 +12,7 @@ from datetime import datetime
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from sicoobito.db.models import AgentSessionRecord
+from novaai_studio.db.models import AgentSessionRecord
 
 
 async def create(

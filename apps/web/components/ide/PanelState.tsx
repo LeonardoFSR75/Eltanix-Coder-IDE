@@ -15,7 +15,7 @@ export function PanelState({
   onRetry,
 }: {
   kind: "loading" | "empty" | "error";
-  message: string;
+  message: React.ReactNode;
   icon?: string;
   onRetry?: () => void;
 }) {

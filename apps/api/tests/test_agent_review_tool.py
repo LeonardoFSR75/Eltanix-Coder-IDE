@@ -12,9 +12,9 @@ from typing import Any
 import pytest
 from git import Repo
 
-from sicoobito.agent.tools import ToolContext
-from sicoobito.agent.tools.review import request_code_review as _request_code_review_tool
-from sicoobito.workspace.fs import WorkspaceFS
+from novaai_studio.agent.tools import ToolContext
+from novaai_studio.agent.tools.review import request_code_review as _request_code_review_tool
+from novaai_studio.workspace.fs import WorkspaceFS
 
 # O decorador `@tool` devolve um `Tool` (dataclass), não a função crua — o
 # handler de verdade é `.handler`, mesma convenção de test_agent_tools.py.

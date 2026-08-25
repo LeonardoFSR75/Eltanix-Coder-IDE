@@ -8,12 +8,12 @@ from unittest.mock import AsyncMock
 import pytest
 from fastapi.testclient import TestClient
 
-os.environ["SICOOBITO_API_KEY"] = "chave-de-teste"
+os.environ["NOVAAI_STUDIO_API_KEY"] = "chave-de-teste"
 os.environ["REDIS_URL"] = "redis://localhost:65533/0"
 
-from sicoobito.config import Settings, get_settings
-from sicoobito.firecrawl.service import FirecrawlService
-from sicoobito.main import create_app
+from novaai_studio.config import Settings, get_settings
+from novaai_studio.firecrawl.service import FirecrawlService
+from novaai_studio.main import create_app
 
 AUTH = {"Authorization": "Bearer chave-de-teste"}
 

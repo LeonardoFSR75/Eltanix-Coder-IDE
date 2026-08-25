@@ -1,6 +1,6 @@
 # Plano de Implementação — Auditoria Arquitetural (2026-08-16)
 
-Plano de execução passo a passo derivado do **Dossiê SicoobitoCode** (auditoria de
+Plano de execução passo a passo derivado do **Dossiê NovaAI Studio** (auditoria de
 comitê multi-perspectiva, ver histórico da sessão de 2026-08-16). Cada item referencia
 os arquivos concretos a tocar. Marcar `[x]` conforme for implementado — este documento
 é reindexado pelo Graphify a cada `--update`, então vira nó consultável no grafo de
@@ -18,7 +18,7 @@ o núcleo de todo o roadmap abaixo.
   chamava `ensure_project_env` (cria `.venv`/`node_modules`) de forma síncrona — podendo
   levar dezenas de segundos num bind mount do Windows — e essa chamada é redundante com
   `POST /{slug}/prewarm`, que já refaz o mesmo provisionamento quando o usuário abre o
-  projeto na IDE. Corrigido em `apps/api/src/sicoobito/api/routes/projects.py`: o
+  projeto na IDE. Corrigido em `apps/api/src/novaai_studio/api/routes/projects.py`: o
   provisionamento agora dispara como task em segundo plano (`asyncio.create_task`), sem
   bloquear a resposta. Validado ao vivo: resposta caiu para ~1,9s, com `.venv` sendo
   criado de fato em segundo plano (confirmado via log `packages.venv.creating`).
@@ -73,7 +73,7 @@ o núcleo de todo o roadmap abaixo.
   em `.github/workflows/e2e.yml` (só dispara quando `apps/web`, rotas de projeto/navegador,
   auth ou `docker-compose.yml` mudam); push fora desses caminhos continua só no noturno.
 - [x] **Documentar a senha admin no primeiro boot.** `README.md` e `.env.example` agora
-  explicam `SICOOBITO_ADMIN_PASSWORD` antes do primeiro `docker compose up`.
+  explicam `NOVAAI_STUDIO_ADMIN_PASSWORD` antes do primeiro `docker compose up`.
 
 ## Horizonte 2 — Governança (3–6 meses)
 
@@ -130,7 +130,7 @@ o núcleo de todo o roadmap abaixo.
   via API — `POST /api/auth/users` (`AdminDep`, `api/deps.py::require_admin`), sem
   self-signup nem convite por e-mail. Migração `0021_app_user_is_admin.py` adiciona
   `AppUser.is_admin` e promove o usuário mais antigo (o seed original) a admin da
-  instância — dono da instância e canal de serviço (`SICOOBITO_API_KEY`, ADR 0005) sempre
+  instância — dono da instância e canal de serviço (`NOVAAI_STUDIO_API_KEY`, ADR 0005) sempre
   passam sem consultar `project_member` (`auth/rbac.py::_actor_bypasses`), o mesmo espírito
   de "canal de serviço não é usuário de browser" que já rege `require_session`.
   Enforcement por rota, não por um dependency FastAPI único: `project_slug` chega por
@@ -221,7 +221,7 @@ o núcleo de todo o roadmap abaixo.
   se sustenta na forma como está escrita. A parte cara de "aquecer" um sandbox é instalar
   dependências, e isso **já é compartilhado** entre sessões do mesmo projeto hoje —
   `env_mounts` resolve `.venv`/`node_modules`/`vendor` por caminho canônico do projeto
-  (subindo por `.sicoobito/worktrees/` até a raiz) tanto em `sandbox/executor.py::
+  (subindo por `.novaai_studio/worktrees/` até a raiz) tanto em `sandbox/executor.py::
   RemoteSandbox.start` quanto em `sandbox/container.py::Sandbox.start`, e o executor
   (`services/executor/app.py::create_sandbox`) monta os mesmos diretórios de host para
   qualquer sessão do projeto. O que sobra — o próprio `docker run` — já é rápido (segundos,
@@ -248,12 +248,12 @@ o núcleo de todo o roadmap abaixo.
   agente concorrentes (`POST /api/agent/sessions`) contra um projeto real, faz *polling*
   de `GET /api/agent/sandboxes/queue` em paralelo, fecha cada sessão assim que a criação
   responde, e verifica ao final que a fila volta a `active=0`/`waiting=[]` sem exceção
-  em nenhuma chamada. Autentica pelo canal de serviço (`SICOOBITO_API_KEY`, ADR 0005) —
+  em nenhuma chamada. Autentica pelo canal de serviço (`NOVAAI_STUDIO_API_KEY`, ADR 0005) —
   é ferramenta externa, não sessão de browser. Rodado ao vivo contra a stack real (modo
   executor): com 10 sessões concorrentes, pico de `active` observado bateu exatamente no
   teto (`max_concurrent=6`), houve fila (`waiting` chegou a 1) e o estado final voltou
   limpo, zero falhas; repetido com 15 sessões, mesmo resultado (pico de `active=6`, zero
-  falhas). `docker ps` confirmou nenhum container `sicoobito-*` órfão depois — nenhuma
+  falhas). `docker ps` confirmou nenhum container `novaai-studio-*` órfão depois — nenhuma
   vaga do gate vazou sob concorrência real. Achado incidental durante a primeira
   tentativa (timeout de 10s no polling): sob 6+ criações de sessão concorrentes o
   servidor de dev demora a responder a outras requisições por alguns segundos —
@@ -337,7 +337,7 @@ o núcleo de todo o roadmap abaixo.
   que `session_timeline()` já entrega hoje — o que justificaria o quarto log append-only que
   hoje o design deliberadamente evita. Já "especialização" era uma lacuna real:
   `spawn_agent` (`agent/tools/agents_graph.py`) cria um filho completo mas sempre genérico — nada permitia o pai dizer *que tipo* de agente
-  aquele filho deveria ser, ao contrário de `custom_instructions` (`.sicoobito/instructions.md`),
+  aquele filho deveria ser, ao contrário de `custom_instructions` (`.novaai_studio/instructions.md`),
   que já concatena ao `SYSTEM_PROMPT` de toda sessão do projeto. Escopo reduzido por decisão do
   usuário: protótipo mínimo — parâmetro opcional `skill_name` em `spawn_agent`, que carrega o
   `system_prompt` de uma Skill já existente (mesmo `SkillService` do item 2 deste Horizonte) como

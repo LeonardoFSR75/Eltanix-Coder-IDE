@@ -1,3 +1,3 @@
-from sicoobito.audit.service import AuditService
+from novaai_studio.audit.service import AuditService
 
 __all__ = ["AuditService"]

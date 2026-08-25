@@ -8,8 +8,8 @@ from uuid import UUID
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from sicoobito.db.models import GraphEdge, GraphMetrics, GraphNode
-from sicoobito.graphify.schema import GraphEdgeCreate, GraphNodeCreate
+from novaai_studio.db.models import GraphEdge, GraphMetrics, GraphNode
+from novaai_studio.graphify.schema import GraphEdgeCreate, GraphNodeCreate
 
 
 class GraphStore:

@@ -59,8 +59,8 @@ export function ExtensionsPanel() {
   // disparado por `sessionRuntime.ts` a partir do stream SSE de tool-calls.
   useEffect(() => {
     const handleExtensionsChanged = () => void carregar();
-    window.addEventListener("sicoobito:extensions:changed", handleExtensionsChanged);
-    return () => window.removeEventListener("sicoobito:extensions:changed", handleExtensionsChanged);
+    window.addEventListener("novaai_studio:extensions:changed", handleExtensionsChanged);
+    return () => window.removeEventListener("novaai_studio:extensions:changed", handleExtensionsChanged);
   }, [carregar]);
 
   const handleToggle = async (id: string, curActive: boolean) => {

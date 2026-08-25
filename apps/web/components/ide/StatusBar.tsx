@@ -99,7 +99,7 @@ function SandboxStatusItem({ sessionId }: { sessionId: string }) {
           // Modo Agente, não Live: a porta do sandbox só entra na rede
           // `browser_net` (nunca publicada no host) — um iframe apontado
           // pra `localhost:<porta>` falharia sempre. O serviço de
-          // navegador sabe resolver via `sicoobito-<sessionId>:<porta>`.
+          // navegador sabe resolver via `novaai-studio-<sessionId>:<porta>`.
           onClick={() => openFile(`browser-agent:http://localhost:${porta}`)}
           style={{
             cursor: "pointer",
@@ -147,8 +147,8 @@ function PackagesStatusItem({ project }: { project: string }) {
   // usuário) — este indicador não faz polling próprio, só reage a ele.
   useEffect(() => {
     const handleChanged = () => void load();
-    window.addEventListener("sicoobito:packages:changed", handleChanged);
-    return () => window.removeEventListener("sicoobito:packages:changed", handleChanged);
+    window.addEventListener("novaai_studio:packages:changed", handleChanged);
+    return () => window.removeEventListener("novaai_studio:packages:changed", handleChanged);
   }, [load]);
 
   if (!status) return null;

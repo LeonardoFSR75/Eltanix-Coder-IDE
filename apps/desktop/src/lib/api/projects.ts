@@ -47,8 +47,8 @@ export async function listProjects(): Promise<ProjectRecord[]> {
     return [
       {
         id: "default",
-        slug: "sicoobito-code",
-        name: "sicoobito-code",
+        slug: "novaai-studio-code",
+        name: "novaai-studio-code",
         description: "Projeto Principal",
         local_path: null,
         git_url: null,

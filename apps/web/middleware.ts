@@ -7,7 +7,7 @@ import { NextRequest, NextResponse } from "next/server";
  * ainda valida a sessão de verdade contra `GET /api/auth/me`.
  */
 const PUBLIC_PATHS = ["/login"];
-const COOKIE_NAME = "sicoobito_session";
+const COOKIE_NAME = "novaai_studio_session";
 
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;

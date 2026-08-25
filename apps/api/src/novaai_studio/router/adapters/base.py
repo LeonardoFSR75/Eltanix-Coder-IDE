@@ -11,8 +11,8 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any
 
-from sicoobito.config import Settings
-from sicoobito.router.catalog import ModelSpec
+from novaai_studio.config import Settings
+from novaai_studio.router.catalog import ModelSpec
 
 
 @dataclass(slots=True)

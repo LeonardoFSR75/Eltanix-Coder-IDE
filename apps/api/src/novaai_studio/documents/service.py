@@ -15,14 +15,14 @@ from typing import Any
 
 from pypdf import PdfReader
 
-from sicoobito.config import Settings
-from sicoobito.db.session import session_scope
-from sicoobito.documents import store
-from sicoobito.documents.chunker import TextChunk, chunk_text
-from sicoobito.documents.store import DocumentSearchHit
-from sicoobito.logging_setup import get_logger
-from sicoobito.router.engine import RouterEngine
-from sicoobito.storage.blob import BlobStore
+from novaai_studio.config import Settings
+from novaai_studio.db.session import session_scope
+from novaai_studio.documents import store
+from novaai_studio.documents.chunker import TextChunk, chunk_text
+from novaai_studio.documents.store import DocumentSearchHit
+from novaai_studio.logging_setup import get_logger
+from novaai_studio.router.engine import RouterEngine
+from novaai_studio.storage.blob import BlobStore
 
 log = get_logger(__name__)
 

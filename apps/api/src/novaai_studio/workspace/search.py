@@ -17,9 +17,9 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from sicoobito.context.languages import detect_language
-from sicoobito.context.scanner import iter_paths, read_text
-from sicoobito.logging_setup import get_logger
+from novaai_studio.context.languages import detect_language
+from novaai_studio.context.scanner import iter_paths, read_text
+from novaai_studio.logging_setup import get_logger
 
 log = get_logger(__name__)
 

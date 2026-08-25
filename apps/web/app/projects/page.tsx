@@ -94,7 +94,7 @@ export default function ProjectsPage() {
               Central do Projeto
             </h1>
             <p style={{ color: "var(--text-dim)", margin: "0.5rem 0 0 0", fontSize: "0.95rem" }}>
-              Cadastre e gerencie o ecossistema unificado do SicoobitoCode (IDE, Segundo Cérebro, Graphify, Custos, Auditoria e Git).
+              Cadastre e gerencie o ecossistema unificado do NovaAI Studio (IDE, Segundo Cérebro, Graphify, Custos, Auditoria e Git).
             </p>
           </div>
           <button

@@ -14,13 +14,13 @@ from typing import Any
 import structlog
 from sqlalchemy import select
 
-from sicoobito.analytics.diagnostics.correction_generator import CorrectionProposalGenerator
-from sicoobito.analytics.diagnostics.rca_engine import RCAEngine
-from sicoobito.analytics.models.classifier import FailureCategory
-from sicoobito.analytics.models.clustering import UnsupervisedClusterer
-from sicoobito.db.models import ChatTrajectory, CorrectionProposal, FailureCluster
-from sicoobito.db.session import session_scope
-from sicoobito.router import RouterEngine
+from novaai_studio.analytics.diagnostics.correction_generator import CorrectionProposalGenerator
+from novaai_studio.analytics.diagnostics.rca_engine import RCAEngine
+from novaai_studio.analytics.models.classifier import FailureCategory
+from novaai_studio.analytics.models.clustering import UnsupervisedClusterer
+from novaai_studio.db.models import ChatTrajectory, CorrectionProposal, FailureCluster
+from novaai_studio.db.session import session_scope
+from novaai_studio.router import RouterEngine
 
 logger = structlog.get_logger(__name__)
 

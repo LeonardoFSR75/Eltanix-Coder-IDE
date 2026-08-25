@@ -8,12 +8,12 @@ from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Query, status
 
-from sicoobito.api.deps import AuthDep, DbSessionDep, SettingsDep
-from sicoobito.graphify.engine import GraphifyEngine
-from sicoobito.graphify.metrics.analytics import GraphAnalytics
-from sicoobito.graphify.pipeline.indexer import GraphIndexer
-from sicoobito.graphify.rag.graph_rag import GraphRAGQueryEngine
-from sicoobito.graphify.schema import (
+from novaai_studio.api.deps import AuthDep, DbSessionDep, SettingsDep
+from novaai_studio.graphify.engine import GraphifyEngine
+from novaai_studio.graphify.metrics.analytics import GraphAnalytics
+from novaai_studio.graphify.pipeline.indexer import GraphIndexer
+from novaai_studio.graphify.rag.graph_rag import GraphRAGQueryEngine
+from novaai_studio.graphify.schema import (
     GraphMetricsSummary,
     GraphNodeRead,
     GraphRAGQueryRequest,
@@ -21,9 +21,9 @@ from sicoobito.graphify.schema import (
     MultiWorkspaceQueryRequest,
     SubgraphResponse,
 )
-from sicoobito.graphify.store import GraphStore
-from sicoobito.workspace import projects as project_ops
-from sicoobito.workspace.projects import ProjectError, ensure_project_slug_exists
+from novaai_studio.graphify.store import GraphStore
+from novaai_studio.workspace import projects as project_ops
+from novaai_studio.workspace.projects import ProjectError, ensure_project_slug_exists
 
 router = APIRouter(prefix="/api/graphify", tags=["graphify"], dependencies=[AuthDep])
 
@@ -52,7 +52,7 @@ def _derive_workspace(payload: dict[str, Any]) -> str:
     do projeto A para dentro do workspace do projeto B, corrompendo o grafo
     de B. Levanta 400 se o caller mandar um `workspace` explícito que diverge
     do `project` (em vez de sobrescrever silenciosamente)."""
-    project_name = payload.get("project") or "SicoobitoCode"
+    project_name = payload.get("project") or "NovaAI Studio"
     requested_workspace = payload.get("workspace")
     if requested_workspace and requested_workspace != project_name:
         raise HTTPException(

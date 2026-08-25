@@ -1,6 +1,6 @@
 /**
  * Cliente HTTP usado pela versão Svelte / Desktop.
- * Fala com a API do SicoobitoCode via API_ORIGIN e gerencia a autenticação por usuário e senha.
+ * Fala com a API do NovaAI Studio via API_ORIGIN e gerencia a autenticação por usuário e senha.
  */
 
 const API_ORIGIN = import.meta.env.VITE_API_ORIGIN || "http://localhost:5401";
@@ -31,10 +31,10 @@ export function onUnauthorized(handler: () => void): void {
 export function getAuthToken(): string {
   if (typeof window === "undefined") return "";
   return (
-    localStorage.getItem("sicoobito_session_token") ||
-    localStorage.getItem("SICOOBITO_API_KEY") ||
-    localStorage.getItem("sicoobito_api_key") ||
-    (import.meta.env.VITE_SICOOBITO_API_KEY as string | undefined) ||
+    localStorage.getItem("novaai_studio_session_token") ||
+    localStorage.getItem("NOVAAI_STUDIO_API_KEY") ||
+    localStorage.getItem("novaai_studio_api_key") ||
+    (import.meta.env.VITE_NOVAAI_STUDIO_API_KEY as string | undefined) ||
     ""
   );
 }
@@ -45,17 +45,17 @@ export function hasAuthToken(): boolean {
 
 export function setAuthToken(token: string): void {
   if (typeof window !== "undefined") {
-    localStorage.setItem("sicoobito_session_token", token.trim());
-    localStorage.setItem("SICOOBITO_API_KEY", token.trim());
+    localStorage.setItem("novaai_studio_session_token", token.trim());
+    localStorage.setItem("NOVAAI_STUDIO_API_KEY", token.trim());
   }
 }
 
 export function clearAuthToken(): void {
   if (typeof window !== "undefined") {
-    localStorage.removeItem("sicoobito_session_token");
-    localStorage.removeItem("SICOOBITO_API_KEY");
-    localStorage.removeItem("sicoobito_api_key");
-    localStorage.removeItem("sicoobito_user");
+    localStorage.removeItem("novaai_studio_session_token");
+    localStorage.removeItem("NOVAAI_STUDIO_API_KEY");
+    localStorage.removeItem("novaai_studio_api_key");
+    localStorage.removeItem("novaai_studio_user");
   }
 }
 
@@ -83,7 +83,7 @@ export interface UserProfile {
 
 export function getAuthUser(): UserProfile | null {
   if (typeof window === "undefined") return null;
-  const stored = localStorage.getItem("sicoobito_user");
+  const stored = localStorage.getItem("novaai_studio_user");
   if (!stored) return null;
   try {
     return JSON.parse(stored) as UserProfile;
@@ -117,16 +117,16 @@ export async function login(username: string, password: string): Promise<boolean
       });
       if (meRes.ok) {
         const me = (await meRes.json()) as UserProfile;
-        localStorage.setItem("sicoobito_user", JSON.stringify(me));
+        localStorage.setItem("novaai_studio_user", JSON.stringify(me));
       } else {
         localStorage.setItem(
-          "sicoobito_user",
+          "novaai_studio_user",
           JSON.stringify({ id: "user", username, display_name: username }),
         );
       }
     } catch {
       localStorage.setItem(
-        "sicoobito_user",
+        "novaai_studio_user",
         JSON.stringify({ id: "user", username, display_name: username }),
       );
     }

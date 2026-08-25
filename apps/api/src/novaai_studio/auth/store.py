@@ -11,7 +11,7 @@ from datetime import datetime
 from sqlalchemy import delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from sicoobito.db.models import AppUser, AuthSession, ProjectMember
+from novaai_studio.db.models import AppUser, AuthSession, ProjectMember
 
 
 async def count_users(session: AsyncSession) -> int:

@@ -49,6 +49,30 @@ export function useAgentSessions({
 
   const notify = useCallback(() => bump(), []);
 
+  // Toda sessão de fundo (orquestração via spawn_agent, ADR 0004) reporta
+  // cada evento SSE por este mesmo `onChange` — sem filtrar, um log/activity
+  // tick de uma sessão que ninguém está olhando força o dock inteiro (com o
+  // AgentPanel da sessão ATIVA) a re-renderizar. A sessão ativa sempre
+  // propaga (é o que a UI mostra agora); uma sessão de fundo só re-renderiza
+  // quando o resumo que a lista de abas/Agent Manager realmente exibe
+  // (task/branch/status/closed) muda de verdade.
+  const lastSummaryRef = useRef<Map<string, string>>(new Map());
+  const notifyFor = useCallback((id: string) => {
+    if (activeIdRef.current === id) {
+      bump();
+      return;
+    }
+    const runtime = runtimesRef.current.get(id);
+    if (!runtime) {
+      bump();
+      return;
+    }
+    const resumo = `${runtime.task || id}|${runtime.session?.branch ?? ""}|${statusOf(runtime)}|${runtime.readOnly}`;
+    if (lastSummaryRef.current.get(id) === resumo) return;
+    lastSummaryRef.current.set(id, resumo);
+    bump();
+  }, []);
+
   const startSession = useCallback(
     (
       task: string,
@@ -61,10 +85,17 @@ export function useAgentSessions({
       if (!project) return;
 
       const pendingId = `pending-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      // `idBox` existe porque este runtime muda de chave no mapa (pendingId
+      // → session_id de verdade) assim que o backend responde — o closure de
+      // `onChange` abaixo precisa ver a chave atual, não a de quando foi
+      // criado, senão `notifyFor` nunca encontra o runtime no mapa e cai no
+      // fallback de sempre re-renderizar (perde a otimização pro resto da
+      // vida da sessão).
+      const idBox = { current: pendingId };
       const runtime = new AgentSessionRuntime({
         project,
         onFileTouched,
-        onChange: notify,
+        onChange: () => notifyFor(idBox.current),
         onNotify,
       });
       runtime.task = task;
@@ -99,7 +130,9 @@ export function useAgentSessions({
           }
 
           runtimesRef.current.delete(pendingId);
+          lastSummaryRef.current.delete(pendingId);
           runtimesRef.current.set(created.session_id, runtime);
+          idBox.current = created.session_id;
           activeIdRef.current = created.session_id;
           notify();
 
@@ -119,7 +152,7 @@ export function useAgentSessions({
         }
       })();
     },
-    [project, onFileTouched, onNotify, notify],
+    [project, onFileTouched, onNotify, notify, notifyFor],
   );
 
   const switchTo = useCallback(
@@ -137,15 +170,17 @@ export function useAgentSessions({
         switchTo(sessionId);
         return;
       }
-      void AgentSessionRuntime.loadClosed(sessionId, { project, onChange: notify }, task).then(
-        (runtime) => {
-          runtimesRef.current.set(sessionId, runtime);
-          activeIdRef.current = sessionId;
-          notify();
-        },
-      );
+      void AgentSessionRuntime.loadClosed(
+        sessionId,
+        { project, onChange: () => notifyFor(sessionId) },
+        task,
+      ).then((runtime) => {
+        runtimesRef.current.set(sessionId, runtime);
+        activeIdRef.current = sessionId;
+        notify();
+      });
     },
-    [project, notify, switchTo],
+    [project, notify, notifyFor, switchTo],
   );
 
   const removeSession = useCallback(
@@ -153,6 +188,7 @@ export function useAgentSessions({
       const runtime = runtimesRef.current.get(sessionId);
       runtime?.abort();
       runtimesRef.current.delete(sessionId);
+      lastSummaryRef.current.delete(sessionId);
       if (activeIdRef.current === sessionId) {
         activeIdRef.current = null;
       }

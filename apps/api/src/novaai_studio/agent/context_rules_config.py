@@ -1,5 +1,5 @@
 """Config declarativa das regras de contexto: leitura de
-`.sicoobito/context_rules.yaml`.
+`.novaai_studio/context_rules.yaml`.
 
 Mesmo padrão de `agent/approval_policy_config.py`: leitura simples via
 `yaml.safe_load` — a escrita, que precisa preservar comentários, fica em
@@ -13,17 +13,17 @@ from pathlib import Path
 import yaml
 from pydantic import ValidationError
 
-from sicoobito.agent.context_rules import ContextRulesConfig
-from sicoobito.logging_setup import get_logger
+from novaai_studio.agent.context_rules import ContextRulesConfig
+from novaai_studio.logging_setup import get_logger
 
 log = get_logger(__name__)
 
-_RELATIVE_PATH = Path(".sicoobito") / "context_rules.yaml"
+_RELATIVE_PATH = Path(".novaai_studio") / "context_rules.yaml"
 
 
 def load_context_rules(workspace_root: Path) -> ContextRulesConfig:
-    """Lê `.sicoobito/context_rules.yaml` do projeto (não do worktree da sessão —
-    mesma raiz que `.sicoobito/instructions.md`/`approval_policy.yaml`, ver
+    """Lê `.novaai_studio/context_rules.yaml` do projeto (não do worktree da sessão —
+    mesma raiz que `.novaai_studio/instructions.md`/`approval_policy.yaml`, ver
     `agent/runner.py::_load_custom_instructions`).
 
     Arquivo ausente, erro de leitura, YAML malformado ou dado que não valida

@@ -7,9 +7,9 @@ from alembic import context
 from sqlalchemy.ext.asyncio import async_engine_from_config
 from sqlalchemy.pool import NullPool
 
-from sicoobito.config import get_settings
-from sicoobito.db.base import Base
-from sicoobito.db import models  # noqa: F401  (registra as tabelas no metadata)
+from novaai_studio.config import get_settings
+from novaai_studio.db.base import Base
+from novaai_studio.db import models  # noqa: F401  (registra as tabelas no metadata)
 
 config = context.config
 

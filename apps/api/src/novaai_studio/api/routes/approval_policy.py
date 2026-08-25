@@ -1,4 +1,4 @@
-"""Rota da política de auto-aprovação (`.sicoobito/approval_policy.yaml`).
+"""Rota da política de auto-aprovação (`.novaai_studio/approval_policy.yaml`).
 
 `agent/approval_policy_editor.py` já tinha as funções de round-trip
 (`load`/`dump`/`add_rule`/`remove_rule`/`set_second_opinion`) prontas desde
@@ -16,11 +16,11 @@ from fastapi import APIRouter
 from pydantic import BaseModel, Field
 from ruamel.yaml.comments import CommentedSeq
 
-from sicoobito.agent import approval_policy_editor as editor
-from sicoobito.agent.approval_policy import ApprovalPolicy, EditPathRule, ExecCommandRule
-from sicoobito.agent.approval_policy_config import load_approval_policy
-from sicoobito.api.deps import AuthDep, SettingsDep
-from sicoobito.api.routes.workspace import project_fs
+from novaai_studio.agent import approval_policy_editor as editor
+from novaai_studio.agent.approval_policy import ApprovalPolicy, EditPathRule, ExecCommandRule
+from novaai_studio.agent.approval_policy_config import load_approval_policy
+from novaai_studio.api.deps import AuthDep, SettingsDep
+from novaai_studio.api.routes.workspace import project_fs
 
 router = APIRouter(prefix="/api/agent/approval-policy", tags=["agent"], dependencies=[AuthDep])
 

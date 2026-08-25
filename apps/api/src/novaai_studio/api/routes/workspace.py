@@ -24,15 +24,15 @@ from fastapi import (
 )
 from pydantic import BaseModel, Field
 
-from sicoobito.api.deps import AuthDep, SettingsDep
-from sicoobito.api.tickets import TICKET_TTL_SECONDS, TicketStore
-from sicoobito.config import Settings
-from sicoobito.context.languages import detect_language
-from sicoobito.logging_setup import get_logger
-from sicoobito.workspace import projects as project_ops
-from sicoobito.workspace import search as search_ops
-from sicoobito.workspace.fs import FileTooLargeError, PathEscapeError, WorkspaceFS
-from sicoobito.workspace.projects import ProjectError
+from novaai_studio.api.deps import AuthDep, SettingsDep
+from novaai_studio.api.tickets import TICKET_TTL_SECONDS, TicketStore
+from novaai_studio.config import Settings
+from novaai_studio.context.languages import detect_language
+from novaai_studio.logging_setup import get_logger
+from novaai_studio.workspace import projects as project_ops
+from novaai_studio.workspace import search as search_ops
+from novaai_studio.workspace.fs import FileTooLargeError, PathEscapeError, WorkspaceFS
+from novaai_studio.workspace.projects import ProjectError
 
 log = get_logger(__name__)
 
@@ -46,7 +46,7 @@ ws_router = APIRouter(prefix="/api/workspace", tags=["workspace"])
 
 MAX_TREE_ENTRIES = 2000
 
-_CACHE_PREFIX = "sicoobito:files"
+_CACHE_PREFIX = "novaai_studio:files"
 # Curto de propósito: arquivos criados fora do IDE aparecem em até um minuto,
 # e quem cria por dentro força a atualização com `refresh=true`.
 _CACHE_TTL_SECONDS = 60
@@ -353,7 +353,7 @@ async def terminal(websocket: WebSocket, session_id: str) -> None:
     volta inteira. Um PTY de verdade exigiria multiplexar o stream do Docker e
     tratar sequências de escape.
     """
-    # O ticket é sempre exigido, com ou sem SICOOBITO_API_KEY configurada: ele
+    # O ticket é sempre exigido, com ou sem NOVAAI_STUDIO_API_KEY configurada: ele
     # só é emitido por `POST /terminal/{id}/ticket`, uma rota atrás de
     # `AuthDep` (`require_session`) — condicionar isto à chave de API de
     # serviço reabriria exatamente o buraco que tornar o login obrigatório

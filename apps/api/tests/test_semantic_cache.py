@@ -12,9 +12,9 @@ from typing import Any
 
 import pytest
 
-from sicoobito.optimizer import semantic_cache as semantic_cache_module
-from sicoobito.optimizer.cache import CachedResponse, ResponseCache
-from sicoobito.optimizer.semantic_cache import SemanticCache, _extract_query_text
+from novaai_studio.optimizer import semantic_cache as semantic_cache_module
+from novaai_studio.optimizer.cache import CachedResponse, ResponseCache
+from novaai_studio.optimizer.semantic_cache import SemanticCache, _extract_query_text
 
 
 class _FakeRedis:

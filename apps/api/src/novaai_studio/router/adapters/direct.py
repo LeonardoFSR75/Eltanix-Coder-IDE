@@ -10,8 +10,8 @@ from typing import Any
 
 import httpx
 
-from sicoobito.router.adapters.base import DiscoveredModel, DiscoveryError, ProviderAdapter
-from sicoobito.router.catalog import ModelSpec
+from novaai_studio.router.adapters.base import DiscoveredModel, DiscoveryError, ProviderAdapter
+from novaai_studio.router.catalog import ModelSpec
 
 _ANTHROPIC_MODELS_URL = "https://api.anthropic.com/v1/models?limit=1000"
 _ANTHROPIC_API_VERSION = "2023-06-01"

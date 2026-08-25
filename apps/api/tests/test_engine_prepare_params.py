@@ -7,8 +7,8 @@ vez só olha `spec`, então `object.__new__` basta.
 
 from __future__ import annotations
 
-from sicoobito.router.catalog import ModelSpec
-from sicoobito.router.engine import RouterEngine
+from novaai_studio.router.catalog import ModelSpec
+from novaai_studio.router.engine import RouterEngine
 
 
 def _engine() -> RouterEngine:

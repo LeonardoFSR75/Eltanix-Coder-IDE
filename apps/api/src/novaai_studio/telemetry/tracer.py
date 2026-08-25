@@ -21,7 +21,7 @@ log = structlog.get_logger(__name__)
 TraceKind = Literal["tool", "rag"]
 TraceStatus = Literal["ok", "error"]
 
-_REDIS_KEY = "sicoobito:telemetry:spans"
+_REDIS_KEY = "novaai_studio:telemetry:spans"
 
 
 @dataclass(slots=True)
@@ -43,6 +43,51 @@ class TraceEntry:
             "status": self.status,
             "session_id": self.session_id,
             "error": self.error,
+        }
+
+    def to_otlp_json(self) -> dict:
+        """Formata o span no padrão OpenTelemetry Trace JSON (OTLP v1)."""
+        start_nano = int(self.ts * 1e9)
+        end_nano = int((self.ts + (self.latency_ms / 1000.0)) * 1e9)
+        return {
+            "resource": {
+                "attributes": [
+                    {"key": "service.name", "value": {"stringValue": "novaai-studio-api"}},
+                    {"key": "service.version", "value": {"stringValue": "0.1.0"}},
+                ]
+            },
+            "scopeSpans": [
+                {
+                    "scope": {"name": f"novaai_studio.{self.kind}"},
+                    "spans": [
+                        {
+                            "traceId": self.session_id.ljust(32, "0")
+                            if self.session_id
+                            else "0" * 32,
+                            "spanId": hex(hash((self.name, self.ts)))[2:].zfill(16)[:16],
+                            "name": self.name,
+                            "kind": 1,  # SPAN_KIND_INTERNAL
+                            "startTimeUnixNano": str(start_nano),
+                            "endTimeUnixNano": str(end_nano),
+                            "attributes": [
+                                {"key": "novaai_studio.kind", "value": {"stringValue": self.kind}},
+                                {
+                                    "key": "novaai_studio.status",
+                                    "value": {"stringValue": self.status},
+                                },
+                                {
+                                    "key": "novaai_studio.session_id",
+                                    "value": {"stringValue": self.session_id},
+                                },
+                            ],
+                            "status": {
+                                "code": 1 if self.status == "ok" else 2,
+                                "message": self.error or "",
+                            },
+                        }
+                    ],
+                }
+            ],
         }
 
     @classmethod
@@ -120,8 +165,8 @@ class TraceRecorder:
         # Import local: evita ciclo de import no módulo (tracer.py é usado por
         # serviços que db/models.py também acaba puxando indiretamente) e
         # mantém este módulo importável mesmo sem `db` configurado em testes.
-        from sicoobito.db.models import ToolSpan
-        from sicoobito.db.session import session_scope
+        from novaai_studio.db.models import ToolSpan
+        from novaai_studio.db.session import session_scope
 
         try:
             async with session_scope() as session:

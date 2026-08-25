@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import asyncio
 
-from sicoobito.sandbox.concurrency import SandboxConcurrencyGate
+from novaai_studio.sandbox.concurrency import SandboxConcurrencyGate
 
 
 async def test_acquire_under_max_returns_immediately():

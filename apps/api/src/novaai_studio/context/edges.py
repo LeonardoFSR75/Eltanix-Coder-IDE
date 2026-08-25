@@ -16,13 +16,13 @@ from collections.abc import Iterator
 from pathlib import PurePosixPath
 from typing import Any
 
-from sicoobito.context.chunker import Chunk, get_parser
-from sicoobito.logging_setup import get_logger
+from novaai_studio.context.chunker import Chunk, get_parser
+from novaai_studio.logging_setup import get_logger
 
 log = get_logger(__name__)
 
 # Só linguagens onde vale a pena tentar resolver import → arquivo: as duas que
-# o próprio SicoobitoCode usa (Python no backend, TS/TSX no frontend). Outras
+# o próprio NovaAI Studio usa (Python no backend, TS/TSX no frontend). Outras
 # linguagens ainda ganham arestas `contains`; só ficam sem `imports`.
 _IMPORT_LANGUAGES = frozenset({"python", "javascript", "typescript", "tsx"})
 _JS_EXTENSIONS = (".ts", ".tsx", ".js", ".jsx")

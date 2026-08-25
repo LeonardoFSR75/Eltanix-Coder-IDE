@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from sicoobito.config import Settings
-from sicoobito.router.adapters import build_adapters
+from novaai_studio.config import Settings
+from novaai_studio.router.adapters import build_adapters
 
 
 def test_catalog_loads_models_and_profiles(catalog):

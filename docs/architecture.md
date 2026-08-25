@@ -1,4 +1,4 @@
-# Arquitetura — SicoobitoCode
+# Arquitetura — NovaAI Studio
 
 ## Visão Geral
 
@@ -89,7 +89,7 @@
 - **Emulador de Dispositivos**: Presets responsivos com moldura de Desktop, Laptop, Tablet e Mobile.
 
 ### 5. Catálogo de Agent Skills & Auto-Aprimoramento
-- Skills declarativas em `.agents/agent-skills/` e `.sicoobito/skills/` com padrão aberto `SKILL.md`.
+- Skills declarativas em `.agents/agent-skills/` e `.novaai_studio/skills/` com padrão aberto `SKILL.md`.
 - Conhecimento especializado para WordPress moderno (Gutenberg, REST API, Performance), FastAPI, Playwright e Firecrawl.
 - Ferramentas `list_skills`, `get_skill` e `propose_skill` para descoberta e evolução autônoma de convenções técnicas.
 
@@ -111,4 +111,6 @@
 7. [ADR 0007: Navegador Interno e Emulação Visual](file:///c:/Users/leona/Documents/Projetos/SicoobitoCode/docs/adr/0007-navegador-interno-e-emulacao-visual.md)
 8. [ADR 0008: RAG Multi-Formato Universal com AnyDoc e PDF Inspector](file:///c:/Users/leona/Documents/Projetos/SicoobitoCode/docs/adr/0008-rag-multi-formato-anydoc-e-pdf-inspector.md)
 9. [ADR 0009: Sistema de 6 Suítes de Extensões e Auto-Update Open VSX](file:///c:/Users/leona/Documents/Projetos/SicoobitoCode/docs/adr/0009-sistema-de-extensoes-e-auto-update-open-vsx.md)
+10. [ADR 0010: Segurança de Servidores MCP e Cisco AI Defense Scanner](file:///c:/Users/leona/Documents/Projetos/SicoobitoCode/docs/adr/0010-seguranca-mcp-e-cisco-scanner.md)
+11. [ADR 0011: Sanitização Dinâmica de Prompts e Mascaramento PII](file:///c:/Users/leona/Documents/Projetos/SicoobitoCode/docs/adr/0011-sanitizacao-dinamica-pii.md)
 

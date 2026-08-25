@@ -7,7 +7,7 @@
   import ToolCallCard, { type ToolCallData } from "./ToolCallCard.svelte";
   import AgentManager from "./AgentManager.svelte";
 
-  let { project = "sicoobito-code", activeFile = "", onInsertCode } = $props<{
+  let { project = "novaai-studio-code", activeFile = "", onInsertCode } = $props<{
     project?: string;
     activeFile?: string;
     onInsertCode?: (snippet: string) => void;
@@ -254,7 +254,7 @@
   <div class="chat-messages">
     {#if log.length === 0 && pending.length === 0}
       <div class="empty-hint">
-        Olá! Sou o agente agêntico do SicoobitoCode Lite. Descreva uma tarefa abaixo — posso
+        Olá! Sou o agente agêntico do NovaAI Studio Lite. Descreva uma tarefa abaixo — posso
         analisar, criar testes ou aplicar edições diretamente no seu código.
       </div>
     {/if}

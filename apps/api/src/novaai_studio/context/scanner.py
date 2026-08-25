@@ -15,8 +15,8 @@ from pathlib import Path
 
 import pathspec
 
-from sicoobito.context.languages import detect_language
-from sicoobito.logging_setup import get_logger
+from novaai_studio.context.languages import detect_language
+from novaai_studio.logging_setup import get_logger
 
 log = get_logger(__name__)
 
@@ -41,7 +41,7 @@ ALWAYS_IGNORED = {
     "target",
     ".idea",
     ".vscode",
-    ".sicoobito",
+    ".novaai_studio",
 }
 
 BINARY_EXTENSIONS = {
@@ -97,7 +97,7 @@ class ScannedFile:
 
 def _load_ignore_spec(root: Path) -> pathspec.PathSpec:
     patterns: list[str] = []
-    for name in (".gitignore", ".sicoobitoignore"):
+    for name in (".gitignore", ".novaai_studioignore"):
         candidate = root / name
         if candidate.exists():
             try:

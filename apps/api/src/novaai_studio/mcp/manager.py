@@ -10,11 +10,11 @@ from __future__ import annotations
 
 from typing import Any
 
-from sicoobito.agent.tools.base import RiskClass, Tool, ToolContext, ToolRegistry, ToolResult
-from sicoobito.config import Settings
-from sicoobito.logging_setup import get_logger
-from sicoobito.mcp.client import MCPServerConnection
-from sicoobito.mcp.config import MCPServerConfig, load_mcp_servers
+from novaai_studio.agent.tools.base import RiskClass, Tool, ToolContext, ToolRegistry, ToolResult
+from novaai_studio.config import Settings
+from novaai_studio.logging_setup import get_logger
+from novaai_studio.mcp.client import MCPServerConnection
+from novaai_studio.mcp.config import MCPServerConfig, load_mcp_servers
 
 log = get_logger(__name__)
 

@@ -9,15 +9,15 @@ from typing import Any, Literal
 from fastapi import APIRouter, HTTPException, Request, status
 from pydantic import BaseModel, Field, model_validator
 
-from sicoobito.agent.tools import registry
-from sicoobito.api.deps import AuthDep, SettingsDep
-from sicoobito.audit.service import AuditService
-from sicoobito.logging_setup import get_logger
-from sicoobito.mcp import config_editor
-from sicoobito.mcp.config import MCPServerConfig, load_catalog
-from sicoobito.mcp.manager import MCPManager
-from sicoobito.mcp.scanner import MCPScannerService
-from sicoobito.router import env_editor
+from novaai_studio.agent.tools import registry
+from novaai_studio.api.deps import AuthDep, SettingsDep
+from novaai_studio.audit.service import AuditService
+from novaai_studio.logging_setup import get_logger
+from novaai_studio.mcp import config_editor
+from novaai_studio.mcp.config import MCPServerConfig, load_catalog
+from novaai_studio.mcp.manager import MCPManager
+from novaai_studio.mcp.scanner import MCPScannerService
+from novaai_studio.router import env_editor
 
 log = get_logger(__name__)
 

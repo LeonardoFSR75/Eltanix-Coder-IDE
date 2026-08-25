@@ -1,4 +1,4 @@
-# SicoobitoCode
+# NovaAI Studio
 
 IDE agêntica local-first: FastAPI (`apps/api`) + Next.js (`apps/web`) + Svelte 5/Tauri (`apps/desktop`), Postgres+pgvector,
 Redis, MinIO, tudo via Docker Compose. Ver [README.md](README.md) para a visão de produto
@@ -18,7 +18,7 @@ Guias específicos: [apps/api/CLAUDE.md](apps/api/CLAUDE.md), [apps/web/CLAUDE.m
 1. **Painel Central & MOCs do Obsidian (`graphify-out/obsidian/00 - 🏠 Painel & MOCs/`)**:
    - `00 - 🏠 Início (MOC Principal).md`: Dashboard mestre com visão 360°, tabela de decisões e top hubs.
    - `MOC - Arquitetura & Sistema.md` e MOCs temáticos especializados.
-   - `Mapa Arquitetural SicoobitoCode.canvas`: Fluxo visual interativo dos componentes.
+   - `Mapa Arquitetural NovaAI Studio.canvas`: Fluxo visual interativo dos componentes.
 2. **Registro de Decisões Arquiteturais (`docs/adr/` e `01 - 📑 Documentos & ADRs/`)**:
    - `ADR 0001 — Camada Única de LLM`
    - `ADR 0002 — Executor Isolado`
@@ -41,7 +41,7 @@ Guias específicos: [apps/api/CLAUDE.md](apps/api/CLAUDE.md), [apps/web/CLAUDE.m
   Todo agente deve respeitar a malha relacional do repositório. Decisões arquiteturais devem ser
   registradas em ADR e refletidas no vault Obsidian (`graphify-out/obsidian/`).
 - **Uma única porta de saída para LLM** (`docs/adr/0001-camada-unica-de-llm.md`): nenhum
-  módulo fora de `sicoobito.router` importa `litellm`/`openai`/`anthropic`/SDK de
+  módulo fora de `novaai_studio.router` importa `litellm`/`openai`/`anthropic`/SDK de
   provedor. Todo consumo passa por `RouterEngine.complete()`/`.embed()`.
 - **Execução de comando nunca fala direto com o daemon Docker da API**
   (`docs/adr/0002-executor-isolado.md`): em produção/container, `run_command` passa pelo
@@ -74,7 +74,7 @@ Guias específicos: [apps/api/CLAUDE.md](apps/api/CLAUDE.md), [apps/web/CLAUDE.m
   breaker; MinIO fora → upload de documento indisponível; MCP com comando inválido →
   aquele servidor marca `status: "error"`, os outros continuam.
 - **Login é obrigatório para o browser** (`docs/adr/0005-login-obrigatorio.md`): toda rota
-  usa `AuthDep = Depends(require_session)` (`api/deps.py`) — aceita `SICOOBITO_API_KEY`
+  usa `AuthDep = Depends(require_session)` (`api/deps.py`) — aceita `NOVAAI_STUDIO_API_KEY`
   válida OU cookie de sessão válido, e nunca fica aberta por omissão.
 
 ---

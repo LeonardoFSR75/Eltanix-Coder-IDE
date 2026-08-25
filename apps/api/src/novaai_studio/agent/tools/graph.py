@@ -5,10 +5,10 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from sicoobito.agent.tools.base import RiskClass, ToolContext, ToolResult, tool
-from sicoobito.context import edges as context_edges
-from sicoobito.context import store as context_store
-from sicoobito.db.session import session_scope
+from novaai_studio.agent.tools.base import RiskClass, ToolContext, ToolResult, tool
+from novaai_studio.context import edges as context_edges
+from novaai_studio.context import store as context_store
+from novaai_studio.db.session import session_scope
 
 
 @tool(

@@ -9,9 +9,11 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { PanelState } from "@/components/ide/PanelState";
 import {
   getAgentGraph,
   listAgentSessions,
+  rootsWithChildren,
   type AgentLiveStatus,
   type AgentSessionRecord as SessionRecord,
 } from "@/lib/api/agent";
@@ -108,16 +110,14 @@ export function AgentManager({
   // descendente está `waiting_approval` — a lista de sessões sozinha não
   // revela isso pra um filho headless que nunca abriu SSE nesta aba.
   useEffect(() => {
-    const raizesComFilhos = new Set(
-      historico.filter((r) => r.parent_session_id).map((r) => r.parent_session_id as string),
-    );
-    if (raizesComFilhos.size === 0) {
+    const raizesComFilhos = rootsWithChildren(historico);
+    if (raizesComFilhos.length === 0) {
       setLiveStatusById(new Map());
       return;
     }
     let cancelado = false;
     Promise.all(
-      [...raizesComFilhos].map((raiz) => getAgentGraph(raiz).catch(() => [])),
+      raizesComFilhos.map((raiz) => getAgentGraph(raiz.session_id).catch(() => [])),
     ).then((arvores) => {
       if (cancelado) return;
       const mapa = new Map<string, SessionStatus>();
@@ -220,16 +220,17 @@ export function AgentManager({
         </button>
       </div>
 
-      {erro && <div className="panel-error">{erro}</div>}
-      {carregando && rows.length === 0 && <div className="tree-hint">carregando…</div>}
-      {!carregando && filtradas.length === 0 && !erro && (
+      {erro && <PanelState kind="error" message={erro} onRetry={carregar} />}
+      {carregando && rows.length === 0 && <PanelState kind="loading" message="Carregando sessões…" />}
+      {!carregando && filtradas.length === 0 && !erro && rows.length === 0 && (
+        <PanelState kind="empty" message="Nenhuma sessão neste projeto ainda." />
+      )}
+      {!carregando && filtradas.length === 0 && !erro && rows.length > 0 && (
         <div className="tree-hint">
-          {rows.length === 0 ? "Nenhuma sessão neste projeto ainda." : `Nenhuma sessão corresponde a "${query}". `}
-          {rows.length > 0 && (
-            <button type="button" className="text-btn-inline" onClick={() => setQuery("")}>
-              Redefinir filtro
-            </button>
-          )}
+          {`Nenhuma sessão corresponde a "${query}". `}
+          <button type="button" className="text-btn-inline" onClick={() => setQuery("")}>
+            Redefinir filtro
+          </button>
         </div>
       )}
 

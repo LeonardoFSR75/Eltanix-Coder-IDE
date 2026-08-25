@@ -4,8 +4,8 @@
  * O IDE precisa de interatividade no cliente (Monaco, SSE do agente). Toda
  * chamada do cliente passa por aqui.
  *
- * A UI web autentica por SESSÃO (cookie httpOnly `sicoobito_session`, ver
- * `app/api/session/route.ts`), nunca pela `SICOOBITO_API_KEY` do ambiente —
+ * A UI web autentica por SESSÃO (cookie httpOnly `novaai_studio_session`, ver
+ * `app/api/session/route.ts`), nunca pela `NOVAAI_STUDIO_API_KEY` do ambiente —
  * de propósito: essa chave é um segredo de servidor-para-servidor para
  * integrações externas (CI, cline, cursor, aider), e anexá-la automaticamente
  * em toda chamada do browser tornaria o login opcional na prática, por mais
@@ -16,7 +16,7 @@
  * ao longo de minutos, e acumulá-los destruiria a razão de existir do stream.
  */
 
-const BASE_URL = process.env.SICOOBITO_API_URL ?? "http://localhost:8000";
+const BASE_URL = process.env.NOVAAI_STUDIO_API_URL ?? "http://localhost:8000";
 
 type Params = { params: Promise<{ path: string[] }> };
 
@@ -43,7 +43,7 @@ async function proxy(request: Request, { params }: Params): Promise<Response> {
   if (contentType) headers.set("content-type", contentType);
   // Identifica a origem no dashboard de custo, separando o IDE das ferramentas
   // externas que também apontam para o gateway.
-  headers.set("X-Sicoobito-Source", "ide");
+  headers.set("X-NovaAI-Studio-Source", "ide");
 
   const init: RequestInit = { method: request.method, headers };
   if (request.method !== "GET" && request.method !== "HEAD") {

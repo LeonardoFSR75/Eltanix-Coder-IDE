@@ -6,8 +6,8 @@ um humano reconheceria, e nenhuma função é cortada ao meio sem aviso.
 
 from __future__ import annotations
 
-from sicoobito.context.chunker import MAX_CHUNK_TOKENS, chunk_file
-from sicoobito.context.languages import detect_language, supports_symbols
+from novaai_studio.context.chunker import MAX_CHUNK_TOKENS, chunk_file
+from novaai_studio.context.languages import detect_language, supports_symbols
 
 PYTHON_SOURCE = '''
 import os

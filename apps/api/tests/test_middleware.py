@@ -5,8 +5,8 @@ from __future__ import annotations
 import pytest
 from fastapi.testclient import TestClient
 
-from sicoobito.config import get_settings
-from sicoobito.main import create_app
+from novaai_studio.config import get_settings
+from novaai_studio.main import create_app
 
 
 @pytest.fixture(scope="module")

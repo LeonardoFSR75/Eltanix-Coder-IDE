@@ -18,13 +18,13 @@ import sys
 import pytest
 from fastapi.testclient import TestClient
 
-os.environ["SICOOBITO_API_KEY"] = "chave-de-teste"
+os.environ["NOVAAI_STUDIO_API_KEY"] = "chave-de-teste"
 os.environ["REDIS_URL"] = "redis://localhost:65533/0"
 
-from sicoobito.config import get_settings
-from sicoobito.lsp.bridge import LanguageServerProcess
-from sicoobito.lsp.servers import ServerSpec, server_for_language, supported_languages
-from sicoobito.main import create_app
+from novaai_studio.config import get_settings
+from novaai_studio.lsp.bridge import LanguageServerProcess
+from novaai_studio.lsp.servers import ServerSpec, server_for_language, supported_languages
+from novaai_studio.main import create_app
 
 AUTH = {"Authorization": "Bearer chave-de-teste"}
 
@@ -258,7 +258,7 @@ def test_websocket_com_ticket_valido_completa_o_handshake(client):
         for _ in range(20):
             mensagem = ws.receive_json()
             assert mensagem["jsonrpc"] == "2.0"
-            if mensagem.get("method") == "sicoobito/error":
+            if mensagem.get("method") == "novaai_studio/error":
                 # Imagem sem o language server: informar pelo canal já exige que
                 # a conexão tenha sido aceita, que é o que este teste garante.
                 return

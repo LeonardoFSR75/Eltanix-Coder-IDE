@@ -8,7 +8,7 @@ export function ErrorNotice({ error }: { error: string }) {
       <br />
       Verifique se o backend está no ar:
       <br />
-      <code>cd apps/api && uv run uvicorn sicoobito.main:app --port 8000</code>
+      <code>cd apps/api && uv run uvicorn novaai_studio.main:app --port 8000</code>
     </div>
   );
 }

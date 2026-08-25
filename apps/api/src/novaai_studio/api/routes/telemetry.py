@@ -12,10 +12,10 @@ from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, Query, Request, status
 
-from sicoobito.api.deps import AuthDep
-from sicoobito.db.session import session_scope
-from sicoobito.telemetry import store as telemetry_store
-from sicoobito.telemetry.tracer import TraceRecorder
+from novaai_studio.api.deps import AuthDep
+from novaai_studio.db.session import session_scope
+from novaai_studio.telemetry import store as telemetry_store
+from novaai_studio.telemetry.tracer import TraceRecorder
 
 router = APIRouter(prefix="/api/telemetry", tags=["telemetry"], dependencies=[AuthDep])
 

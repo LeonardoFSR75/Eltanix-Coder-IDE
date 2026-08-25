@@ -1,3 +1,3 @@
-from sicoobito.mcp.manager import MCPManager
+from novaai_studio.mcp.manager import MCPManager
 
 __all__ = ["MCPManager"]

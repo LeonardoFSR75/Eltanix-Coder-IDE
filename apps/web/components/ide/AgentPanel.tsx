@@ -216,7 +216,7 @@ export function AgentLiveActivity({
     activity?.summary ||
     activity?.detail ||
     (activity?.stage === "thinking"
-      ? "Sicoobito Agente está pensando e planejando o próximo passo..."
+      ? "NovaAI Studio Agente está pensando e planejando o próximo passo..."
       : `Executando ${activity?.tool}...`);
 
   const formatTimer = (s: number) => {
@@ -741,7 +741,7 @@ function MessageStream({
                     <circle cx="12" cy="12" r="3" fill={`url(#msg-g-${index})`} />
                   </svg>
                 </div>
-                <span className="message-author">Sicoobito Agente</span>
+                <span className="message-author">NovaAI Studio Agente</span>
               </div>
               <div className="message-body">
                 <RenderedAssistantText text={line.text} />

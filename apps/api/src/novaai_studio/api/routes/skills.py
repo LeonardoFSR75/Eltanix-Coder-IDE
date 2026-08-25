@@ -8,10 +8,10 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Request, status
 from pydantic import BaseModel, Field
 
-from sicoobito.api.deps import AuthDep, DbSessionDep, EngineDep
-from sicoobito.audit.service import AuditService
-from sicoobito.skills.promotion import analyze_recent_sessions
-from sicoobito.skills.service import SkillService
+from novaai_studio.api.deps import AuthDep, DbSessionDep, EngineDep
+from novaai_studio.audit.service import AuditService
+from novaai_studio.skills.promotion import analyze_recent_sessions
+from novaai_studio.skills.service import SkillService
 
 router = APIRouter(prefix="/api/skills", tags=["skills"], dependencies=[AuthDep])
 

@@ -55,7 +55,7 @@ class ModelCard(BaseModel):
     id: str
     object: Literal["model"] = "model"
     created: int = 0
-    owned_by: str = "sicoobito"
+    owned_by: str = "novaai_studio"
     # Campos fora do contrato da OpenAI; clientes bem comportados ignoram.
     context_window: int | None = None
     tags: list[str] = Field(default_factory=list)

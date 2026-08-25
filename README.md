@@ -1,4 +1,4 @@
-# SicoobitoCode
+# NovaAI Studio
 
 Plataforma local-first de codificação agêntica: um IDE web completo estilo VS Code com chat e agente
 autônomo sobre o repositório, integração com Git/GitHub, **Navegador Interno Híbrido com Tela Cheia**,
@@ -46,9 +46,9 @@ python -c "import secrets;print(secrets.token_urlsafe(32))"
 ```
 
 Fixe no `.env`:
-- `SICOOBITO_API_KEY`: Chave para integrações externas (Cline, Continue, Aider).
+- `NOVAAI_STUDIO_API_KEY`: Chave para integrações externas (Cline, Continue, Aider).
 - `EXECUTOR_TOKEN`: Chave de comunicação com o sandbox do executor.
-- `SICOOBITO_ADMIN_USERNAME` e `SICOOBITO_ADMIN_PASSWORD`: Credenciais para acesso à interface web.
+- `NOVAAI_STUDIO_ADMIN_USERNAME` e `NOVAAI_STUDIO_ADMIN_PASSWORD`: Credenciais para acesso à interface web.
 - `FIRECRAWL_API_KEY`: (Opcional) Chave da API do Firecrawl para scraping e deep research na web pública.
 
 ### 2. Subir a Stack via Docker Compose
@@ -75,7 +75,7 @@ docker compose exec api alembic upgrade head
 
 ## 🌐 Navegador Interno & Verificação Visual
 
-O SicoobitoCode conta com um navegador de desenvolvimento integrado completo:
+O NovaAI Studio conta com um navegador de desenvolvimento integrado completo:
 - **Modo Tela Cheia (`F11`)**: Expande a visualização para 100% da tela do monitor para testes visuais imersivos.
 - **Múltiplas Abas**: Abra e gerencie múltiplas sessões com URLs e históricos independentes.
 - **Emulador de Dispositivos**: Teste em tempo real layouts em **Desktop (1280px)**, **Tablet (768x1024)** e **Mobile (375x667 / 390x844)** com rotação e controle de zoom.

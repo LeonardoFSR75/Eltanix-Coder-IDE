@@ -29,12 +29,12 @@ from contextlib import suppress
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
-from sicoobito.logging_setup import get_logger
+from novaai_studio.logging_setup import get_logger
 
 if TYPE_CHECKING:
     from redis.asyncio import Redis
 
-    from sicoobito.storage.blob import BlobStore
+    from novaai_studio.storage.blob import BlobStore
 
 log = get_logger(__name__)
 
@@ -172,9 +172,7 @@ async def mark_replay_expired(redis: Redis | None, session_id: str) -> None:
     if redis is None:
         return
     with suppress(Exception):
-        await redis.set(
-            f"{_REDIS_EXPIRED_PREFIX}{session_id}", "1", ex=_REDIS_EXPIRED_TTL_SECONDS
-        )
+        await redis.set(f"{_REDIS_EXPIRED_PREFIX}{session_id}", "1", ex=_REDIS_EXPIRED_TTL_SECONDS)
 
 
 async def was_replay_expired(redis: Redis | None, session_id: str) -> bool:

@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from sqlalchemy import select, text
 
-from sicoobito.db.models import GraphEdge, GraphNode
-from sicoobito.graphify.schema import GraphEdgeRead, GraphNodeRead, GraphRAGResult
-from sicoobito.graphify.store import GraphStore
+from novaai_studio.db.models import GraphEdge, GraphNode
+from novaai_studio.graphify.schema import GraphEdgeRead, GraphNodeRead, GraphRAGResult
+from novaai_studio.graphify.store import GraphStore
 
 
 class GraphRAGQueryEngine:

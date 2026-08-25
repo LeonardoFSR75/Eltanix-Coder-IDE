@@ -14,7 +14,7 @@ export function Breadcrumbs({ activePath }: { activePath?: string | null }) {
   if (!activePath) {
     return (
       <div className="ide-breadcrumbs">
-        <span className="breadcrumb-segment project">{project || "SicoobitoCode"}</span>
+        <span className="breadcrumb-segment project">{project || "NovaAI Studio"}</span>
       </div>
     );
   }
@@ -24,7 +24,7 @@ export function Breadcrumbs({ activePath }: { activePath?: string | null }) {
 
   return (
     <nav className="ide-breadcrumbs" aria-label="Breadcrumb">
-      <span className="breadcrumb-segment project">{project || "SicoobitoCode"}</span>
+      <span className="breadcrumb-segment project">{project || "NovaAI Studio"}</span>
 
       {parts.map((part, index) => {
         const subPath = parts.slice(0, index + 1).join("/");

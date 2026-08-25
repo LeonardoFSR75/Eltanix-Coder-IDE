@@ -4,8 +4,8 @@ começar (mesmo espírito de `_load_custom_instructions`)."""
 
 from __future__ import annotations
 
-from sicoobito.agent.approval_policy import ApprovalPolicy
-from sicoobito.agent.approval_policy_config import load_approval_policy
+from novaai_studio.agent.approval_policy import ApprovalPolicy
+from novaai_studio.agent.approval_policy_config import load_approval_policy
 
 
 def test_missing_file_returns_empty_policy(tmp_path):
@@ -15,7 +15,7 @@ def test_missing_file_returns_empty_policy(tmp_path):
 
 
 def test_valid_yaml_parses_rules(tmp_path):
-    diretorio = tmp_path / ".sicoobito"
+    diretorio = tmp_path / ".novaai_studio"
     diretorio.mkdir()
     (diretorio / "approval_policy.yaml").write_text(
         """
@@ -39,7 +39,7 @@ rules:
 
 
 def test_malformed_yaml_degrades_to_empty_policy(tmp_path):
-    diretorio = tmp_path / ".sicoobito"
+    diretorio = tmp_path / ".novaai_studio"
     diretorio.mkdir()
     (diretorio / "approval_policy.yaml").write_text(
         "rules: [this is not: valid: yaml:", encoding="utf-8"
@@ -49,7 +49,7 @@ def test_malformed_yaml_degrades_to_empty_policy(tmp_path):
 
 
 def test_invalid_data_degrades_to_empty_policy(tmp_path):
-    diretorio = tmp_path / ".sicoobito"
+    diretorio = tmp_path / ".novaai_studio"
     diretorio.mkdir()
     (diretorio / "approval_policy.yaml").write_text(
         """
@@ -64,7 +64,7 @@ rules:
 
 
 def test_empty_file_returns_empty_policy(tmp_path):
-    diretorio = tmp_path / ".sicoobito"
+    diretorio = tmp_path / ".novaai_studio"
     diretorio.mkdir()
     (diretorio / "approval_policy.yaml").write_text("", encoding="utf-8")
     policy = load_approval_policy(tmp_path)

@@ -1,7 +1,7 @@
 <script lang="ts">
   import { searchInFiles, type SearchMatch } from "../api/workspace";
 
-  let { project = "sicoobito-code", onOpenMatch } = $props<{
+  let { project = "novaai-studio-code", onOpenMatch } = $props<{
     project?: string;
     /** Abre o arquivo no editor e revela a linha/coluna do resultado. */
     onOpenMatch?: (path: string, line: number, column: number) => void;

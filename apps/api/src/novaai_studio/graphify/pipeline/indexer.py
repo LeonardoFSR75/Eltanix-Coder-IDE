@@ -6,15 +6,15 @@ import asyncio
 from pathlib import Path
 from typing import Any
 
-from sicoobito.context.scanner import scan
-from sicoobito.graphify.pipeline.l1_wikilinks import (
+from novaai_studio.context.scanner import scan
+from novaai_studio.graphify.pipeline.l1_wikilinks import (
     extract_python_imports,
     extract_tags,
     extract_ts_imports,
     extract_wikilinks,
 )
-from sicoobito.graphify.schema import GraphEdgeCreate, GraphNodeCreate
-from sicoobito.graphify.store import GraphStore
+from novaai_studio.graphify.schema import GraphEdgeCreate, GraphNodeCreate
+from novaai_studio.graphify.store import GraphStore
 
 
 class GraphIndexer:

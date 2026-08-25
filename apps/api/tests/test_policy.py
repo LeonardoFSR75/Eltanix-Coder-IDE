@@ -8,10 +8,10 @@ from __future__ import annotations
 
 import pytest
 
-from sicoobito.config import Settings
-from sicoobito.router.adapters import build_adapters
-from sicoobito.router.health import HealthTracker
-from sicoobito.router.policy import RoutingPolicy
+from novaai_studio.config import Settings
+from novaai_studio.router.adapters import build_adapters
+from novaai_studio.router.health import HealthTracker
+from novaai_studio.router.policy import RoutingPolicy
 
 
 @pytest.fixture

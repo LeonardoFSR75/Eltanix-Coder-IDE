@@ -14,11 +14,11 @@ from types import SimpleNamespace
 
 import pytest
 
-from sicoobito.agent.tools.base import RiskClass, ToolRegistry
-from sicoobito.config import Settings
-from sicoobito.mcp.client import MCPServerConnection
-from sicoobito.mcp.config import MCPServerConfig
-from sicoobito.mcp.manager import MCPManager, _classify_risk
+from novaai_studio.agent.tools.base import RiskClass, ToolRegistry
+from novaai_studio.config import Settings
+from novaai_studio.mcp.client import MCPServerConnection
+from novaai_studio.mcp.config import MCPServerConfig
+from novaai_studio.mcp.manager import MCPManager, _classify_risk
 
 
 def _cfg(

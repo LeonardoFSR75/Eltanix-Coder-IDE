@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from sicoobito.agent.slash_commands import SLASH_COMMANDS, resolve_slash_command
+from novaai_studio.agent.slash_commands import SLASH_COMMANDS, resolve_slash_command
 
 
 @pytest.mark.parametrize("comando", sorted(SLASH_COMMANDS))
@@ -60,7 +60,7 @@ def test_every_command_except_explain_has_a_skill_and_mode(comando):
 
 @pytest.mark.asyncio
 async def test_list_slash_commands_endpoint_exposes_the_full_catalog():
-    from sicoobito.api.routes.agent import list_slash_commands
+    from novaai_studio.api.routes.agent import list_slash_commands
 
     payload = await list_slash_commands()
     comandos = {c["command"]: c for c in payload["commands"]}

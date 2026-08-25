@@ -13,7 +13,7 @@ from datetime import datetime
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from sicoobito.db.models import ToolSpan
+from novaai_studio.db.models import ToolSpan
 
 
 async def list_spans(

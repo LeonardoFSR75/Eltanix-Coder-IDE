@@ -4,15 +4,15 @@ import pytest
 from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from sicoobito.graphify.api.router import _derive_workspace
-from sicoobito.graphify.engine import MAX_MULTI_WORKSPACE_FANOUT, GraphifyEngine
-from sicoobito.graphify.pipeline.l1_wikilinks import (
+from novaai_studio.graphify.api.router import _derive_workspace
+from novaai_studio.graphify.engine import MAX_MULTI_WORKSPACE_FANOUT, GraphifyEngine
+from novaai_studio.graphify.pipeline.l1_wikilinks import (
     extract_python_imports,
     extract_tags,
     extract_wikilinks,
 )
-from sicoobito.graphify.schema import GraphEdgeCreate, GraphNodeCreate
-from sicoobito.graphify.store import GraphStore
+from novaai_studio.graphify.schema import GraphEdgeCreate, GraphNodeCreate
+from novaai_studio.graphify.store import GraphStore
 
 
 def test_derive_workspace_defaults_to_project():
@@ -20,7 +20,7 @@ def test_derive_workspace_defaults_to_project():
 
 
 def test_derive_workspace_defaults_when_project_missing():
-    assert _derive_workspace({}) == "SicoobitoCode"
+    assert _derive_workspace({}) == "NovaAI Studio"
 
 
 def test_derive_workspace_accepts_matching_workspace():
@@ -46,11 +46,11 @@ def test_extract_tags():
 
 
 def test_extract_python_imports():
-    code = "import os\nfrom fastapi import FastAPI\nimport sicoobito.db"
+    code = "import os\nfrom fastapi import FastAPI\nimport novaai_studio.db"
     imports = extract_python_imports(code)
     assert "os" in imports
     assert "fastapi" in imports
-    assert "sicoobito" in imports
+    assert "novaai_studio" in imports
 
 
 async def test_graph_store_crud(pg_session: AsyncSession):

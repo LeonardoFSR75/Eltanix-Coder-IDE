@@ -10,9 +10,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from sicoobito.agent.tools.base import RiskClass, ToolContext, ToolResult, tool
-from sicoobito.db.session import session_scope
-from sicoobito.graphify.engine import MAX_MULTI_WORKSPACE_FANOUT, GraphifyEngine
+from novaai_studio.agent.tools.base import RiskClass, ToolContext, ToolResult, tool
+from novaai_studio.db.session import session_scope
+from novaai_studio.graphify.engine import MAX_MULTI_WORKSPACE_FANOUT, GraphifyEngine
 
 
 def _format_result(result: dict[str, Any]) -> str:

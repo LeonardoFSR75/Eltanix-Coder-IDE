@@ -24,32 +24,32 @@ os.environ.setdefault("LITELLM_LOCAL_MODEL_COST_MAP", "True")
 import litellm
 from litellm import Router as LiteLLMRouter
 
-from sicoobito.config import Settings
-from sicoobito.logging_setup import get_logger
-from sicoobito.optimizer.cache import ResponseCache
+from novaai_studio.config import Settings
+from novaai_studio.logging_setup import get_logger
+from novaai_studio.optimizer.cache import ResponseCache
 
 # Alias explícito: `router.errors` também exporta um `classify`, que recebe uma
 # exceção. Importar os dois com o mesmo nome faria o segundo sobrescrever o
 # primeiro silenciosamente.
-from sicoobito.optimizer.complexity import classify as classify_complexity
-from sicoobito.optimizer.compressor import ContextCompressor
-from sicoobito.optimizer.semantic_cache import SemanticCache
-from sicoobito.optimizer.tokens import count_text, estimate_prompt_tokens
-from sicoobito.router.adapters import ProviderAdapter, build_adapters
-from sicoobito.router.budget import BudgetGuard
-from sicoobito.router.catalog import Catalog, ModelSpec
-from sicoobito.router.errors import (
+from novaai_studio.optimizer.complexity import classify as classify_complexity
+from novaai_studio.optimizer.compressor import ContextCompressor
+from novaai_studio.optimizer.semantic_cache import SemanticCache
+from novaai_studio.optimizer.tokens import count_text, estimate_prompt_tokens
+from novaai_studio.router.adapters import ProviderAdapter, build_adapters
+from novaai_studio.router.budget import BudgetGuard
+from novaai_studio.router.catalog import Catalog, ModelSpec
+from novaai_studio.router.errors import (
     AllCandidatesFailedError,
     FailureKind,
     NoCandidatesError,
     classify,
     extract_failed_tool_call,
 )
-from sicoobito.router.health import HealthTracker
-from sicoobito.router.policy import RoutingPolicy
-from sicoobito.router.pricing import PriceTable, Usage
-from sicoobito.router.telemetry import TelemetryEntry
-from sicoobito.router.telemetry import record as _record_telemetry
+from novaai_studio.router.health import HealthTracker
+from novaai_studio.router.policy import RoutingPolicy
+from novaai_studio.router.pricing import PriceTable, Usage
+from novaai_studio.router.telemetry import TelemetryEntry
+from novaai_studio.router.telemetry import record as _record_telemetry
 
 log = get_logger(__name__)
 
@@ -183,7 +183,7 @@ class RouterEngine:
             set_verbose=False,
         )
 
-        from sicoobito.telemetry.langfuse_tracer import is_langfuse_configured
+        from novaai_studio.telemetry.langfuse_tracer import is_langfuse_configured
 
         if is_langfuse_configured(self.settings):
             try:

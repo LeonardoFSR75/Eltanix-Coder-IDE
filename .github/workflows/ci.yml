@@ -76,19 +76,19 @@ jobs:
       postgres:
         image: pgvector/pgvector:pg17
         env:
-          POSTGRES_USER: sicoobito
-          POSTGRES_PASSWORD: sicoobito
-          POSTGRES_DB: sicoobito_test
+          POSTGRES_USER: novaai_studio
+          POSTGRES_PASSWORD: novaai_studio
+          POSTGRES_DB: novaai_studio_test
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U sicoobito -d sicoobito_test"
+          --health-cmd "pg_isready -U novaai_studio -d novaai_studio_test"
           --health-interval 5s
           --health-timeout 3s
           --health-retries 20
     env:
-      DATABASE_URL: postgresql+asyncpg://sicoobito:sicoobito@localhost:5432/sicoobito_test
-      DATABASE_URL_TEST: postgresql+asyncpg://sicoobito:sicoobito@localhost:5432/sicoobito_test
+      DATABASE_URL: postgresql+asyncpg://novaai_studio:novaai_studio@localhost:5432/novaai_studio_test
+      DATABASE_URL_TEST: postgresql+asyncpg://novaai_studio:novaai_studio@localhost:5432/novaai_studio_test
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v3

@@ -1,7 +1,7 @@
-from sicoobito.agent.graph import build_graph
-from sicoobito.agent.runner import AgentRunner, AgentSession
-from sicoobito.agent.state import AgentMode, AgentState, PendingApproval
-from sicoobito.agent.tools import RiskClass, ToolContext, ToolResult, registry
+from novaai_studio.agent.graph import build_graph
+from novaai_studio.agent.runner import AgentRunner, AgentSession
+from novaai_studio.agent.state import AgentMode, AgentState, PendingApproval
+from novaai_studio.agent.tools import RiskClass, ToolContext, ToolResult, registry
 
 __all__ = [
     "AgentMode",

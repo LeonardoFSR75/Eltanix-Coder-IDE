@@ -6,8 +6,8 @@
  * cookie de resposta).
  */
 
-const BASE_URL = process.env.SICOOBITO_API_URL ?? "http://localhost:8000";
-const COOKIE_NAME = "sicoobito_session";
+const BASE_URL = process.env.NOVAAI_STUDIO_API_URL ?? "http://localhost:8000";
+const COOKIE_NAME = "novaai_studio_session";
 
 function cookieAttrs(expires?: string): string {
   const parts = ["Path=/", "HttpOnly", "SameSite=Lax"];

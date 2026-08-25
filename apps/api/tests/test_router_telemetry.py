@@ -15,8 +15,8 @@ from contextlib import asynccontextmanager
 
 from sqlalchemy import select
 
-from sicoobito.db.models import RequestLog
-from sicoobito.router.telemetry import TelemetryEntry, record
+from novaai_studio.db.models import RequestLog
+from novaai_studio.router.telemetry import TelemetryEntry, record
 
 
 def _session_id() -> str:
@@ -28,7 +28,7 @@ async def test_record_persists_session_id(pg_session, monkeypatch):
     async def fake_session_scope():
         yield pg_session
 
-    monkeypatch.setattr("sicoobito.router.telemetry.session_scope", fake_session_scope)
+    monkeypatch.setattr("novaai_studio.router.telemetry.session_scope", fake_session_scope)
 
     sid = _session_id()
     await record(
@@ -52,7 +52,7 @@ async def test_record_without_session_id_leaves_it_null(pg_session, monkeypatch)
     async def fake_session_scope():
         yield pg_session
 
-    monkeypatch.setattr("sicoobito.router.telemetry.session_scope", fake_session_scope)
+    monkeypatch.setattr("novaai_studio.router.telemetry.session_scope", fake_session_scope)
 
     marcador = f"unit-test-{uuid.uuid4().hex[:8]}"
     await record(TelemetryEntry(requested_model=marcador, source="unit-test"))

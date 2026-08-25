@@ -1,6 +1,6 @@
 <script lang="ts">
   let {
-    project = "sicoobito-code",
+    project = "novaai-studio-code",
     projects = [],
     profile = "auto",
     showSidebar = true,
@@ -43,7 +43,7 @@
 <header class="top-menu-bar">
   <div class="brand-section">
     <span class="logo">⚡</span>
-    <span class="app-name">SicoobitoCode <span class="lite-badge">Lite IDE</span></span>
+    <span class="app-name">NovaAI Studio <span class="lite-badge">Lite IDE</span></span>
   </div>
 
   <div class="controls-section">
@@ -59,7 +59,7 @@
             <option value={proj.slug}>{proj.name}</option>
           {/each}
           {#if !projects.length}
-            <option value="sicoobito-code">sicoobito-code</option>
+            <option value="novaai-studio-code">novaai-studio-code</option>
           {/if}
         </select>
       </label>

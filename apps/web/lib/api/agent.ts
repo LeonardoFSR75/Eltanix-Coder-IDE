@@ -77,6 +77,22 @@ export async function listSlashCommands(): Promise<SlashCommandInfo[]> {
   return commands;
 }
 
+/** Sessões-raiz (sem pai) que têm pelo menos um filho — o único subconjunto
+ * que vale a pena consultar via `getAgentGraph` (que já retorna a raiz +
+ * todos os descendentes recursivamente): consultar um nó intermediário
+ * também, além da sua raiz, é uma chamada redundante que devolve uma árvore
+ * já coberta pela consulta da raiz. `AgentDock.tsx` (polling de aprovações
+ * pendentes) e `AgentManager.tsx` (status ao vivo no histórico) usam o
+ * mesmo critério para não divergir sobre o que conta como "raiz com
+ * filhos". */
+export function rootsWithChildren<
+  T extends { session_id: string; parent_session_id: string | null },
+>(records: T[]): T[] {
+  return records.filter(
+    (r) => !r.parent_session_id && records.some((f) => f.parent_session_id === r.session_id),
+  );
+}
+
 /** Árvore de agentes a partir de `sessionId` (ele + todos os descendentes),
  * com status ao vivo do `AgentCoordinator` — inclusive `waiting_approval`
  * para um filho headless, que a lista de sessões sozinha não revela. */

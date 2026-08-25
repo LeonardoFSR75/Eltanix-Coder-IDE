@@ -58,7 +58,7 @@ function EditorSplash({ project }: { project: string | null }) {
           </svg>
         </div>
         <p className="editor-splash-title">
-          {project ? project : "SicoobitoCode IDE"}
+          {project ? project : "NovaAI Studio IDE"}
         </p>
         <p className="editor-splash-sub">
           Abra um arquivo pelo Explorer ou use os atalhos abaixo
@@ -138,12 +138,12 @@ function Shell() {
         // AGENTE (`browser_action`), tipicamente contra um servidor no
         // sandbox cuja porta nunca é publicada no host — um iframe direto
         // (`browser:`) falharia sempre; o modo Agente resolve via o
-        // serviço de navegador (`sicoobito-<sessionId>:<porta>`).
+        // serviço de navegador (`novaai-studio-<sessionId>:<porta>`).
         ide.openFile(`browser-agent:${url}`);
       }
     };
-    window.addEventListener("sicoobito:browser:open", handleBrowserOpen);
-    return () => window.removeEventListener("sicoobito:browser:open", handleBrowserOpen);
+    window.addEventListener("novaai_studio:browser:open", handleBrowserOpen);
+    return () => window.removeEventListener("novaai_studio:browser:open", handleBrowserOpen);
   }, [sessionId, ide]);
 
   const handleCreateProject = () => {

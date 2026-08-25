@@ -13,6 +13,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { PanelState } from "@/components/ide/PanelState";
 import { listAgentTools, type AgentToolInfo as ToolInfo } from "@/lib/api/agent";
 import { listSkills, toggleSkill, type SkillRecord } from "@/lib/api/skills";
 import { listMcpServers, type MCPServerRecord } from "@/lib/api/mcp";
@@ -70,7 +71,7 @@ const CATEGORIAS: { id: CategoriaId; label: string; enabled: boolean }[] = [
   { id: "tools", label: "Ferramentas", enabled: true },
 ];
 
-const INSTRUCTIONS_PATH = ".sicoobito/instructions.md";
+const INSTRUCTIONS_PATH = ".novaai_studio/instructions.md";
 
 export function CustomizationsPopover({
   anchorRef,
@@ -455,12 +456,17 @@ export function CustomizationsPopover({
 
         {categoria === "skills" && (
           <div className="customizations-list">
-            {skillsErro && <div className="panel-error">{skillsErro}</div>}
-            {!skills && !skillsErro && <div className="tree-hint">carregando…</div>}
+            {skillsErro && <PanelState kind="error" message={skillsErro} />}
+            {!skills && !skillsErro && <PanelState kind="loading" message="carregando…" />}
             {skills && skills.length === 0 && !skillsErro && (
-              <div className="tree-hint">
-                Nenhuma habilidade cadastrada ainda. <Link href="/skills">Criar em /skills</Link>.
-              </div>
+              <PanelState
+                kind="empty"
+                message={
+                  <>
+                    Nenhuma habilidade cadastrada ainda. <Link href="/skills">Criar em /skills</Link>.
+                  </>
+                }
+              />
             )}
             {(skills ?? []).map((s) => (
               <div key={s.id} className="customizations-item">
@@ -492,21 +498,21 @@ export function CustomizationsPopover({
 
         {categoria === "instructions" && (
           <div className="customizations-list">
-            {!project && <div className="tree-hint">Selecione um projeto para editar as instruções.</div>}
+            {!project && <PanelState kind="empty" message="Selecione um projeto para editar as instruções." />}
             {project && (
               <>
                 <p className="customizations-item-desc" style={{ marginBottom: 8 }}>
                   Texto livre, só para este projeto — concatenado ao system prompt do agente em toda
                   sessão nova. Guardado em <code>{INSTRUCTIONS_PATH}</code>.
                 </p>
-                {instructionsErro && <div className="panel-error">{instructionsErro}</div>}
+                {instructionsErro && <PanelState kind="error" message={instructionsErro} />}
                 {instructionsMsg && (
                   <div className="tree-hint ok-hint" style={{ color: "var(--accent-emerald)" }}>
                     {instructionsMsg}
                   </div>
                 )}
                 {instructionsLoadedFor !== project && !instructionsErro && (
-                  <div className="tree-hint">carregando…</div>
+                  <PanelState kind="loading" message="carregando…" />
                 )}
                 {instructionsLoadedFor === project && (
                   <>
@@ -545,30 +551,31 @@ export function CustomizationsPopover({
         {categoria === "context_rules" && (
           <div className="customizations-list">
             {!project && (
-              <div className="tree-hint">Selecione um projeto para configurar regras de contexto.</div>
+              <PanelState kind="empty" message="Selecione um projeto para configurar regras de contexto." />
             )}
             {project && (
               <>
                 <p className="customizations-item-desc" style={{ marginBottom: 8 }}>
                   Instruções extras injetadas no agente só quando o arquivo/pasta em foco da
                   sessão bate no glob (estilo <code>.cursor/rules</code>). Avaliado uma vez no
-                  início da sessão. Guardado em <code>.sicoobito/context_rules.yaml</code>.
+                  início da sessão. Guardado em <code>.novaai_studio/context_rules.yaml</code>.
                 </p>
-                {contextRulesErro && <div className="panel-error">{contextRulesErro}</div>}
+                {contextRulesErro && <PanelState kind="error" message={contextRulesErro} />}
                 {contextRulesMsg && (
                   <div className="tree-hint ok-hint" style={{ color: "var(--accent-emerald)" }}>
                     {contextRulesMsg}
                   </div>
                 )}
                 {contextRulesLoadedFor !== project && !contextRulesErro && (
-                  <div className="tree-hint">carregando…</div>
+                  <PanelState kind="loading" message="carregando…" />
                 )}
                 {contextRulesLoadedFor === project && contextRules && (
                   <>
                     {contextRules.rules.length === 0 && (
-                      <div className="tree-hint">
-                        Nenhuma regra ainda — nenhuma instrução condicional é injetada.
-                      </div>
+                      <PanelState
+                        kind="empty"
+                        message="Nenhuma regra ainda — nenhuma instrução condicional é injetada."
+                      />
                     )}
 
                     {contextRules.rules.map((rule, i) => (
@@ -644,11 +651,11 @@ export function CustomizationsPopover({
               Selecionar um modo customizado troca <code>mode</code> para o id dele — funciona
               igual a escolher Agent/Ask/Plan.
             </p>
-            {customModesErro && <div className="panel-error">{customModesErro}</div>}
-            {modoErro && <div className="panel-error">{modoErro}</div>}
-            {!customModes && !customModesErro && <div className="tree-hint">carregando…</div>}
+            {customModesErro && <PanelState kind="error" message={customModesErro} />}
+            {modoErro && <PanelState kind="error" message={modoErro} />}
+            {!customModes && !customModesErro && <PanelState kind="loading" message="carregando…" />}
             {customModes && customModes.length === 0 && !modoForm && (
-              <div className="tree-hint">Nenhum modo customizado ainda.</div>
+              <PanelState kind="empty" message="Nenhum modo customizado ainda." />
             )}
 
             {(customModes ?? []).map((m) => (
@@ -742,8 +749,8 @@ export function CustomizationsPopover({
                 <div className="customizations-item-desc" style={{ marginTop: 8, marginBottom: 4 }}>
                   Ferramentas permitidas
                 </div>
-                {toolsErro && <div className="panel-error">{toolsErro}</div>}
-                {!tools && !toolsErro && <div className="tree-hint">carregando ferramentas…</div>}
+                {toolsErro && <PanelState kind="error" message={toolsErro} />}
+                {!tools && !toolsErro && <PanelState kind="loading" message="carregando ferramentas…" />}
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
                   {(tools ?? []).map((t) => (
                     <label
@@ -794,23 +801,23 @@ export function CustomizationsPopover({
         {categoria === "approval" && (
           <div className="customizations-list">
             {!project && (
-              <div className="tree-hint">Selecione um projeto para configurar a auto-aprovação.</div>
+              <PanelState kind="empty" message="Selecione um projeto para configurar a auto-aprovação." />
             )}
             {project && (
               <>
                 <p className="customizations-item-desc" style={{ marginBottom: 8 }}>
                   Regras opt-in que dispensam a pausa de aprovação para ações WRITE/EXEC — restritas ao
                   que descrevem explicitamente, qualquer ambiguidade continua pausando como sempre.
-                  Guardado em <code>.sicoobito/approval_policy.yaml</code>.
+                  Guardado em <code>.novaai_studio/approval_policy.yaml</code>.
                 </p>
-                {approvalErro && <div className="panel-error">{approvalErro}</div>}
+                {approvalErro && <PanelState kind="error" message={approvalErro} />}
                 {approvalMsg && (
                   <div className="tree-hint ok-hint" style={{ color: "var(--accent-emerald)" }}>
                     {approvalMsg}
                   </div>
                 )}
                 {approvalLoadedFor !== project && !approvalErro && (
-                  <div className="tree-hint">carregando…</div>
+                  <PanelState kind="loading" message="carregando…" />
                 )}
                 {approvalLoadedFor === project && approvalPolicy && (
                   <>
@@ -838,9 +845,10 @@ export function CustomizationsPopover({
                     </label>
 
                     {approvalPolicy.rules.length === 0 && (
-                      <div className="tree-hint">
-                        Nenhuma regra ainda — toda ação WRITE/EXEC continua pausando para aprovação.
-                      </div>
+                      <PanelState
+                        kind="empty"
+                        message="Nenhuma regra ainda — toda ação WRITE/EXEC continua pausando para aprovação."
+                      />
                     )}
 
                     {approvalPolicy.rules.map((rule, i) => (
@@ -986,12 +994,17 @@ export function CustomizationsPopover({
 
         {categoria === "mcp" && (
           <div className="customizations-list">
-            {mcpErro && <div className="panel-error">{mcpErro}</div>}
-            {!mcpServers && !mcpErro && <div className="tree-hint">carregando…</div>}
+            {mcpErro && <PanelState kind="error" message={mcpErro} />}
+            {!mcpServers && !mcpErro && <PanelState kind="loading" message="carregando…" />}
             {mcpServers && mcpServers.length === 0 && !mcpErro && (
-              <div className="tree-hint">
-                Nenhum servidor MCP cadastrado ainda. <Link href="/mcp">Conectar em /mcp</Link>.
-              </div>
+              <PanelState
+                kind="empty"
+                message={
+                  <>
+                    Nenhum servidor MCP cadastrado ainda. <Link href="/mcp">Conectar em /mcp</Link>.
+                  </>
+                }
+              />
             )}
             {(mcpServers ?? []).map((s) => (
               <div key={s.name} className="customizations-item">
@@ -1017,8 +1030,8 @@ export function CustomizationsPopover({
 
         {categoria === "tools" && (
           <div className="customizations-list">
-            {toolsErro && <div className="panel-error">{toolsErro}</div>}
-            {!tools && !toolsErro && <div className="tree-hint">carregando…</div>}
+            {toolsErro && <PanelState kind="error" message={toolsErro} />}
+            {!tools && !toolsErro && <PanelState kind="loading" message="carregando…" />}
             {(tools ?? []).map((t) => (
               <div key={t.name} className="customizations-item">
                 <div className="customizations-item-title">

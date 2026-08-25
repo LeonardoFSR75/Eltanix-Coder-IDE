@@ -14,7 +14,7 @@ import { FileIcon } from "@/components/ide/FileIcons";
 
 // Payload usado tanto para reordenar dentro do grupo quanto para o
 // drag-to-split entre grupos (EditorGroupView lê o mesmo formato).
-export const TAB_DRAG_MIME = "application/x-sicoobito-tab";
+export const TAB_DRAG_MIME = "application/x-novaai-studio-tab";
 
 export function TabStrip({ groupId }: { groupId: string }) {
   const { groups, setActive, closeTab, pinTab, reorderTabs } = useIde();

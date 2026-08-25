@@ -2,7 +2,7 @@
 
 ## Contexto
 
-A plataforma SicoobitoCode oferecia inicialmente uma lista estática de extensões de linguagens (LSP) no frontend, sem integração em tempo real com repositórios públicos, sem gestão centralizada de ciclo de vida e sem cobrir todas as etapas do fluxo de engenharia de software contemporâneo (Design System, Scraping com Firecrawl, pgvector/RAG, SAST/Segurança, Testes visuais E2E e Segundo Cérebro com Graphify).
+A plataforma NovaAI Studio oferecia inicialmente uma lista estática de extensões de linguagens (LSP) no frontend, sem integração em tempo real com repositórios públicos, sem gestão centralizada de ciclo de vida e sem cobrir todas as etapas do fluxo de engenharia de software contemporâneo (Design System, Scraping com Firecrawl, pgvector/RAG, SAST/Segurança, Testes visuais E2E e Segundo Cérebro com Graphify).
 
 Adicionalmente, os desenvolvedores e os próprios agentes de IA necessitavam de ferramentas sempre atualizadas com as versões mais recentes distribuídas nos repositórios oficiais do ecossistema VS Code / Open VSX.
 

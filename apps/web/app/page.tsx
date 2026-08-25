@@ -1,8 +1,8 @@
 import ProjectsPage from "./projects/page";
 
 export const metadata = {
-  title: "Central de Projetos | SicoobitoCode",
-  description: "Cadastre e gerencie o ecossistema unificado de projetos no SicoobitoCode.",
+  title: "Central de Projetos | NovaAI Studio",
+  description: "Cadastre e gerencie o ecossistema unificado de projetos no NovaAI Studio.",
 };
 
 export default function HomePage() {

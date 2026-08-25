@@ -1,3 +1,3 @@
-from sicoobito.storage.blob import BlobStore
+from novaai_studio.storage.blob import BlobStore
 
 __all__ = ["BlobStore"]

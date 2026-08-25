@@ -7,27 +7,27 @@ from __future__ import annotations
 
 import pytest
 
-from sicoobito.agent.coordinator import AgentCoordinator
-from sicoobito.agent.tools import RiskClass, ToolContext, registry
-from sicoobito.agent.tools.agents_graph import (
+from novaai_studio.agent.coordinator import AgentCoordinator
+from novaai_studio.agent.tools import RiskClass, ToolContext, registry
+from novaai_studio.agent.tools.agents_graph import (
     agent_finish as _agent_finish_tool,
 )
-from sicoobito.agent.tools.agents_graph import (
+from novaai_studio.agent.tools.agents_graph import (
     send_message_to_agent as _send_message_tool,
 )
-from sicoobito.agent.tools.agents_graph import (
+from novaai_studio.agent.tools.agents_graph import (
     spawn_agent as _spawn_agent_tool,
 )
-from sicoobito.agent.tools.agents_graph import (
+from novaai_studio.agent.tools.agents_graph import (
     stop_agent as _stop_agent_tool,
 )
-from sicoobito.agent.tools.agents_graph import (
+from novaai_studio.agent.tools.agents_graph import (
     view_agent_graph as _view_agent_graph_tool,
 )
-from sicoobito.agent.tools.agents_graph import (
+from novaai_studio.agent.tools.agents_graph import (
     wait_for_agents as _wait_for_agents_tool,
 )
-from sicoobito.workspace.fs import WorkspaceFS
+from novaai_studio.workspace.fs import WorkspaceFS
 
 spawn_agent = _spawn_agent_tool.handler
 view_agent_graph = _view_agent_graph_tool.handler

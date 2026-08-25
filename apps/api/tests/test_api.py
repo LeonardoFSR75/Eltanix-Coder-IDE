@@ -11,12 +11,12 @@ import os
 import pytest
 from fastapi.testclient import TestClient
 
-os.environ["SICOOBITO_API_KEY"] = "chave-de-teste"
+os.environ["NOVAAI_STUDIO_API_KEY"] = "chave-de-teste"
 # Aponta para portas mortas de propósito: o startup precisa sobreviver a isso.
 os.environ["REDIS_URL"] = "redis://localhost:65533/0"
 
-from sicoobito.config import get_settings
-from sicoobito.main import create_app
+from novaai_studio.config import get_settings
+from novaai_studio.main import create_app
 
 
 @pytest.fixture(scope="module")
@@ -75,7 +75,7 @@ def test_providers_catalog_exposes_availability_reasons(client):
 
 
 def test_persist_default_profile_replaces_only_target_line(tmp_path):
-    from sicoobito.api.routes.health import _persist_default_profile
+    from novaai_studio.api.routes.health import _persist_default_profile
 
     routes_file = tmp_path / "routes.yaml"
     routes_file.write_text(
@@ -98,7 +98,7 @@ def test_persist_default_profile_replaces_only_target_line(tmp_path):
 
 
 def test_persist_default_profile_missing_key_raises(tmp_path):
-    from sicoobito.api.routes.health import _persist_default_profile
+    from novaai_studio.api.routes.health import _persist_default_profile
 
     routes_file = tmp_path / "routes.yaml"
     routes_file.write_text("profiles:\n  auto:\n    strategy: score\n", encoding="utf-8")
@@ -112,14 +112,14 @@ def test_set_default_profile_updates_memory_and_disk(client, tmp_path):
     persistência é redirecionada para uma cópia em tmp_path via override de
     `get_settings`, e o catálogo em memória é restaurado no final para não
     vazar estado entre testes."""
-    from sicoobito.config import Settings, get_settings
+    from novaai_studio.config import Settings, get_settings
 
     engine = client.app.state.engine
     original_default = engine.catalog.default_profile
     routes_copy = tmp_path / "routes.yaml"
     routes_copy.write_text(get_settings().routes_file.read_text(encoding="utf-8"), encoding="utf-8")
 
-    fake_settings = Settings(SICOOBITO_CONFIG_DIR=tmp_path)
+    fake_settings = Settings(NOVAAI_STUDIO_CONFIG_DIR=tmp_path)
     client.app.dependency_overrides[get_settings] = lambda: fake_settings
     try:
         response = client.post(
@@ -148,7 +148,7 @@ def test_set_default_profile_rejects_unknown_profile(client):
 
 
 def _routes_copy(tmp_path):
-    from sicoobito.config import get_settings
+    from novaai_studio.config import get_settings
 
     routes_file = tmp_path / "routes.yaml"
     routes_file.write_text(get_settings().routes_file.read_text(encoding="utf-8"), encoding="utf-8")
@@ -158,7 +158,7 @@ def _routes_copy(tmp_path):
 def test_routes_editor_upsert_new_profile_preserves_comments(tmp_path):
     """A garantia real deste módulo: um perfil novo não pode deslocar o
     comentário de rodapé do arquivo para dentro do bloco `profiles`."""
-    from sicoobito.router import routes_editor
+    from novaai_studio.router import routes_editor
 
     routes_file = _routes_copy(tmp_path)
 
@@ -187,7 +187,7 @@ def test_routes_editor_upsert_new_profile_preserves_comments(tmp_path):
 
 
 def test_routes_editor_upsert_existing_profile_replaces_in_place(tmp_path):
-    from sicoobito.router import routes_editor
+    from novaai_studio.router import routes_editor
 
     routes_file = _routes_copy(tmp_path)
 
@@ -208,7 +208,7 @@ def test_routes_editor_upsert_existing_profile_replaces_in_place(tmp_path):
 
 
 def test_routes_editor_delete_profile(tmp_path):
-    from sicoobito.router import routes_editor
+    from novaai_studio.router import routes_editor
 
     routes_file = _routes_copy(tmp_path)
 
@@ -222,11 +222,11 @@ def test_routes_editor_delete_profile(tmp_path):
 
 
 def test_upsert_profile_endpoint_creates_and_persists(client, tmp_path):
-    from sicoobito.config import Settings, get_settings
+    from novaai_studio.config import Settings, get_settings
 
     engine = client.app.state.engine
     routes_copy = _routes_copy(tmp_path)
-    fake_settings = Settings(SICOOBITO_CONFIG_DIR=tmp_path)
+    fake_settings = Settings(NOVAAI_STUDIO_CONFIG_DIR=tmp_path)
     client.app.dependency_overrides[get_settings] = lambda: fake_settings
     try:
         response = client.put(
@@ -299,9 +299,9 @@ def test_delete_profile_rejects_unknown_profile(client):
 
 
 def test_delete_profile_endpoint_removes_custom_profile(client, tmp_path):
-    from sicoobito.config import Settings, get_settings
-    from sicoobito.router import routes_editor
-    from sicoobito.router.catalog import RouteProfile
+    from novaai_studio.config import Settings, get_settings
+    from novaai_studio.router import routes_editor
+    from novaai_studio.router.catalog import RouteProfile
 
     engine = client.app.state.engine
     engine.catalog.profiles["descartavel"] = RouteProfile(
@@ -314,7 +314,7 @@ def test_delete_profile_endpoint_removes_custom_profile(client, tmp_path):
     )
     routes_editor.dump(routes_copy, data)
 
-    fake_settings = Settings(SICOOBITO_CONFIG_DIR=tmp_path)
+    fake_settings = Settings(NOVAAI_STUDIO_CONFIG_DIR=tmp_path)
     client.app.dependency_overrides[get_settings] = lambda: fake_settings
     try:
         response = client.delete(
@@ -331,7 +331,7 @@ def test_delete_profile_endpoint_removes_custom_profile(client, tmp_path):
 
 
 def _providers_copy(tmp_path):
-    from sicoobito.config import get_settings
+    from novaai_studio.config import get_settings
 
     providers_file = tmp_path / "providers.yaml"
     providers_file.write_text(
@@ -343,7 +343,7 @@ def _providers_copy(tmp_path):
 def test_providers_editor_append_models_preserves_comments(tmp_path):
     """A garantia real deste módulo: acrescentar um modelo não pode apagar os
     comentários de seção nem as entradas já existentes."""
-    from sicoobito.router import providers_editor
+    from novaai_studio.router import providers_editor
 
     providers_file = _providers_copy(tmp_path)
 
@@ -378,7 +378,7 @@ def test_providers_editor_append_models_preserves_comments(tmp_path):
 
 
 def test_providers_editor_append_models_multiple_entries(tmp_path):
-    from sicoobito.router import providers_editor
+    from novaai_studio.router import providers_editor
 
     providers_file = _providers_copy(tmp_path)
 
@@ -408,8 +408,8 @@ def test_providers_editor_append_models_multiple_entries(tmp_path):
 
     # Reload via load_catalog real, para garantir que o resultado é YAML válido
     # e que o carregador enxerga as duas entradas novas junto das antigas.
-    from sicoobito.config import get_settings
-    from sicoobito.router.catalog import load_catalog
+    from novaai_studio.config import get_settings
+    from novaai_studio.router.catalog import load_catalog
 
     reloaded = load_catalog(providers_file, get_settings().routes_file)
     assert "databricks/novo-a" in reloaded.models
@@ -418,7 +418,7 @@ def test_providers_editor_append_models_multiple_entries(tmp_path):
 
 
 def test_env_editor_write_and_read_roundtrip(tmp_path):
-    from sicoobito.router import env_editor
+    from novaai_studio.router import env_editor
 
     env_file = tmp_path / ".env"
     env_file.write_text("# comentário\nEXISTENTE=valor-antigo\nOUTRA=fica\n", encoding="utf-8")
@@ -437,7 +437,7 @@ def test_env_editor_write_and_read_roundtrip(tmp_path):
 
 
 def test_env_editor_read_values_missing_file(tmp_path):
-    from sicoobito.router import env_editor
+    from novaai_studio.router import env_editor
 
     values = env_editor.read_values(tmp_path / "nao-existe.env", ["A", "B"])
     assert values == {"A": "", "B": ""}
@@ -445,21 +445,21 @@ def test_env_editor_read_values_missing_file(tmp_path):
 
 def test_env_editor_write_values_rejects_newline_injection(tmp_path):
     """Um valor com `\\n` inseriria uma linha nova no `.env` — na prática,
-    permitiria sobrescrever SICOOBITO_API_KEY ou qualquer outra variável."""
-    from sicoobito.router import env_editor
+    permitiria sobrescrever NOVAAI_STUDIO_API_KEY ou qualquer outra variável."""
+    from novaai_studio.router import env_editor
 
     env_file = tmp_path / ".env"
-    env_file.write_text("SICOOBITO_API_KEY=segredo\n", encoding="utf-8")
+    env_file.write_text("NOVAAI_STUDIO_API_KEY=segredo\n", encoding="utf-8")
 
     with pytest.raises(ValueError):
         env_editor.write_values(
-            env_file, {"OLLAMA_BASE_URL": "abc\nSICOOBITO_API_KEY=comprometido"}
+            env_file, {"OLLAMA_BASE_URL": "abc\nNOVAAI_STUDIO_API_KEY=comprometido"}
         )
     with pytest.raises(ValueError):
         env_editor.write_values(env_file, {"OLLAMA_BASE_URL": "abc\rcomprometido"})
 
     # Nada foi escrito: a chave original continua intacta.
-    assert env_file.read_text(encoding="utf-8") == "SICOOBITO_API_KEY=segredo\n"
+    assert env_file.read_text(encoding="utf-8") == "NOVAAI_STUDIO_API_KEY=segredo\n"
 
 
 def test_get_credentials_never_exposes_secret_values(client):
@@ -486,7 +486,7 @@ def test_get_credentials_never_exposes_secret_values(client):
 def test_update_credentials_applies_immediately_and_persists(client, tmp_path):
     """A gravação é redirecionada para um `.env` em tmp_path via override de
     `get_settings` — sem isso o teste escreveria no `.env` real do projeto."""
-    from sicoobito.config import Settings, get_settings
+    from novaai_studio.config import Settings, get_settings
 
     engine = client.app.state.engine
     original_ollama = engine.settings.ollama_base_url
@@ -495,7 +495,7 @@ def test_update_credentials_applies_immediately_and_persists(client, tmp_path):
     env_copy = tmp_path / ".env"
     env_copy.write_text("SOME_OTHER_VAR=mantido\n", encoding="utf-8")
 
-    fake_settings = Settings(SICOOBITO_ENV_FILE=env_copy)
+    fake_settings = Settings(NOVAAI_STUDIO_ENV_FILE=env_copy)
     client.app.dependency_overrides[get_settings] = lambda: fake_settings
     try:
         response = client.put(
@@ -527,13 +527,13 @@ def test_update_credentials_applies_immediately_and_persists(client, tmp_path):
 
 
 def test_update_credentials_partial_update_preserves_other_fields(client, tmp_path):
-    from sicoobito.config import Settings, get_settings
+    from novaai_studio.config import Settings, get_settings
 
     engine = client.app.state.engine
     original_github = engine.settings.github_token
     original_anthropic = engine.settings.anthropic_api_key
 
-    fake_settings = Settings(SICOOBITO_ENV_FILE=tmp_path / ".env")
+    fake_settings = Settings(NOVAAI_STUDIO_ENV_FILE=tmp_path / ".env")
     client.app.dependency_overrides[get_settings] = lambda: fake_settings
     try:
         client.put(
@@ -564,7 +564,7 @@ def test_update_credentials_rejects_newline_in_value(client):
     response = client.put(
         "/api/providers/credentials",
         headers={"Authorization": "Bearer chave-de-teste"},
-        json={"openai_api_key": "sk-teste\nSICOOBITO_API_KEY=comprometido"},
+        json={"openai_api_key": "sk-teste\nNOVAAI_STUDIO_API_KEY=comprometido"},
     )
     assert response.status_code == 422
 
@@ -603,7 +603,7 @@ def test_discover_missing_credentials_returns_error_field_not_exception(client):
 def test_discover_splits_new_from_already_cataloged(client):
     """Um candidato cujo `model` bruto já existe no catálogo (ainda que sob
     outro id) não pode aparecer como novo — é a garantia central do merge."""
-    from sicoobito.router.adapters.base import DiscoveredModel
+    from novaai_studio.router.adapters.base import DiscoveredModel
 
     engine = client.app.state.engine
     original = engine.adapters["ollama"].discover_models
@@ -644,7 +644,7 @@ def test_discover_splits_new_from_already_cataloged(client):
 
 
 def test_discover_propagates_discovery_error_as_502(client):
-    from sicoobito.router.adapters.base import DiscoveryError
+    from novaai_studio.router.adapters.base import DiscoveryError
 
     engine = client.app.state.engine
     original = engine.adapters["ollama"].discover_models
@@ -718,12 +718,12 @@ def test_confirm_discovery_rejects_unknown_capability(client):
 def test_confirm_discovery_adds_model_and_persists(client, tmp_path):
     """Ponta a ponta: confirma um candidato novo, e ele aparece em memória
     (catálogo do engine) e em disco (cópia de providers.yaml em tmp_path)."""
-    from sicoobito.config import Settings, get_settings
+    from novaai_studio.config import Settings, get_settings
 
     engine = client.app.state.engine
     new_id = "ollama/teste-discovery:1b"
     providers_copy = _providers_copy(tmp_path)
-    fake_settings = Settings(SICOOBITO_CONFIG_DIR=tmp_path)
+    fake_settings = Settings(NOVAAI_STUDIO_CONFIG_DIR=tmp_path)
     client.app.dependency_overrides[get_settings] = lambda: fake_settings
     try:
         response = client.post(
@@ -760,7 +760,7 @@ def test_confirm_discovery_adds_model_and_persists(client, tmp_path):
 def test_chat_without_any_reachable_provider_returns_503_not_500(client, monkeypatch):
     # Sem provedores elegíveis no ar, nenhum candidato é retornado.
     # O cliente precisa ver "sem provedor" (503), não um stack trace (500).
-    from sicoobito.router.policy import RoutingDecision
+    from novaai_studio.router.policy import RoutingDecision
 
     async def _mock_select(*args, **kwargs):
         return RoutingDecision(profile=None, strategy="none", candidates=[], excluded=[])

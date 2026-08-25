@@ -9,7 +9,7 @@ from __future__ import annotations
 import time
 from types import SimpleNamespace
 
-from sicoobito.api.routes.browser import (
+from novaai_studio.api.routes.browser import (
     PANEL_CLIENT_IDLE_TTL_SECONDS,
     purge_idle_panel_clients,
 )

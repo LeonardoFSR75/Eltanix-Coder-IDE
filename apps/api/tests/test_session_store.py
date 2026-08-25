@@ -12,8 +12,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
-from sicoobito.agent import session_store
-from sicoobito.agent.runner import AgentRunner
+from novaai_studio.agent import session_store
+from novaai_studio.agent.runner import AgentRunner
 
 
 def _session_id() -> str:
@@ -144,8 +144,8 @@ async def test_reconnect_session_handles_closed_records(monkeypatch):
     async def fake_session_scope():
         yield object()
 
-    monkeypatch.setattr("sicoobito.agent.runner.session_scope", fake_session_scope)
-    monkeypatch.setattr("sicoobito.workspace.projects.resolve", lambda root, project: Path("/tmp/projects/demo"))
+    monkeypatch.setattr("novaai_studio.agent.runner.session_scope", fake_session_scope)
+    monkeypatch.setattr("novaai_studio.workspace.projects.resolve", lambda root, project: Path("/tmp/projects/demo"))
     created = object()
 
     async def fake_create_session(**kwargs):

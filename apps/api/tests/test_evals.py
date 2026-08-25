@@ -1,10 +1,10 @@
 """Só a lógica de score (hit@k / MRR) — busca real precisa de Postgres+pgvector
-e fica fora do pytest padrão (ver `sicoobito-eval-rag` para a execução ponta-a-ponta)."""
+e fica fora do pytest padrão (ver `novaai-studio-eval-rag` para a execução ponta-a-ponta)."""
 
 from __future__ import annotations
 
-from sicoobito.evals.dataset import EvalCase
-from sicoobito.evals.runner import score_case
+from novaai_studio.evals.dataset import EvalCase
+from novaai_studio.evals.runner import score_case
 
 
 def _case(**kwargs) -> EvalCase:

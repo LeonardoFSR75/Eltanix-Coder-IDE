@@ -13,17 +13,17 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Request, status
 from pydantic import BaseModel, Field
 
-from sicoobito.api.deps import AuthDep
-from sicoobito.config import get_settings
-from sicoobito.logging_setup import get_logger
-from sicoobito.packages.commands import (
+from novaai_studio.api.deps import AuthDep
+from novaai_studio.config import get_settings
+from novaai_studio.logging_setup import get_logger
+from novaai_studio.packages.commands import (
     MissingBinaryError,
     build_ecosystem_command,
     list_python_packages,
     parse_installed_packages,
     run_dependency_audit,
 )
-from sicoobito.workspace.projects import resolve
+from novaai_studio.workspace.projects import resolve
 
 log = get_logger(__name__)
 

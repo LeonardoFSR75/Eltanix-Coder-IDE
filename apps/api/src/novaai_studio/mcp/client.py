@@ -30,8 +30,8 @@ from mcp import Client, StdioServerParameters
 from mcp.client.stdio import stdio_client
 from mcp.client.streamable_http import streamable_http_client
 
-from sicoobito.logging_setup import get_logger
-from sicoobito.mcp.config import MCPServerConfig
+from novaai_studio.logging_setup import get_logger
+from novaai_studio.mcp.config import MCPServerConfig
 
 log = get_logger(__name__)
 

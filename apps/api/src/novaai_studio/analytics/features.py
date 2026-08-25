@@ -6,7 +6,7 @@ from typing import Any
 
 import structlog
 
-from sicoobito.router import RouterEngine
+from novaai_studio.router import RouterEngine
 
 logger = structlog.get_logger(__name__)
 

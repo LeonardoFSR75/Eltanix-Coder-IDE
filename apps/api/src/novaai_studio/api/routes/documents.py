@@ -16,15 +16,15 @@ from typing import Any
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field
 
-from sicoobito.api.deps import AuthDep, SettingsDep
-from sicoobito.audit.service import AuditService
-from sicoobito.auth.rbac import require_role_by_slug
-from sicoobito.db.session import session_scope
-from sicoobito.documents import store
-from sicoobito.documents.service import DocumentService
-from sicoobito.logging_setup import get_logger
-from sicoobito.storage.blob import BlobStore
-from sicoobito.workspace.projects import ProjectError, ensure_project_slug_exists
+from novaai_studio.api.deps import AuthDep, SettingsDep
+from novaai_studio.audit.service import AuditService
+from novaai_studio.auth.rbac import require_role_by_slug
+from novaai_studio.db.session import session_scope
+from novaai_studio.documents import store
+from novaai_studio.documents.service import DocumentService
+from novaai_studio.logging_setup import get_logger
+from novaai_studio.storage.blob import BlobStore
+from novaai_studio.workspace.projects import ProjectError, ensure_project_slug_exists
 
 router = APIRouter(prefix="/api/documents", tags=["documents"], dependencies=[AuthDep])
 

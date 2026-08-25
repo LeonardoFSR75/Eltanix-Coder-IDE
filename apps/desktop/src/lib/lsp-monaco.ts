@@ -57,7 +57,7 @@ function documentoDe(model: Monaco.editor.ITextModel): DocumentoAtivo | null {
 }
 
 if (typeof window !== "undefined") {
-  (window as unknown as Record<string, unknown>).__sicoobitoLsp = () => ({
+  (window as unknown as Record<string, unknown>).__novaai_studioLsp = () => ({
     abertos: Array.from(documentos.values()).map((d) => ({
       path: d.path,
       pronto: d.connection.ready,
@@ -148,7 +148,7 @@ export function applyDiagnostics(
 
   monaco.editor.setModelMarkers(
     model,
-    "sicoobito-lsp",
+    "novaai-studio-lsp",
     itens.map((item) => ({
       ...paraRangeMonaco(item.range),
       message: item.message,
@@ -161,7 +161,7 @@ export function applyDiagnostics(
 
 export function clearDiagnostics(monaco: MonacoNs, model: Monaco.editor.ITextModel): void {
   if (!model || model.isDisposed()) return;
-  monaco.editor.setModelMarkers(model, "sicoobito-lsp", []);
+  monaco.editor.setModelMarkers(model, "novaai-studio-lsp", []);
 }
 
 // ── provedores ────────────────────────────────────────────────────────────

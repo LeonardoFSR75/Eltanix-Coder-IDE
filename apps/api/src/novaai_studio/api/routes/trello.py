@@ -1,5 +1,5 @@
 """Rotas para gestão do Quadro Trello/Kanban do projeto com persistência em
-.sicoobito/kanban.json."""
+.novaai_studio/kanban.json."""
 
 from __future__ import annotations
 
@@ -11,10 +11,10 @@ from typing import Any, Literal
 from fastapi import APIRouter, HTTPException, Request, status
 from pydantic import BaseModel, Field
 
-from sicoobito.api.deps import AuthDep
-from sicoobito.config import get_settings
-from sicoobito.logging_setup import get_logger
-from sicoobito.workspace.projects import resolve
+from novaai_studio.api.deps import AuthDep
+from novaai_studio.config import get_settings
+from novaai_studio.logging_setup import get_logger
+from novaai_studio.workspace.projects import resolve
 
 log = get_logger(__name__)
 
@@ -49,9 +49,9 @@ def _projects_root(request: Request) -> Path:
 
 
 def get_kanban_file(project_path: Path) -> Path:
-    sicoobito_dir = project_path / ".sicoobito"
-    sicoobito_dir.mkdir(parents=True, exist_ok=True)
-    return sicoobito_dir / "kanban.json"
+    novaai_studio_dir = project_path / ".novaai_studio"
+    novaai_studio_dir.mkdir(parents=True, exist_ok=True)
+    return novaai_studio_dir / "kanban.json"
 
 
 def load_kanban_cards(project_path: Path) -> list[dict[str, Any]]:

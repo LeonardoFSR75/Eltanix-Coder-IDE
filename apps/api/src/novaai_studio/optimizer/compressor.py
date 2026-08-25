@@ -22,8 +22,8 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any
 
-from sicoobito.logging_setup import get_logger
-from sicoobito.optimizer.tokens import count_text, estimate_prompt_tokens
+from novaai_studio.logging_setup import get_logger
+from novaai_studio.optimizer.tokens import count_text, estimate_prompt_tokens
 
 log = get_logger(__name__)
 

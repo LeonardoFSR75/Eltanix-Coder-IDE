@@ -17,9 +17,9 @@ from typing import Any, Literal, cast
 
 import httpx
 
-from sicoobito.config import Settings
-from sicoobito.logging_setup import get_logger
-from sicoobito.mcp.config import MCPServerConfig
+from novaai_studio.config import Settings
+from novaai_studio.logging_setup import get_logger
+from novaai_studio.mcp.config import MCPServerConfig
 
 log = get_logger(__name__)
 
@@ -144,7 +144,7 @@ class MCPScannerService:
             "run",
             "--rm",
             "--network",
-            "sicoobito_default",
+            "novaai_studio_default",
         ]
 
         # Injeta variáveis de ambiente configuradas no servidor

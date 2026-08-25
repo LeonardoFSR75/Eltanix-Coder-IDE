@@ -8,12 +8,12 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field
 
-from sicoobito.api.deps import AuthDep
-from sicoobito.audit.service import AuditService
-from sicoobito.auth.rbac import require_role_by_slug
-from sicoobito.db.session import session_scope
-from sicoobito.notes.service import NoteService
-from sicoobito.workspace.projects import ProjectError
+from novaai_studio.api.deps import AuthDep
+from novaai_studio.audit.service import AuditService
+from novaai_studio.auth.rbac import require_role_by_slug
+from novaai_studio.db.session import session_scope
+from novaai_studio.notes.service import NoteService
+from novaai_studio.workspace.projects import ProjectError
 
 router = APIRouter(prefix="/api/notes", tags=["notes"], dependencies=[AuthDep])
 

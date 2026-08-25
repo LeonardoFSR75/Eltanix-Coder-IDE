@@ -17,10 +17,10 @@ from types import SimpleNamespace
 import pytest
 from fastapi import HTTPException
 
-from sicoobito.api.deps import require_session
-from sicoobito.auth import store
-from sicoobito.auth.service import _hash_password, _hash_token, _verify_password
-from sicoobito.config import get_settings
+from novaai_studio.api.deps import require_session
+from novaai_studio.auth import store
+from novaai_studio.auth.service import _hash_password, _hash_token, _verify_password
+from novaai_studio.config import get_settings
 
 # ── Hashing (unitário, sem banco) ──────────────────────────────────────────
 
@@ -139,7 +139,7 @@ async def test_require_session_rejects_without_any_credential():
                 settings=settings,
                 authorization=None,
                 x_api_key=None,
-                sicoobito_session=None,
+                novaai_studio_session=None,
             )
         assert exc_info.value.status_code == 401
     finally:
@@ -154,7 +154,7 @@ async def test_require_session_accepts_the_service_api_key():
             settings=settings,
             authorization="Bearer chave-secreta",
             x_api_key=None,
-            sicoobito_session=None,
+            novaai_studio_session=None,
         )
     finally:
         settings.api_key = original
@@ -172,7 +172,7 @@ async def test_require_session_never_opens_up_just_because_no_api_key_is_set():
                 settings=settings,
                 authorization=None,
                 x_api_key=None,
-                sicoobito_session=None,
+                novaai_studio_session=None,
             )
         assert exc_info.value.status_code == 401
     finally:
@@ -188,7 +188,7 @@ async def test_require_session_accepts_a_valid_session_cookie():
             settings=settings,
             authorization=None,
             x_api_key=None,
-            sicoobito_session="token-valido",
+            novaai_studio_session="token-valido",
         )
     finally:
         settings.api_key = original
@@ -204,7 +204,7 @@ async def test_require_session_rejects_an_invalid_session_cookie():
                 settings=settings,
                 authorization=None,
                 x_api_key=None,
-                sicoobito_session="token-invalido",
+                novaai_studio_session="token-invalido",
             )
         assert exc_info.value.status_code == 401
     finally:
@@ -277,7 +277,7 @@ async def test_change_password_store(pg_session):
 
 
 async def test_rate_limiting_in_memory():
-    from sicoobito.auth.service import AuthService
+    from novaai_studio.auth.service import AuthService
 
     service = AuthService()
     ip = "192.168.1.100"

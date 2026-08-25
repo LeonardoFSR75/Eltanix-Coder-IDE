@@ -7,15 +7,15 @@ import time
 import uuid
 from typing import Any
 
-from sicoobito.config import Settings
-from sicoobito.db.models import Note
-from sicoobito.db.session import session_scope
-from sicoobito.documents.chunker import chunk_text
-from sicoobito.logging_setup import get_logger
-from sicoobito.notes import store
-from sicoobito.notes.store import NoteSearchHit
-from sicoobito.router.engine import RouterEngine
-from sicoobito.workspace.projects import ensure_project_slug_exists
+from novaai_studio.config import Settings
+from novaai_studio.db.models import Note
+from novaai_studio.db.session import session_scope
+from novaai_studio.documents.chunker import chunk_text
+from novaai_studio.logging_setup import get_logger
+from novaai_studio.notes import store
+from novaai_studio.notes.store import NoteSearchHit
+from novaai_studio.router.engine import RouterEngine
+from novaai_studio.workspace.projects import ensure_project_slug_exists
 
 log = get_logger(__name__)
 

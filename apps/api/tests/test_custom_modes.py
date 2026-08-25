@@ -12,12 +12,12 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from sicoobito.agent.graph import _tool_schemas
-from sicoobito.agent.prompts import build_task_prompt
-from sicoobito.agent.runner import AgentRunner
-from sicoobito.agent.state import BUILTIN_MODES
-from sicoobito.agent.tools.base import ToolContext
-from sicoobito.workspace.fs import WorkspaceFS
+from novaai_studio.agent.graph import _tool_schemas
+from novaai_studio.agent.prompts import build_task_prompt
+from novaai_studio.agent.runner import AgentRunner
+from novaai_studio.agent.state import BUILTIN_MODES
+from novaai_studio.agent.tools.base import ToolContext
+from novaai_studio.workspace.fs import WorkspaceFS
 
 
 def _make_runner(*, custom_modes) -> AgentRunner:

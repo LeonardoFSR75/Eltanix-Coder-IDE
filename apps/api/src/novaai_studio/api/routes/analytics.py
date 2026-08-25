@@ -2,15 +2,15 @@
 
 from __future__ import annotations
 
-from typing import Any
 import uuid
+from typing import Any
 
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
 
-from sicoobito.analytics.service import AnalyticsService
-from sicoobito.api.deps import AuthDep, EngineDep
-from sicoobito.db.session import session_scope
+from novaai_studio.analytics.service import AnalyticsService
+from novaai_studio.api.deps import AuthDep, EngineDep
+from novaai_studio.db.session import session_scope
 
 router = APIRouter(prefix="/api/analytics", tags=["analytics"], dependencies=[AuthDep])
 
@@ -18,9 +18,13 @@ router = APIRouter(prefix="/api/analytics", tags=["analytics"], dependencies=[Au
 class IngestSessionPayload(BaseModel):
     session_id: str = Field(..., description="ID da sessão de agente")
     user_prompt: str = Field(..., description="Prompt do usuário")
-    steps: list[dict[str, Any]] = Field(default_factory=list, description="Passos e ferramentas executadas")
+    steps: list[dict[str, Any]] = Field(
+        default_factory=list, description="Passos e ferramentas executadas"
+    )
     project_slug: str | None = Field(default=None, description="Slug do projeto")
-    status: str = Field(default="success", description="Status da sessão (success, failed, interrupted)")
+    status: str = Field(
+        default="success", description="Status da sessão (success, failed, interrupted)"
+    )
 
 
 @router.get("/dashboard")

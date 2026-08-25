@@ -16,10 +16,10 @@ from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from sicoobito.db.session import session_scope
-from sicoobito.logging_setup import get_logger
-from sicoobito.optimizer import semantic_cache_store
-from sicoobito.optimizer.cache import CachedResponse, ResponseCache
+from novaai_studio.db.session import session_scope
+from novaai_studio.logging_setup import get_logger
+from novaai_studio.optimizer import semantic_cache_store
+from novaai_studio.optimizer.cache import CachedResponse, ResponseCache
 
 log = get_logger(__name__)
 

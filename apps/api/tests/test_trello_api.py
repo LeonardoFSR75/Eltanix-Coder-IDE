@@ -4,15 +4,15 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-os.environ["SICOOBITO_API_KEY"] = "chave-de-teste"
+os.environ["NOVAAI_STUDIO_API_KEY"] = "chave-de-teste"
 
-from sicoobito.main import app
+from novaai_studio.main import app
 
 client = TestClient(app)
 
 
 def test_trello_api_crud(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.setattr("sicoobito.api.routes.trello._projects_root", lambda req: tmp_path)
+    monkeypatch.setattr("novaai_studio.api.routes.trello._projects_root", lambda req: tmp_path)
 
     project_dir = tmp_path / "test-proj"
     project_dir.mkdir()

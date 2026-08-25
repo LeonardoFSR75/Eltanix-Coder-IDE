@@ -81,7 +81,6 @@ class SandboxConcurrencyGate:
             "active": len(self._active),
             "max_concurrent": self._max,
             "waiting": [
-                {"session_id": w.session_id, "position": i + 1}
-                for i, w in enumerate(self._waiters)
+                {"session_id": w.session_id, "position": i + 1} for i, w in enumerate(self._waiters)
             ],
         }

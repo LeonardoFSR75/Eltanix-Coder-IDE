@@ -2,7 +2,7 @@
 
 ## Contexto
 
-O SicoobitoCode gerencia quatro fontes de conhecimento de projeto: código-fonte, documentos (PDFs/MDs), notas do Segundo Cérebro e metadados de repositório.
+O NovaAI Studio gerencia quatro fontes de conhecimento de projeto: código-fonte, documentos (PDFs/MDs), notas do Segundo Cérebro e metadados de repositório.
 
 Modelos RAG planos baseados unicamente em busca por similaridade vetorial (embeddings) ou busca por palavra-chave (full-text) ignoram as **relações estruturais e semânticas** inerentes a um repositório, como:
 - Relações sintáticas diretas (Wikilinks `[[Nota]]`, `#tags`, imports AST de Python e TypeScript/JavaScript).
@@ -11,7 +11,7 @@ Modelos RAG planos baseados unicamente em busca por similaridade vetorial (embed
 
 ## Decisão
 
-Adicionar um módulo dedicado de **Grafo de Conhecimento e Graph RAG (`sicoobito.graphify`)**, estruturado em 3 camadas de arestas e exposto via API (`/api/graphify/*`) e ferramenta do agente (`graph_search`).
+Adicionar um módulo dedicado de **Grafo de Conhecimento e Graph RAG (`novaai_studio.graphify`)**, estruturado em 3 camadas de arestas e exposto via API (`/api/graphify/*`) e ferramenta do agente (`graph_search`).
 
 ### Camadas de Arestas:
 1. **Camada 1 (Sintática - Explícita)**: Extração determinística de Wikilinks `[[Nota]]`, `#tags`, imports AST em Python e imports de módulos em TypeScript/JavaScript (`weight=1.0`).

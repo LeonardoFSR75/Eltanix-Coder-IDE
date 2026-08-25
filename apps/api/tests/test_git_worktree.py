@@ -9,8 +9,8 @@ from __future__ import annotations
 import pytest
 from git import Repo
 
-from sicoobito.workspace import git as git_ops
-from sicoobito.workspace.git import GitError
+from novaai_studio.workspace import git as git_ops
+from novaai_studio.workspace.git import GitError
 
 
 @pytest.fixture
@@ -61,7 +61,7 @@ def test_worktree_isolates_the_agent_from_your_tree(repo):
     worktree = git_ops.create_worktree(repo, "abc123")
 
     assert worktree.path.exists()
-    assert worktree.branch == "sicoobito/abc123"
+    assert worktree.branch == "novaai_studio/abc123"
     assert worktree.base_branch == "main"
     # A árvore principal continua no branch dela, com o trabalho intacto.
     assert git_ops.status(repo).branch == "main"
@@ -113,7 +113,7 @@ def test_remove_worktree_cleans_up(repo):
     git_ops.remove_worktree(repo, "descartavel", delete_branch=True)
 
     assert not worktree.path.exists()
-    assert "sicoobito/descartavel" not in {b.name for b in Repo(repo).branches}
+    assert "novaai_studio/descartavel" not in {b.name for b in Repo(repo).branches}
 
 
 def test_worktree_auto_initializes_commit_if_empty(tmp_path):

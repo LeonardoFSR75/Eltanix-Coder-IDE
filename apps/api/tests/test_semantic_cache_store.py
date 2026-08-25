@@ -11,8 +11,8 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime, timedelta
 
-from sicoobito.config import get_settings
-from sicoobito.optimizer import semantic_cache_store
+from novaai_studio.config import get_settings
+from novaai_studio.optimizer import semantic_cache_store
 
 _DIM = get_settings().embedding_dim
 

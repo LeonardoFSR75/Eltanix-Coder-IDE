@@ -17,14 +17,14 @@ from dataclasses import dataclass, field
 from functools import lru_cache
 from typing import Any
 
-from sicoobito.context.languages import (
+from novaai_studio.context.languages import (
     LINE_CHUNKED_LANGUAGES,
     LanguageRules,
     rules_for,
     supports_symbols,
 )
-from sicoobito.logging_setup import get_logger
-from sicoobito.optimizer.tokens import count_text
+from novaai_studio.logging_setup import get_logger
+from novaai_studio.optimizer.tokens import count_text
 
 log = get_logger(__name__)
 

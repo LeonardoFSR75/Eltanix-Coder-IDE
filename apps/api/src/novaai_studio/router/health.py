@@ -13,12 +13,12 @@ from dataclasses import dataclass, field
 
 from redis.asyncio import Redis
 
-from sicoobito.logging_setup import get_logger
-from sicoobito.router.catalog import Resilience
+from novaai_studio.logging_setup import get_logger
+from novaai_studio.router.catalog import Resilience
 
 log = get_logger(__name__)
 
-_PREFIX = "sicoobito:health"
+_PREFIX = "novaai_studio:health"
 _LATENCY_SAMPLES = 50
 
 

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from sicoobito.context.scanner import MAX_FILE_BYTES, read_text, scan
+from novaai_studio.context.scanner import MAX_FILE_BYTES, read_text, scan
 
 
 def _build_repo(tmp_path: Path) -> Path:

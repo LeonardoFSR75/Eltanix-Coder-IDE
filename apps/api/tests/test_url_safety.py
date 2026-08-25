@@ -3,12 +3,12 @@ que roda a mesma lista de hostnames contra os pontos de chamada de validação
 SSRF, garantindo que concordam entre si.
 
 Há 3 pontos de chamada no total, mas só 2 deles compartilham código de
-verdade — `sicoobito.security.url_safety` (item 1), consumido por
+verdade — `novaai_studio.security.url_safety` (item 1), consumido por
 `firecrawl/service.py::validate_target_url` e por
 `agent/tools/browser.py::is_agent_local_test_target`. O terceiro,
 `services/browser/app.py::validate_url`, mantém uma cópia sincronizada
 DELIBERADAMENTE não importada (aquele serviço roda isolado, sem o pacote
-`sicoobito` instalado — ver a docstring de `security/url_safety.py` e o
+`novaai_studio` instalado — ver a docstring de `security/url_safety.py` e o
 addendum do ADR 0007). Para comparar os dois mesmo assim, este arquivo carrega
 `services/browser/app.py` via `importlib.util.spec_from_file_location`
 (mesmo truque já usado por `test_security_pentest.py`), sem precisar
@@ -22,7 +22,7 @@ from pathlib import Path
 
 import pytest
 
-from sicoobito.security.url_safety import (
+from novaai_studio.security.url_safety import (
     is_agent_local_test_target,
     is_internal_hostname,
     validate_target_url,
@@ -60,7 +60,7 @@ HOSTS_SEMPRE_PERMITIDOS = ["exemplo.com", "docs.python.org"]
 # INTENCIONAL entre os dois módulos: `url_safety` os bloqueia (scraping
 # externo via firecrawl nunca deveria mirar loopback), mas
 # `services/browser/app.py::validate_url` os permite de propósito — são o
-# próprio gatilho da substituição por `sicoobito-<sid>`/`host.docker.internal`
+# próprio gatilho da substituição por `novaai-studio-<sid>`/`host.docker.internal`
 # (ver `_LOOPBACK_TRIGGERS` naquele arquivo). Verificado explicitamente aqui
 # em vez de ficar de fora da bateria, para o divergir continuar sendo uma
 # escolha visível, não um esquecimento.
@@ -115,11 +115,11 @@ def test_loopback_trigger_hosts_diverge_on_purpose_between_the_two_modules(hostn
 
 
 def test_sandbox_container_hostnames_are_internal_but_agent_local() -> None:
-    """`sicoobito-<session_id>` é Docker-interno (bloqueado como alvo de
+    """`novaai-studio-<session_id>` é Docker-interno (bloqueado como alvo de
     scraping externo) mas é exatamente o que a sessão de AGENTE precisa
     alcançar para testar o próprio sandbox — as duas coisas ao mesmo tempo,
     não uma contradição."""
-    hostname = "sicoobito-algum-id-de-sessao"
+    hostname = "novaai-studio-algum-id-de-sessao"
     assert is_internal_hostname(hostname) is True
     assert is_agent_local_test_target(hostname) is True
     with pytest.raises(ValueError):

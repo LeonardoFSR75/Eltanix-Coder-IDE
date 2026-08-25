@@ -13,11 +13,11 @@ from typing import Any
 import httpx
 import pytest
 
-from sicoobito.config import Settings
-from sicoobito.router.adapters.base import DiscoveryError
-from sicoobito.router.adapters.databricks import DatabricksAdapter
-from sicoobito.router.adapters.direct import AnthropicAdapter, GroqAdapter, OpenAIAdapter
-from sicoobito.router.adapters.ollama import OllamaAdapter
+from novaai_studio.config import Settings
+from novaai_studio.router.adapters.base import DiscoveryError
+from novaai_studio.router.adapters.databricks import DatabricksAdapter
+from novaai_studio.router.adapters.direct import AnthropicAdapter, GroqAdapter, OpenAIAdapter
+from novaai_studio.router.adapters.ollama import OllamaAdapter
 
 
 class _FakeResponse:

@@ -1,4 +1,4 @@
-name: sicoobito
+name: novaai_studio
 
 # Toda a plataforma sobe junto. Faixa de portas 5400–5499 para não disputar
 # 3000/8000/5432 com outros projetos — 5432 e 5489 já estavam ocupadas nesta
@@ -17,7 +17,7 @@ name: sicoobito
 # Todas as portas publicadas são vinculadas a 127.0.0.1: nenhum destes
 # serviços tem autenticação forte o suficiente para ficar alcançável pela
 # rede (o executor tem acesso ao docker.sock, e o `web` reencaminha
-# SICOOBITO_API_KEY automaticamente para quem alcançar a porta). Quem
+# NOVAAI_STUDIO_API_KEY automaticamente para quem alcançar a porta). Quem
 # precisar de acesso pela LAN deve trocar por um binding explícito e reforçar
 # a autenticação antes.
 #
@@ -40,22 +40,22 @@ services:
   postgres:
     image: pgvector/pgvector:pg17
     environment:
-      POSTGRES_USER: sicoobito
-      POSTGRES_PASSWORD: sicoobito
-      POSTGRES_DB: sicoobito
+      POSTGRES_USER: novaai_studio
+      POSTGRES_PASSWORD: novaai_studio
+      POSTGRES_DB: novaai_studio
     ports:
       - "127.0.0.1:5403:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U sicoobito -d sicoobito"]
+      test: ["CMD-SHELL", "pg_isready -U novaai_studio -d novaai_studio"]
       interval: 5s
       timeout: 3s
       retries: 20
 
   redis:
     image: redis:7-alpine
-    command: ["redis-server", "--appendonly", "yes"]
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "256mb", "--maxmemory-policy", "volatile-lru"]
     ports:
       - "127.0.0.1:5404:6379"
     volumes:
@@ -173,7 +173,7 @@ services:
   # prática o publish de porta para o host não funciona numa rede sem rota
   # de saída (confirmado: `docker port` não lista nada, a porta simplesmente
   # não fica acessível de fora). Para diagnóstico, use
-  # `docker exec sicoobito-browser-1 curl -s http://localhost:5406/health`.
+  # `docker exec novaai-studio-browser-1 curl -s http://localhost:5406/health`.
   browser:
     build:
       context: ./services/browser
@@ -231,9 +231,9 @@ services:
       - default
       - browser_net
     environment:
-      DATABASE_URL: postgresql+asyncpg://sicoobito:sicoobito@postgres:5432/sicoobito
+      DATABASE_URL: postgresql+asyncpg://novaai_studio:novaai_studio@postgres:5432/novaai_studio
       REDIS_URL: redis://redis:6379/0
-      SICOOBITO_API_KEY: ${SICOOBITO_API_KEY:?defina SICOOBITO_API_KEY no .env}
+      NOVAAI_STUDIO_API_KEY: ${NOVAAI_STUDIO_API_KEY:?defina NOVAAI_STUDIO_API_KEY no .env}
       # Raiz onde os projetos editáveis vivem, do ponto de vista do container.
       PROJECTS_ROOT: /projects
       # O mesmo caminho visto pelo host. O executor precisa dele para montar
@@ -308,8 +308,8 @@ services:
       - browser_net
     environment:
       # O browser fala com o Next; o Next fala com a API pela rede interna.
-      SICOOBITO_API_URL: http://api:5401
-      SICOOBITO_API_KEY: ${SICOOBITO_API_KEY:?defina SICOOBITO_API_KEY no .env}
+      NOVAAI_STUDIO_API_URL: http://api:5401
+      NOVAAI_STUDIO_API_KEY: ${NOVAAI_STUDIO_API_KEY:?defina NOVAAI_STUDIO_API_KEY no .env}
       # Usado só para montar a URL do WebSocket, que o browser abre direto.
       NEXT_PUBLIC_API_ORIGIN: ${PUBLIC_API_ORIGIN:-http://localhost:5401}
       PORT: "5400"
@@ -335,8 +335,8 @@ services:
       - browser_net
     environment:
       VITE_API_ORIGIN: ${PUBLIC_API_ORIGIN:-http://localhost:5401}
-      VITE_SICOOBITO_API_KEY: ${SICOOBITO_API_KEY:?defina SICOOBITO_API_KEY no .env}
-      SICOOBITO_API_KEY: ${SICOOBITO_API_KEY:?defina SICOOBITO_API_KEY no .env}
+      VITE_NOVAAI_STUDIO_API_KEY: ${NOVAAI_STUDIO_API_KEY:?defina NOVAAI_STUDIO_API_KEY no .env}
+      NOVAAI_STUDIO_API_KEY: ${NOVAAI_STUDIO_API_KEY:?defina NOVAAI_STUDIO_API_KEY no .env}
       PORT: "5409"
     ports:
       - "127.0.0.1:5409:5409"

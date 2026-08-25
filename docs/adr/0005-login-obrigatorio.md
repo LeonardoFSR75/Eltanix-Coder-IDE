@@ -5,7 +5,7 @@
 ## Contexto
 
 Até aqui a fronteira de segurança real era a combinação "porta publicada só em
-`127.0.0.1`" + `SICOOBITO_API_KEY` compartilhada (`api/deps.py::require_api_key`),
+`127.0.0.1`" + `NOVAAI_STUDIO_API_KEY` compartilhada (`api/deps.py::require_api_key`),
 documentada na seção "Segurança" do `CLAUDE.md` raiz: sem a chave definida, a
 API ficava aberta a qualquer chamada local. Isso fazia sentido enquanto o
 único consumidor do browser era o próprio operador na própria máquina — o
@@ -29,7 +29,7 @@ separado.** Duas credenciais válidas, dois propósitos:
   token de sessão opaco em cookie `httpOnly`, só o hash SHA-256 do token
   persiste no banco (`_hash_token`) — mesmo padrão que `hmac.compare_digest`
   já usava para a API key de serviço.
-- `SICOOBITO_API_KEY` continua existindo e validando por `hmac.compare_digest`,
+- `NOVAAI_STUDIO_API_KEY` continua existindo e validando por `hmac.compare_digest`,
   mas passa a ser o canal para ferramenta externa server-to-server (CI, cline,
   continue, aider, cursor) — o gateway do Next **parou de reencaminhar a API
   key automaticamente** para chamadas vindas do browser do usuário.
@@ -46,7 +46,7 @@ na prática.
 **Etapa 1 de um plano em duas etapas, documentado no próprio código
 (`auth/service.py` docstring): um único usuário seed, sem RBAC.**
 `ensure_seed_user` roda no lifespan (`main.py`) e é idempotente — não faz
-nada se `app_user` já tem alguém. Sem `SICOOBITO_ADMIN_PASSWORD` no `.env`,
+nada se `app_user` já tem alguém. Sem `NOVAAI_STUDIO_ADMIN_PASSWORD` no `.env`,
 gera uma senha aleatória e loga em nível `info` com a dica explícita para o
 operador fixar a variável (`main.py:166-181`) — visível nos logs do primeiro
 `docker compose up`, não escondida.

@@ -50,7 +50,7 @@ termina com uma mensagem padrão pedindo revisão humana — não é silencioso.
 8. Estilo de comunicação (português, direto, técnico)
 
 Composição em `agent/graph.py::build_graph()` (linha 214-228): `SYSTEM_PROMPT` +
-`\n\n## Instruções do projeto\n\n{custom_instructions}` (se `.sicoobito/instructions.md`
+`\n\n## Instruções do projeto\n\n{custom_instructions}` (se `.novaai_studio/instructions.md`
 existir) + `\n\n## Especialização deste agente\n\n{specialization_prompt}` (só para agentes
 filhos spawnados pelo coordenador multiagente, ADR 0004). Calculado **uma vez por sessão**, não
 por turno — de propósito, para preservar o prefixo estável e aproveitar cache de prompt do
@@ -114,7 +114,7 @@ para os dois nunca divergirem.
 
 ## 4. Skills — três camadas distintas, não confundir
 
-### 4.1 Skills do agente (banco de dados, `sicoobito.skills.*`)
+### 4.1 Skills do agente (banco de dados, `novaai_studio.skills.*`)
 
 O que `list_skills`/`get_skill`/`propose_skill` (`agent/tools/skills.py`) realmente leem é a
 tabela `skill` do Postgres, **não** arquivos lidos em tempo real. Seedada uma vez no `lifespan`
@@ -141,8 +141,8 @@ nativo de Skills do Claude Code, onde o modelo recebe a lista de skills disponí
 descrições já no prompt e decide ativamente qual usar).
 
 `propose_skill` é a via de "Self-Improving Skill": o agente pode gravar uma skill nova no banco
-e, se `workspace_root` existir, também em `.sicoobito/skills/<slug>.md` — mas esse arquivo de
-projeto **não é relido em nenhum lugar** (não há `rglob` sobre `.sicoobito/skills/` em nenhum
+e, se `workspace_root` existir, também em `.novaai_studio/skills/<slug>.md` — mas esse arquivo de
+projeto **não é relido em nenhum lugar** (não há `rglob` sobre `.novaai_studio/skills/` em nenhum
 arquivo do repositório) — funciona só como registro em Git, não como fonte viva.
 
 ### 4.2 UI de skills (`CustomizationsPopover.tsx`, `/skills`)
@@ -157,13 +157,13 @@ não auditada neste documento).
 
 `.claude/skills/graphify/SKILL.md` é do **Claude Code** (o CLI usado nesta sessão), carregado
 pelo mecanismo nativo `Skill` tool do próprio Claude Code — não tem nenhuma relação com o sistema
-de skills do agente SicoobitoCode descrito acima. Os dois compartilham o nome "skill" e o formato
+de skills do agente NovaAI Studio descrito acima. Os dois compartilham o nome "skill" e o formato
 `SKILL.md`, mas são pipelines completamente separados (um roda dentro do Claude Code que edita
-este repositório; o outro roda dentro do agente que o SicoobitoCode expõe aos usuários finais).
+este repositório; o outro roda dentro do agente que o NovaAI Studio expõe aos usuários finais).
 
 ## 5. Aprovação e política (`agent/approval_policy.py`)
 
-Opt-in, por projeto, guardada em `.sicoobito/approval_policy.yaml`. Duas formas de regra:
+Opt-in, por projeto, guardada em `.novaai_studio/approval_policy.yaml`. Duas formas de regra:
 
 - `EditPathRule`: glob simples (fnmatch) sobre o caminho + teto de linhas alteradas — calcula o
   diff de verdade antes de decidir (`compute_proposed_diff`), então "até 20 linhas" é sobre a
@@ -194,7 +194,7 @@ realimenta a política (evita um modelo barato "carimbando" aprovações).
   `/explain /fix /test /refactor /docs`. **Isso é só uma dica visual** — nada no código intercepta
   o texto digitado para expandir `/fix` em um prompt estruturado ou mudar o modo automaticamente;
   o texto literal `/fix ...` vai para o agente como qualquer outra mensagem.
-- **Instruções do projeto** (`.sicoobito/instructions.md`, editável na aba "Instruções" do
+- **Instruções do projeto** (`.novaai_studio/instructions.md`, editável na aba "Instruções" do
   popover): texto livre concatenado ao system prompt em toda sessão nova (seção 2).
 
 ## 7. Aceitar/rejeitar código gerado
@@ -223,13 +223,13 @@ Cursor/Copilot). Toda geração de código passa pelo ciclo completo think→app
 
 | Camada | Arquivo |
 | --- | --- |
-| System prompt + prompt por modo | `apps/api/src/sicoobito/agent/prompts.py` |
-| Ciclo think/approve/act, gate de ferramentas por modo | `apps/api/src/sicoobito/agent/graph.py` |
-| Política de auto-aprovação | `apps/api/src/sicoobito/agent/approval_policy.py` (+ `approval_policy_config.py`, `approval_policy_editor.py`) |
-| Ferramentas de skills do agente | `apps/api/src/sicoobito/agent/tools/skills.py` |
-| Ferramenta de plano/checklist | `apps/api/src/sicoobito/agent/tools/plan.py` |
-| Serviço/store de skills (Postgres) | `apps/api/src/sicoobito/skills/service.py`, `store.py` |
-| Seed de skills a partir de `.agents/` | `apps/api/src/sicoobito/skills/seed.py` |
+| System prompt + prompt por modo | `apps/api/src/novaai_studio/agent/prompts.py` |
+| Ciclo think/approve/act, gate de ferramentas por modo | `apps/api/src/novaai_studio/agent/graph.py` |
+| Política de auto-aprovação | `apps/api/src/novaai_studio/agent/approval_policy.py` (+ `approval_policy_config.py`, `approval_policy_editor.py`) |
+| Ferramentas de skills do agente | `apps/api/src/novaai_studio/agent/tools/skills.py` |
+| Ferramenta de plano/checklist | `apps/api/src/novaai_studio/agent/tools/plan.py` |
+| Serviço/store de skills (Postgres) | `apps/api/src/novaai_studio/skills/service.py`, `store.py` |
+| Seed de skills a partir de `.agents/` | `apps/api/src/novaai_studio/skills/seed.py` |
 | Skills curadas do projeto | `.agents/skills/master-*/SKILL.md` (12 arquivos) |
 | Skills vendorizadas (Addy Osmani) | `.agents/agent-skills/skills/*/SKILL.md` (~25 arquivos) |
 | Regras de modo planejamento (doc) | `.agents/rules/planning_mode.md` |

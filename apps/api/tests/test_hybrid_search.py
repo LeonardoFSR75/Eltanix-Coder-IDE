@@ -18,12 +18,12 @@ from __future__ import annotations
 import time
 import uuid
 
-from sicoobito.config import get_settings
-from sicoobito.context import store as context_store
-from sicoobito.context.chunker import Chunk
-from sicoobito.documents import store as documents_store
-from sicoobito.documents.chunker import TextChunk
-from sicoobito.notes import store as notes_store
+from novaai_studio.config import get_settings
+from novaai_studio.context import store as context_store
+from novaai_studio.context.chunker import Chunk
+from novaai_studio.documents import store as documents_store
+from novaai_studio.documents.chunker import TextChunk
+from novaai_studio.notes import store as notes_store
 
 _VECTOR = [0.1] * get_settings().embedding_dim
 

@@ -11,10 +11,10 @@ import asyncio
 from dataclasses import dataclass
 from decimal import Decimal
 
-from sicoobito.logging_setup import get_logger
-from sicoobito.router.catalog import Catalog, ModelSpec, RouteProfile
-from sicoobito.router.health import HealthTracker
-from sicoobito.router.pricing import PriceTable, Usage
+from novaai_studio.logging_setup import get_logger
+from novaai_studio.router.catalog import Catalog, ModelSpec, RouteProfile
+from novaai_studio.router.health import HealthTracker
+from novaai_studio.router.pricing import PriceTable, Usage
 
 log = get_logger(__name__)
 
@@ -137,9 +137,7 @@ class RoutingPolicy:
         # independente dos demais — sequencial pagaria N round-trips em série
         # em toda requisição, no caminho mais quente da plataforma (ADR 0001).
         built = list(
-            await asyncio.gather(
-                *(self._build_candidate(s, estimated_prompt_tokens) for s in pool)
-            )
+            await asyncio.gather(*(self._build_candidate(s, estimated_prompt_tokens) for s in pool))
         )
         usable = [c for c in built if c.excluded_reason is None]
         excluded = [c for c in built if c.excluded_reason is not None]

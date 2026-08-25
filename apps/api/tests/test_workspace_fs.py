@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from sicoobito.workspace.fs import FileTooLargeError, PathEscapeError, WorkspaceFS
+from novaai_studio.workspace.fs import FileTooLargeError, PathEscapeError, WorkspaceFS
 
 
 @pytest.fixture

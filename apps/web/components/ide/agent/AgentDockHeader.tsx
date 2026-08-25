@@ -61,7 +61,7 @@ export function AgentDockHeader({
             <circle cx="12" cy="12" r="3" fill="url(#copilot-g)" opacity="0.6" />
           </svg>
         </div>
-        <span className="agent-dock-title">Sicoobito Agente</span>
+        <span className="agent-dock-title">NovaAI Studio Agente</span>
         <span
           className={`copilot-status-dot${meta ? ` ${meta.className}` : ""}`}
           title={meta ? `Agente: ${meta.label}` : "Nenhuma sessão ativa"}

@@ -20,7 +20,7 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from sicoobito.db.models import (
+from novaai_studio.db.models import (
     AgentSessionRecord,
     AuditLogEntry,
     Document,
@@ -30,15 +30,15 @@ from sicoobito.db.models import (
     ProjectRecord,
     RequestLog,
 )
-from sicoobito.logging_setup import get_logger
-from sicoobito.workspace.path_guard import default_path_guard
+from novaai_studio.logging_setup import get_logger
+from novaai_studio.workspace.path_guard import default_path_guard
 
 log = get_logger(__name__)
 
 # Um segmento de caminho, sem separador e sem `..`.
 _NOME_VALIDO = re.compile(r"^[A-Za-z0-9._-][A-Za-z0-9 ._-]{0,127}$")
 
-_IGNORADOS = {".git", "node_modules", ".venv", "__pycache__", ".sicoobito", "$RECYCLE.BIN"}
+_IGNORADOS = {".git", "node_modules", ".venv", "__pycache__", ".novaai_studio", "$RECYCLE.BIN"}
 
 
 class ProjectError(ValueError):
@@ -333,7 +333,7 @@ async def get_project_summary(
     recent_commits: list[dict[str, str]] = []
     if is_git:
         try:
-            from sicoobito.workspace import git as git_ops
+            from novaai_studio.workspace import git as git_ops
 
             recent_commits = await asyncio.to_thread(git_ops.log_recent, local_path, 5)
         except Exception as exc:

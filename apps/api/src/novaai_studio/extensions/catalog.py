@@ -1,5 +1,4 @@
-"""Catálogo mestre das 6 Suítes de Extensões da plataforma SicoobitoCode.
-"""
+"""Catálogo mestre das 6 Suítes de Extensões da plataforma NovaAI Studio."""
 
 from __future__ import annotations
 
@@ -77,7 +76,7 @@ class ExtensionDefinition:
 MASTER_EXTENSIONS_CATALOG: list[ExtensionDefinition] = [
     # ── SUÍTE 1: FRONTEND, DESIGN SYSTEM & PROTOTIPAGEM RÁPIDA ──────────────────
     ExtensionDefinition(
-        id="sicoobito.shadcn-radix-studio",
+        id="novaai_studio.shadcn-radix-studio",
         name="Shadcn UI & Radix Component Registry",
         publisher="shadcn",
         version="1.4.0",
@@ -95,7 +94,7 @@ MASTER_EXTENSIONS_CATALOG: list[ExtensionDefinition] = [
         ],
     ),
     ExtensionDefinition(
-        id="sicoobito.daisyui-theme-explorer",
+        id="novaai_studio.daisyui-theme-explorer",
         name="DaisyUI & Tailwind Theme Explorer",
         publisher="saadeghi",
         version="4.12.10",
@@ -113,7 +112,7 @@ MASTER_EXTENSIONS_CATALOG: list[ExtensionDefinition] = [
         ],
     ),
     ExtensionDefinition(
-        id="sicoobito.lucide-tabler-icons",
+        id="novaai_studio.lucide-tabler-icons",
         name="Lucide & Tabler Icon Studio",
         publisher="lucide",
         version="0.460.0",
@@ -131,7 +130,7 @@ MASTER_EXTENSIONS_CATALOG: list[ExtensionDefinition] = [
         ],
     ),
     ExtensionDefinition(
-        id="sicoobito.live-server-templates",
+        id="novaai_studio.live-server-templates",
         name="Live Server & Hot-Reload para Templates",
         publisher="ritwickdey",
         version="5.7.9",
@@ -149,7 +148,7 @@ MASTER_EXTENSIONS_CATALOG: list[ExtensionDefinition] = [
         ],
     ),
     ExtensionDefinition(
-        id="sicoobito.chart-dataviz-studio",
+        id="novaai_studio.chart-dataviz-studio",
         name="Chart.js & ApexCharts Data Viz Studio",
         publisher="chartjs",
         version="4.4.4",
@@ -168,7 +167,7 @@ MASTER_EXTENSIONS_CATALOG: list[ExtensionDefinition] = [
     ),
     # ── SUÍTE 2: IA, WEB SCRAPING & CONECTORES DE DADOS (FIRECRAWL & MCP) ────────
     ExtensionDefinition(
-        id="sicoobito.firecrawl-workflow-builder",
+        id="novaai_studio.firecrawl-workflow-builder",
         name="Firecrawl Visual Workflow Builder (Open Agent Builder)",
         publisher="firecrawl",
         version="1.2.0",
@@ -186,7 +185,7 @@ MASTER_EXTENSIONS_CATALOG: list[ExtensionDefinition] = [
         ],
     ),
     ExtensionDefinition(
-        id="sicoobito.llm-data-connectors",
+        id="novaai_studio.llm-data-connectors",
         name="LLM Data Connectors (Firecrawl Connectors)",
         publisher="firecrawl",
         version="1.1.0",
@@ -204,16 +203,16 @@ MASTER_EXTENSIONS_CATALOG: list[ExtensionDefinition] = [
         ],
     ),
     ExtensionDefinition(
-        id="sicoobito.mcp-marketplace-scanner",
+        id="novaai_studio.mcp-marketplace-scanner",
         name="MCP Marketplace & Security Inspector",
-        publisher="sicoobito",
+        publisher="novaai_studio",
         version="2.0.0",
         description="Gerenciador de servidores Model Context Protocol (MCP) com varredura contínua de segurança contra Tool Poisoning.",
         category="IA & Web Scraping",
         icon="🛡️",
         downloads="310K",
         rating=4.96,
-        upstream_id="sicoobito.mcp-inspector",
+        upstream_id="novaai_studio.mcp-inspector",
         repository_url="https://github.com/cisco-open/cisco-mcp-scanner",
         features=[
             "Scan automatizado via cisco-mcp-scanner",
@@ -223,7 +222,7 @@ MASTER_EXTENSIONS_CATALOG: list[ExtensionDefinition] = [
     ),
     # ── SUÍTE 3: BANCOS DE DADOS, VETORES & CACHE ──────────────────────────────
     ExtensionDefinition(
-        id="sicoobito.pgvector-semantic-studio",
+        id="novaai_studio.pgvector-semantic-studio",
         name="pgvector & Semantic RAG Studio",
         publisher="postgres",
         version="2.5.0",
@@ -241,7 +240,7 @@ MASTER_EXTENSIONS_CATALOG: list[ExtensionDefinition] = [
         ],
     ),
     ExtensionDefinition(
-        id="sicoobito.redis-commander",
+        id="novaai_studio.redis-commander",
         name="Redis Commander & Cache Inspector",
         publisher="redis",
         version="3.1.0",
@@ -259,7 +258,7 @@ MASTER_EXTENSIONS_CATALOG: list[ExtensionDefinition] = [
         ],
     ),
     ExtensionDefinition(
-        id="sicoobito.minio-storage-explorer",
+        id="novaai_studio.minio-storage-explorer",
         name="MinIO & S3 Object Storage Explorer",
         publisher="minio",
         version="2.2.0",
@@ -278,7 +277,7 @@ MASTER_EXTENSIONS_CATALOG: list[ExtensionDefinition] = [
     ),
     # ── SUÍTE 4: SEGURANÇA, GOVERNANÇA & AUDITORIA ─────────────────────────────
     ExtensionDefinition(
-        id="sicoobito.sast-security-scanner",
+        id="novaai_studio.sast-security-scanner",
         name="SAST Security Scanner (Semgrep & Bandit)",
         publisher="semgrep",
         version="1.85.0",
@@ -296,7 +295,7 @@ MASTER_EXTENSIONS_CATALOG: list[ExtensionDefinition] = [
         ],
     ),
     ExtensionDefinition(
-        id="sicoobito.dependency-cve-auditor",
+        id="novaai_studio.dependency-cve-auditor",
         name="Dependency & License Auditor (Pip-Audit / AuditJS)",
         publisher="safety",
         version="2.4.0",
@@ -314,16 +313,16 @@ MASTER_EXTENSIONS_CATALOG: list[ExtensionDefinition] = [
         ],
     ),
     ExtensionDefinition(
-        id="sicoobito.token-cost-profiler",
+        id="novaai_studio.token-cost-profiler",
         name="Token Cost & Latency Profiler",
-        publisher="sicoobito",
+        publisher="novaai_studio",
         version="2.1.0",
         description="Gráficos de telemetria de consumo de tokens, custo em USD por modelo e replay passo a passo do Flight Recorder.",
         category="Segurança & Auditoria",
         icon="💰",
         downloads="190K",
         rating=4.93,
-        upstream_id="sicoobito.flight-recorder",
+        upstream_id="novaai_studio.flight-recorder",
         repository_url="https://github.com/LeonardoFSR75/SicoobitoCode",
         features=[
             "Visualização de custos por modelo e sessão",
@@ -333,7 +332,7 @@ MASTER_EXTENSIONS_CATALOG: list[ExtensionDefinition] = [
     ),
     # ── SUÍTE 5: TESTES, APIS & VERIFICAÇÃO E2E ─────────────────────────────────
     ExtensionDefinition(
-        id="sicoobito.playwright-visual-studio",
+        id="novaai_studio.playwright-visual-studio",
         name="Playwright Visual E2E Studio",
         publisher="ms-playwright",
         version="1.48.0",
@@ -351,7 +350,7 @@ MASTER_EXTENSIONS_CATALOG: list[ExtensionDefinition] = [
         ],
     ),
     ExtensionDefinition(
-        id="sicoobito.bruno-thunder-client",
+        id="novaai_studio.bruno-thunder-client",
         name="Bruno & Thunder Client API Runner",
         publisher="usebruno",
         version="1.30.0",
@@ -369,7 +368,7 @@ MASTER_EXTENSIONS_CATALOG: list[ExtensionDefinition] = [
         ],
     ),
     ExtensionDefinition(
-        id="sicoobito.coverage-heatmap-viewer",
+        id="novaai_studio.coverage-heatmap-viewer",
         name="Coverage Heatmap & Mutation Testing",
         publisher="coverage",
         version="1.6.0",
@@ -388,16 +387,16 @@ MASTER_EXTENSIONS_CATALOG: list[ExtensionDefinition] = [
     ),
     # ── SUÍTE 6: ARQUITETURA & SEGUNDO CÉREBRO (GRAPHYFY & OBSIDIAN) ────────────
     ExtensionDefinition(
-        id="sicoobito.graphify-3d-canvas",
+        id="novaai_studio.graphify-3d-canvas",
         name="Graphify 3D Live Canvas",
-        publisher="sicoobito",
+        publisher="novaai_studio",
         version="2.4.0",
         description="Visualizador de grafo de dependências e comunidades acoplado ao editor que se atualiza conforme arquivos são editados.",
         category="Segundo Cérebro & Arquitetura",
         icon="🕸️",
         downloads="210K",
         rating=4.99,
-        upstream_id="sicoobito.graphify",
+        upstream_id="novaai_studio.graphify",
         repository_url="https://github.com/LeonardoFSR75/SicoobitoCode",
         features=[
             "Visualização 2D/3D com física de clustering",
@@ -406,16 +405,16 @@ MASTER_EXTENSIONS_CATALOG: list[ExtensionDefinition] = [
         ],
     ),
     ExtensionDefinition(
-        id="sicoobito.adr-architecture-assistant",
+        id="novaai_studio.adr-architecture-assistant",
         name="ADR Architecture Assistant",
-        publisher="sicoobito",
+        publisher="novaai_studio",
         version="1.5.0",
         description="Assistente guiado para redigir, validar e catalogar Decisões Arquiteturais com templates padronizados.",
         category="Segundo Cérebro & Arquitetura",
         icon="📑",
         downloads="140K",
         rating=4.92,
-        upstream_id="sicoobito.adr-tools",
+        upstream_id="novaai_studio.adr-tools",
         repository_url="https://github.com/LeonardoFSR75/SicoobitoCode",
         features=[
             "Geração de ADRs com numeração automática",
@@ -424,16 +423,16 @@ MASTER_EXTENSIONS_CATALOG: list[ExtensionDefinition] = [
         ],
     ),
     ExtensionDefinition(
-        id="sicoobito.git-smart-blame",
+        id="novaai_studio.git-smart-blame",
         name="Git Smart Blame & Co-Change Matrix",
-        publisher="sicoobito",
+        publisher="novaai_studio",
         version="2.0.0",
         description="Análise preditiva de acoplamento temporal e histórico semântico de commits por autor e símbolo.",
         category="Segundo Cérebro & Arquitetura",
         icon="🐙",
         downloads="560K",
         rating=4.95,
-        upstream_id="sicoobito.git-intelligence",
+        upstream_id="novaai_studio.git-intelligence",
         repository_url="https://github.com/LeonardoFSR75/SicoobitoCode",
         features=[
             "Detecção de co-change (arquivos que mudam juntos)",
@@ -471,7 +470,7 @@ MASTER_EXTENSIONS_CATALOG: list[ExtensionDefinition] = [
         name="Python Debugger",
         publisher="ms-python",
         version="2026.2.0",
-        description="Python Debugger extension using debugpy & Sicoobito container executor.",
+        description="Python Debugger extension using debugpy & NovaAI Studio container executor.",
         category="LSP & Linguagens",
         icon="🐞",
         downloads="38M",

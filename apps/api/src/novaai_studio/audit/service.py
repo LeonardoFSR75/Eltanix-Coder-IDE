@@ -11,9 +11,9 @@ from __future__ import annotations
 import uuid
 from typing import Any
 
-from sicoobito.audit import store
-from sicoobito.db.models import AuditLogEntry
-from sicoobito.db.session import session_scope
+from novaai_studio.audit import store
+from novaai_studio.db.models import AuditLogEntry
+from novaai_studio.db.session import session_scope
 
 
 class AuditService:

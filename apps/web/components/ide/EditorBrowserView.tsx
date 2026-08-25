@@ -43,7 +43,7 @@ interface EditorBrowserViewProps {
   isStandalone?: boolean;
   /** Força o modo inicial da primeira aba — usado quando quem abriu já sabe
    * que a URL só é alcançável via o serviço de navegador (ex.: porta de um
-   * sandbox, resolvida por `sicoobito-<sessionId>:<porta>` dentro do
+   * sandbox, resolvida por `novaai-studio-<sessionId>:<porta>` dentro do
    * `browser_net`), nunca por um iframe direto no navegador real. */
   initialMode?: RenderMode;
 }
@@ -65,7 +65,7 @@ const VIEWPORT_SIZES: Record<ViewportMode, { width: string; height?: string; lab
 // e o addendum do ADR 0007) — este regex cobre o caso de o usuário digitar
 // um desses hosts diretamente na barra de endereço do modo Live.
 const DOCKER_INTERNAL_HOSTNAME_RE =
-  /^(sicoobito-[\w-]+|web|api|executor|redis|minio|postgres|browser|ollama|mcp-scanner|host\.docker\.internal)$/i;
+  /^(novaai-studio-[\w-]+|web|api|executor|redis|minio|postgres|browser|ollama|mcp-scanner|host\.docker\.internal)$/i;
 
 function suspectedDockerInternalHostname(url: string): string | null {
   try {

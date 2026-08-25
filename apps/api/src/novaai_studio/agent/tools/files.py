@@ -6,8 +6,8 @@ import difflib
 from pathlib import Path
 from typing import Any
 
-from sicoobito.agent.tools.base import RiskClass, ToolContext, ToolResult, tool
-from sicoobito.workspace.fs import FileTooLargeError, PathEscapeError
+from novaai_studio.agent.tools.base import RiskClass, ToolContext, ToolResult, tool
+from novaai_studio.workspace.fs import FileTooLargeError, PathEscapeError
 
 # Truncar aqui e não no prompt: a saída da ferramenta é o que entra no histórico
 # e volta em toda chamada seguinte.

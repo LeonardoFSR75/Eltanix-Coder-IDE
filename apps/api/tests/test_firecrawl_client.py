@@ -5,7 +5,7 @@ from __future__ import annotations
 import httpx
 import pytest
 
-from sicoobito.firecrawl.client import (
+from novaai_studio.firecrawl.client import (
     FirecrawlAuthError,
     FirecrawlClient,
     FirecrawlConfig,
