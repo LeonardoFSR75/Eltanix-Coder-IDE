@@ -100,6 +100,43 @@ async def revoke_other_sessions(
     return len(sessions)
 
 
+async def list_active_sessions_for_user(
+    session: AsyncSession, *, user_id: uuid.UUID, now: datetime
+) -> list[AuthSession]:
+    """Sessões não revogadas e não expiradas do usuário, mais recentes
+    primeiro (por `last_seen_at`, caindo para `created_at`)."""
+    stmt = (
+        select(AuthSession)
+        .where(
+            AuthSession.user_id == user_id,
+            AuthSession.revoked_at.is_(None),
+            AuthSession.expires_at > now,
+        )
+        .order_by(func.coalesce(AuthSession.last_seen_at, AuthSession.created_at).desc())
+    )
+    return list((await session.execute(stmt)).scalars())
+
+
+async def revoke_session_by_id(
+    session: AsyncSession, *, user_id: uuid.UUID, session_id: uuid.UUID, now: datetime
+) -> bool:
+    """Revoga uma sessão específica **do próprio usuário** (o `user_id` no
+    `where` impede revogar sessão alheia por id). `True` = existia e estava
+    ativa."""
+    auth_session = await session.scalar(
+        select(AuthSession).where(
+            AuthSession.id == session_id,
+            AuthSession.user_id == user_id,
+            AuthSession.revoked_at.is_(None),
+        )
+    )
+    if auth_session is None:
+        return False
+    auth_session.revoked_at = now
+    await session.flush()
+    return True
+
+
 async def purge_expired_sessions(session: AsyncSession, *, now: datetime) -> int:
     """Remove registros de sessão onde a data de expiração já passou ou a sessão
     foi revogada."""

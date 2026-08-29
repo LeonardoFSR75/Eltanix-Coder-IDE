@@ -20,10 +20,32 @@ const BASE_URL = process.env.ELTANIX_API_URL ?? "http://localhost:8000";
 
 type Params = { params: Promise<{ path: string[] }> };
 
+const UNSAFE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+
 async function proxy(request: Request, { params }: Params): Promise<Response> {
   const { path } = await params;
   const url = new URL(request.url);
   const target = `${BASE_URL}/${path.join("/")}${url.search}`;
+
+  // Backstop de CSRF (F-2 da revisão): o cookie de sessão já é SameSite=Strict,
+  // mas aqui também recusamos qualquer método que muda estado vindo de uma
+  // origem diferente da própria app. Navegadores só mandam `Origin` cross-site
+  // em requisições CORS — same-origin não dispara isto; requisições sem
+  // `Origin` (GET, server-to-server) passam direto.
+  if (UNSAFE_METHODS.has(request.method)) {
+    const origin = request.headers.get("origin");
+    if (origin) {
+      let originHost: string;
+      try {
+        originHost = new URL(origin).host;
+      } catch {
+        return Response.json({ error: "Origin inválida." }, { status: 403 });
+      }
+      if (originHost !== url.host) {
+        return Response.json({ error: "Origem não permitida." }, { status: 403 });
+      }
+    }
+  }
 
   const headers = new Headers();
 

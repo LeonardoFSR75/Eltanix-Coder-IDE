@@ -149,6 +149,11 @@ class AuthService:
         # invariante de degradação no CLAUDE.md: ela vale para o que é
         # opcional, não para o 2FA).
         self._mfa_challenges: dict[str, tuple[uuid.UUID, datetime]] = {}
+        # Contador de tentativas de login por username (F-4 da revisão de
+        # segurança) — complementa o por IP: quem rotaciona IP não escapa da
+        # trava da conta. Cardinalidade baixa (nº de usernames reais), então
+        # poda por chave já basta.
+        self._user_attempts: dict[str, list[datetime]] = {}
 
     async def check_and_register_attempt(self, ip: str, redis: Any | None = None) -> bool:
         """Registra a tentativa de login atual e devolve `True` se ainda está
@@ -202,6 +207,53 @@ class AuthService:
             except Exception as exc:
                 log.warning("auth.ratelimit.redis_reset_failed", error=str(exc)[:200])
         self._memory_attempts.pop(ip, None)
+
+    _USER_ATTEMPT_LIMIT = 10
+    _USER_ATTEMPT_WINDOW_SECONDS = 15 * 60
+
+    async def check_and_register_user_attempt(
+        self, username: str, redis: Any | None = None
+    ) -> bool:
+        """`True` enquanto a conta `username` estiver abaixo de
+        `_USER_ATTEMPT_LIMIT` tentativas na janela. Mesmo idioma atômico do
+        contador por IP (`check_and_register_attempt`)."""
+        chave = (username or "").strip().lower()[:64]
+        limite = self._USER_ATTEMPT_LIMIT
+        janela = self._USER_ATTEMPT_WINDOW_SECONDS
+        now = datetime.now(UTC)
+
+        if redis is not None:
+            try:
+                key = f"auth:ratelimit:user:{chave}"
+                pipe = redis.pipeline()
+                pipe.incr(key)
+                pipe.expire(key, janela)
+                count, _ = await pipe.execute()
+                return int(count) <= limite
+            except Exception as exc:
+                log.warning("auth.ratelimit.user_redis_failed", error=str(exc)[:200])
+
+        inicio = now - timedelta(seconds=janela)
+        expiradas = [
+            u
+            for u, ts in self._user_attempts.items()
+            if u != chave and all(t <= inicio for t in ts)
+        ]
+        for u in expiradas:
+            self._user_attempts.pop(u, None)
+        tentativas = [t for t in self._user_attempts.get(chave, []) if t > inicio]
+        tentativas.append(now)
+        self._user_attempts[chave] = tentativas
+        return len(tentativas) <= limite
+
+    async def reset_user_attempts(self, username: str, redis: Any | None = None) -> None:
+        chave = (username or "").strip().lower()[:64]
+        if redis is not None:
+            try:
+                await redis.delete(f"auth:ratelimit:user:{chave}")
+            except Exception as exc:
+                log.warning("auth.ratelimit.user_reset_failed", error=str(exc)[:200])
+        self._user_attempts.pop(chave, None)
 
     async def ensure_seed_user(self, *, username: str, password: str) -> None:
         """Cria o usuário único se `app_user` estiver vazia. Idempotente e
@@ -344,6 +396,34 @@ class AuthService:
             auth_session = await store.get_session_by_token_hash(session, token_hash)
             if auth_session is not None:
                 await store.revoke_session(session, auth_session, now=datetime.now(UTC))
+
+    async def list_sessions(
+        self, user_id: uuid.UUID, *, current_token: str | None = None
+    ) -> list[dict[str, Any]]:
+        """Sessões ativas do usuário, para ele ver "onde estou logado" e
+        revogar uma específica (F-5 da revisão). Marca a que fez a chamada."""
+        current_hash = _hash_token(current_token) if current_token else None
+        async with session_scope() as session:
+            rows = await store.list_active_sessions_for_user(
+                session, user_id=user_id, now=datetime.now(UTC)
+            )
+        return [
+            {
+                "id": str(r.id),
+                "created_at": r.created_at.isoformat(),
+                "last_seen_at": r.last_seen_at.isoformat() if r.last_seen_at else None,
+                "expires_at": r.expires_at.isoformat(),
+                "user_agent": r.user_agent,
+                "current": current_hash is not None and r.token_hash == current_hash,
+            }
+            for r in rows
+        ]
+
+    async def revoke_session_by_id(self, user_id: uuid.UUID, session_id: uuid.UUID) -> bool:
+        async with session_scope() as session:
+            return await store.revoke_session_by_id(
+                session, user_id=user_id, session_id=session_id, now=datetime.now(UTC)
+            )
 
     # ── Segundo fator (TOTP) ──────────────────────────────────────────────
 

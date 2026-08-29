@@ -10,7 +10,7 @@ const BASE_URL = process.env.ELTANIX_API_URL ?? "http://localhost:8000";
 const COOKIE_NAME = "eltanix_session";
 
 function cookieAttrs(expires?: string): string {
-  const parts = ["Path=/", "HttpOnly", "SameSite=Lax"];
+  const parts = ["Path=/", "HttpOnly", "SameSite=Strict"];
   if (process.env.NODE_ENV === "production") parts.push("Secure");
   parts.push(expires ? `Expires=${new Date(expires).toUTCString()}` : "Max-Age=0");
   return parts.join("; ");

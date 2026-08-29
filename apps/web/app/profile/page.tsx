@@ -10,6 +10,7 @@ import { getMetricsSummary, type Summary } from "@/lib/api/metrics";
 
 import { changePassword } from "@/lib/client";
 import MfaSettings from "@/components/MfaSettings";
+import SessionsPanel from "@/components/SessionsPanel";
 
 export default function ProfilePage() {
   const { user, logout } = useAuth();
@@ -205,6 +206,10 @@ export default function ProfilePage() {
 
       <section className="section-block">
         <MfaSettings />
+      </section>
+
+      <section className="section-block">
+        <SessionsPanel />
       </section>
 
       <section className="section-block">

@@ -287,6 +287,38 @@ class Settings(BaseSettings):
             "http://127.0.0.1:3000",
         ]
 
+    @field_validator("cors_origins", mode="after")
+    @classmethod
+    def _sanitize_origins(cls, origins: list[str]) -> list[str]:
+        """`main.py` monta o CORS com `allow_credentials=True`. Combinado com
+        `*` isso seria uma API autenticada aberta a qualquer site — o Starlette
+        já se recusa a mandar `Allow-Credentials` junto com `*`, mas o pior
+        caso real é uma origem pública na lista. Então: `*` é sempre descartado,
+        e origem não-loopback só passa com um aviso alto (F-3 da revisão de
+        segurança)."""
+        import warnings
+
+        limpos: list[str] = []
+        for origem in origins:
+            o = origem.strip()
+            if not o or o == "*":
+                if o == "*":
+                    warnings.warn(
+                        "CORS_ORIGINS continha '*' — descartado (incompatível com "
+                        "allow_credentials). Liste origens explícitas.",
+                        stacklevel=2,
+                    )
+                continue
+            host = o.split("://", 1)[-1].split("/", 1)[0].split(":", 1)[0].lower()
+            if host not in {"localhost", "127.0.0.1", "::1", "[::1]"}:
+                warnings.warn(
+                    f"CORS_ORIGINS inclui origem não-loopback {o!r} com "
+                    "allow_credentials=True — confirme que é intencional.",
+                    stacklevel=2,
+                )
+            limpos.append(o)
+        return limpos
+
     @property
     def env_file_path(self) -> Path:
         """`.env` da raiz — mesmo arquivo que o `env_file` acima já carrega.

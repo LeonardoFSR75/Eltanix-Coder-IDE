@@ -113,6 +113,12 @@ class _FakeAuthService:
     async def check_and_register_attempt(self, ip, redis=None):
         return True
 
+    async def check_and_register_user_attempt(self, username, redis=None):
+        return True
+
+    async def reset_user_attempts(self, username, redis=None):
+        return None
+
     async def reset_failed_attempts(self, ip, redis=None):
         return None
 
@@ -206,6 +212,8 @@ def test_login_mfa_route_is_reachable_without_credentials(client):
         ("post", "/api/auth/mfa/activate"),
         ("post", "/api/auth/mfa/disable"),
         ("post", "/api/auth/mfa/recovery-codes"),
+        ("get", "/api/auth/sessions"),
+        ("delete", "/api/auth/sessions/00000000-0000-0000-0000-000000000000"),
     ],
 )
 def test_mfa_management_endpoints_require_authentication(client, method, path):
