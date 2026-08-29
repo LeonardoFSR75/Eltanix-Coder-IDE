@@ -1,9 +1,11 @@
 """Testes da ferramenta propose_skill (Self-Improving Skills)."""
 
+from contextlib import asynccontextmanager
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+
 from eltanix.agent.tools.base import RiskClass, ToolContext
 from eltanix.agent.tools.skills import propose_skill
 from eltanix.db.models import Skill
@@ -70,9 +72,6 @@ async def test_propose_skill_success(tmp_path: Path):
         system_prompt="Sempre use APIRouter com prefixo /api.",
         workspace_root=ws_dir,
     )
-
-
-from contextlib import asynccontextmanager
 
 
 @pytest.mark.asyncio

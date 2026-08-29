@@ -22,7 +22,7 @@ jobs:
       - name: Instalar dependências
         run: uv sync --dev
       - name: ruff check
-        run: uv run ruff check src
+        run: uv run ruff check src tests
       - name: pytest
         run: uv run pytest tests -q
 

@@ -87,6 +87,7 @@ async def test_audit_service_record_accepts_event_metadata_alias(pg_session):
 @pytest.mark.asyncio
 async def test_create_project_endpoint(tmp_path: Path):
     from httpx import ASGITransport, AsyncClient
+
     from eltanix.api.deps import require_session
     from eltanix.main import create_app
 

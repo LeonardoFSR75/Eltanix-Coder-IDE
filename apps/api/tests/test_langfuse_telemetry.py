@@ -2,7 +2,6 @@
 
 from unittest.mock import MagicMock, patch
 
-import pytest
 from eltanix.config import Settings
 from eltanix.telemetry.langfuse_tracer import (
     flush_langfuse,
