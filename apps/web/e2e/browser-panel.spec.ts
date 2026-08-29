@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { idePath } from "./helpers";
+import { openIdeWithFile } from "./helpers";
 
 /**
  * Golden path do painel de navegador manual — exercita de ponta a ponta o
@@ -8,8 +8,7 @@ import { idePath } from "./helpers";
  * navegar para uma URL real e ver a captura de tela voltar.
  */
 test("painel de navegador manual navega e mostra uma captura real da página", async ({ page }) => {
-  await page.goto(idePath());
-  await expect(page.locator(".monaco-editor").first()).toBeVisible({ timeout: 20_000 });
+  await openIdeWithFile(page);
 
   await page.getByRole("button", { name: "Navegador (verificação visual)" }).click();
 

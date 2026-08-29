@@ -21,8 +21,9 @@ test("modo Live avisa e nunca navega quando o host é Docker-interno", async ({ 
 
   // Modo Live é o padrão desta página (`initialMode` não é passado por
   // `app/browser/page.tsx`) — confirma antes de seguir, já que o aviso só
-  // dispara nesse modo (fora dele o iframe nem existe).
-  await expect(page.getByRole("button", { name: /Modo Live Iframe/i })).toHaveClass(/active/);
+  // dispara nesse modo (fora dele o iframe nem existe). O botão mostra só
+  // "⚡ Live" como texto (nome acessível), então mira-se pelo `title`.
+  await expect(page.locator('button[title^="Modo Live Iframe"]')).toHaveClass(/active/);
 
   const iframe = page.locator("iframe.browser-live-iframe");
   const srcAntes = await iframe.getAttribute("src");

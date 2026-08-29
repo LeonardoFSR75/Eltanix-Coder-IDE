@@ -11,6 +11,22 @@ import { loader } from "@monaco-editor/react";
 
 loader.config({ paths: { vs: "/vs" } });
 
+// Força o `loader` a resolver `/vs/loader.js` AGORA, no import deste módulo —
+// que roda antes de `<MonacoEditor>`/`<DiffEditor>` montar. Sem isto, quem
+// dispara o `loader.init()` é o `useEffect` de dentro do componente; o
+// `@monaco-editor/loader` lê `config.paths.vs` no instante do `init()`, então
+// qualquer `init()` que escape antes desta linha cai no default (CDN
+// jsdelivr). Numa stack sem internet garantida (E2E no CI, deploy
+// local-first) esse fetch nunca volta e a área do editor fica eternamente em
+// "Loading…". `init()` é idempotente e o wrapper é cancelável — o
+// componente reaproveita esta mesma Promise.
+if (typeof window !== "undefined") {
+  loader.init().catch(() => {
+    // Erro real de carregamento (ex.: `/vs` ausente) aparece no próprio
+    // <Editor>, que também chama `init()` e loga o motivo — não duplicar aqui.
+  });
+}
+
 // Bug conhecido do @monaco-editor/react: em dev, o Strict Mode do React monta
 // → desmonta → remonta cada componente de propósito (para expor efeitos não
 // idempotentes). O DiffEditor kicka o carregamento assíncrono do Monaco no
