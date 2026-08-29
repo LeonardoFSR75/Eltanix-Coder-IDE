@@ -248,3 +248,48 @@ def test_inline_edit_is_rate_limited_per_actor(client, workspace, monkeypatch):
         assert 429 not in codigos[:3]
     finally:
         client.app.state.redis = None
+
+
+# ── _await_or_abandon_on_disconnect: cancela a chamada de LLM se o cliente cair ──
+
+
+@pytest.mark.asyncio
+async def test_await_or_abandon_returns_result_while_client_is_connected():
+    import asyncio
+
+    from eltanix.api.routes.agent import _await_or_abandon_on_disconnect
+
+    class _Req:
+        async def is_disconnected(self) -> bool:
+            return False
+
+    async def _trabalho() -> str:
+        await asyncio.sleep(0.05)
+        return "pronto"
+
+    assert await _await_or_abandon_on_disconnect(_Req(), _trabalho()) == "pronto"
+
+
+@pytest.mark.asyncio
+async def test_await_or_abandon_cancels_the_coro_when_client_disconnects():
+    import asyncio
+
+    from eltanix.api.routes.agent import _await_or_abandon_on_disconnect
+
+    class _Req:
+        async def is_disconnected(self) -> bool:
+            return True
+
+    cancelada = asyncio.Event()
+
+    async def _trabalho_longo() -> str:
+        try:
+            await asyncio.sleep(10)
+        except asyncio.CancelledError:
+            cancelada.set()
+            raise
+        return "nunca"
+
+    with pytest.raises(asyncio.CancelledError):
+        await _await_or_abandon_on_disconnect(_Req(), _trabalho_longo())
+    assert cancelada.is_set()

@@ -33,6 +33,12 @@ export interface InlineEditResult {
   auto_approved_reason: string | null;
 }
 
-export function requestInlineEdit(req: InlineEditRequest): Promise<InlineEditResult> {
-  return post<InlineEditResult>("/api/agent/inline-edit", req);
+// `signal` deixa o editor abortar a chamada quando o usuário cancela o Cmd+K
+// (Esc enquanto gera) — o backend cancela o `engine.complete()` ao ver a
+// conexão cair, então tokens não são gastos por um resultado descartado.
+export function requestInlineEdit(
+  req: InlineEditRequest,
+  signal?: AbortSignal,
+): Promise<InlineEditResult> {
+  return post<InlineEditResult>("/api/agent/inline-edit", req, signal);
 }

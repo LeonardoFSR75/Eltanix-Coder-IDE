@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import re
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable
+from contextlib import suppress
 from pathlib import Path
 from typing import Any, Literal
 
@@ -36,6 +38,32 @@ from eltanix.workspace.projects import ProjectError
 log = get_logger(__name__)
 
 router = APIRouter(prefix="/api/agent", tags=["agent"], dependencies=[AuthDep])
+
+
+async def _await_or_abandon_on_disconnect[T](request: Request, coro: Awaitable[T]) -> T:
+    """Aguarda `coro`, mas cancela se o cliente fechar a conexão no meio.
+
+    A edição inline chama `engine.complete()` fora do grafo — sem isto, um
+    Cmd+K cancelado no editor (Esc enquanto "gerando…") deixava a chamada de
+    LLM correndo até o fim, gastando tokens por um resultado que ninguém ia
+    ler. O adaptador de provedor é httpx por baixo, que aborta a request HTTP
+    quando a task é cancelada."""
+    task: asyncio.Task[T] = asyncio.ensure_future(coro)
+
+    async def _watch() -> None:
+        while not task.done():
+            if await request.is_disconnected():
+                task.cancel()
+                return
+            await asyncio.sleep(0.25)
+
+    watcher = asyncio.ensure_future(_watch())
+    try:
+        return await task
+    finally:
+        watcher.cancel()
+        with suppress(asyncio.CancelledError):
+            await watcher
 
 
 def _runner(request: Request) -> AgentRunner:
@@ -220,26 +248,33 @@ async def inline_edit(
         )
 
     try:
-        resultado = await engine.complete(
-            requested_model="coding",
-            params={
-                "messages": [
-                    {"role": "system", "content": _INLINE_EDIT_SYSTEM_PROMPT},
-                    {
-                        "role": "user",
-                        "content": (
-                            f"Arquivo: {payload.path}\n\n"
-                            f"Contexto antes:\n{payload.context_before}\n\n"
-                            f"Trecho selecionado:\n{payload.selected_text}\n\n"
-                            f"Contexto depois:\n{payload.context_after}\n\n"
-                            f"Instrução: {payload.instruction}"
-                        ),
-                    },
-                ],
-                "temperature": 0,
-            },
-            source="ide:inline_edit",
+        resultado = await _await_or_abandon_on_disconnect(
+            request,
+            engine.complete(
+                requested_model="coding",
+                params={
+                    "messages": [
+                        {"role": "system", "content": _INLINE_EDIT_SYSTEM_PROMPT},
+                        {
+                            "role": "user",
+                            "content": (
+                                f"Arquivo: {payload.path}\n\n"
+                                f"Contexto antes:\n{payload.context_before}\n\n"
+                                f"Trecho selecionado:\n{payload.selected_text}\n\n"
+                                f"Contexto depois:\n{payload.context_after}\n\n"
+                                f"Instrução: {payload.instruction}"
+                            ),
+                        },
+                    ],
+                    "temperature": 0,
+                },
+                source="ide:inline_edit",
+            ),
         )
+    except asyncio.CancelledError:
+        # Cliente desistiu — nada a devolver, a resposta nem vai ser lida.
+        log.info("agent.inline_edit.abandoned", path=payload.path)
+        raise
     except Exception as exc:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Falha ao chamar o modelo: {exc}"

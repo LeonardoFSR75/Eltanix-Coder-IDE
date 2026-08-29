@@ -46,6 +46,10 @@ async function proxy(request: Request, { params }: Params): Promise<Response> {
   headers.set("X-Eltanix-Source", "ide");
 
   const init: RequestInit = { method: request.method, headers };
+  // Propaga o cancelamento do cliente para o backend: sem isto, um fetch
+  // abortado no browser (ex.: Cmd+K cancelado no editor) deixava a chamada
+  // upstream — e o `engine.complete()` por trás dela — correndo até o fim.
+  init.signal = request.signal;
   if (request.method !== "GET" && request.method !== "HEAD") {
     init.body = await request.text();
   }
