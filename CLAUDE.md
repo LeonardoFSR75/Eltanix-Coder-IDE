@@ -28,6 +28,10 @@ Guias específicos: [apps/api/CLAUDE.md](apps/api/CLAUDE.md), [apps/web/CLAUDE.m
    - `ADR 0006 — Integração Firecrawl para Web Scraping, Search e Ingestão de Docs no RAG`
    - `ADR 0007 — Navegador Interno Híbrido, Emulação de Dispositivos e Compatibilidade Lightpanda`
    - `ADR 0008 — RAG Multi-Formato Universal com AnyDoc, Motor Calamine e PDF Inspector`
+   - `ADR 0009 — Sistema de Extensões e Auto-Update via Open VSX`
+   - `ADR 0010 — Segurança de Servidores MCP e Cisco AI Defense Scanner`
+   - `ADR 0011 — Sanitização Dinâmica de PII`
+   - `ADR 0012 — Modos Customizáveis do Agente e o Gate de Ferramentas por Nome`
 3. **Histórico de Fases & Roadmap (`01 - 📑 Documentos & ADRs/Notas de Projeto (Roadmap & Fases)/`)**:
    - 20 notas sequenciais (`00-MOC.md` a `19-robustez-agente-router-orquestracao-multiagente.md`).
 4. **Ferramenta `graph_search` (em tempo de execução)**:

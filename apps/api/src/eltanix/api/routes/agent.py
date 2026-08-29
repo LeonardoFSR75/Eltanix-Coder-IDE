@@ -7,13 +7,14 @@ from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any, Literal
 
-from fastapi import APIRouter, HTTPException, Request, status
+from fastapi import APIRouter, HTTPException, Request, Response, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from eltanix.agent import session_store
 from eltanix.agent.approval_policy import evaluate_policy
 from eltanix.agent.approval_policy_config import load_approval_policy
+from eltanix.agent.prompts import compose_system_prompt
 from eltanix.agent.runner import AgentRunner, AgentSession
 from eltanix.agent.slash_commands import SLASH_COMMANDS
 from eltanix.agent.state import AgentMode, PendingApproval
@@ -79,11 +80,16 @@ async def list_tools() -> dict[str, Any]:
 
 
 @router.get("/slash-commands")
-async def list_slash_commands() -> dict[str, Any]:
+async def list_slash_commands(response: Response) -> dict[str, Any]:
     """Catálogo de slash commands reconhecidos (Fase 2 do upgrade do agente) —
     fonte única do lado do servidor, consumida pelo autocomplete de
     `AgentChatInput.tsx` (mesmo espírito de `modes.ts` ser fonte única no
-    frontend para os 7 modos)."""
+    frontend para os 7 modos).
+
+    O catálogo é estático por deploy (uma constante Python), então o
+    autocomplete pode cachear por alguns minutos em vez de rebuscar a cada
+    tecla `/`."""
+    response.headers["Cache-Control"] = "public, max-age=300"
     return {
         "commands": [
             {
@@ -108,6 +114,37 @@ do trecho original. O texto devolvido substitui exatamente o trecho selecionado,
 continuar sintaticamente válido encaixado no contexto ao redor."""
 
 _FENCE_RE = re.compile(r"^```[a-zA-Z0-9_+-]*\r?\n(?P<body>.*)\r?\n```\s*$", re.DOTALL)
+
+# Teto de chamadas de `POST /api/agent/inline-edit` por ator por minuto. O
+# endpoint chama `engine.complete()` direto, fora do grafo — então não tem o
+# teto de iterações do agente, e um loop de Ctrl+K (script, tecla presa,
+# retry agressivo do cliente) gastaria LLM sem limite. 20/min dá folga larga
+# para uso interativo real e ainda corta uma rajada descontrolada.
+_INLINE_EDIT_MAX_PER_MINUTE = 20
+
+
+async def _guard_inline_edit_rate(request: Request) -> None:
+    """`INCR`+`expire` numa janela de 60s por ator (mesmo padrão de
+    `AuthService.check_and_register_attempt`). Redis fora do ar → não limita
+    (degrada, não derruba — mesma filosofia do resto da plataforma)."""
+    redis = getattr(request.app.state, "redis", None)
+    if redis is None:
+        return
+    ator = getattr(request.state, "actor", "unknown")
+    try:
+        pipe = redis.pipeline()
+        pipe.incr(f"agent:inline_edit:ratelimit:{ator}")
+        pipe.expire(f"agent:inline_edit:ratelimit:{ator}", 60)
+        count, _ = await pipe.execute()
+    except Exception as exc:  # degradação intencional: Redis fora não pode barrar a edição
+        log.warning("agent.inline_edit.ratelimit_redis_failed", error=str(exc)[:200])
+        return
+    if int(count) > _INLINE_EDIT_MAX_PER_MINUTE:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=f"Muitas edições inline seguidas (limite {_INLINE_EDIT_MAX_PER_MINUTE}/min). "
+            "Aguarde alguns segundos.",
+        )
 
 
 def _strip_fence(texto: str) -> str:
@@ -147,6 +184,8 @@ async def inline_edit(
     aceitar/rejeitar (mesmo componente `InlineDiffApprovalBar` já usado para
     revisar o diff de uma sessão do agente).
     """
+    await _guard_inline_edit_rate(request)
+
     raiz = settings.effective_projects_root
     if raiz is None:
         raise HTTPException(
@@ -375,6 +414,31 @@ async def list_sessions(
 @router.get("/sessions/{session_id}")
 async def get_session(session_id: str, request: Request) -> dict[str, Any]:
     return _session_view(await _session(request, session_id))
+
+
+@router.get("/sessions/{session_id}/system-prompt")
+async def get_session_system_prompt(session_id: str, request: Request) -> dict[str, Any]:
+    """Prompt de sistema final da sessão, recomposto pela mesma
+    `compose_system_prompt` que `agent/graph.py` usa a cada turno — expõe no
+    painel de debug exatamente o que o modelo recebe (base + instruções do
+    projeto + especialização + skills roteadas + regras de contexto), sem ter
+    que garimpar o log de uma chamada de LLM. `blocks` diz quais adendos
+    entraram; `custom_mode_prompt_block` fica de fora de propósito — ele vai no
+    prompt da tarefa (`build_task_prompt`), não no de sistema."""
+    ctx = (await _session(request, session_id)).context
+    blocos = {
+        "custom_instructions": ctx.custom_instructions,
+        "specialization_prompt": ctx.specialization_prompt,
+        "routed_skills_prompt": ctx.routed_skills_prompt,
+        "context_rules_prompt": ctx.context_rules_prompt,
+    }
+    composto = compose_system_prompt(**blocos)
+    return {
+        "session_id": session_id,
+        "system_prompt": composto,
+        "length": len(composto),
+        "blocks": {nome: bool(valor) for nome, valor in blocos.items()},
+    }
 
 
 @router.get("/sessions/{session_id}/graph")

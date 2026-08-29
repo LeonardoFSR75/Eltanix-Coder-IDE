@@ -193,3 +193,58 @@ def test_requires_auth(client):
         },
     )
     assert resposta.status_code == 401
+
+
+class _FakeRedisPipeline:
+    def __init__(self, store: dict) -> None:
+        self._store = store
+        self._ops: list = []
+
+    def incr(self, key):
+        self._ops.append(("incr", key))
+
+    def expire(self, key, ttl):
+        self._ops.append(("expire", key, ttl))
+
+    async def execute(self):
+        out = []
+        for op in self._ops:
+            if op[0] == "incr":
+                self._store[op[1]] = self._store.get(op[1], 0) + 1
+                out.append(self._store[op[1]])
+            else:
+                out.append(True)
+        return out
+
+
+class _FakeRedis:
+    def __init__(self) -> None:
+        self.store: dict = {}
+
+    def pipeline(self):
+        return _FakeRedisPipeline(self.store)
+
+
+def test_inline_edit_is_rate_limited_per_actor(client, workspace, monkeypatch):
+    from eltanix.api.routes import agent as agent_routes
+
+    monkeypatch.setattr(agent_routes, "_INLINE_EDIT_MAX_PER_MINUTE", 3)
+    _set_engine(client, "    return a + b + 1")
+    client.app.state.redis = _FakeRedis()
+    try:
+        corpo = {
+            "project": "demo",
+            "path": "src/app.py",
+            "selected_text": "    return a + b",
+            "instruction": "soma 1",
+        }
+        codigos = [
+            client.post("/api/agent/inline-edit", json=corpo, headers=AUTH).status_code
+            for _ in range(5)
+        ]
+        # As 3 primeiras passam (200/409/...), a 4ª e a 5ª batem no teto.
+        assert codigos[3] == 429
+        assert codigos[4] == 429
+        assert 429 not in codigos[:3]
+    finally:
+        client.app.state.redis = None

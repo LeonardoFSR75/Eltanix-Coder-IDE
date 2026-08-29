@@ -169,3 +169,40 @@ class TestBuildTaskPromptCustomMode:
         )
         assert "MODO PLANEJAR ATIVO" in prompt
         assert "não deveria aparecer" not in prompt
+
+
+class TestAllowedToolsValidationAtSave:
+    """Item 68: nomes de ferramenta inexistentes são rejeitados no save, com
+    mensagem útil — em vez de salvarem "sujos" e sumirem em `_tool_schemas`."""
+
+    def test_unknown_tool_name_raises_422(self):
+        from fastapi import HTTPException
+
+        from eltanix.api.routes.custom_modes import _validate_allowed_tools
+
+        with pytest.raises(HTTPException) as exc_info:
+            _validate_allowed_tools(["read_file", "ferramenta_que_nao_existe"])
+        assert exc_info.value.status_code == 422
+        assert "ferramenta_que_nao_existe" in exc_info.value.detail
+
+    def test_known_tools_and_empty_list_pass(self):
+        from eltanix.api.routes.custom_modes import _validate_allowed_tools
+
+        _validate_allowed_tools([])  # não levanta
+        _validate_allowed_tools(["read_file", "search_code"])  # não levanta
+
+
+def test_agent_mode_is_a_plain_str_after_phase_6_widening():
+    """Item 70: `AgentMode` deixou de ser `Literal[...]` (Fase 6) para um id de
+    modo customizado poder circular como `mode`. Se alguém reverter para
+    `Literal`, sessões em modo customizado voltam a quebrar na validação —
+    este teste trava a mudança."""
+    from eltanix.agent.state import AgentMode
+
+    assert AgentMode is str
+
+    # E o modelo de request da criação de sessão aceita um id arbitrário.
+    from eltanix.api.routes.agent import CreateSessionRequest
+
+    req = CreateSessionRequest(task="x", mode="7f3a-um-id-de-modo-custom", project="p")
+    assert req.mode == "7f3a-um-id-de-modo-custom"

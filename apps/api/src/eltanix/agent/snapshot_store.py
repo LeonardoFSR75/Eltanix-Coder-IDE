@@ -12,11 +12,17 @@ unicamente para alimentar `POST /api/agent/sessions/{id}/rewind`.
 
 from __future__ import annotations
 
-from sqlalchemy import select
+import asyncio
+from datetime import UTC, datetime, timedelta
+
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from eltanix.db.models import SessionFileSnapshot
 from eltanix.db.session import session_scope
+from eltanix.logging_setup import get_logger
+
+log = get_logger(__name__)
 
 
 async def _record(
@@ -62,6 +68,16 @@ async def _restore_targets(
     return list((await session.execute(stmt)).scalars().all())
 
 
+async def _prune_older_than(session: AsyncSession, *, cutoff: datetime) -> int:
+    """Apaga snapshots criados antes de `cutoff`. A tabela cresce a cada
+    escrita de arquivo de toda sessão e nunca é lida depois que a janela de
+    rewind daquela sessão passou — sem esta poda ela só cresce."""
+    result = await session.execute(
+        delete(SessionFileSnapshot).where(SessionFileSnapshot.created_at < cutoff)
+    )
+    return result.rowcount or 0
+
+
 async def _list_for_session(session: AsyncSession, *, session_id: str) -> list[SessionFileSnapshot]:
     stmt = (
         select(SessionFileSnapshot)
@@ -95,3 +111,28 @@ class SnapshotService:
     async def list_for_session(self, *, session_id: str) -> list[SessionFileSnapshot]:
         async with session_scope() as session:
             return await _list_for_session(session, session_id=session_id)
+
+    async def prune_older_than(self, *, retention_days: int) -> int:
+        cutoff = datetime.now(UTC) - timedelta(days=max(retention_days, 1))
+        async with session_scope() as session:
+            return await _prune_older_than(session, cutoff=cutoff)
+
+
+async def run_snapshot_prune_reaper(
+    snapshots: SnapshotService,
+    *,
+    retention_days: int,
+    interval_seconds: int = 6 * 3600,
+) -> None:
+    """Laço de poda periódica dos snapshots de rewind — mesmo padrão de
+    `run_replay_purge_reaper`/`AuthService.run_session_purge_reaper`."""
+    while True:
+        try:
+            await asyncio.sleep(interval_seconds)
+            removidos = await snapshots.prune_older_than(retention_days=retention_days)
+            if removidos:
+                log.info("agent.snapshots.pruned", removed=removidos, retention_days=retention_days)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            log.warning("agent.snapshots.prune_reaper_iteration_failed", error=str(exc)[:200])

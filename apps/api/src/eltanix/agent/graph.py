@@ -27,7 +27,7 @@ from langgraph.graph import END, StateGraph
 from langgraph.types import interrupt
 
 from eltanix.agent.approval_policy import ApprovalPolicy, evaluate_policy
-from eltanix.agent.prompts import APPROVAL_DENIED_TEMPLATE, SYSTEM_PROMPT
+from eltanix.agent.prompts import APPROVAL_DENIED_TEMPLATE, compose_system_prompt
 from eltanix.agent.review_common import request_review_verdict
 from eltanix.agent.state import BUILTIN_MODES, AgentState, PendingApproval
 from eltanix.agent.tools import RiskClass, Tool, ToolContext, registry
@@ -255,20 +255,17 @@ def build_graph(engine: RouterEngine, context: ToolContext):
     # mudam no meio de uma sessão, e manter o prefixo do system prompt estável
     # entre turnos é o que permite o cache de prompt (ver docstring de
     # SYSTEM_PROMPT em prompts.py).
-    # Duas fontes independentes de adendo ao prompt base — projeto e
-    # especialização (Horizonte 4, item 3) — compostas como seções extras
-    # em vez de sobrescritas sucessivas, para nenhuma apagar a outra quando
-    # ambas estão presentes (ex: agente filho spawnado com skill_name num
-    # projeto que também tem instructions.md).
-    system_prompt = SYSTEM_PROMPT
-    if context.custom_instructions:
-        system_prompt += f"\n\n## Instruções do projeto\n\n{context.custom_instructions}"
-    if context.specialization_prompt:
-        system_prompt += f"\n\n## Especialização deste agente\n\n{context.specialization_prompt}"
-    if context.routed_skills_prompt:
-        system_prompt += f"\n\n{context.routed_skills_prompt}"
-    if context.context_rules_prompt:
-        system_prompt += f"\n\n{context.context_rules_prompt}"
+    # Adendos independentes ao prompt base (projeto, especialização, skills
+    # roteadas, regras de contexto) compostos como seções extras — nunca
+    # sobrescritas sucessivas — em `compose_system_prompt`, a mesma função que
+    # `GET /api/agent/sessions/{id}/system-prompt` reusa para mostrar este
+    # texto exato no debug.
+    system_prompt = compose_system_prompt(
+        custom_instructions=context.custom_instructions,
+        specialization_prompt=context.specialization_prompt,
+        routed_skills_prompt=context.routed_skills_prompt,
+        context_rules_prompt=context.context_rules_prompt,
+    )
 
     # `_tool_schemas` só depende de `(mode, has_plan)` — `context` já é fixo
     # por sessão (capturado no fechamento). Sem isto, `think()` reconstruía a

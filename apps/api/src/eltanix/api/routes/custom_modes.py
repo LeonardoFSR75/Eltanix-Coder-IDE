@@ -13,10 +13,30 @@ from fastapi import APIRouter, HTTPException, Request, status
 from pydantic import BaseModel, Field
 
 from eltanix.agent.custom_modes import CustomModeService
+from eltanix.agent.tools import registry as tool_registry
 from eltanix.api.deps import AuthDep
 from eltanix.audit.service import AuditService
 
 router = APIRouter(prefix="/api/agent/custom-modes", tags=["agent"], dependencies=[AuthDep])
+
+
+def _validate_allowed_tools(names: list[str]) -> None:
+    """Rejeita no save qualquer nome de ferramenta que não exista no registro —
+    senão o modo salva "sujo" e só falha silenciosamente em `_tool_schemas`
+    (que ignora nomes desconhecidos), deixando o usuário achar que restringiu
+    para uma ferramenta que na verdade nunca vai aparecer."""
+    conhecidas = {t.name for t in tool_registry.all()}
+    desconhecidas = [n for n in names if n not in conhecidas]
+    if desconhecidas:
+        # 422 literal: o nome da constante Starlette (UNPROCESSABLE_ENTITY vs
+        # _CONTENT) muda entre versões e emite DeprecationWarning.
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"Ferramentas desconhecidas em allowed_tools: {', '.join(sorted(desconhecidas))}. "
+                f"Use nomes do registro (ex.: read_file, search_code, write_file)."
+            ),
+        )
 
 
 def _service(request: Request) -> CustomModeService:
@@ -62,6 +82,7 @@ async def list_custom_modes(request: Request) -> dict[str, Any]:
 
 @router.post("")
 async def create_custom_mode(payload: CustomModeIn, request: Request) -> dict[str, Any]:
+    _validate_allowed_tools(payload.allowed_tools)
     modo = await _service(request).create(
         name=payload.name,
         icon=payload.icon,
@@ -88,6 +109,7 @@ async def get_custom_mode(mode_id: uuid.UUID, request: Request) -> dict[str, Any
 async def update_custom_mode(
     mode_id: uuid.UUID, payload: CustomModeIn, request: Request
 ) -> dict[str, Any]:
+    _validate_allowed_tools(payload.allowed_tools)
     modo = await _service(request).update(
         mode_id,
         name=payload.name,

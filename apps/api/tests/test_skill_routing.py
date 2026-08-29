@@ -12,9 +12,12 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+import yaml
 
 from eltanix.agent.runner import AgentRunner
+from eltanix.config import REPO_ROOT
 from eltanix.db.models import Skill
+from eltanix.skills.seed import parse_skill_markdown
 from eltanix.skills.service import SkillService
 
 
@@ -247,3 +250,99 @@ async def test_route_skills_plan_mode_slash_spec_does_not_duplicate_forced_skill
     assert "### planning-and-task-breakdown (padrão do Modo Planejar)" in resultado
     # /spec já resolveu spec-driven-development — só falta buscar planning-and-task-breakdown.
     assert runner.skills.get_by_name.await_count == 2
+
+
+# ── Item 57: golden-set do roteamento (config/skill_routing_eval.yaml) ────────
+
+_EVAL_DATASET = REPO_ROOT / "config" / "skill_routing_eval.yaml"
+
+
+def _seeded_skill_names() -> set[str]:
+    """Nomes reais de skills seedadas — mesma varredura de `seed_agent_skills`."""
+    nomes: set[str] = set()
+    for skill_md in (REPO_ROOT / ".agents").rglob("SKILL.md"):
+        parsed = parse_skill_markdown(skill_md)
+        if parsed:
+            nomes.add(parsed["name"])
+    return nomes
+
+
+def test_eval_dataset_is_well_formed_and_targets_real_skills():
+    dados = yaml.safe_load(_EVAL_DATASET.read_text(encoding="utf-8"))
+    casos = dados["cases"]
+    assert len(casos) >= 20, "golden-set pequeno demais para medir precisão com sentido"
+
+    nomes_reais = _seeded_skill_names()
+    assert nomes_reais, "nenhuma SKILL.md encontrada em .agents/ — varredura quebrou"
+
+    for caso in casos:
+        assert caso["task"].strip(), f"caso sem task: {caso!r}"
+        assert caso["expect"] in nomes_reais, (
+            f"'{caso['expect']}' não é o nome de nenhuma skill seedada em .agents/ "
+            f"(caso: {caso['task']!r})"
+        )
+
+
+def test_eval_dataset_has_no_duplicate_tasks():
+    casos = yaml.safe_load(_EVAL_DATASET.read_text(encoding="utf-8"))["cases"]
+    tarefas = [c["task"] for c in casos]
+    assert len(tarefas) == len(set(tarefas)), "há tarefas duplicadas no golden-set"
+
+
+# ── _timed_prompt_phase: span de telemetria por etapa da montagem do prompt ──
+
+
+@pytest.mark.asyncio
+async def test_timed_prompt_phase_records_rag_span_on_success():
+    runner = _make_runner(skills=None)
+    gravados: list[dict] = []
+    runner.trace_recorder = SimpleNamespace(
+        record=lambda **kw: gravados.append(kw)
+    )
+
+    async def _fase() -> str:
+        return "prompt-x"
+
+    resultado = await runner._timed_prompt_phase(
+        session_id="sess-1", name="skill_routing", coro=_fase()
+    )
+
+    assert resultado == "prompt-x"
+    assert len(gravados) == 1
+    span = gravados[0]
+    assert span["kind"] == "rag"
+    assert span["name"] == "skill_routing"
+    assert span["status"] == "ok"
+    assert span["session_id"] == "sess-1"
+    assert span["latency_ms"] >= 0
+
+
+@pytest.mark.asyncio
+async def test_timed_prompt_phase_records_error_span_and_reraises():
+    runner = _make_runner(skills=None)
+    gravados: list[dict] = []
+    runner.trace_recorder = SimpleNamespace(record=lambda **kw: gravados.append(kw))
+
+    async def _fase_quebrada() -> str:
+        raise RuntimeError("boom")
+
+    with pytest.raises(RuntimeError, match="boom"):
+        await runner._timed_prompt_phase(
+            session_id="sess-2", name="context_rules", coro=_fase_quebrada()
+        )
+
+    assert gravados and gravados[0]["status"] == "error"
+    assert gravados[0]["name"] == "context_rules"
+
+
+@pytest.mark.asyncio
+async def test_timed_prompt_phase_is_a_noop_passthrough_without_recorder():
+    runner = _make_runner(skills=None)
+    runner.trace_recorder = None
+
+    async def _fase() -> str:
+        return "ok"
+
+    assert await runner._timed_prompt_phase(
+        session_id="s", name="custom_mode_resolve", coro=_fase()
+    ) == "ok"

@@ -557,8 +557,13 @@ export function CustomizationsPopover({
               <>
                 <p className="customizations-item-desc" style={{ marginBottom: 8 }}>
                   Instruções extras injetadas no agente só quando o arquivo/pasta em foco da
-                  sessão bate no glob (estilo <code>.cursor/rules</code>). Avaliado uma vez no
-                  início da sessão. Guardado em <code>.eltanix/context_rules.yaml</code>.
+                  sessão bate no glob (estilo <code>.cursor/rules</code>). Guardado em{" "}
+                  <code>.eltanix/context_rules.yaml</code>. Todas as regras que casarem entram,
+                  na ordem em que aparecem aqui.{" "}
+                  <strong>
+                    Avaliado uma única vez ao criar a sessão — regras que só baterem em arquivos
+                    abertos depois não retroagem.
+                  </strong>
                 </p>
                 {contextRulesErro && <PanelState kind="error" message={contextRulesErro} />}
                 {contextRulesMsg && (

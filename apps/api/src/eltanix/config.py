@@ -104,6 +104,17 @@ class Settings(BaseSettings):
     embedding_profile: str = Field(default="embedding", alias="EMBEDDING_PROFILE")
     embedding_batch_size: int = Field(default=32, alias="EMBEDDING_BATCH_SIZE")
 
+    # ── Roteamento automático de skills (Fase 1 do upgrade do agente) ────────
+    # Similaridade de cosseno mínima (0..1) para uma skill entrar no system
+    # prompt por roteamento automático, e quantas skills no máximo. O default
+    # 0.72 foi calibrado à mão; expor por env permite ajustar por deployment
+    # sem editar código, e o log `skills.routing.near_miss` mostra os
+    # candidatos que ficaram logo abaixo do corte para orientar o ajuste.
+    agent_skill_routing_min_score: float = Field(
+        default=0.72, alias="AGENT_SKILL_ROUTING_MIN_SCORE"
+    )
+    agent_skill_routing_top_k: int = Field(default=2, alias="AGENT_SKILL_ROUTING_TOP_K")
+
     # ── Projetos ────────────────────────────────────────────────────────────
     # Pasta que contém os projetos editáveis, como este processo a enxerga.
     # É a fronteira: nada fora dela é alcançável pelo IDE ou pelo agente.
@@ -166,6 +177,10 @@ class Settings(BaseSettings):
     agent_session_abandon_after_hours: int = Field(
         default=24, alias="AGENT_SESSION_ABANDON_AFTER_HOURS"
     )
+    # Retenção dos snapshots de arquivo do rewind (Fase 8). A tabela
+    # `session_file_snapshot` cresce a cada escrita de toda sessão e só serve
+    # à janela de rewind da própria sessão — um reaper poda o que passou disso.
+    agent_snapshot_retention_days: int = Field(default=14, alias="AGENT_SNAPSHOT_RETENTION_DAYS")
 
     # ── Navegador para verificação visual (Fase 7) ──────────────────────────
     # Serviço à parte, numa rede restrita própria (ver docker-compose.yml,
@@ -194,9 +209,7 @@ class Settings(BaseSettings):
     minio_access_key: str = Field(default="minioadmin", alias="MINIO_ACCESS_KEY")
     minio_secret_key: str = Field(default="minioadmin", alias="MINIO_SECRET_KEY")
     minio_secure: bool = Field(default=False, alias="MINIO_SECURE")
-    minio_documents_bucket: str = Field(
-        default="eltanix-documents", alias="MINIO_DOCUMENTS_BUCKET"
-    )
+    minio_documents_bucket: str = Field(default="eltanix-documents", alias="MINIO_DOCUMENTS_BUCKET")
 
     @property
     def effective_minio_public_endpoint(self) -> str:

@@ -10,11 +10,13 @@ remontado.
 from __future__ import annotations
 
 import asyncio
+import time
 import uuid
+from collections.abc import Awaitable
 from contextlib import suppress
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, TypeVar, cast
 
 if TYPE_CHECKING:
     from eltanix.audit.service import AuditService
@@ -61,6 +63,8 @@ from eltanix.workspace.github import GitHubClient, GitHubError, parse_remote, re
 from eltanix.workspace.projects import ProjectError
 
 log = get_logger(__name__)
+
+_T = TypeVar("_T")
 
 
 class SessionAlreadyRunningError(RuntimeError):
@@ -387,9 +391,53 @@ class AgentRunner:
         return self._browser_http
 
     # ── Roteamento automático de skills (Fase 1 do upgrade do agente) ──────
-
+    # Defaults; `settings.agent_skill_routing_*` (env) sobrescreve por
+    # deployment. Resolvidos em `_skill_routing_params()` para tolerar um
+    # `settings` mock nos testes.
     _SKILLS_TOP_K = 2
     _SKILLS_MIN_SCORE = 0.72
+
+    def _skill_routing_params(self) -> tuple[int, float]:
+        """`(top_k, min_score)` efetivos — do `settings` quando forem números
+        de verdade, senão os defaults de classe (o caso dos testes com
+        `settings` mockado, onde os atributos viram `MagicMock`)."""
+        top_k = getattr(self.settings, "agent_skill_routing_top_k", None)
+        min_score = getattr(self.settings, "agent_skill_routing_min_score", None)
+        if isinstance(top_k, bool) or not isinstance(top_k, int):
+            top_k = self._SKILLS_TOP_K
+        if isinstance(min_score, bool) or not isinstance(min_score, int | float):
+            min_score = self._SKILLS_MIN_SCORE
+        return top_k, float(min_score)
+
+    async def _timed_prompt_phase(self, *, session_id: str, name: str, coro: Awaitable[_T]) -> _T:
+        """Cronometra e grava no `TraceRecorder` cada etapa da montagem do
+        prompt aditivo da sessão (roteamento de skills, regras de contexto,
+        resolução de modo customizado) — antes disso essas três só apareciam
+        em log solto, nunca no mesmo buffer de spans que as ferramentas e o
+        RAG, então não dava para ver o custo delas no painel de telemetria.
+
+        Usa `kind="rag"` de propósito: são todas recuperação/resolução no
+        bootstrap da sessão, e reaproveitar o kind existente evita alargar o
+        Literal `TraceKind`, o schema de `ToolSpan.kind` e o mapeamento OTLP
+        só para três nomes novos. O prefixo `skill_routing`/`context_rules`/
+        `custom_mode` no `name` já os separa na leitura."""
+        if self.trace_recorder is None:
+            return await coro
+        inicio = time.perf_counter()
+        status: str = "ok"
+        try:
+            return await coro
+        except Exception:
+            status = "error"
+            raise
+        finally:
+            self.trace_recorder.record(
+                kind="rag",
+                name=name,
+                latency_ms=(time.perf_counter() - inicio) * 1000,
+                status=cast(Any, status),
+                session_id=session_id,
+            )
 
     # Fase 3 do upgrade do agente (estilo Antigravity): "Modo Planejar" sempre
     # segue o processo estruturado destas duas skills vendorizadas
@@ -465,8 +513,9 @@ class AgentRunner:
                 dados = resultado.payload.get("data") or []
                 vetor = dados[0].get("embedding") if dados else None
                 if vetor:
+                    top_k, min_score = self._skill_routing_params()
                     relevantes = await self.skills.find_relevant(
-                        vetor, top_k=self._SKILLS_TOP_K, min_score=self._SKILLS_MIN_SCORE
+                        vetor, top_k=top_k, min_score=min_score
                     )
                     for skill in relevantes:
                         if skill.name in nomes_vistos:
@@ -687,13 +736,28 @@ class AgentRunner:
             burst.add_done_callback(self._background_tasks.discard)
             return True
 
+        async def _context_rules_phase() -> str | None:
+            return _load_context_rules_prompt(
+                workspace_root, focus_files=focus_files, focus_folder=focus_folder
+            )
+
         routed_skills_prompt = (
-            await self._route_skills(task, mode) if self.skills is not None else None
+            await self._timed_prompt_phase(
+                session_id=session_id,
+                name="skill_routing",
+                coro=self._route_skills(task, mode),
+            )
+            if self.skills is not None
+            else None
         )
-        context_rules_prompt = _load_context_rules_prompt(
-            workspace_root, focus_files=focus_files, focus_folder=focus_folder
+        context_rules_prompt = await self._timed_prompt_phase(
+            session_id=session_id, name="context_rules", coro=_context_rules_phase()
         )
-        custom_mode_allowed_tools, custom_mode_prompt_block = await self._resolve_custom_mode(mode)
+        custom_mode_allowed_tools, custom_mode_prompt_block = await self._timed_prompt_phase(
+            session_id=session_id,
+            name="custom_mode_resolve",
+            coro=self._resolve_custom_mode(mode),
+        )
 
         contexto = ToolContext(
             session_id=session_id,

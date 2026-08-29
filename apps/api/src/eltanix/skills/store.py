@@ -9,6 +9,9 @@ from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from eltanix.db.models import Skill
+from eltanix.logging_setup import get_logger
+
+log = get_logger(__name__)
 
 
 async def create_skill(
@@ -140,6 +143,18 @@ async def search_by_similarity(
 
     matched_ids = [row["id"] for row in rows if float(row["score"]) >= min_score]
     if not matched_ids:
+        # Near-miss: houve candidatos, mas nenhum passou do corte. Logar os
+        # scores ajuda a calibrar `agent_skill_routing_min_score` por deployment
+        # sem adivinhar.
+        if rows:
+            log.debug(
+                "skills.routing.near_miss",
+                min_score=min_score,
+                candidates=[
+                    {"skill_id": str(row["id"]), "score": round(float(row["score"]), 4)}
+                    for row in rows
+                ],
+            )
         return []
 
     skills = {
