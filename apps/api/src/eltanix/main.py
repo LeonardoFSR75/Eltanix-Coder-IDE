@@ -16,9 +16,10 @@ from eltanix import __version__
 from eltanix.agent.coordinator import AgentCoordinator
 from eltanix.agent.custom_modes import CustomModeService
 from eltanix.agent.runner import AgentRunner
-from eltanix.agent.snapshot_store import SnapshotService
+from eltanix.agent.snapshot_store import SnapshotService, run_snapshot_prune_reaper
 from eltanix.agent.tools import registry as tool_registry
 from eltanix.analytics.worker import run_analytics_batch_reaper
+from eltanix.api.errors import register_error_handlers
 from eltanix.api.middleware import CorrelationIdMiddleware
 from eltanix.api.routes import (
     agent_router,
@@ -318,6 +319,9 @@ async def lifespan(app: FastAPI):
     replay_purge_reaper = asyncio.create_task(run_replay_purge_reaper(blob=blob, redis=redis))
     panel_client_purge_reaper = asyncio.create_task(run_panel_client_purge_reaper(app.state))
     analytics_batch_reaper = asyncio.create_task(run_analytics_batch_reaper(engine))
+    snapshot_prune_reaper = asyncio.create_task(
+        run_snapshot_prune_reaper(snapshots, retention_days=settings.agent_snapshot_retention_days)
+    )
 
     log.info(
         "app.started",
@@ -346,6 +350,9 @@ async def lifespan(app: FastAPI):
         analytics_batch_reaper.cancel()
         with suppress(asyncio.CancelledError):
             await analytics_batch_reaper
+        snapshot_prune_reaper.cancel()
+        with suppress(asyncio.CancelledError):
+            await snapshot_prune_reaper
         # Containers da sessão não podem sobreviver ao processo que os criou:
         # ficariam órfãos consumindo memória até alguém notar.
         await sandboxes.shutdown()
@@ -379,6 +386,7 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
     app.add_middleware(CorrelationIdMiddleware)
+    register_error_handlers(app)
 
     app.include_router(openai_router)
     app.include_router(auth_router)
