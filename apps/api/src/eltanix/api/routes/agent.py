@@ -51,11 +51,16 @@ async def _await_or_abandon_on_disconnect[T](request: Request, coro: Awaitable[T
     task: asyncio.Task[T] = asyncio.ensure_future(coro)
 
     async def _watch() -> None:
-        while not task.done():
-            if await request.is_disconnected():
-                task.cancel()
-                return
-            await asyncio.sleep(0.25)
+        try:
+            while not task.done():
+                if await request.is_disconnected():
+                    task.cancel()
+                    return
+                await asyncio.sleep(0.25)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # um watcher com problema nunca derruba a request
+            log.warning("agent.disconnect_watch_failed", error=str(exc)[:200])
 
     watcher = asyncio.ensure_future(_watch())
     try:

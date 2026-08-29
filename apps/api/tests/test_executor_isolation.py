@@ -14,7 +14,6 @@ Cobre o cliente `RemoteSandbox`/`ExecutorSandboxManager`:
 from __future__ import annotations
 
 import inspect
-import sys
 
 import pytest
 
@@ -58,10 +57,19 @@ _CFG = ExecutorConfig(base_url="http://executor:8080", token="tok-secreto-123")
 
 def test_executor_client_module_nao_toca_no_daemon_docker():
     fonte = inspect.getsource(executor_mod)
-    for proibido in ("import docker", "from docker", "docker.from_env", "_docker_client", "docker.sock"):
+    for proibido in (
+        "import docker",
+        "from docker",
+        "docker.from_env",
+        "_docker_client",
+        "docker.sock",
+    ):
         assert proibido not in fonte, f"cliente do executor referencia {proibido!r} (viola ADR 0002)"
-    # E importar o módulo não puxa o SDK do Docker para o processo.
-    assert "docker" not in sys.modules or getattr(sys.modules["docker"], "__file__", "") == ""
+    # `import docker` NÃO é checado via `sys.modules`: o caminho de sandbox
+    # local (`sandbox/container.py`) importa o SDK legitimamente, e a ordem da
+    # suíte determina se ele já foi importado quando este teste roda. O
+    # invariante do ADR 0002 é sobre o *cliente do executor* — a varredura de
+    # fonte acima cobre isso por inteiro.
 
 
 @pytest.mark.asyncio
