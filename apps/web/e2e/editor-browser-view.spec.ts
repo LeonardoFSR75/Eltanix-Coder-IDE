@@ -31,7 +31,10 @@ test("modo Live avisa e nunca navega quando o host é Docker-interno", async ({ 
   await urlInput.fill("http://web:5400/admin");
   await page.getByRole("button", { name: "Ir", exact: true }).click();
 
-  const aviso = page.getByRole("alert");
+  // `getByRole("alert")` casaria também o `#__next-route-announcer__` que o
+  // Next mantém sempre montado (strict-mode violation) — mira-se o banner
+  // real do componente pela classe.
+  const aviso = page.locator(".editor-browser-error-banner");
   await expect(aviso).toBeVisible();
   await expect(aviso).toContainText("web");
   await expect(aviso).toContainText("Docker");
@@ -51,7 +54,7 @@ test("modo Live navega normalmente para um host público, sem aviso", async ({ p
   await urlInput.fill("http://localhost:5400");
   await page.getByRole("button", { name: "Ir", exact: true }).click();
 
-  await expect(page.getByRole("alert")).toHaveCount(0);
+  await expect(page.locator(".editor-browser-error-banner")).toHaveCount(0);
   await expect(page.locator("iframe.browser-live-iframe")).toHaveAttribute(
     "src",
     "http://localhost:5400",
