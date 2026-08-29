@@ -1,7 +1,13 @@
 "use client";
 
 import React, { createContext, useCallback, useContext, useEffect, useState } from "react";
-import { get, login as apiLogin, logout as apiLogout } from "@/lib/client";
+import {
+  get,
+  login as apiLogin,
+  loginMfa as apiLoginMfa,
+  logout as apiLogout,
+  type LoginResult,
+} from "@/lib/client";
 
 /**
  * O backend agora exige login de sessão (`require_session` em
@@ -23,10 +29,18 @@ interface MeResponse {
   display_name: string | null;
 }
 
+type LoginOutcome =
+  | { ok: true }
+  | { ok: false; mfaRequired: false }
+  | { ok: false; mfaRequired: true; mfaToken: string };
+
 interface AuthContextType {
   user: AuthUser | null;
   checking: boolean;
-  login: (username: string, password: string) => Promise<boolean>;
+  /** `ok:true` = sessão pronta; `mfaRequired:true` = precisa do 2º fator. */
+  login: (username: string, password: string) => Promise<LoginOutcome>;
+  /** Completa o login em 2 etapas com o código do autenticador/recuperação. */
+  completeMfa: (mfaToken: string, code: string) => Promise<boolean>;
   logout: () => Promise<void>;
 }
 
@@ -55,9 +69,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [refresh]);
 
   const login = useCallback(
-    async (username: string, password: string): Promise<boolean> => {
+    async (username: string, password: string): Promise<LoginOutcome> => {
+      let result: LoginResult;
       try {
-        await apiLogin(username, password);
+        result = await apiLogin(username, password);
+      } catch {
+        return { ok: false, mfaRequired: false };
+      }
+      if (result.mfaRequired) {
+        return { ok: false, mfaRequired: true, mfaToken: result.mfaToken };
+      }
+      await refresh();
+      return { ok: true };
+    },
+    [refresh],
+  );
+
+  const completeMfa = useCallback(
+    async (mfaToken: string, code: string): Promise<boolean> => {
+      try {
+        await apiLoginMfa(mfaToken, code);
       } catch {
         return false;
       }
@@ -73,7 +104,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, checking, login, logout }}>
+    <AuthContext.Provider value={{ user, checking, login, completeMfa, logout }}>
       {children}
     </AuthContext.Provider>
   );

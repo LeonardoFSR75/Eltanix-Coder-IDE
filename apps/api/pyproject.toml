@@ -54,6 +54,9 @@ dependencies = [
     "aiosqlite>=0.22.1",
     # Observabilidade — tracing e estatísticas para LLM e LangGraph
     "langfuse>=2.50.0",
+    # QR do enrollment de 2FA (TOTP). Python puro, zero dependência nativa —
+    # mesmo critério do resto: nada de wheel que exija toolchain no Windows.
+    "segno>=1.6",
 ]
 
 [project.optional-dependencies]

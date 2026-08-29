@@ -11225,3 +11225,30 @@ button.primary:hover:not(:disabled) {
 @media (prefers-reduced-motion: reduce) {
   .ide-skeleton__bar { animation: none; }
 }
+
+/* --- 2FA / MFA (components/MfaSettings.tsx) --- */
+.mfa-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-top: 4px;
+}
+.mfa-recovery {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 28rem;
+}
+.mfa-recovery-list {
+  background: var(--bg-elev, rgba(127,127,127,0.08));
+  border: 1px solid var(--border, rgba(127,127,127,0.25));
+  border-radius: 8px;
+  padding: 12px 14px;
+  font-size: 13px;
+  line-height: 1.9;
+  letter-spacing: 0.04em;
+  white-space: pre;
+  overflow-x: auto;
+  margin: 0;
+}

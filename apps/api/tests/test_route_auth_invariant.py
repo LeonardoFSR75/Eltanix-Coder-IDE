@@ -31,6 +31,7 @@ from eltanix.main import create_app
 ROTAS_PUBLICAS_POR_DESIGN: set[tuple[str, str]] = {
     ("GET", "/"),  # meta: nome/versão/base-url, sem dado sensível
     ("POST", "/api/auth/login"),  # o único jeito de obter uma sessão
+    ("POST", "/api/auth/login/mfa"),  # 2ª etapa do login: desafio + código -> sessão
 }
 
 # Valores concretos para placeholders de path — o recurso não precisa existir:

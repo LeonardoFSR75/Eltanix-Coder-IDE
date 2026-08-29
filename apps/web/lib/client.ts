@@ -139,11 +139,28 @@ export async function streamEvents(
  * genérico), que é o único Route Handler capaz de setar o cookie httpOnly de
  * resposta. Ver `app/api/session/route.ts`.
  */
-export async function login(username: string, password: string): Promise<void> {
+export type LoginResult = { mfaRequired: false } | { mfaRequired: true; mfaToken: string };
+
+export async function login(username: string, password: string): Promise<LoginResult> {
   const response = await fetch("/api/session", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ username, password }),
+  });
+  if (!response.ok) await failFrom(response);
+  // 204 = sessão criada; 200 = falta o 2º fator.
+  if (response.status === 200) {
+    const body = await response.json();
+    if (body?.mfaRequired) return { mfaRequired: true, mfaToken: body.mfaToken };
+  }
+  return { mfaRequired: false };
+}
+
+export async function loginMfa(mfaToken: string, code: string): Promise<void> {
+  const response = await fetch("/api/session/mfa", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ mfaToken, code }),
   });
   if (!response.ok) await failFrom(response);
 }

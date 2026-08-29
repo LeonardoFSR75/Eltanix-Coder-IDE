@@ -11,7 +11,7 @@ from datetime import datetime
 from sqlalchemy import delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from eltanix.db.models import AppUser, AuthSession, ProjectMember
+from eltanix.db.models import AppUser, AuthSession, ProjectMember, UserMfa
 
 
 async def count_users(session: AsyncSession) -> int:
@@ -162,3 +162,68 @@ async def remove_member(
     await session.delete(member)
     await session.flush()
     return True
+
+
+# --- user_mfa: segundo fator TOTP (ver auth/service.py + auth/totp.py) ---
+
+
+async def get_mfa(session: AsyncSession, *, user_id: uuid.UUID) -> UserMfa | None:
+    return await session.get(UserMfa, user_id)
+
+
+async def upsert_mfa_secret(session: AsyncSession, *, user_id: uuid.UUID, secret: str) -> UserMfa:
+    """Grava (ou regrava) o segredo pendente, sempre com `enabled=False` e sem
+    códigos de recuperação — chamado pelo `setup`, que pode rodar de novo
+    enquanto o usuário ainda não confirmou."""
+    row = await session.get(UserMfa, user_id)
+    if row is None:
+        row = UserMfa(user_id=user_id, secret=secret, enabled=False, recovery_codes=[])
+        session.add(row)
+    else:
+        row.secret = secret
+        row.enabled = False
+        row.recovery_codes = []
+        row.confirmed_at = None
+    await session.flush()
+    return row
+
+
+async def enable_mfa(
+    session: AsyncSession, *, user_id: uuid.UUID, recovery_code_hashes: list[str], now: datetime
+) -> None:
+    row = await session.get(UserMfa, user_id)
+    if row is None:
+        return
+    row.enabled = True
+    row.confirmed_at = now
+    row.recovery_codes = recovery_code_hashes
+    await session.flush()
+
+
+async def set_recovery_codes(
+    session: AsyncSession, *, user_id: uuid.UUID, recovery_code_hashes: list[str]
+) -> None:
+    row = await session.get(UserMfa, user_id)
+    if row is not None:
+        row.recovery_codes = recovery_code_hashes
+        await session.flush()
+
+
+async def consume_recovery_code(
+    session: AsyncSession, *, user_id: uuid.UUID, code_hash: str
+) -> bool:
+    """Remove `code_hash` da lista se estiver lá. `True` = era válido e foi
+    gasto agora (uso único)."""
+    row = await session.get(UserMfa, user_id)
+    if row is None or code_hash not in (row.recovery_codes or []):
+        return False
+    row.recovery_codes = [h for h in row.recovery_codes if h != code_hash]
+    await session.flush()
+    return True
+
+
+async def delete_mfa(session: AsyncSession, *, user_id: uuid.UUID) -> None:
+    row = await session.get(UserMfa, user_id)
+    if row is not None:
+        await session.delete(row)
+        await session.flush()
