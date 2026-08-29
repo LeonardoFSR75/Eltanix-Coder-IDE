@@ -51,6 +51,16 @@ jobs:
       - name: Subir a stack (sem o profile ollama — os golden paths não chamam LLM)
         run: docker compose up -d --build postgres redis minio executor browser api web
 
+      - name: Migrar o banco e resemear o admin
+        # A imagem da API não roda migração no boot (é passo manual no compose —
+        # ver CLAUDE.md). Sem isto o schema não existe e o seed de `admin`
+        # falha com `relation "app_user" does not exist`, derrubando o login dos
+        # testes. `restart api` faz o lifespan reexecutar o seed com o schema
+        # já criado.
+        run: |
+          docker compose exec -T api alembic upgrade head
+          docker compose restart api
+
       - name: Esperar api e web responderem
         run: |
           for servico_url in "http://localhost:5401/api/health" "http://localhost:5400/login"; do
