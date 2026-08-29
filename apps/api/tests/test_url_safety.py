@@ -49,10 +49,19 @@ HOSTS_SEMPRE_BLOQUEADOS = [
     "mcp-scanner",
 ]
 
-# Só bloqueado pra sessão de painel (o resultado vai pra um <iframe> do
-# navegador real do usuário, que não resolve nomes Docker-internos) — a
-# sessão de agente pode alcançar de propósito, pra testar a própria app.
-HOSTS_BLOQUEADOS_SO_PARA_PAINEL = ["web", "api", "host.docker.internal"]
+# Só bloqueado pra sessão de painel: `host.docker.internal` é fuga para o host
+# real, fora do Docker — a sessão de agente pode alcançar de propósito, pra
+# testar a própria app; a de painel, não.
+HOSTS_BLOQUEADOS_SO_PARA_PAINEL = ["host.docker.internal"]
+
+# `web`/`api` são a PRÓPRIA aplicação. Bloqueados pra scraping externo
+# (firecrawl nunca deveria mirar nome Docker), mas alcançáveis pelo serviço de
+# navegador em QUALQUER sessão — inclusive o painel manual de "verificação
+# visual", que renderiza um screenshot tirado no servidor (`<img>` base64),
+# nunca um `<iframe>` no navegador real (esse caminho vive no `EditorBrowserView`
+# e não passa por aqui). Ver `_DOCKER_INTERNAL_HOSTS_BLOCKED_FOR_PANEL` em
+# `services/browser/app.py`.
+HOSTS_APP_PROPRIA_ALCANCAVEL_PELO_PAINEL = ["web", "api"]
 
 HOSTS_SEMPRE_PERMITIDOS = ["exemplo.com", "docs.python.org"]
 
@@ -92,6 +101,21 @@ def test_docker_internal_hosts_blocked_for_panel_allowed_for_agent(hostname):
     with pytest.raises(browser_app.HTTPException):
         browser_app.validate_url(f"http://{hostname}/x", session_id="panel-x")
     browser_app.validate_url(f"http://{hostname}/x", session_id="agent-x")  # não levanta
+
+
+@pytest.mark.parametrize("hostname", HOSTS_APP_PROPRIA_ALCANCAVEL_PELO_PAINEL)
+def test_app_own_hosts_blocked_for_scraping_but_reachable_by_any_browser_session(hostname):
+    # Módulo compartilhado (firecrawl/scraping externo): bloqueado, é nome
+    # Docker-interno — e reconhecido como alvo local legítimo do agente.
+    assert is_internal_hostname(hostname) is True
+    with pytest.raises(ValueError):
+        validate_target_url(f"http://{hostname}/x")
+    assert is_agent_local_test_target(hostname) is True
+
+    # Serviço de navegador: `web`/`api` são a própria aplicação — painel manual
+    # (screenshot no servidor, nunca iframe) e agente, ambos alcançam.
+    for session_id in ("panel-x", "agent-x"):
+        browser_app.validate_url(f"http://{hostname}/x", session_id=session_id)
 
 
 @pytest.mark.parametrize("hostname", HOSTS_SEMPRE_PERMITIDOS)
