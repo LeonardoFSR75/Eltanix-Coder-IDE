@@ -466,13 +466,18 @@ async def get_session_system_prompt(session_id: str, request: Request) -> dict[s
     entraram; `custom_mode_prompt_block` fica de fora de propósito — ele vai no
     prompt da tarefa (`build_task_prompt`), não no de sistema."""
     ctx = (await _session(request, session_id)).context
-    blocos = {
+    blocos: dict[str, str | None] = {
         "custom_instructions": ctx.custom_instructions,
         "specialization_prompt": ctx.specialization_prompt,
         "routed_skills_prompt": ctx.routed_skills_prompt,
         "context_rules_prompt": ctx.context_rules_prompt,
     }
-    composto = compose_system_prompt(**blocos)
+    composto = compose_system_prompt(
+        custom_instructions=ctx.custom_instructions,
+        specialization_prompt=ctx.specialization_prompt,
+        routed_skills_prompt=ctx.routed_skills_prompt,
+        context_rules_prompt=ctx.context_rules_prompt,
+    )
     return {
         "session_id": session_id,
         "system_prompt": composto,

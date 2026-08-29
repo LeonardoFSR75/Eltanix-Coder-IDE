@@ -73,7 +73,9 @@ jobs:
 
       - name: Instalar dependências
         working-directory: apps/web
-        run: npm ci
+        # `npm install` e não `npm ci`: o package-lock.json está fora de sync
+        # com o package.json (mesmo motivo do commit 0a05762 nos jobs de ci.yml).
+        run: npm install
 
       - name: Instalar Chromium do Playwright
         working-directory: apps/web
