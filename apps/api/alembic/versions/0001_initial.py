@@ -27,7 +27,9 @@ def upgrade() -> None:
     op.create_table(
         "request_log",
         sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
         sa.Column("source", sa.String(length=64), nullable=False, server_default="unknown"),
         sa.Column("endpoint", sa.String(length=64), nullable=False, server_default="chat"),
         sa.Column("requested_model", sa.String(length=128), nullable=False),

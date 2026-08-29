@@ -102,6 +102,47 @@ jobs:
       - name: pytest (só os testes de hybrid_search)
         run: uv run pytest tests/test_hybrid_search.py -q
 
+  db-migrations:
+    name: API — migrações (drift & reversibilidade)
+    runs-on: ubuntu-latest
+    # Bloqueante: o drift model↔migração pré-existente foi zerado, então
+    # qualquer novo desalinhamento (ou downgrade quebrado) deve travar o PR.
+    defaults:
+      run:
+        working-directory: apps/api
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_USER: eltanix
+          POSTGRES_PASSWORD: eltanix
+          POSTGRES_DB: eltanix_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U eltanix -d eltanix_test"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgresql+asyncpg://eltanix:eltanix@localhost:5432/eltanix_test
+      DATABASE_URL_TEST: postgresql+asyncpg://eltanix:eltanix@localhost:5432/eltanix_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+        with:
+          version: "latest"
+      - name: Instalar dependências
+        run: uv sync --dev
+      - name: upgrade head
+        run: uv run alembic upgrade head
+      - name: alembic check (autogenerate diff deve estar vazio)
+        run: uv run alembic check
+      - name: Reversibilidade — downgrade base -> upgrade head
+        run: |
+          uv run alembic downgrade base
+          uv run alembic upgrade head
+
   dependency-audit:
     name: Auditoria de dependências
     runs-on: ubuntu-latest

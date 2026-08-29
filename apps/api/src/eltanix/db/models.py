@@ -26,8 +26,10 @@ from sqlalchemy import (
     Index,
     Integer,
     Numeric,
+    SmallInteger,
     String,
     Text,
+    UniqueConstraint,
     func,
 )
 from sqlalchemy.dialects.postgresql import JSONB, TSVECTOR, UUID
@@ -700,7 +702,13 @@ class GraphNode(Base):
         "GraphMetrics", back_populates="node", uselist=False, cascade="all, delete-orphan"
     )
 
-    __table_args__ = (Index("ix_graph_node_workspace_type", "workspace", "entity_type"),)
+    __table_args__ = (
+        Index("ix_graph_node_workspace_type", "workspace", "entity_type"),
+        # Dedupe de entidade por workspace — a constraint nasceu na migração 0009.
+        UniqueConstraint(
+            "workspace", "canonical_id", name="uq_graph_node_workspace_canonical"
+        ),
+    )
 
     def __repr__(self) -> str:  # pragma: no cover
         return f"<GraphNode {self.entity_type}:{self.name!r}>"
@@ -722,7 +730,9 @@ class GraphEdge(Base):
     relation_type: Mapped[str] = mapped_column(
         String(64), nullable=False
     )  # REFERENCIA, DEPENDE, AFETA, etc.
-    layer: Mapped[int] = mapped_column(Integer, nullable=False)  # 1=Explicit, 2=Vector, 3=LLM
+    # SmallInteger (não Integer): só assume 1/2/3 e a coluna nasceu SMALLINT na
+    # migração 0009 — o tipo aqui acompanha o DDL já aplicado.
+    layer: Mapped[int] = mapped_column(SmallInteger, nullable=False)  # 1=Explicit, 2=Vector, 3=LLM
     weight: Mapped[float] = mapped_column(Numeric(5, 4), default=1.0, nullable=False)
     evidence: Mapped[str | None] = mapped_column(Text, nullable=True)
     edge_metadata: Mapped[dict] = mapped_column("metadata", JSON_TYPE, default=dict, nullable=False)
@@ -741,6 +751,10 @@ class GraphEdge(Base):
         Index("ix_graph_edge_source", "source_id", "relation_type"),
         Index("ix_graph_edge_target", "target_id", "relation_type"),
         Index("ix_graph_edge_workspace_layer", "workspace", "layer"),
+        # Uma aresta por (origem, destino, tipo) — a constraint nasceu na migração 0009.
+        UniqueConstraint(
+            "source_id", "target_id", "relation_type", name="uq_graph_edge_src_tgt_type"
+        ),
     )
 
     def __repr__(self) -> str:  # pragma: no cover

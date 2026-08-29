@@ -38,7 +38,9 @@ def upgrade() -> None:
         sa.Column("mtime", sa.Float(), nullable=False, server_default="0"),
         sa.Column("chunk_count", sa.Integer(), nullable=False, server_default="0"),
         sa.Column("fallback_chunking", sa.Boolean(), nullable=False, server_default=sa.false()),
-        sa.Column("indexed_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
+        sa.Column(
+            "indexed_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index(

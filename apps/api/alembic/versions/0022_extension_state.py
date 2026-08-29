@@ -31,6 +31,7 @@ def upgrade() -> None:
             sa.DateTime(timezone=True),
             server_default=sa.func.now(),
             onupdate=sa.func.now(),
+            nullable=False,
         ),
         sa.PrimaryKeyConstraint("extension_id"),
     )

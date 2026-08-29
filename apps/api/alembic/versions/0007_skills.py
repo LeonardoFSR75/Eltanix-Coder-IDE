@@ -31,12 +31,15 @@ def upgrade() -> None:
         sa.Column("parameters_json", sa.Text(), nullable=False, server_default="{}"),
         sa.Column("enabled", sa.Boolean(), nullable=False, server_default=sa.true()),
         sa.Column("usage_count", sa.Integer(), nullable=False, server_default="0"),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
         sa.Column(
             "updated_at",
             sa.DateTime(timezone=True),
             server_default=sa.func.now(),
             onupdate=sa.func.now(),
+            nullable=False,
         ),
         sa.PrimaryKeyConstraint("id"),
     )
