@@ -526,14 +526,17 @@ _LOOPBACK_TRIGGERS = {"localhost", "127.0.0.1", "0.0.0.0"}
 # timeout de conexão confuso.
 _INFRA_HOSTS_ALWAYS_BLOCKED = {"executor", "redis", "minio", "postgres", "mcp-scanner"}
 
-# Hosts Docker-internos que só sessões de AGENTE podem alcançar diretamente
-# (a allowlist correspondente vive em
-# `eltanix.agent.tools.browser::is_agent_local_test_target`) — sessões do
-# PAINEL MANUAL (`panel-*`) nunca devem, porque o resultado é renderizado
-# num `<iframe>` do navegador REAL do usuário, fora do Docker, que não
-# resolve esses nomes (ver item 2 / `url_is_internal_fallback` abaixo para o
-# sinal complementar quando a substituição acontece por baixo dos panos).
-_DOCKER_INTERNAL_HOSTS_BLOCKED_FOR_PANEL = {"web", "api", "host.docker.internal"}
+# Hosts Docker-internos que o PAINEL MANUAL (`panel-*`) nunca alcança
+# diretamente. `host.docker.internal` (fuga para o host) e `eltanix-*`
+# (sandbox de OUTRA sessão) continuam barrados. `web`/`api` NÃO estão mais
+# aqui de propósito: o `BrowserPanel` renderiza um screenshot tirado no
+# servidor (`<img>` base64), nunca um `<iframe>` no navegador real do
+# usuário — o modo Live com iframe vive em `EditorBrowserView` e jamais
+# chama este serviço —, então nenhum hostname Docker-interno vaza para fora
+# do container. Alcançar a própria aplicação é justamente o propósito da
+# "verificação visual". Infra sensível (`executor`/`redis`/`minio`/...)
+# segue barrada por `_INFRA_HOSTS_ALWAYS_BLOCKED`.
+_DOCKER_INTERNAL_HOSTS_BLOCKED_FOR_PANEL = {"host.docker.internal"}
 
 
 def _canonical_ipv4(host: str) -> str | None:
