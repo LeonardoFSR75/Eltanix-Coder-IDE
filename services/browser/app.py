@@ -25,6 +25,7 @@ import hmac
 import ipaddress
 import os
 import shutil
+import socket
 import tempfile
 import time
 from contextlib import asynccontextmanager, suppress
@@ -535,13 +536,31 @@ _INFRA_HOSTS_ALWAYS_BLOCKED = {"executor", "redis", "minio", "postgres", "mcp-sc
 _DOCKER_INTERNAL_HOSTS_BLOCKED_FOR_PANEL = {"web", "api", "host.docker.internal"}
 
 
+def _canonical_ipv4(host: str) -> str | None:
+    """IPv4 em codificação alternativa (decimal `2130706433`, octal
+    `0177.0.0.1`, hex `0x7f.0.0.1`, curta `127.1`) → forma pontilhada
+    canônica; senão `None`. Cópia sincronizada (não importada) de
+    `eltanix.security.url_safety.canonical_ipv4` — mesmo motivo da duplicação
+    do resto deste bloco (ver docstring de BLOCKED_HOSTS e addendum do ADR
+    0007). Sem isto, `http://2130706433/` fura o bloqueio de IP privado."""
+    try:
+        packed = socket.inet_aton(host)
+    except OSError:
+        return None
+    return socket.inet_ntoa(packed)
+
+
 def validate_url(url: str | None, *, session_id: str = "") -> None:
     if not url or not url.startswith(ALLOWED_SCHEMES):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="url precisa ser http(s)")
     parsed = urlparse(url)
-    hostname = (parsed.hostname or "").lower()
+    hostname = (parsed.hostname or "").lower().rstrip(".")
     if not hostname:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="url sem hostname válido")
+
+    # Normaliza IPv4 codificado de forma exótica para a checagem de IP
+    # privado/reservado lá embaixo enxergar o alvo real.
+    hostname = _canonical_ipv4(hostname) or hostname
 
     if hostname in BLOCKED_HOSTS or hostname.startswith("169.254."):
         raise HTTPException(

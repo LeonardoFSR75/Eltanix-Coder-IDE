@@ -128,3 +128,72 @@ def test_sandbox_container_hostnames_are_internal_but_agent_local() -> None:
     with pytest.raises(browser_app.HTTPException):
         browser_app.validate_url(f"http://{hostname}/x", session_id="panel-x")
     browser_app.validate_url(f"http://{hostname}/x", session_id="agent-x")
+
+
+# --- Lote 2 / item 87: bypass por codificação alternativa de IPv4 -------------
+#
+# `socket.inet_aton` (e todo resolver real: httpx, curl, libc) aceita IPv4 em
+# decimal (`2130706433`), octal (`0177.0.0.1`), hex (`0x7f.0.0.1`) e curto
+# (`127.1`). Um bloqueio que só compara o texto `"169.254.169.254"` era
+# contornável com `http://2852039166/`. Ambos os módulos normalizam agora
+# antes de classificar (`canonical_ipv4` / `_canonical_ipv4`).
+
+# Metadados cloud e faixas privadas, codificados — bloqueados em TODOS os
+# pontos de chamada e para qualquer sessão.
+IPV4_CODIFICADO_METADADOS_E_PRIVADO = [
+    "2852039166",  # 169.254.169.254 (metadados AWS/GCP) em decimal
+    "0xa9fea9fe",  # 169.254.169.254 em hex
+    "0xA000001",  # 10.0.0.1 (privado) em hex
+    "3232235521",  # 192.168.0.1 (privado) em decimal
+]
+
+# Loopback codificado: o `validate_target_url` (firecrawl/scraping externo)
+# bloqueia — nunca deveria mirar 127.0.0.0/8. O `browser_app.validate_url`
+# canoniza para `127.0.0.1`, que é gatilho legítimo de fallback Docker-interno
+# (mesma divergência intencional de `HOSTS_GATILHO_DE_FALLBACK_DIVERGEM_DE_PROPOSITO`).
+IPV4_CODIFICADO_LOOPBACK = ["2130706433", "0x7f.0.0.1", "127.1", "0177.0.0.1"]
+
+# Ponto final de FQDN — `localhost.` resolve igual a `localhost`.
+HOSTS_COM_PONTO_FINAL = ["localhost.", "redis.", "metadata.google.internal."]
+
+
+@pytest.mark.parametrize("hostname", IPV4_CODIFICADO_METADADOS_E_PRIVADO)
+def test_encoded_ipv4_metadata_and_private_blocked_everywhere(hostname):
+    assert is_internal_hostname(hostname) is True
+    with pytest.raises(ValueError):
+        validate_target_url(f"http://{hostname}/x")
+    for session_id in ("panel-x", "agent-x"):
+        with pytest.raises(browser_app.HTTPException):
+            browser_app.validate_url(f"http://{hostname}/x", session_id=session_id)
+
+
+@pytest.mark.parametrize("hostname", IPV4_CODIFICADO_LOOPBACK)
+def test_encoded_ipv4_loopback_blocked_for_external_scraping(hostname):
+    assert is_internal_hostname(hostname) is True
+    with pytest.raises(ValueError):
+        validate_target_url(f"http://{hostname}/x")
+    # Serviço de navegador: canoniza para 127.0.0.1, que é gatilho de fallback
+    # — permitido de propósito para qualquer sessão.
+    for session_id in ("panel-x", "agent-x"):
+        browser_app.validate_url(f"http://{hostname}/x", session_id=session_id)
+
+
+@pytest.mark.parametrize("hostname", HOSTS_COM_PONTO_FINAL)
+def test_trailing_dot_hostname_is_normalized_and_blocked(hostname):
+    assert is_internal_hostname(hostname) is True
+    with pytest.raises(ValueError):
+        validate_target_url(f"http://{hostname}/x")
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://[::ffff:169.254.169.254]/",  # IPv4-mapeado em IPv6
+        "http://[::1]/",  # loopback IPv6
+        "http://[fd00::1]/",  # ULA IPv6 (privado)
+        "http://legit.example.com@169.254.169.254/",  # userinfo enganoso
+    ],
+)
+def test_ipv6_and_userinfo_ssrf_vectors_blocked(url):
+    with pytest.raises(ValueError):
+        validate_target_url(url)
