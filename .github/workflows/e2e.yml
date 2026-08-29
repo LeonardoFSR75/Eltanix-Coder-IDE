@@ -25,6 +25,13 @@ on:
       - "docker-compose.yml"
       - ".github/workflows/e2e.yml"
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
 jobs:
   e2e:
     name: E2E — stack completa

@@ -137,9 +137,7 @@ async def lsp_socket(websocket: WebSocket, project: str, language: str) -> None:
         # Aceitar antes de fechar para que o motivo chegue ao editor: uma recusa
         # no handshake vira apenas "connection failed" no console do browser.
         await websocket.accept()
-        await websocket.send_json(
-            {"jsonrpc": "2.0", "method": "eltanix/error", "params": str(exc)}
-        )
+        await websocket.send_json({"jsonrpc": "2.0", "method": "eltanix/error", "params": str(exc)})
         await websocket.close(code=4503)
         return
 

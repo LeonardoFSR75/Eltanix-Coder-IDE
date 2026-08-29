@@ -6,6 +6,15 @@ on:
       - "v*"
   workflow_dispatch:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+# Default deny no nível do workflow; o job que publica o release reafirma
+# `contents: write` para si.
+permissions:
+  contents: read
+
 jobs:
   build-desktop:
     name: Build Desktop (${{ matrix.platform }})

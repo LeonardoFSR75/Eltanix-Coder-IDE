@@ -37,9 +37,7 @@ class OpenVSXClient:
 
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
-                res = await client.get(
-                    url, headers={"User-Agent": "Eltanix-ExtensionManager/2.0"}
-                )
+                res = await client.get(url, headers={"User-Agent": "Eltanix-ExtensionManager/2.0"})
                 if res.status_code == 200:
                     data = res.json()
                     return {

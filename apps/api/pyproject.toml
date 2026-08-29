@@ -77,6 +77,7 @@ dev = [
     # Um teste que trava esperando rede ou banco roda por horas sem timeout.
     # Melhor falhar em 60s e mostrar onde travou.
     "pytest-timeout>=2.3",
+    "pytest-cov>=6.0",
     "ruff>=0.8",
     "mypy>=1.13",
 ]
@@ -113,3 +114,20 @@ timeout = 60
 python_version = "3.12"
 plugins = []
 ignore_missing_imports = true
+
+[tool.coverage.run]
+source = ["src/eltanix"]
+branch = true
+omit = [
+    "src/eltanix/*/__main__.py",
+    "src/eltanix/evals/*",
+]
+
+[tool.coverage.report]
+# `--cov-fail-under` no comando do CI é a porta; começa em 0 e sobe conforme
+# a cobertura real for medida. Aqui só o que não conta como "faltando".
+exclude_also = [
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+    "@(abc\\.)?abstractmethod",
+]
