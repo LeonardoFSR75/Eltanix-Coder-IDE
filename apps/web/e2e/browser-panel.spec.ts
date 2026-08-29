@@ -15,7 +15,7 @@ test("painel de navegador manual navega e mostra uma captura real da página", a
   const urlInput = page.getByPlaceholder("http://web:5400 ou https://exemplo.com");
   await expect(urlInput).toBeVisible();
   await urlInput.fill("http://web:5400");
-  await page.getByRole("button", { name: "Ir" }).click();
+  await page.getByRole("button", { name: "Ir", exact: true }).click();
 
   await expect(page.locator(".browser-panel-viewport img")).toBeVisible({ timeout: 20_000 });
   await expect(page.locator(".browser-panel-status")).toContainText("web:5400");
@@ -23,6 +23,6 @@ test("painel de navegador manual navega e mostra uma captura real da página", a
   // Uma segunda navegação na mesma sessão de painel prova que a sessão do
   // serviço `browser` foi reaproveitada, não recriada a cada ação.
   await urlInput.fill("http://web:5400/login");
-  await page.getByRole("button", { name: "Ir" }).click();
+  await page.getByRole("button", { name: "Ir", exact: true }).click();
   await expect(page.locator(".browser-panel-status")).toContainText("web:5400/login");
 });

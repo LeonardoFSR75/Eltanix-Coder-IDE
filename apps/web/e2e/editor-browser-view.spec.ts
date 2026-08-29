@@ -29,7 +29,7 @@ test("modo Live avisa e nunca navega quando o host é Docker-interno", async ({ 
   const srcAntes = await iframe.getAttribute("src");
 
   await urlInput.fill("http://web:5400/admin");
-  await page.getByRole("button", { name: "Ir" }).click();
+  await page.getByRole("button", { name: "Ir", exact: true }).click();
 
   const aviso = page.getByRole("alert");
   await expect(aviso).toBeVisible();
@@ -49,7 +49,7 @@ test("modo Live navega normalmente para um host público, sem aviso", async ({ p
   await expect(urlInput).toBeVisible({ timeout: 20_000 });
 
   await urlInput.fill("http://localhost:5400");
-  await page.getByRole("button", { name: "Ir" }).click();
+  await page.getByRole("button", { name: "Ir", exact: true }).click();
 
   await expect(page.getByRole("alert")).toHaveCount(0);
   await expect(page.locator("iframe.browser-live-iframe")).toHaveAttribute(
