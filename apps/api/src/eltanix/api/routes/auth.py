@@ -426,7 +426,9 @@ async def list_users(request: Request) -> dict[str, Any]:
 
 
 @router.get("/users/search", dependencies=[AuthDep])
-async def search_users(request: Request, q: str = Query(default="", max_length=64)) -> dict[str, Any]:
+async def search_users(
+    request: Request, q: str = Query(default="", max_length=64)
+) -> dict[str, Any]:
     """Busca leve por `username`/`display_name`, sem `AdminDep` — o owner de
     um projeto precisa achar gente pra convidar (`POST /api/projects/{slug}/members`)
     sem ser admin da instância (ver ADR 0016, Fase 3). Devolve só o essencial

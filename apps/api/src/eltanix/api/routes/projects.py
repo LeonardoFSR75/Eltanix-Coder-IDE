@@ -113,7 +113,9 @@ class OpenPathIn(BaseModel):
 
 
 class BrowsePathIn(BaseModel):
-    path: str | None = Field(default=None, description="Caminho a explorar — vazio lista unidades/raízes do sistema")
+    path: str | None = Field(
+        default=None, description="Caminho a explorar — vazio lista unidades/raízes do sistema"
+    )
 
 
 class InspectPathIn(BaseModel):
@@ -123,44 +125,54 @@ class InspectPathIn(BaseModel):
 def _list_system_roots(projects_root: Path) -> list[dict[str, Any]]:
     roots: list[dict[str, Any]] = []
     if projects_root.exists():
-        roots.append({
-            "name": f"⚡ Raiz de Projetos ({projects_root.name})",
-            "path": str(projects_root),
-            "icon": "projects",
-            "type": "projects_root",
-        })
+        roots.append(
+            {
+                "name": f"⚡ Raiz de Projetos ({projects_root.name})",
+                "path": str(projects_root),
+                "icon": "projects",
+                "type": "projects_root",
+            }
+        )
     user_home = Path.home()
-    roots.append({
-        "name": f"🏠 Pasta do Usuário ({user_home.name})",
-        "path": str(user_home),
-        "icon": "home",
-        "type": "home",
-    })
+    roots.append(
+        {
+            "name": f"🏠 Pasta do Usuário ({user_home.name})",
+            "path": str(user_home),
+            "icon": "home",
+            "type": "home",
+        }
+    )
     docs = user_home / "Documents"
     if docs.exists():
-        roots.append({
-            "name": "📁 Documentos",
-            "path": str(docs),
-            "icon": "docs",
-            "type": "special",
-        })
+        roots.append(
+            {
+                "name": "📁 Documentos",
+                "path": str(docs),
+                "icon": "docs",
+                "type": "special",
+            }
+        )
     if sys.platform == "win32":
         for letter in string.ascii_uppercase:
             drive = Path(f"{letter}:\\")
             if drive.exists():
-                roots.append({
-                    "name": f"💽 Disco Local ({letter}:)",
-                    "path": str(drive),
-                    "icon": "drive",
-                    "type": "drive",
-                })
+                roots.append(
+                    {
+                        "name": f"💽 Disco Local ({letter}:)",
+                        "path": str(drive),
+                        "icon": "drive",
+                        "type": "drive",
+                    }
+                )
     else:
-        roots.append({
-            "name": "💽 Raiz do Sistema (/)",
-            "path": "/",
-            "icon": "drive",
-            "type": "drive",
-        })
+        roots.append(
+            {
+                "name": "💽 Raiz do Sistema (/)",
+                "path": "/",
+                "icon": "drive",
+                "type": "drive",
+            }
+        )
     return roots
 
 
@@ -200,7 +212,7 @@ def _resolve_user_path(raw_path: str, projects_root: Path) -> Path:
     if projects_root_host:
         host_norm = projects_root_host.replace("\\", "/").rstrip("/")
         if norm.lower().startswith(host_norm.lower()):
-            rel_part = norm[len(host_norm):].lstrip("/")
+            rel_part = norm[len(host_norm) :].lstrip("/")
             target = (projects_root / rel_part).resolve()
             if target.exists() and target.is_relative_to(projects_root.resolve()):
                 return target
@@ -214,7 +226,6 @@ def _resolve_user_path(raw_path: str, projects_root: Path) -> Path:
         pass
 
     return candidate_in_root
-
 
 
 class ProjectUpdateIn(BaseModel):
@@ -247,7 +258,8 @@ async def list_projects(request: Request) -> dict[str, Any]:
 
                     stmt_membros = select(ProjectMember).where(ProjectMember.user_id == user_id)
                     roles_por_projeto = {
-                        m.project_id: m.role for m in (await session.execute(stmt_membros)).scalars()
+                        m.project_id: m.role
+                        for m in (await session.execute(stmt_membros)).scalars()
                     }
                     records = [r for r in records if r.id in roles_por_projeto]
                 else:
@@ -371,9 +383,7 @@ async def create_project(payload: ProjectCreateIn, request: Request) -> dict[str
                 # POST é upsert-por-slug: sem esta checagem, um `editor` (ou
                 # qualquer autenticado, hoje) reenviando o mesmo nome
                 # reescreveria metadado de um projeto que não é dono.
-                await require_role_by_slug(
-                    session, request, project_slug=slug, min_role="editor"
-                )
+                await require_role_by_slug(session, request, project_slug=slug, min_role="editor")
             else:
                 # Slug novo, mas pode ter sido apagado antes (`delete_project`
                 # só remove o `ProjectRecord`, não nota/documento/grafo/
@@ -831,13 +841,17 @@ async def browse_filesystem(payload: BrowsePathIn, request: Request) -> dict[str
                 if item.is_dir() and item.name not in ignorar and not item.name.startswith("."):
                     has_git = (item / ".git").exists()
                     has_pkg = (item / "package.json").exists()
-                    has_py = (item / "pyproject.toml").exists() or (item / "requirements.txt").exists()
-                    res.append({
-                        "name": item.name,
-                        "path": str(item),
-                        "has_git": has_git,
-                        "is_project": bool(has_git or has_pkg or has_py),
-                    })
+                    has_py = (item / "pyproject.toml").exists() or (
+                        item / "requirements.txt"
+                    ).exists()
+                    res.append(
+                        {
+                            "name": item.name,
+                            "path": str(item),
+                            "has_git": has_git,
+                            "is_project": bool(has_git or has_pkg or has_py),
+                        }
+                    )
             except (PermissionError, OSError):
                 continue
         return res
@@ -861,7 +875,6 @@ async def browse_filesystem(payload: BrowsePathIn, request: Request) -> dict[str
         "truncated": len(dirs) > 120,
         "total_directories": len(dirs),
     }
-
 
 
 @router.get("/{slug}/summary")
@@ -1206,7 +1219,9 @@ async def list_members(slug: str, request: Request) -> dict[str, Any]:
                 {
                     "user_id": str(m.user_id),
                     "username": usuarios[m.user_id].username if m.user_id in usuarios else None,
-                    "display_name": usuarios[m.user_id].display_name if m.user_id in usuarios else None,
+                    "display_name": usuarios[m.user_id].display_name
+                    if m.user_id in usuarios
+                    else None,
                     "role": m.role,
                     "created_at": m.created_at.isoformat(),
                 }

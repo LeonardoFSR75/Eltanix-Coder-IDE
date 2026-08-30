@@ -238,9 +238,7 @@ async def rehydrate_path_guard(session: AsyncSession) -> int:
     legitimamente aberto fora de `PROJECTS_ROOT` perderia acesso ao próprio
     metadado git (e a tudo mais que `resolve()` alimenta — arquivos, agente,
     índice, LSP) até ser reaberto manualmente pela UI."""
-    registros = (
-        await session.execute(select(ProjectRecord.slug, ProjectRecord.local_path))
-    ).all()
+    registros = (await session.execute(select(ProjectRecord.slug, ProjectRecord.local_path))).all()
     return await asyncio.to_thread(_allow_existing_dirs, [(r[0], r[1]) for r in registros])
 
 
@@ -279,7 +277,10 @@ async def sync_projects_db(session: AsyncSession, projects_root: Path) -> list[P
         await session.flush()
         admin_id = (
             await session.execute(
-                select(AppUser.id).where(AppUser.is_admin.is_(True)).order_by(AppUser.created_at).limit(1)
+                select(AppUser.id)
+                .where(AppUser.is_admin.is_(True))
+                .order_by(AppUser.created_at)
+                .limit(1)
             )
         ).scalar_one_or_none()
         if admin_id is not None:

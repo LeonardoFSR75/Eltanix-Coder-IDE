@@ -45,6 +45,7 @@ async def _check_project_access(request: Request, project: str, min_role: str) -
     async with session_scope() as session:
         await require_role_by_slug(session, request, project_slug=project, min_role=min_role)
 
+
 _DEP_CACHE_PREFIX = "quality:depmarkers"
 _DEP_CACHE_TTL_SECONDS = 600
 _DEP_AUDIT_TIMEOUT_S = 25.0

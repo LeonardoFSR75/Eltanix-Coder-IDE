@@ -39,7 +39,9 @@ def _canon(name: str) -> str:
     return name.strip().lower().replace("_", "-")
 
 
-def markers_from_audit(manifest_name: str, manifest_text: str, audit: dict[str, Any]) -> list[DependencyMarker]:
+def markers_from_audit(
+    manifest_name: str, manifest_text: str, audit: dict[str, Any]
+) -> list[DependencyMarker]:
     """`audit` é o dict devolvido por `run_dependency_audit`. Formato das vulns
     varia por ecossistema (pip-audit vs npm audit) — os dois são normalizados
     aqui."""

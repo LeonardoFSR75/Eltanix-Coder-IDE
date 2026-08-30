@@ -129,9 +129,7 @@ def load_project_coverage(root: Path) -> ProjectCoverage | None:
             continue
 
         if files:
-            return ProjectCoverage(
-                fmt=fmt, source=rel, generated_at=mtime, files=files
-            )
+            return ProjectCoverage(fmt=fmt, source=rel, generated_at=mtime, files=files)
     return None
 
 
@@ -208,9 +206,7 @@ def _parse_lcov(raw: str) -> dict[str, FileCoverage]:
                     number = int(body[0])
                 except ValueError:
                     continue
-                hits[current][number] = max(
-                    hits[current].get(number, 0), _to_int(body[1])
-                )
+                hits[current][number] = max(hits[current].get(number, 0), _to_int(body[1]))
         elif line.startswith("BRDA:"):
             body = line[5:].split(",")
             if len(body) >= 4:
