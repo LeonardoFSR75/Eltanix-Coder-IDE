@@ -42,6 +42,7 @@ export interface ProjectSummary {
 export interface ProjectCreateIn {
   name: string;
   description?: string;
+  language?: string;
   git_url?: string;
   init_git?: boolean;
   create_github_repo?: boolean;

@@ -150,6 +150,7 @@ export function LinkProjectModal({
       const created: ProjectRecord = await createProject({
         name: newName.trim(),
         description: newDesc.trim() || undefined,
+        language: newLanguage,
         init_git: newInitGit,
         create_github_repo: newCreateGithub,
         budget_limit_usd: newBudgetLimit ? parseFloat(newBudgetLimit) : undefined,
