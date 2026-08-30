@@ -57,6 +57,11 @@ dependencies = [
     # QR do enrollment de 2FA (TOTP). Python puro, zero dependência nativa —
     # mesmo critério do resto: nada de wheel que exija toolchain no Windows.
     "segno>=1.6",
+    # Cifra em repouso do segredo TOTP (F-7 da revisão de segurança 2026-08,
+    # ver auth/secret_box.py). Ao contrário de bcrypt/argon2 (rejeitados no
+    # ADR 0005), publica wheel abi3 pré-compilada para win_amd64/manylinux/
+    # macOS — não exige toolchain, mesmo critério de psycopg[binary].
+    "cryptography>=44",
 ]
 
 [project.optional-dependencies]

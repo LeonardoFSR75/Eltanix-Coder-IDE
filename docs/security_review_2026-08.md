@@ -100,27 +100,38 @@ fatal, só grava IP + módulo `auth` sem senha) em login OK/falho, login MFA
 OK/falho, logout, `change_password` OK/falho, `create_user`,
 `session.revoke`, `mfa.activate`, `mfa.disable` OK/falho.
 
-### F-7 — Segredo TOTP guardado em claro na coluna · **Baixa** · *anotado*
-`user_mfa.secret` (base32) fica em claro, como a maioria das apps sem
-envelope-encryption faz. Se o Postgres vazar, o atacante que *também* tem a
-senha do usuário passa no 2º fator. O `password_hash` no mesmo vazamento já
-permite ataque offline, então o TOTP em claro não é o elo mais fraco.
-**Recomendação (opcional):** cifrar `secret` e `recovery_codes` com AES-GCM
-usando chave de `ELTANIX_MFA_SECRET_KEY` (env) — exige a dependência
-`cryptography`. Sem ela, manter em claro é aceitável para o modelo local-first
-e está documentado aqui.
+### F-7 — Segredo TOTP guardado em claro na coluna · **Baixa** · *corrigido nesta entrega*
+`user_mfa.secret` (base32) ficava em claro. Se o Postgres vazar, o atacante que
+*também* tem a senha do usuário passa no 2º fator.
+**Feito:** `auth/secret_box.py` (`SecretBox`) cifra o segredo com **AES-256-GCM**
+quando `ELTANIX_MFA_SECRET_KEY` está definida — chave derivada por `scrypt`
+determinístico, envelope `enc:v1:` + base64(nonce+ct+tag), coluna alargada para
+`String(255)` (migração `0028`). Sem a env var, o valor fica em claro **como
+antes** (degrada, não quebra — F-7 é *Baixa* e o modelo é local-first); o
+startup (`main.py`) emite `auth.mfa.secret_key_missing` em nível `warning` se
+houver linha em `user_mfa` sem a chave. Segredo em claro pré-F-7 é regravado
+cifrado na primeira autenticação bem-sucedida (`_verify_second_factor` →
+`store.set_mfa_secret`), mesmo padrão do re-hash de senha. `recovery_codes`
+ficam fora: já são `sha256` de uso único (não recuperáveis), cifrá-los é
+ganho marginal e invadiria o `store` inteiro — deferido.
+Dependência nova: `cryptography` (wheel `abi3` pré-compilada, sem toolchain —
+mesmo critério de `psycopg[binary]`, não recai no veto a bcrypt/argon2 do
+ADR 0005). Testes: `tests/test_secret_box.py` + wiring em `tests/test_mfa.py`.
 
 ### F-8 — `min_length=6` para senha · **Baixa** · *corrigido nesta entrega*
 `CreateUserRequest.password`, `ChangePasswordRequest.new_password` e o form de
 `/profile` subiram para `min_length=8`. Checagem de lista de vazadas continua
 fora de escopo para um app local.
 
-### F-9 — `ELTANIX_API_KEY`: segredo único, estático, poder total · **Baixa**
+### F-9 — `ELTANIX_API_KEY`: segredo único, estático, poder total · **Baixa** · *mitigado nesta entrega*
 Bypass de tudo (RBAC inclusive), sem rotação, sem escopo. É o desenho do
 ADR 0005 (canal de serviço), e a comparação é constante-tempo.
-**Recomendação:** `.env.example` deve gerar uma chave longa aleatória por
-padrão (não um literal como `eltanix-local-dev-key`) e o startup já avisa
-quando ela está vazia — manter esse aviso alto.
+**Feito:** bloco Núcleo do `.env.example` reescrito — instrução única no topo
+para gerar valor aleatório para **cada** segredo (`token_urlsafe(32)`),
+placeholder `troque-me` mantido só como marcador inválido, e a chave descrita
+como raiz sem rotação. O startup (`main.py:106`) já aborta com
+`ELTANIX_API_KEY` vazia — aviso preservado. Rotação/escopo real fica fora:
+mudaria o contrato do ADR 0005.
 
 ### F-10 — Proxy do Next repassa `Authorization` do cliente · **Baixa**
 `app/api/gateway` encaminha o header `Authorization`/`x-api-key` que o
@@ -171,13 +182,18 @@ Segunda leva (Lote 8 — follow-ups de severidade Média):
 - Testes: `tests/test_auth_hardening.py` (F-3, F-4) e novos casos em
   `tests/test_mfa.py` (endpoints de sessão exigem autenticação).
 
+Terceira leva (Lote 9 — cauda de severidade Baixa, item C2 do roadmap ponta a ponta):
+
+- **F-7** — `auth/secret_box.py` (AES-256-GCM), config `ELTANIX_MFA_SECRET_KEY`,
+  migração `0028` (coluna `secret` → 255), aviso de boot, migração preguiçosa
+  do segredo em claro. `tests/test_secret_box.py` + wiring em `tests/test_mfa.py`.
+- **F-9** — bloco Núcleo do `.env.example` reescrito.
+
 ## Acompanhamento (não bloqueia esta entrega)
 
-- **F-7** (segredo TOTP cifrado com AES-GCM) — exige a dependência
-  `cryptography`; em claro é aceitável para o modelo local-first (ver acima).
-- **F-9** (`ELTANIX_API_KEY` aleatória por padrão no `.env.example`) — mexer
-  aqui esbarra no compose zero-config; o startup já avisa quando a chave está
-  vazia. Fica como ajuste de packaging, não de código.
+- **F-7 / `recovery_codes`** — deixados em claro-hash (`sha256`): já são de uso
+  único e não recuperáveis; cifrar exigiria decifrar a lista inteira a cada
+  leitura e invadir `store.py` — ganho marginal, deferido.
 - **F-5 (parte de banco)** — `list_active_sessions_for_user` /
   `revoke_session_by_id` só têm cobertura sob `pg_session` (requer
   `DATABASE_URL_TEST`); vale um `tests/test_auth.py` dedicado quando o CI

@@ -208,6 +208,10 @@ async def get_mfa(session: AsyncSession, *, user_id: uuid.UUID) -> UserMfa | Non
     return await session.get(UserMfa, user_id)
 
 
+async def count_mfa_rows(session: AsyncSession) -> int:
+    return (await session.execute(select(func.count(UserMfa.user_id)))).scalar() or 0
+
+
 async def upsert_mfa_secret(session: AsyncSession, *, user_id: uuid.UUID, secret: str) -> UserMfa:
     """Grava (ou regrava) o segredo pendente, sempre com `enabled=False` e sem
     códigos de recuperação — chamado pelo `setup`, que pode rodar de novo
@@ -223,6 +227,15 @@ async def upsert_mfa_secret(session: AsyncSession, *, user_id: uuid.UUID, secret
         row.confirmed_at = None
     await session.flush()
     return row
+
+
+async def set_mfa_secret(session: AsyncSession, *, user_id: uuid.UUID, secret: str) -> None:
+    """Regrava só o `secret` (mantém `enabled`/`recovery_codes`) — usado na
+    migração preguiçosa de segredo em claro para cifrado (F-7)."""
+    row = await session.get(UserMfa, user_id)
+    if row is not None:
+        row.secret = secret
+        await session.flush()
 
 
 async def enable_mfa(

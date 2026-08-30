@@ -217,6 +217,20 @@ async def lifespan(app: FastAPI):
     await auth.ensure_seed_user(username=settings.admin_username, password=admin_password)
     await auth.purge_expired_sessions()
 
+    # F-7: segredo TOTP cifrado em repouso só quando ELTANIX_MFA_SECRET_KEY
+    # existe. Avisa alto se há MFA configurado sem a chave (o segredo está em
+    # claro no banco) — silencioso para quem não usa 2º fator.
+    if not auth.mfa_secret_encrypted:
+        try:
+            if await auth.any_mfa_configured():
+                log.warning(
+                    "auth.mfa.secret_key_missing",
+                    impact="segredo TOTP gravado em claro no banco",
+                    hint="defina ELTANIX_MFA_SECRET_KEY no .env para cifrá-lo (F-7)",
+                )
+        except Exception as exc:  # sem banco no boot não deve derrubar o app
+            log.warning("auth.mfa.secret_key_check_failed", error=str(exc)[:200])
+
     mcp_manager = MCPManager(settings)
     await mcp_manager.connect_all()
     mcp_manager.register_tools(tool_registry)

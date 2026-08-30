@@ -43,6 +43,10 @@ class Settings(BaseSettings):
     # obrigatório, só a senha do primeiro acesso fica no log em vez do `.env`.
     admin_username: str = Field(default="admin", alias="ELTANIX_ADMIN_USERNAME")
     admin_password: str = Field(default="", alias="ELTANIX_ADMIN_PASSWORD")
+    # Cifra em repouso do segredo TOTP (`user_mfa.secret`) — F-7 da revisão de
+    # segurança 2026-08. Vazia = segredo em claro, como antes (degrada, não
+    # quebra). Ver `auth/secret_box.py`.
+    mfa_secret_key: str = Field(default="", alias="ELTANIX_MFA_SECRET_KEY")
     log_level: str = Field(default="INFO", alias="ELTANIX_LOG_LEVEL")
     log_json: bool = Field(default=False, alias="ELTANIX_LOG_JSON")
     config_dir: Path = Field(default=REPO_ROOT / "config", alias="ELTANIX_CONFIG_DIR")

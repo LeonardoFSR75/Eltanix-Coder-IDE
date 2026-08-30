@@ -18,6 +18,8 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from eltanix.auth import store, totp
+from eltanix.auth.secret_box import SecretBox
+from eltanix.config import get_settings
 from eltanix.db.models import AppUser
 from eltanix.db.session import session_scope
 from eltanix.logging_setup import get_logger
@@ -154,6 +156,9 @@ class AuthService:
         # trava da conta. Cardinalidade baixa (nº de usernames reais), então
         # poda por chave já basta.
         self._user_attempts: dict[str, list[datetime]] = {}
+        # Cifra em repouso do segredo TOTP (F-7). Sem `ELTANIX_MFA_SECRET_KEY`
+        # é um no-op transparente — o segredo fica em claro como antes.
+        self._secret_box = SecretBox(get_settings().mfa_secret_key)
 
     async def check_and_register_attempt(self, ip: str, redis: Any | None = None) -> bool:
         """Registra a tentativa de login atual e devolve `True` se ainda está
@@ -427,6 +432,17 @@ class AuthService:
 
     # ── Segundo fator (TOTP) ──────────────────────────────────────────────
 
+    @property
+    def mfa_secret_encrypted(self) -> bool:
+        """`True` se `ELTANIX_MFA_SECRET_KEY` está configurada (segredo TOTP
+        cifrado em repouso — F-7)."""
+        return self._secret_box.enabled
+
+    async def any_mfa_configured(self) -> bool:
+        """Há pelo menos uma linha em `user_mfa` (ativa ou pendente)?"""
+        async with session_scope() as session:
+            return await store.count_mfa_rows(session) > 0
+
     async def is_mfa_enabled(self, user_id: uuid.UUID) -> bool:
         async with session_scope() as session:
             row = await store.get_mfa(session, user_id=user_id)
@@ -451,7 +467,9 @@ class AuthService:
             if existing and existing.enabled:
                 raise ValueError("MFA já está ativo — desative antes de gerar um novo segredo.")
             secret = totp.generate_secret()
-            await store.upsert_mfa_secret(session, user_id=user_id, secret=secret)
+            await store.upsert_mfa_secret(
+                session, user_id=user_id, secret=self._secret_box.encrypt(secret)
+            )
         return {
             "secret": secret,
             "otpauth_uri": totp.provisioning_uri(secret, account=account),
@@ -465,7 +483,7 @@ class AuthService:
             row = await store.get_mfa(session, user_id=user_id)
         if row is None or row.enabled:
             return None
-        return totp.provisioning_uri(row.secret, account=account)
+        return totp.provisioning_uri(self._secret_box.decrypt(row.secret), account=account)
 
     async def activate_mfa(
         self, user_id: uuid.UUID, *, code: str, keep_session_token: str | None = None
@@ -477,7 +495,9 @@ class AuthService:
         hashes = [_hash_token(_normalize_recovery_code(c)) for c in codigos]
         async with session_scope() as session:
             row = await store.get_mfa(session, user_id=user_id)
-            if row is None or row.enabled or not totp.verify(row.secret, code):
+            if row is None or row.enabled or not totp.verify(
+                self._secret_box.decrypt(row.secret), code
+            ):
                 return None
             now = datetime.now(UTC)
             await store.enable_mfa(session, user_id=user_id, recovery_code_hashes=hashes, now=now)
@@ -528,7 +548,15 @@ class AuthService:
             row = await store.get_mfa(session, user_id=user_id)
             if row is None or not row.enabled:
                 return False
-            if totp.verify(row.secret, code):
+            plain_secret = self._secret_box.decrypt(row.secret)
+            if totp.verify(plain_secret, code):
+                # Migração preguiçosa: um segredo em claro pré-F-7 é regravado
+                # cifrado na primeira autenticação bem-sucedida (mesmo padrão
+                # do re-hash de senha).
+                if self._secret_box.needs_reencrypt(row.secret):
+                    await store.set_mfa_secret(
+                        session, user_id=user_id, secret=self._secret_box.encrypt(plain_secret)
+                    )
                 return True
             code_hash = _hash_token(_normalize_recovery_code(code))
             if consume_recovery:

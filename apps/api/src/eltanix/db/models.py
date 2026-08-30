@@ -910,8 +910,10 @@ class UserMfa(Base):
     """Segundo fator (TOTP) de um usuário. 1:1 com `app_user` — a ausência de
     linha é o estado "MFA não configurado"; nada muda para quem não ativou.
 
-    `secret` fica em claro (base32), como a maioria das apps sem
-    envelope-encryption — ver F-7 em `docs/security_review_2026-08.md`.
+    `secret` (base32) vai cifrado em repouso com AES-256-GCM quando
+    `ELTANIX_MFA_SECRET_KEY` está definida (F-7 de `docs/security_review_2026-08.md`,
+    ver `auth/secret_box.py`); sem a chave, fica em claro como antes. O envelope
+    cifrado é maior que o base32 cru — daí `String(255)`.
     `recovery_codes` guarda só o `sha256` de cada código de uso único (alta
     entropia, mesmo critério do token de sessão em `AuthSession`).
     """
@@ -923,7 +925,7 @@ class UserMfa(Base):
         ForeignKey("app_user.id", ondelete="CASCADE"),
         primary_key=True,
     )
-    secret: Mapped[str] = mapped_column(String(64), nullable=False)
+    secret: Mapped[str] = mapped_column(String(255), nullable=False)
     # False = segredo gerado no `setup` mas ainda não confirmado por um código
     # válido. Só `enabled=True` passa a exigir 2º fator no login.
     enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)

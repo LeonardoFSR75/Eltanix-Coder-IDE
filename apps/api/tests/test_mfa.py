@@ -42,6 +42,24 @@ def test_normalize_recovery_code_strips_hyphen_space_and_case():
     assert _normalize_recovery_code("  ab1c 2d3e ") == "ab1c2d3e"
 
 
+# ── F-7: cifra do segredo TOTP em repouso (wiring de AuthService) ──────────
+
+
+def test_auth_service_reads_mfa_secret_key_from_settings(monkeypatch):
+    monkeypatch.setenv("ELTANIX_MFA_SECRET_KEY", "k" * 40)
+    get_settings.cache_clear()
+    try:
+        assert AuthService().mfa_secret_encrypted is True
+    finally:
+        monkeypatch.delenv("ELTANIX_MFA_SECRET_KEY", raising=False)
+        get_settings.cache_clear()
+
+
+def test_auth_service_defaults_to_plaintext_secret():
+    get_settings.cache_clear()
+    assert AuthService().mfa_secret_encrypted is False
+
+
 # ── desafio de 2ª etapa (dict em memória, sem tocar no banco) ──────────────
 
 
