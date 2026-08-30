@@ -2,16 +2,23 @@
 reais (`DocumentService.search`, `NoteService.search`,
 `ContextIndexer.search`) e imprime hit@k / MRR por fonte.
 
-Não entra no `pytest` padrão (`tests/test_evals.py` cobre só a lógica de
-score) — precisa de Postgres+pgvector+embeddings reais no ar, é ferramenta
-de desenvolvedor, não teste de unidade. Uso:
+Com `--judge` (ou `EVALS_JUDGE=1`), também gera uma resposta a partir dos
+trechos recuperados e mede `faithfulness` e `answer_relevance` no espírito do
+RAGAS (ver `evals/ragas.py`) — juiz LLM via `RouterEngine`.
+
+Não entra no `pytest` padrão (`tests/test_evals.py` / `tests/test_ragas.py`
+cobrem só a lógica pura de score) — precisa de Postgres+pgvector+embeddings
+reais no ar, é ferramenta de desenvolvedor, não teste de unidade. Uso:
 
     uv run eltanix-eval-rag
+    uv run eltanix-eval-rag --judge
 """
 
 from __future__ import annotations
 
 import asyncio
+import os
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -19,6 +26,7 @@ from eltanix.config import get_settings
 from eltanix.context.indexer import ContextIndexer
 from eltanix.db.session import init_engine, shutdown_engine
 from eltanix.documents.service import DocumentService
+from eltanix.evals import ragas
 from eltanix.evals.dataset import EvalCase, load_dataset
 from eltanix.notes.service import NoteService
 from eltanix.optimizer.cache import ResponseCache
@@ -60,6 +68,8 @@ async def _run_case(
     documents: DocumentService,
     notes: NoteService,
     indexer: ContextIndexer,
+    engine: RouterEngine | None = None,
+    judge: bool = False,
 ) -> dict[str, Any]:
     if case.source == "documents":
         doc_results = await documents.search(case.query, limit=case.limit)
@@ -70,10 +80,25 @@ async def _run_case(
     else:
         assert case.root is not None
         code_results = await indexer.search(
-            root=Path(case.root), query=case.query, limit=case.limit
+            root=Path(case.root),
+            query=case.query,
+            limit=case.limit,
+            git_aware=indexer.settings.context_git_aware_search,
         )
         hits = [(h.content, h.citation) for h in code_results]
-    return score_case(hits, case)
+
+    result = score_case(hits, case)
+
+    if judge and engine is not None and hits:
+        context_blocks = [content for content, _ in hits[: case.limit]]
+        answer, gen = await ragas.score_generation(
+            engine, query=case.query, context_blocks=context_blocks, source="eval"
+        )
+        result["answer"] = answer
+        result["faithfulness"] = gen.faithfulness
+        result["answer_relevance"] = gen.answer_relevance
+        result["judge_unparseable"] = gen.unparseable
+    return result
 
 
 def _print_report(results: list[dict[str, Any]]) -> None:
@@ -93,11 +118,22 @@ def _print_report(results: list[dict[str, Any]]) -> None:
     for source, items in by_source.items():
         hit_rate = sum(1 for i in items if i["hit"]) / len(items)
         mrr = sum(i["reciprocal_rank"] for i in items) / len(items)
-        print(f"{source}: hit@k={hit_rate:.0%}  MRR={mrr:.2f}  ({len(items)} casos)")
+        linha = f"{source}: hit@k={hit_rate:.0%}  MRR={mrr:.2f}  ({len(items)} casos)"
+
+        judged = [i for i in items if "faithfulness" in i]
+        if judged:
+            faith = sum(i["faithfulness"] for i in judged) / len(judged)
+            rel = sum(i["answer_relevance"] for i in judged) / len(judged)
+            bad = sum(1 for i in judged if i.get("judge_unparseable"))
+            linha += f"  faithfulness={faith:.2f}  answer_rel={rel:.2f}"
+            if bad:
+                linha += f"  (juiz ilegível em {bad})"
+        print(linha)
 
 
 async def _main_async() -> None:
     settings = get_settings()
+    judge = "--judge" in sys.argv or os.getenv("EVALS_JUDGE") == "1"
     init_engine(settings.database_url)
     try:
         cases = load_dataset(settings.config_dir / "eval_dataset.yaml")
@@ -123,8 +159,17 @@ async def _main_async() -> None:
         notes = NoteService(settings=settings, engine=engine)
         indexer = ContextIndexer(settings=settings, engine=engine)
 
+        if judge:
+            print("modo --judge: gerando resposta e medindo faithfulness/answer_relevance\n")
         results = [
-            await _run_case(case, documents=documents, notes=notes, indexer=indexer)
+            await _run_case(
+                case,
+                documents=documents,
+                notes=notes,
+                indexer=indexer,
+                engine=engine,
+                judge=judge,
+            )
             for case in cases
         ]
         _print_report(results)

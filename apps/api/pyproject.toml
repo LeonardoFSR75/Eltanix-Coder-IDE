@@ -54,6 +54,14 @@ dependencies = [
     "aiosqlite>=0.22.1",
     # Observabilidade — tracing e estatísticas para LLM e LangGraph
     "langfuse>=2.50.0",
+    # QR do enrollment de 2FA (TOTP). Python puro, zero dependência nativa —
+    # mesmo critério do resto: nada de wheel que exija toolchain no Windows.
+    "segno>=1.6",
+    # Cifra em repouso do segredo TOTP (F-7 da revisão de segurança 2026-08,
+    # ver auth/secret_box.py). Ao contrário de bcrypt/argon2 (rejeitados no
+    # ADR 0005), publica wheel abi3 pré-compilada para win_amd64/manylinux/
+    # macOS — não exige toolchain, mesmo critério de psycopg[binary].
+    "cryptography>=44",
 ]
 
 [project.optional-dependencies]
@@ -77,6 +85,7 @@ dev = [
     # Um teste que trava esperando rede ou banco roda por horas sem timeout.
     # Melhor falhar em 60s e mostrar onde travou.
     "pytest-timeout>=2.3",
+    "pytest-cov>=6.0",
     "ruff>=0.8",
     "mypy>=1.13",
 ]
@@ -113,3 +122,20 @@ timeout = 60
 python_version = "3.12"
 plugins = []
 ignore_missing_imports = true
+
+[tool.coverage.run]
+source = ["src/eltanix"]
+branch = true
+omit = [
+    "src/eltanix/*/__main__.py",
+    "src/eltanix/evals/*",
+]
+
+[tool.coverage.report]
+# `--cov-fail-under` no comando do CI é a porta; começa em 0 e sobe conforme
+# a cobertura real for medida. Aqui só o que não conta como "faltando".
+exclude_also = [
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+    "@(abc\\.)?abstractmethod",
+]

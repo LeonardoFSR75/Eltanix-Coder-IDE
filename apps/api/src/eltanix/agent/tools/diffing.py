@@ -14,7 +14,12 @@ from dataclasses import dataclass
 from typing import Any
 
 from eltanix.agent.tools.base import ToolContext
-from eltanix.agent.tools.files import unified_diff
+from eltanix.agent.tools.files import (
+    EditAmbiguousError,
+    EditNotFoundError,
+    resolve_edit,
+    unified_diff,
+)
 from eltanix.workspace.fs import FileTooLargeError, PathEscapeError
 
 # Único lugar que decide quais ferramentas têm conceito de diff — consultado
@@ -74,23 +79,20 @@ def _diff_for_edit_file(
     except (PathEscapeError, FileNotFoundError, FileTooLargeError, ValueError):
         return None
 
-    atual_norm = atual.replace("\r\n", "\n")
-    old_norm = old_text.replace("\r\n", "\n")
-    new_norm = new_text.replace("\r\n", "\n")
-
-    # Mesma regra de `edit_file`: só faz sentido "prever" o diff quando o
-    # trecho é inequívoco — 0 ou várias ocorrências são um erro que a própria
-    # ferramenta vai recusar na hora de executar, não um diff válido pra
-    # avaliar agora.
-    if atual_norm.count(old_norm) != 1:
+    # `allow_fuzzy=False`: aqui só se prevê o que um casamento EXATO faria. 0
+    # ou várias ocorrências são um erro que `edit_file` vai recusar na hora de
+    # executar, não um diff válido para a política de auto-aprovação avaliar
+    # agora — degrada para `None`, igual a antes desta extração.
+    try:
+        resolvido = resolve_edit(atual, old_text, new_text, allow_fuzzy=False)
+    except (EditNotFoundError, EditAmbiguousError):
         return None
 
-    novo_norm = atual_norm.replace(old_norm, new_norm, 1)
-    diff = unified_diff(path, atual_norm, novo_norm)
+    diff = unified_diff(path, resolvido.before, resolvido.after)
     return ProposedDiff(
         path=path,
-        before=atual_norm,
-        after=novo_norm,
+        before=resolvido.before,
+        after=resolvido.after,
         diff=diff,
         changed_lines=_count_changed_lines(diff),
         existed=True,

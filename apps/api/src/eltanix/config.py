@@ -43,6 +43,10 @@ class Settings(BaseSettings):
     # obrigatório, só a senha do primeiro acesso fica no log em vez do `.env`.
     admin_username: str = Field(default="admin", alias="ELTANIX_ADMIN_USERNAME")
     admin_password: str = Field(default="", alias="ELTANIX_ADMIN_PASSWORD")
+    # Cifra em repouso do segredo TOTP (`user_mfa.secret`) — F-7 da revisão de
+    # segurança 2026-08. Vazia = segredo em claro, como antes (degrada, não
+    # quebra). Ver `auth/secret_box.py`.
+    mfa_secret_key: str = Field(default="", alias="ELTANIX_MFA_SECRET_KEY")
     log_level: str = Field(default="INFO", alias="ELTANIX_LOG_LEVEL")
     log_json: bool = Field(default=False, alias="ELTANIX_LOG_JSON")
     config_dir: Path = Field(default=REPO_ROOT / "config", alias="ELTANIX_CONFIG_DIR")
@@ -103,6 +107,21 @@ class Settings(BaseSettings):
     embedding_dim: int = Field(default=768, alias="EMBEDDING_DIM")
     embedding_profile: str = Field(default="embedding", alias="EMBEDDING_PROFILE")
     embedding_batch_size: int = Field(default=32, alias="EMBEDDING_BATCH_SIZE")
+    # Git-Aware RAG (Fase 4 do Git Intelligence): `search_code` expande os hits
+    # por vizinhança no Code Knowledge Graph e re-rankeia por recência/co-mudança
+    # do git. Degrada para o hybrid_search puro sem grafo/git. Off = só RRF.
+    context_git_aware_search: bool = Field(default=True, alias="CONTEXT_GIT_AWARE_SEARCH")
+
+    # ── Roteamento automático de skills (Fase 1 do upgrade do agente) ────────
+    # Similaridade de cosseno mínima (0..1) para uma skill entrar no system
+    # prompt por roteamento automático, e quantas skills no máximo. O default
+    # 0.72 foi calibrado à mão; expor por env permite ajustar por deployment
+    # sem editar código, e o log `skills.routing.near_miss` mostra os
+    # candidatos que ficaram logo abaixo do corte para orientar o ajuste.
+    agent_skill_routing_min_score: float = Field(
+        default=0.72, alias="AGENT_SKILL_ROUTING_MIN_SCORE"
+    )
+    agent_skill_routing_top_k: int = Field(default=2, alias="AGENT_SKILL_ROUTING_TOP_K")
 
     # ── Projetos ────────────────────────────────────────────────────────────
     # Pasta que contém os projetos editáveis, como este processo a enxerga.
@@ -166,6 +185,10 @@ class Settings(BaseSettings):
     agent_session_abandon_after_hours: int = Field(
         default=24, alias="AGENT_SESSION_ABANDON_AFTER_HOURS"
     )
+    # Retenção dos snapshots de arquivo do rewind (Fase 8). A tabela
+    # `session_file_snapshot` cresce a cada escrita de toda sessão e só serve
+    # à janela de rewind da própria sessão — um reaper poda o que passou disso.
+    agent_snapshot_retention_days: int = Field(default=14, alias="AGENT_SNAPSHOT_RETENTION_DAYS")
 
     # ── Navegador para verificação visual (Fase 7) ──────────────────────────
     # Serviço à parte, numa rede restrita própria (ver docker-compose.yml,
@@ -194,9 +217,7 @@ class Settings(BaseSettings):
     minio_access_key: str = Field(default="minioadmin", alias="MINIO_ACCESS_KEY")
     minio_secret_key: str = Field(default="minioadmin", alias="MINIO_SECRET_KEY")
     minio_secure: bool = Field(default=False, alias="MINIO_SECURE")
-    minio_documents_bucket: str = Field(
-        default="eltanix-documents", alias="MINIO_DOCUMENTS_BUCKET"
-    )
+    minio_documents_bucket: str = Field(default="eltanix-documents", alias="MINIO_DOCUMENTS_BUCKET")
 
     @property
     def effective_minio_public_endpoint(self) -> str:
@@ -273,6 +294,38 @@ class Settings(BaseSettings):
             "http://localhost:3000",
             "http://127.0.0.1:3000",
         ]
+
+    @field_validator("cors_origins", mode="after")
+    @classmethod
+    def _sanitize_origins(cls, origins: list[str]) -> list[str]:
+        """`main.py` monta o CORS com `allow_credentials=True`. Combinado com
+        `*` isso seria uma API autenticada aberta a qualquer site — o Starlette
+        já se recusa a mandar `Allow-Credentials` junto com `*`, mas o pior
+        caso real é uma origem pública na lista. Então: `*` é sempre descartado,
+        e origem não-loopback só passa com um aviso alto (F-3 da revisão de
+        segurança)."""
+        import warnings
+
+        limpos: list[str] = []
+        for origem in origins:
+            o = origem.strip()
+            if not o or o == "*":
+                if o == "*":
+                    warnings.warn(
+                        "CORS_ORIGINS continha '*' — descartado (incompatível com "
+                        "allow_credentials). Liste origens explícitas.",
+                        stacklevel=2,
+                    )
+                continue
+            host = o.split("://", 1)[-1].split("/", 1)[0].split(":", 1)[0].lower()
+            if host not in {"localhost", "127.0.0.1", "::1", "[::1]"}:
+                warnings.warn(
+                    f"CORS_ORIGINS inclui origem não-loopback {o!r} com "
+                    "allow_credentials=True — confirme que é intencional.",
+                    stacklevel=2,
+                )
+            limpos.append(o)
+        return limpos
 
     @property
     def env_file_path(self) -> Path:

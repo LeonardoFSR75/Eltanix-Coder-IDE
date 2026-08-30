@@ -1,0 +1,67 @@
+# Golden-set do roteamento automático de skills (Fase 1 do upgrade do agente).
+#
+# Cada linha é uma tarefa em linguagem natural e a skill que o roteador por
+# similaridade (`AgentRunner._route_skills` -> `SkillService.find_relevant`)
+# deveria trazer como melhor match (precision@1).
+#
+# Uso:
+#   uv run python scripts/eval_skill_routing.py --profile <perfil-de-embedding>
+# (precisa do Postgres com as skills seedadas + um provedor de embedding real —
+# mesma categoria de teste "de integração" que `tests/test_hybrid_search.py`.)
+#
+# `tests/test_skill_routing.py::test_eval_dataset_is_well_formed` valida, sem
+# provedor, que todo `expect` abaixo é o nome real de uma skill em `.agents/`.
+
+cases:
+  - task: "escreva testes unitários para o módulo de autenticação antes de implementar"
+    expect: test-driven-development
+  - task: "quero cobrir essa função com testes seguindo o ciclo red-green-refactor"
+    expect: test-driven-development
+  - task: "revise este pull request procurando bugs, acoplamento e falta de testes"
+    expect: code-review-and-quality
+  - task: "faça uma revisão de código crítica deste diff"
+    expect: code-review-and-quality
+  - task: "essa função está complexa demais, reduza a complexidade sem mudar o comportamento"
+    expect: code-simplification
+  - task: "simplifique este código mantendo a mesma saída"
+    expect: code-simplification
+  - task: "tem um bug intermitente no upload de arquivos, investigue a causa raiz"
+    expect: debugging-and-error-recovery
+  - task: "está lançando uma exceção em produção, ajude a rastrear e corrigir"
+    expect: debugging-and-error-recovery
+  - task: "escreva a especificação técnica dessa feature antes de qualquer código"
+    expect: spec-driven-development
+  - task: "preciso de um documento de spec detalhado do novo módulo de billing"
+    expect: spec-driven-development
+  - task: "quebre esse épico em tarefas pequenas e verificáveis"
+    expect: planning-and-task-breakdown
+  - task: "monte um plano passo a passo para essa migração grande"
+    expect: planning-and-task-breakdown
+  - task: "implemente a próxima tarefa do plano de forma incremental"
+    expect: incremental-implementation
+  - task: "vá construindo isso em pequenos passos, um commit de cada vez"
+    expect: incremental-implementation
+  - task: "documente essa decisão de arquitetura num ADR"
+    expect: documentation-and-adrs
+  - task: "atualize a documentação e escreva um registro de decisão"
+    expect: documentation-and-adrs
+  - task: "refatore essa classe seguindo as convenções do projeto, sem mudar a API"
+    expect: dev-code-refactoring
+  - task: "essa rota está lenta, otimize a performance e os Core Web Vitals"
+    expect: performance-optimization
+  - task: "audite a superfície de ataque e adicione defesa contra SSRF e injeção"
+    expect: security-and-hardening
+  - task: "faça uma auditoria de vulnerabilidades neste serviço"
+    expect: sec-vulnerability-audit
+  - task: "prepare o checklist de pré-lançamento e o plano de rollout"
+    expect: shipping-and-launch
+  - task: "planeje a depreciação da API antiga e o caminho de migração"
+    expect: deprecation-and-migration
+  - task: "adicione tracing, métricas e logs estruturados neste fluxo"
+    expect: observability-and-instrumentation
+  - task: "configure o pipeline de CI e a automação de release no GitHub Actions"
+    expect: ci-cd-and-automation
+  - task: "escreva um teste end-to-end de navegador com Playwright para o login"
+    expect: browser-testing-e2e-playwright
+  - task: "melhore a engenharia de contexto e o prompt do pipeline de RAG"
+    expect: ai-prompt-rag-engineering

@@ -203,9 +203,7 @@ async def get_container_tree() -> dict[str, Any]:
                     "ServerVersion"
                 )
             },
-            "containers_by_project": projetos
-            if projetos
-            else {"eltanix": FALLBACK_CONTAINERS},
+            "containers_by_project": projetos if projetos else {"eltanix": FALLBACK_CONTAINERS},
             "images": images_list if images_list else FALLBACK_IMAGES,
             "registries": [
                 {"name": "Docker Hub", "url": "docker.io"},

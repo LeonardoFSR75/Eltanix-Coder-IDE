@@ -165,6 +165,10 @@ export function Editor({
   const [inlineEditBusy, setInlineEditBusy] = useState(false);
   const [inlineEditError, setInlineEditError] = useState<string | null>(null);
   const [inlineEditResult, setInlineEditResult] = useState<InlineEditResult | null>(null);
+  // Aborta a chamada `POST /api/agent/inline-edit` em voo quando o usuário
+  // cancela o Cmd+K (Esc/"Cancelar") — o backend, ao ver a conexão cair,
+  // cancela o `engine.complete()`, então nenhum token é gasto à toa.
+  const inlineEditAbortRef = useRef<AbortController | null>(null);
 
   const openInlineEdit = useCallback(() => {
     const editor = editorInstanceRef.current;
@@ -198,6 +202,8 @@ export function Editor({
   }, []);
 
   const cancelInlineEdit = useCallback(() => {
+    inlineEditAbortRef.current?.abort();
+    inlineEditAbortRef.current = null;
     setInlineEditSelection(null);
     setInlineEditInstruction("");
     setInlineEditError(null);
@@ -217,17 +223,22 @@ export function Editor({
 
   const submitInlineEdit = useCallback(async () => {
     if (!inlineEditSelection || !project || !path || !inlineEditInstruction.trim()) return;
+    const controller = new AbortController();
+    inlineEditAbortRef.current = controller;
     setInlineEditBusy(true);
     setInlineEditError(null);
     try {
-      const result = await requestInlineEdit({
-        project,
-        path,
-        selected_text: inlineEditSelection.selectedText,
-        instruction: inlineEditInstruction.trim(),
-        context_before: inlineEditSelection.contextBefore,
-        context_after: inlineEditSelection.contextAfter,
-      });
+      const result = await requestInlineEdit(
+        {
+          project,
+          path,
+          selected_text: inlineEditSelection.selectedText,
+          instruction: inlineEditInstruction.trim(),
+          context_before: inlineEditSelection.contextBefore,
+          context_after: inlineEditSelection.contextAfter,
+        },
+        controller.signal,
+      );
       if (result.applied) {
         // Já escrita no arquivo (bateu numa regra de auto-aprovação) — só
         // recarrega o buffer local, sem passar pela revisão manual.
@@ -237,8 +248,12 @@ export function Editor({
         setInlineEditResult(result);
       }
     } catch (err) {
-      setInlineEditError(err instanceof Error ? err.message : String(err));
+      // Cancelamento do próprio usuário não é erro para mostrar.
+      if (!controller.signal.aborted) {
+        setInlineEditError(err instanceof Error ? err.message : String(err));
+      }
     } finally {
+      if (inlineEditAbortRef.current === controller) inlineEditAbortRef.current = null;
       setInlineEditBusy(false);
     }
   }, [inlineEditSelection, project, path, inlineEditInstruction, applyInlineEditContent]);

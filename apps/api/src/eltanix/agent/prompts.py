@@ -211,6 +211,36 @@ Responda em português de forma direta, técnica e executiva.
 - Seja conciso: não repita o prompt original nem faça enrolações teóricas."""
 
 
+def compose_system_prompt(
+    *,
+    base: str = SYSTEM_PROMPT,
+    custom_instructions: str | None = None,
+    specialization_prompt: str | None = None,
+    routed_skills_prompt: str | None = None,
+    context_rules_prompt: str | None = None,
+) -> str:
+    """Junta o `SYSTEM_PROMPT` base com os quatro adendos independentes por
+    sessão (instruções do projeto, especialização do agente, skills roteadas,
+    regras de contexto) como seções extras — nunca sobrescritas sucessivas,
+    para nenhuma apagar a outra quando mais de uma está presente.
+
+    Fonte única desta composição: `agent/graph.py::build_graph` a usa para o
+    prompt real de cada turno, e `GET /api/agent/sessions/{id}/system-prompt`
+    a reusa para mostrar exatamente o mesmo texto no painel de debug. A ordem
+    aqui é a ordem em que o modelo lê as seções — mantê-la estável entre
+    turnos é o que preserva o cache de prompt (ver docstring de `SYSTEM_PROMPT`)."""
+    partes = [base]
+    if custom_instructions:
+        partes.append(f"## Instruções do projeto\n\n{custom_instructions}")
+    if specialization_prompt:
+        partes.append(f"## Especialização deste agente\n\n{specialization_prompt}")
+    if routed_skills_prompt:
+        partes.append(routed_skills_prompt)
+    if context_rules_prompt:
+        partes.append(context_rules_prompt)
+    return "\n\n".join(partes)
+
+
 def build_task_prompt(
     task: str,
     repo_map: str | None = None,

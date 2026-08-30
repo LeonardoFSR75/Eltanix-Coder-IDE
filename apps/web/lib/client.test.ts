@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { del, get, post, streamEvents } from "./client";
+import { del, get, HttpError, post, streamEvents } from "./client";
 
 function jsonResponse(body: unknown, init?: { ok?: boolean; status?: number }): Response {
   return {
@@ -73,6 +73,43 @@ describe("get/post/del", () => {
     await del("/api/notes/1");
 
     expect(fetchMock.mock.calls[0][1].method).toBe("DELETE");
+  });
+
+  it("forwards an AbortSignal to fetch", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ ok: true }));
+    vi.stubGlobal("fetch", fetchMock);
+    const controller = new AbortController();
+
+    await get("/api/health", controller.signal);
+
+    expect(fetchMock.mock.calls[0][1].signal).toBe(controller.signal);
+  });
+
+  it("HttpError keeps the parsed error body (RFC 7807 shape included)", async () => {
+    const problem = {
+      type: "https://errors/invalid-target",
+      title: "Alvo inválido",
+      status: 400,
+      detail: "o host aponta para rede interna",
+    };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse(problem, { ok: false, status: 400 })));
+
+    const err = await get("/api/firecrawl/scrape").catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(HttpError);
+    const httpErr = err as HttpError;
+    expect(httpErr.status).toBe(400);
+    expect(httpErr.message).toBe("Alvo inválido: o host aponta para rede interna");
+    expect(httpErr.body).toEqual(problem);
+  });
+
+  it("falls back to title alone when there is no detail", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(jsonResponse({ title: "Recurso ausente" }, { ok: false, status: 404 })),
+    );
+
+    await expect(get("/api/x")).rejects.toThrow("Recurso ausente");
   });
 });
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import difflib
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -165,6 +166,81 @@ async def write_file(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
     )
 
 
+@dataclass(slots=True)
+class ResolvedEdit:
+    """`old_text` localizado em `current` e a troca já aplicada, tudo
+    normalizado para `\\n`. `line_ending` guarda a convenção original do
+    arquivo, para quem vai gravar em disco reconvertê-lo."""
+
+    before: str
+    after: str
+    line_ending: str
+
+
+class EditNotFoundError(ValueError):
+    """`old_text` não aparece em `current` — nem exato, nem por casamento
+    tolerante a espaço no fim de linha."""
+
+
+class EditAmbiguousError(ValueError):
+    """`old_text` aparece mais de uma vez — trocar a primeira editaria o
+    lugar errado sem ninguém perceber."""
+
+    def __init__(self, ocorrencias: int) -> None:
+        super().__init__(f"o trecho aparece {ocorrencias} vezes")
+        self.ocorrencias = ocorrencias
+
+
+def resolve_edit(
+    current: str, old_text: str, new_text: str, *, allow_fuzzy: bool = True
+) -> ResolvedEdit:
+    """Núcleo compartilhado entre o caminho de escrita (`edit_file`) e o de
+    preview (`agent/tools/diffing.py::_diff_for_edit_file`).
+
+    O modelo escreve `old_text` com `\\n`; um arquivo criado no Windows usa
+    `\\r\\n` — comparar cru faria toda edição falhar em silêncio. Casamos com as
+    pontas normalizadas e devolvemos o resultado na convenção original.
+
+    `allow_fuzzy` liga o fallback que ignora espaço no fim de cada linha
+    (rstrip): `edit_file` usa (`True`), o preview passa `False` para prever só
+    o que um casamento exato faria. Antes essa heurística vivia duplicada nos
+    dois lugares e o preview ficava para trás do real a cada ajuste."""
+    quebra = "\r\n" if "\r\n" in current else "\n"
+    atual_norm = current.replace("\r\n", "\n")
+    old_norm = old_text.replace("\r\n", "\n")
+    new_norm = new_text.replace("\r\n", "\n")
+
+    ocorrencias = atual_norm.count(old_norm)
+
+    if ocorrencias == 0 and allow_fuzzy and old_norm.strip():
+
+        def _strip_lines(text: str) -> str:
+            return "\n".join(line.rstrip() for line in text.splitlines())
+
+        old_stripped = _strip_lines(old_norm)
+        linhas_atual = atual_norm.splitlines(keepends=True)
+        qtd_linhas = len(old_norm.splitlines())
+        casados = [
+            "".join(linhas_atual[i : i + qtd_linhas])
+            for i in range(len(linhas_atual) - qtd_linhas + 1)
+            if _strip_lines("".join(linhas_atual[i : i + qtd_linhas])) == old_stripped
+        ]
+        if len(casados) == 1:
+            old_norm = casados[0]
+            ocorrencias = 1
+
+    if ocorrencias == 0:
+        raise EditNotFoundError
+    if ocorrencias > 1:
+        raise EditAmbiguousError(ocorrencias)
+
+    return ResolvedEdit(
+        before=atual_norm,
+        after=atual_norm.replace(old_norm, new_norm, 1),
+        line_ending=quebra,
+    )
+
+
 @tool(
     name="edit_file",
     description=(
@@ -192,54 +268,29 @@ async def edit_file(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
     except (PathEscapeError, FileNotFoundError, FileTooLargeError, ValueError) as exc:
         return ToolResult.failure(str(exc))
 
-    # O modelo escreve `old_text` com \n; um arquivo criado no Windows tem
-    # \r\n. Comparar cru faria toda edição falhar com "trecho não encontrado",
-    # de forma silenciosa e sistemática. Casamos com as pontas normalizadas e
-    # devolvemos o arquivo na convenção que ele já usava.
-    quebra = "\r\n" if "\r\n" in atual else "\n"
-    atual_norm = atual.replace("\r\n", "\n")
-    old_norm = old_text.replace("\r\n", "\n")
-    new_norm = new_text.replace("\r\n", "\n")
-
-    ocorrencias = atual_norm.count(old_norm)
-    if ocorrencias == 0:
-        # Fallback: tentar casar ignorando espaços no final de cada linha (rstrip)
-        def _strip_lines(text: str) -> str:
-            return "\n".join(line.rstrip() for line in text.splitlines())
-
-        old_stripped = _strip_lines(old_norm)
-        if old_stripped:
-            linhas_atual = atual_norm.splitlines(keepends=True)
-            linhas_old = old_norm.splitlines()
-            qtd_linhas = len(linhas_old)
-
-            matches_encontrados: list[str] = []
-            for i in range(len(linhas_atual) - qtd_linhas + 1):
-                trecho = "".join(linhas_atual[i : i + qtd_linhas])
-                if _strip_lines(trecho) == old_stripped:
-                    matches_encontrados.append(trecho)
-
-            if len(matches_encontrados) == 1:
-                old_norm = matches_encontrados[0]
-                ocorrencias = 1
-
-    if ocorrencias == 0:
+    try:
+        resolvido = resolve_edit(atual, old_text, new_text)
+    except EditAmbiguousError as exc:
+        # Substituir a primeira ocorrência silenciosamente editaria o lugar
+        # errado sem ninguém perceber.
+        return ToolResult.failure(
+            f"O trecho aparece {exc.ocorrencias} vezes em {path}. "
+            "Inclua mais linhas de contexto para identificar qual delas editar."
+        )
+    except EditNotFoundError:
         return ToolResult.failure(
             f"O trecho não foi encontrado em {path}. "
             "Leia o arquivo novamente: ele pode ter mudado, ou a indentação/espaços diferem. "
             "DICA: Verifique se o código possui espaços extras no fim da linha ou "
             "indentação diferente."
         )
-    if ocorrencias > 1:
-        # Substituir a primeira ocorrência silenciosamente editaria o lugar
-        # errado sem ninguém perceber.
-        return ToolResult.failure(
-            f"O trecho aparece {ocorrencias} vezes em {path}. "
-            "Inclua mais linhas de contexto para identificar qual delas editar."
-        )
 
-    novo_norm = atual_norm.replace(old_norm, new_norm, 1)
-    novo = novo_norm.replace("\n", quebra) if quebra == "\r\n" else novo_norm
+    atual_norm, novo_norm = resolvido.before, resolvido.after
+    novo = (
+        novo_norm.replace("\n", resolvido.line_ending)
+        if resolvido.line_ending == "\r\n"
+        else novo_norm
+    )
     try:
         ctx.fs.write(path, novo)
     except (PathEscapeError, OSError) as exc:
@@ -303,7 +354,10 @@ async def search_code(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
         )
 
     hits = await ctx.indexer.search(
-        root=Path(ctx.workspace_root), query=args["query"], limit=args.get("limit", 8)
+        root=Path(ctx.workspace_root),
+        query=args["query"],
+        limit=args.get("limit", 8),
+        git_aware=ctx.indexer.settings.context_git_aware_search,
     )
     if not hits:
         return ToolResult(ok=True, content="Nenhum trecho encontrado.", data={"hits": []})

@@ -12,6 +12,7 @@ from pathlib import Path
 
 import pytest
 
+from eltanix.agent.tools import registry as tool_registry
 from eltanix.agent.tools.base import RiskClass, ToolContext, ToolRegistry, tool
 from eltanix.agent.tools.plan import _todos_risk, write_todos
 from eltanix.workspace.fs import WorkspaceFS
@@ -127,3 +128,53 @@ class TestPlanRegisteredFlag:
             {"items": [{"content": "outra etapa", "status": "pending"}]}, ctx
         )
         assert segunda_chamada is RiskClass.READ
+
+
+class TestGateDeAprovacaoIntegradoComoNoThink:
+    """Lote 2 / item 60 — reproduz o caminho exato de `agent/graph.py::think`
+    ao montar `pending`: pega a ferramenta REAL do registro, resolve o risco
+    com o contexto da sessão e checa `.requires_approval`. Garante que a
+    primeira `write_todos` do modo Planejar de fato vira um item de aprovação
+    humana (e a segunda não), no nível do contrato que a UI consome — não só
+    do enum de risco.
+    """
+
+    def _resolve_como_think(self, ctx: ToolContext, args: dict):
+        ferramenta = tool_registry.get("write_todos")
+        assert ferramenta is not None
+        risco = ferramenta.resolve_risk(args, ctx)
+        return ferramenta, risco
+
+    @pytest.mark.asyncio
+    async def test_primeira_write_todos_no_modo_plan_pede_aprovacao_a_segunda_nao(self, tmp_path):
+        ctx = _ctx(tmp_path, mode="plan")
+
+        ferramenta, risco = self._resolve_como_think(ctx, {"items": ITENS_COM_CONTEUDO})
+        assert risco.requires_approval is True
+        # `think` monta este dict e a UI faz o caso especial de "write_todos".
+        pendente = {
+            "tool": "write_todos",
+            "risk": str(risco),
+            "arguments": {"items": ITENS_COM_CONTEUDO},
+            "summary": ferramenta.describe_call({"items": ITENS_COM_CONTEUDO}),
+        }
+        assert pendente["tool"] == "write_todos"
+        assert pendente["summary"]
+
+        # O plano é registrado (o que o handler faz ao ser aprovado e rodar).
+        await write_todos.handler(ctx, {"items": ITENS_COM_CONTEUDO})
+
+        _, risco2 = self._resolve_como_think(
+            ctx, {"items": [{"content": "próxima etapa", "status": "pending"}]}
+        )
+        assert risco2.requires_approval is False
+
+    def test_modo_agente_nunca_pede_aprovacao_para_write_todos(self, tmp_path):
+        ctx = _ctx(tmp_path, mode="agent")
+        _, risco = self._resolve_como_think(ctx, {"items": ITENS_COM_CONTEUDO})
+        assert risco.requires_approval is False
+
+    def test_lista_vazia_no_modo_plan_nao_pede_aprovacao(self, tmp_path):
+        ctx = _ctx(tmp_path, mode="plan")
+        _, risco = self._resolve_como_think(ctx, {"items": ITENS_VAZIOS})
+        assert risco.requires_approval is False

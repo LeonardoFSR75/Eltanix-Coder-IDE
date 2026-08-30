@@ -91,9 +91,7 @@ def _bootstrap_repo(root: Path, repo: Repo) -> Repo:
     try:
         gitignore_path = root / ".gitignore"
         if not gitignore_path.exists():
-            gitignore_path.write_text(
-                ".eltanix/\nnode_modules/\n__pycache__/\n", encoding="utf-8"
-            )
+            gitignore_path.write_text(".eltanix/\nnode_modules/\n__pycache__/\n", encoding="utf-8")
         if repo.head.is_valid():
             return repo
         repo.index.add([str(gitignore_path.relative_to(root))])

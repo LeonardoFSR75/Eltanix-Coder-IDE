@@ -906,6 +906,42 @@ class AuthSession(Base):
         return f"<AuthSession user={self.user_id}>"
 
 
+class UserMfa(Base):
+    """Segundo fator (TOTP) de um usuário. 1:1 com `app_user` — a ausência de
+    linha é o estado "MFA não configurado"; nada muda para quem não ativou.
+
+    `secret` (base32) vai cifrado em repouso com AES-256-GCM quando
+    `ELTANIX_MFA_SECRET_KEY` está definida (F-7 de `docs/security_review_2026-08.md`,
+    ver `auth/secret_box.py`); sem a chave, fica em claro como antes. O envelope
+    cifrado é maior que o base32 cru — daí `String(255)`.
+    `recovery_codes` guarda só o `sha256` de cada código de uso único (alta
+    entropia, mesmo critério do token de sessão em `AuthSession`).
+    """
+
+    __tablename__ = "user_mfa"
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("app_user.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    secret: Mapped[str] = mapped_column(String(255), nullable=False)
+    # False = segredo gerado no `setup` mas ainda não confirmado por um código
+    # válido. Só `enabled=True` passa a exigir 2º fator no login.
+    enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    recovery_codes: Mapped[list] = mapped_column(JSON_TYPE, default=list, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+    def __repr__(self) -> str:  # pragma: no cover
+        return f"<UserMfa user={self.user_id} enabled={self.enabled}>"
+
+
 class ChatTrajectory(Base):
     """Armazena o fluxo e telemetria completa de uma sessão de chat do agente para análise por ML."""
 

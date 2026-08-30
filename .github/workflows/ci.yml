@@ -7,10 +7,21 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# Um push seguido de outro no mesmo ref cancela a execução anterior — não
+# adianta gastar runner terminando um CI que já foi superado.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# Menor privilégio: nenhum job aqui escreve no repo, cria release ou comenta PR.
+permissions:
+  contents: read
+
 jobs:
   api-tests:
     name: API — lint & testes
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: apps/api
@@ -19,16 +30,55 @@ jobs:
       - uses: astral-sh/setup-uv@v3
         with:
           version: "latest"
+          enable-cache: true
+          cache-dependency-glob: "apps/api/uv.lock"
       - name: Instalar dependências
         run: uv sync --dev
+      - name: ruff format --check
+        run: uv run ruff format --check src
       - name: ruff check
         run: uv run ruff check src
       - name: pytest
-        run: uv run pytest tests -q
+        # `--cov` sem valor usa o `source` de [tool.coverage.run] no pyproject.
+        run: >-
+          uv run pytest tests -q --durations=10
+          --cov --cov-report=term-missing --cov-report=xml
+          --cov-fail-under=0
+      - name: Publicar cobertura
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-api
+          path: apps/api/coverage.xml
+          retention-days: 14
+
+  api-typecheck:
+    name: API — mypy
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Não bloqueante enquanto o baseline de tipos não é zerado — serve para
+    # tornar a dívida visível e impedir que ela cresça sem alguém ver.
+    # Trocar para bloqueante quando `mypy src` passar limpo.
+    continue-on-error: true
+    defaults:
+      run:
+        working-directory: apps/api
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+        with:
+          version: "latest"
+          enable-cache: true
+          cache-dependency-glob: "apps/api/uv.lock"
+      - name: Instalar dependências
+        run: uv sync --dev
+      - name: mypy
+        run: uv run mypy src
 
   web-build:
-    name: Web — typecheck & build
+    name: Web — typecheck, testes & build
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     defaults:
       run:
         working-directory: apps/web
@@ -48,28 +98,10 @@ jobs:
       - name: Build
         run: npm run build
 
-  desktop-build:
-    name: Desktop (Svelte 5) — typecheck & build
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: apps/desktop
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-      - name: Instalar dependências
-        run: npm install
-      - name: Typecheck
-        run: npm run typecheck
-      - name: Build
-        run: npm run build
-
-
   api-db-tests:
     name: API — integração com Postgres (RRF)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: apps/api
@@ -95,6 +127,8 @@ jobs:
       - uses: astral-sh/setup-uv@v3
         with:
           version: "latest"
+          enable-cache: true
+          cache-dependency-glob: "apps/api/uv.lock"
       - name: Instalar dependências
         run: uv sync --dev
       - name: Migrar o banco de teste
@@ -102,14 +136,63 @@ jobs:
       - name: pytest (só os testes de hybrid_search)
         run: uv run pytest tests/test_hybrid_search.py -q
 
-  dependency-audit:
-    name: Auditoria de dependências
+  db-migrations:
+    name: API — migrações (drift & reversibilidade)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Não bloqueante na estreia: se houver drift model↔migração ou um
+    # downgrade quebrado pré-existente, isto revela sem travar todo PR.
+    # Trocar para bloqueante depois da primeira execução verde.
+    continue-on-error: true
+    defaults:
+      run:
+        working-directory: apps/api
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_USER: eltanix
+          POSTGRES_PASSWORD: eltanix
+          POSTGRES_DB: eltanix_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U eltanix -d eltanix_test"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgresql+asyncpg://eltanix:eltanix@localhost:5432/eltanix_test
+      DATABASE_URL_TEST: postgresql+asyncpg://eltanix:eltanix@localhost:5432/eltanix_test
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v3
         with:
           version: "latest"
+          enable-cache: true
+          cache-dependency-glob: "apps/api/uv.lock"
+      - name: Instalar dependências
+        run: uv sync --dev
+      - name: upgrade head
+        run: uv run alembic upgrade head
+      - name: alembic check (autogenerate diff deve estar vazio)
+        run: uv run alembic check
+      - name: Reversibilidade — downgrade base -> upgrade head
+        run: |
+          uv run alembic downgrade base
+          uv run alembic upgrade head
+
+  dependency-audit:
+    name: Auditoria de dependências
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+        with:
+          version: "latest"
+          enable-cache: true
+          cache-dependency-glob: "apps/api/uv.lock"
       - name: pip-audit (Python)
         working-directory: apps/api
         run: uv run --with pip-audit pip-audit
@@ -120,6 +203,8 @@ jobs:
           cache-dependency-path: apps/web/package-lock.json
       - name: npm audit (Node, falha em high/critical)
         working-directory: apps/web
+        # Só reconcilia o lockfile (sem baixar node_modules) e audita — não
+        # precisa do `npm install` completo que o job antigo fazia.
         run: |
-          npm install --no-audit --no-fund
+          npm install --package-lock-only --no-audit --no-fund
           npm audit --omit=dev --audit-level=high

@@ -1,0 +1,36 @@
+# Ganchos de pré-commit — espelham o que a CI já cobra, para o feedback vir
+# antes do push. Instalar uma vez:  pipx run pre-commit install
+# (ou: uv tool run pre-commit install)
+#
+# O lint de Python fica restrito a apps/api/src de propósito — é o mesmo escopo
+# de `.github/workflows/ci.yml` (a suíte de testes tem débito de lint sendo
+# resolvido à parte).
+minimum_pre_commit_version: "3.5.0"
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+        exclude: '\.md$'
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-toml
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: ["--maxkb=1024"]
+      - id: mixed-line-ending
+        args: ["--fix=lf"]
+        # .bat/.cmd/.ps1 são CRLF por design (ver .editorconfig).
+        exclude: '\.(bat|cmd|ps1)$'
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.16.4
+    hooks:
+      - id: ruff
+        name: ruff (apps/api/src)
+        args: ["check", "--fix"]
+        files: '^apps/api/src/.*\.py$'
+      - id: ruff-format
+        name: ruff-format (apps/api/src)
+        args: ["format"]
+        files: '^apps/api/src/.*\.py$'

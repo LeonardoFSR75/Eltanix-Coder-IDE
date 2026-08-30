@@ -172,7 +172,26 @@ def test_navigate_with_capture_screenshot_returns_image(monkeypatch):
     page.screenshot.assert_awaited_once()
 
 
-def test_navigate_panel_session_rejects_docker_internal_hostname(monkeypatch):
+def test_navigate_panel_session_rejects_host_gateway(monkeypatch):
+    # `host.docker.internal` (fuga para o host real) segue barrado para o
+    # painel manual — só `web`/`api` deixaram de ser (screenshot no servidor,
+    # nunca iframe no navegador do usuário; ver comentário em `app.py`).
+    app_module = _reload_app(monkeypatch, token=None)
+    _install_fake_page(app_module, monkeypatch)
+    client = TestClient(app_module.app)
+
+    response = client.post(
+        "/sessions/panel-abc/action",
+        json={"action": "navigate", "url": "http://host.docker.internal:5400/ide"},
+    )
+
+    assert response.status_code == 400
+
+
+def test_navigate_panel_session_allows_web_hostname(monkeypatch):
+    # O painel manual ("verificação visual") existe justamente para abrir a
+    # própria aplicação; `web`/`api` são alcançáveis pelo `browser_net` e o
+    # resultado volta como screenshot base64, sem vazar hostname interno.
     app_module = _reload_app(monkeypatch, token=None)
     _install_fake_page(app_module, monkeypatch)
     client = TestClient(app_module.app)
@@ -181,7 +200,7 @@ def test_navigate_panel_session_rejects_docker_internal_hostname(monkeypatch):
         "/sessions/panel-abc/action", json={"action": "navigate", "url": "http://web:5400/ide"}
     )
 
-    assert response.status_code == 400
+    assert response.status_code == 200
 
 
 def test_navigate_agent_session_allows_web_hostname(monkeypatch):
@@ -644,12 +663,19 @@ def test_validate_url_battery_agrees_with_shared_ssrf_module(monkeypatch):
 
     # Só o painel manual bloqueia — o agente pode testar a própria aplicação
     # (allowlist espelhada em `eltanix.agent.tools.browser::
-    # is_agent_local_test_target`).
-    bloqueados_so_para_painel = ["web", "api", "host.docker.internal", "eltanix-outra-sessao"]
+    # is_agent_local_test_target`). `web`/`api` saíram desta lista: o painel
+    # os renderiza como screenshot no servidor, nunca como iframe no
+    # navegador real (ver comentário de `_DOCKER_INTERNAL_HOSTS_BLOCKED_FOR_PANEL`).
+    bloqueados_so_para_painel = ["host.docker.internal", "eltanix-outra-sessao"]
     for hostname in bloqueados_so_para_painel:
         with pytest.raises(app_module.HTTPException):
             app_module.validate_url(f"http://{hostname}/x", session_id="panel-x")
         app_module.validate_url(f"http://{hostname}/x", session_id="agent-x")  # não levanta
+
+    # `web`/`api` agora passam para AMBOS — painel e agente.
+    for hostname in ("web", "api"):
+        for sessao in ("panel-x", "agent-x"):
+            app_module.validate_url(f"http://{hostname}/x", session_id=sessao)
 
     # Gatilho de fallback (`eltanix-<sid>`/`host.docker.internal`) e
     # domínios externos comuns — nunca bloqueados por este validador (o

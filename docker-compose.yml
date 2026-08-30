@@ -286,6 +286,22 @@ services:
     extra_hosts:
       # Permite alcançar o Ollama rodando no host.
       - "host.docker.internal:host-gateway"
+    healthcheck:
+      # `/api/health/ready` sonda Postgres (obrigatório) + Redis (opcional).
+      # A rota exige credencial (ADR 0005) — daí o header com a chave local.
+      test:
+        - "CMD"
+        - "python"
+        - "-c"
+        - >-
+          import os,urllib.request;
+          urllib.request.urlopen(urllib.request.Request(
+          'http://localhost:5401/api/health/ready',
+          headers={'X-Api-Key': os.environ.get('ELTANIX_API_KEY','')}))
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
     depends_on:
       postgres:
         condition: service_healthy
@@ -325,7 +341,8 @@ services:
       - ./apps/web/components:/app/components
       - ./apps/web/lib:/app/lib
     depends_on:
-      - api
+      api:
+        condition: service_healthy
 
   desktop:
     build:

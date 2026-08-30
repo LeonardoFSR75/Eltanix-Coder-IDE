@@ -7,62 +7,79 @@ const GATEWAY = "/api/gateway";
 
 /** Erro de resposta HTTP não-ok, com o status preservado — quem chama pode
  * distinguir "não encontrado" (ex.: arquivo opcional ainda não criado) de um
- * erro de verdade sem precisar adivinhar pela mensagem. */
+ * erro de verdade sem precisar adivinhar pela mensagem.
+ *
+ * `body` guarda o payload de erro já parseado (quando é JSON) — inclui o
+ * shape RFC 7807 (`type`/`title`/`detail`/`status`) quando o backend o
+ * emite, para quem precisa reagir ao `type` e não só mostrar o texto. */
 export class HttpError extends Error {
   constructor(
     message: string,
     public readonly status: number,
+    public readonly body?: unknown,
   ) {
     super(message);
     this.name = "HttpError";
   }
 }
 
-export async function get<T>(path: string): Promise<T> {
+/** Lê o corpo de erro uma vez, monta a mensagem legível e lança o `HttpError`
+ * já com o payload estruturado anexado. */
+async function failFrom(response: Response): Promise<never> {
+  const { message, body } = await describeError(response);
+  throw new HttpError(message, response.status, body);
+}
+
+export async function get<T>(path: string, signal?: AbortSignal): Promise<T> {
   const response = await fetch(`${GATEWAY}${path}`, {
     cache: "no-store",
+    signal,
   });
-  if (!response.ok) throw new HttpError(await describeError(response), response.status);
+  if (!response.ok) await failFrom(response);
   return (await response.json()) as T;
 }
 
-export async function post<T>(path: string, body?: unknown): Promise<T> {
+export async function post<T>(path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
   const response = await fetch(`${GATEWAY}${path}`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body ?? {}),
+    signal,
   });
-  if (!response.ok) throw new HttpError(await describeError(response), response.status);
+  if (!response.ok) await failFrom(response);
   return (await response.json()) as T;
 }
 
-export async function put<T>(path: string, body: unknown): Promise<T> {
+export async function put<T>(path: string, body: unknown, signal?: AbortSignal): Promise<T> {
   const response = await fetch(`${GATEWAY}${path}`, {
     method: "PUT",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
+    signal,
   });
-  if (!response.ok) throw new HttpError(await describeError(response), response.status);
+  if (!response.ok) await failFrom(response);
   return (await response.json()) as T;
 }
 
-export async function patch<T>(path: string, body: unknown): Promise<T> {
+export async function patch<T>(path: string, body: unknown, signal?: AbortSignal): Promise<T> {
   const response = await fetch(`${GATEWAY}${path}`, {
     method: "PATCH",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
+    signal,
   });
-  if (!response.ok) throw new HttpError(await describeError(response), response.status);
+  if (!response.ok) await failFrom(response);
   return (await response.json()) as T;
 }
 
-export async function del<T>(path: string, body?: unknown): Promise<T> {
+export async function del<T>(path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
   const response = await fetch(`${GATEWAY}${path}`, {
     method: "DELETE",
     headers: body ? { "content-type": "application/json" } : undefined,
     body: body ? JSON.stringify(body) : undefined,
+    signal,
   });
-  if (!response.ok) throw new HttpError(await describeError(response), response.status);
+  if (!response.ok) await failFrom(response);
   return (await response.json()) as T;
 }
 
@@ -86,7 +103,7 @@ export async function streamEvents(
     signal,
   });
 
-  if (!response.ok) throw new HttpError(await describeError(response), response.status);
+  if (!response.ok) await failFrom(response);
   if (!response.body) throw new Error("Resposta sem corpo.");
 
   const reader = response.body.getReader();
@@ -122,13 +139,30 @@ export async function streamEvents(
  * genérico), que é o único Route Handler capaz de setar o cookie httpOnly de
  * resposta. Ver `app/api/session/route.ts`.
  */
-export async function login(username: string, password: string): Promise<void> {
+export type LoginResult = { mfaRequired: false } | { mfaRequired: true; mfaToken: string };
+
+export async function login(username: string, password: string): Promise<LoginResult> {
   const response = await fetch("/api/session", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ username, password }),
   });
-  if (!response.ok) throw new HttpError(await describeError(response), response.status);
+  if (!response.ok) await failFrom(response);
+  // 204 = sessão criada; 200 = falta o 2º fator.
+  if (response.status === 200) {
+    const body = await response.json();
+    if (body?.mfaRequired) return { mfaRequired: true, mfaToken: body.mfaToken };
+  }
+  return { mfaRequired: false };
+}
+
+export async function loginMfa(mfaToken: string, code: string): Promise<void> {
+  const response = await fetch("/api/session/mfa", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ mfaToken, code }),
+  });
+  if (!response.ok) await failFrom(response);
 }
 
 export async function logout(): Promise<void> {
@@ -142,32 +176,44 @@ export async function changePassword(oldPassword: string, newPassword: string): 
   });
 }
 
-async function describeError(response: Response): Promise<string> {
+async function describeError(response: Response): Promise<{ message: string; body: unknown }> {
+  const fallback = `${response.status} ${response.statusText}`;
   try {
     const body = await response.json();
-    const detail = body?.detail ?? body?.error;
+    // RFC 7807 usa `detail` (string) e `title`; o FastAPI usa `detail`
+    // (string | array) e alguns handlers usam `error`. `title` entra como
+    // fonte secundária para quando o backend passar a emitir problem+json.
+    const detail = body?.detail ?? body?.error ?? body?.title;
 
     // FastAPI/Pydantic 422: detail é um array de { loc, msg, type }
     if (Array.isArray(detail) && detail.length > 0) {
-      return detail
+      const message = detail
         .map((e: { msg?: string; loc?: string[] }) => {
           const field = e.loc?.filter((p) => p !== "body").join(".") ?? "";
           const msg = e.msg?.replace(/^Value error,\s*/i, "") ?? "erro de validação";
           return field ? `${field}: ${msg}` : msg;
         })
         .join(" | ");
+      return { message, body };
     }
 
     if (typeof detail === "string") {
       const normalized = detail.trim();
       if (normalized.startsWith("Sessão desconhecida:")) {
-        return "Sessão reaberta automaticamente após o reinício do serviço. Se o histórico não aparecer, recarregue a aba.";
+        return {
+          message:
+            "Sessão reaberta automaticamente após o reinício do serviço. Se o histórico não aparecer, recarregue a aba.",
+          body,
+        };
       }
-      return normalized;
+      // RFC 7807: se veio `title` além do `detail`, prefixa para dar contexto.
+      const title = typeof body?.title === "string" ? body.title.trim() : "";
+      const message = title && title !== normalized ? `${title}: ${normalized}` : normalized;
+      return { message, body };
     }
-    if (detail?.error?.message) return detail.error.message;
-    return `${response.status} ${response.statusText}`;
+    if (detail?.error?.message) return { message: detail.error.message, body };
+    return { message: fallback, body };
   } catch {
-    return `${response.status} ${response.statusText}`;
+    return { message: fallback, body: undefined };
   }
 }

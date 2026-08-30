@@ -67,8 +67,16 @@ branco silenciosa. `EditorBrowserView.tsx` nunca usa uma URL Docker-interna como
 disso mostra um banner (`role="alert"`/`role="status"`) e sugere o modo 🤖 Agente. Complementarmente, uma
 heurística client-side (regex sobre o hostname digitado) cobre o caso de o usuário digitar um hostname
 Docker-interno direto na barra de endereço, sem esperar uma resposta do backend. `validate_url` no
-próprio `services/browser/app.py` também é sensível ao contexto: sessões `panel-*` bloqueiam hosts
-Docker-internos que só fazem sentido para uma sessão de agente (`web`, `api`, `host.docker.internal`).
+próprio `services/browser/app.py` também é sensível ao contexto: sessões `panel-*` bloqueiam
+`host.docker.internal` (fuga para o host real) e os sandboxes `eltanix-*` de outras sessões.
+
+**Correção (2026-08).** `web`/`api` saíram do bloqueio `panel-*` — a justificativa original ("o
+resultado renderiza num `<iframe>` do navegador REAL, que não resolve nomes Docker") nunca valeu para o
+`BrowserPanel`, que mostra um screenshot tirado no servidor (`<img>` base64); o caminho com `<iframe>`
+vive só no modo Live de `EditorBrowserView` e não chama este serviço. Sem iframe, nenhum hostname
+Docker-interno vaza para fora do container, e abrir a própria aplicação é o propósito da verificação
+visual. Continuam barrados para qualquer sessão: `executor`/`redis`/`minio`/`postgres`/`mcp-scanner`
+(`_INFRA_HOSTS_ALWAYS_BLOCKED`), IPs de metadados de nuvem e faixas privadas/reservadas.
 
 **Streaming ao vivo (screencast CDP).** O modo 🤖 Agente pode manter um canal WebSocket de frames JPEG
 ao vivo (em vez de screenshot sob pedido), auto-iniciado ao entrar nesse modo, com reconexão automática

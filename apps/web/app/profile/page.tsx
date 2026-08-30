@@ -9,6 +9,8 @@ import { getHealth, type HealthStatus } from "@/lib/api/health";
 import { getMetricsSummary, type Summary } from "@/lib/api/metrics";
 
 import { changePassword } from "@/lib/client";
+import MfaSettings from "@/components/MfaSettings";
+import SessionsPanel from "@/components/SessionsPanel";
 
 export default function ProfilePage() {
   const { user, logout } = useAuth();
@@ -49,8 +51,8 @@ export default function ProfilePage() {
       addToast("Preencha a senha atual e a nova senha.", "warning");
       return;
     }
-    if (newPassword.length < 6) {
-      addToast("A nova senha deve ter pelo menos 6 caracteres.", "warning");
+    if (newPassword.length < 8) {
+      addToast("A nova senha deve ter pelo menos 8 caracteres.", "warning");
       return;
     }
     if (newPassword !== confirmPassword) {
@@ -170,7 +172,7 @@ export default function ProfilePage() {
               />
             </div>
             <div className="form-group">
-              <label htmlFor="new-password-input">Nova Senha (mín. 6 caracteres)</label>
+              <label htmlFor="new-password-input">Nova Senha (mín. 8 caracteres)</label>
               <input
                 id="new-password-input"
                 type="password"
@@ -200,6 +202,14 @@ export default function ProfilePage() {
             </button>
           </form>
         </div>
+      </section>
+
+      <section className="section-block">
+        <MfaSettings />
+      </section>
+
+      <section className="section-block">
+        <SessionsPanel />
       </section>
 
       <section className="section-block">

@@ -16,9 +16,10 @@ from eltanix import __version__
 from eltanix.agent.coordinator import AgentCoordinator
 from eltanix.agent.custom_modes import CustomModeService
 from eltanix.agent.runner import AgentRunner
-from eltanix.agent.snapshot_store import SnapshotService
+from eltanix.agent.snapshot_store import SnapshotService, run_snapshot_prune_reaper
 from eltanix.agent.tools import registry as tool_registry
 from eltanix.analytics.worker import run_analytics_batch_reaper
+from eltanix.api.errors import register_error_handlers
 from eltanix.api.middleware import CorrelationIdMiddleware
 from eltanix.api.routes import (
     agent_router,
@@ -216,6 +217,20 @@ async def lifespan(app: FastAPI):
     await auth.ensure_seed_user(username=settings.admin_username, password=admin_password)
     await auth.purge_expired_sessions()
 
+    # F-7: segredo TOTP cifrado em repouso só quando ELTANIX_MFA_SECRET_KEY
+    # existe. Avisa alto se há MFA configurado sem a chave (o segredo está em
+    # claro no banco) — silencioso para quem não usa 2º fator.
+    if not auth.mfa_secret_encrypted:
+        try:
+            if await auth.any_mfa_configured():
+                log.warning(
+                    "auth.mfa.secret_key_missing",
+                    impact="segredo TOTP gravado em claro no banco",
+                    hint="defina ELTANIX_MFA_SECRET_KEY no .env para cifrá-lo (F-7)",
+                )
+        except Exception as exc:  # sem banco no boot não deve derrubar o app
+            log.warning("auth.mfa.secret_key_check_failed", error=str(exc)[:200])
+
     mcp_manager = MCPManager(settings)
     await mcp_manager.connect_all()
     mcp_manager.register_tools(tool_registry)
@@ -318,6 +333,9 @@ async def lifespan(app: FastAPI):
     replay_purge_reaper = asyncio.create_task(run_replay_purge_reaper(blob=blob, redis=redis))
     panel_client_purge_reaper = asyncio.create_task(run_panel_client_purge_reaper(app.state))
     analytics_batch_reaper = asyncio.create_task(run_analytics_batch_reaper(engine))
+    snapshot_prune_reaper = asyncio.create_task(
+        run_snapshot_prune_reaper(snapshots, retention_days=settings.agent_snapshot_retention_days)
+    )
 
     log.info(
         "app.started",
@@ -346,6 +364,9 @@ async def lifespan(app: FastAPI):
         analytics_batch_reaper.cancel()
         with suppress(asyncio.CancelledError):
             await analytics_batch_reaper
+        snapshot_prune_reaper.cancel()
+        with suppress(asyncio.CancelledError):
+            await snapshot_prune_reaper
         # Containers da sessão não podem sobreviver ao processo que os criou:
         # ficariam órfãos consumindo memória até alguém notar.
         await sandboxes.shutdown()
@@ -379,6 +400,7 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
     app.add_middleware(CorrelationIdMiddleware)
+    register_error_handlers(app)
 
     app.include_router(openai_router)
     app.include_router(auth_router)

@@ -17,7 +17,27 @@ ADR 0007 para o porquê dessa duplicação ser intencional, não um descuido.
 from __future__ import annotations
 
 import ipaddress
+import socket
 import urllib.parse
+
+
+def canonical_ipv4(host: str) -> str | None:
+    """Se `host` for um IPv4 em qualquer codificação que os resolvers de fato
+    aceitam — decimal (`2130706433`), octal (`0177.0.0.1`), hexadecimal
+    (`0x7f.0.0.1`) ou curta (`127.1`) —, devolve a forma pontilhada canônica
+    (`127.0.0.1`); senão `None`.
+
+    Sem isto, um bloqueio que só compara o texto `"127.0.0.1"`/`"169.254.169.254"`
+    é trivialmente contornável (`http://2130706433/` alcança o loopback em
+    `httpx`/`curl`/libc). `socket.inet_aton` aceita exatamente o mesmo
+    conjunto de formas que a resolução real de nome faria.
+    """
+    try:
+        packed = socket.inet_aton(host)
+    except OSError:
+        return None
+    return socket.inet_ntoa(packed)
+
 
 # Hosts e endereços internos que nunca devem ser alvos de scraping/crawling/
 # navegação vinda de uma URL externa/fornecida pelo modelo.
@@ -74,13 +94,19 @@ def is_internal_hostname(hostname: str) -> bool:
     """True se `hostname` é infraestrutura Docker interna (nunca alcançável
     de fora da malha de containers, seja pela internet pública ou pelo
     navegador real do usuário)."""
-    h = (hostname or "").lower()
+    # Ponto/fim de FQDN: "localhost." e "localhost" resolvem igual.
+    h = (hostname or "").lower().rstrip(".")
     if not h:
         return False
     if h in BLOCKED_HOSTNAMES or h.startswith(SANDBOX_HOSTNAME_PREFIX):
         return True
     if h.startswith("169.254."):
         return True
+    # Normaliza IPv4 em codificação alternativa (decimal/octal/hex/curta) antes
+    # de classificar — senão "http://2130706433/" fura o bloqueio de loopback.
+    canonical = canonical_ipv4(h)
+    if canonical is not None:
+        h = canonical
     try:
         ip = ipaddress.ip_address(h)
     except ValueError:

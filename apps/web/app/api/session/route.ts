@@ -10,7 +10,7 @@ const BASE_URL = process.env.ELTANIX_API_URL ?? "http://localhost:8000";
 const COOKIE_NAME = "eltanix_session";
 
 function cookieAttrs(expires?: string): string {
-  const parts = ["Path=/", "HttpOnly", "SameSite=Lax"];
+  const parts = ["Path=/", "HttpOnly", "SameSite=Strict"];
   if (process.env.NODE_ENV === "production") parts.push("Secure");
   parts.push(expires ? `Expires=${new Date(expires).toUTCString()}` : "Max-Age=0");
   return parts.join("; ");
@@ -39,10 +39,15 @@ export async function POST(request: Request): Promise<Response> {
     );
   }
 
-  const { token, expires_at: expiresAt } = await upstream.json();
+  const data = await upstream.json();
+  // Senha ok mas a conta tem 2º fator: nenhum cookie ainda — o browser
+  // completa em `POST /api/session/mfa` com o código do autenticador.
+  if (data?.mfa_required) {
+    return Response.json({ mfaRequired: true, mfaToken: data.mfa_token }, { status: 200 });
+  }
   return new Response(null, {
     status: 204,
-    headers: { "Set-Cookie": `${COOKIE_NAME}=${token}; ${cookieAttrs(expiresAt)}` },
+    headers: { "Set-Cookie": `${COOKIE_NAME}=${data.token}; ${cookieAttrs(data.expires_at)}` },
   });
 }
 

@@ -49,10 +49,19 @@ HOSTS_SEMPRE_BLOQUEADOS = [
     "mcp-scanner",
 ]
 
-# Só bloqueado pra sessão de painel (o resultado vai pra um <iframe> do
-# navegador real do usuário, que não resolve nomes Docker-internos) — a
-# sessão de agente pode alcançar de propósito, pra testar a própria app.
-HOSTS_BLOQUEADOS_SO_PARA_PAINEL = ["web", "api", "host.docker.internal"]
+# Só bloqueado pra sessão de painel: `host.docker.internal` é fuga para o host
+# real, fora do Docker — a sessão de agente pode alcançar de propósito, pra
+# testar a própria app; a de painel, não.
+HOSTS_BLOQUEADOS_SO_PARA_PAINEL = ["host.docker.internal"]
+
+# `web`/`api` são a PRÓPRIA aplicação. Bloqueados pra scraping externo
+# (firecrawl nunca deveria mirar nome Docker), mas alcançáveis pelo serviço de
+# navegador em QUALQUER sessão — inclusive o painel manual de "verificação
+# visual", que renderiza um screenshot tirado no servidor (`<img>` base64),
+# nunca um `<iframe>` no navegador real (esse caminho vive no `EditorBrowserView`
+# e não passa por aqui). Ver `_DOCKER_INTERNAL_HOSTS_BLOCKED_FOR_PANEL` em
+# `services/browser/app.py`.
+HOSTS_APP_PROPRIA_ALCANCAVEL_PELO_PAINEL = ["web", "api"]
 
 HOSTS_SEMPRE_PERMITIDOS = ["exemplo.com", "docs.python.org"]
 
@@ -94,6 +103,21 @@ def test_docker_internal_hosts_blocked_for_panel_allowed_for_agent(hostname):
     browser_app.validate_url(f"http://{hostname}/x", session_id="agent-x")  # não levanta
 
 
+@pytest.mark.parametrize("hostname", HOSTS_APP_PROPRIA_ALCANCAVEL_PELO_PAINEL)
+def test_app_own_hosts_blocked_for_scraping_but_reachable_by_any_browser_session(hostname):
+    # Módulo compartilhado (firecrawl/scraping externo): bloqueado, é nome
+    # Docker-interno — e reconhecido como alvo local legítimo do agente.
+    assert is_internal_hostname(hostname) is True
+    with pytest.raises(ValueError):
+        validate_target_url(f"http://{hostname}/x")
+    assert is_agent_local_test_target(hostname) is True
+
+    # Serviço de navegador: `web`/`api` são a própria aplicação — painel manual
+    # (screenshot no servidor, nunca iframe) e agente, ambos alcançam.
+    for session_id in ("panel-x", "agent-x"):
+        browser_app.validate_url(f"http://{hostname}/x", session_id=session_id)
+
+
 @pytest.mark.parametrize("hostname", HOSTS_SEMPRE_PERMITIDOS)
 def test_ordinary_hosts_allowed_everywhere(hostname):
     validate_target_url(f"http://{hostname}/x")
@@ -128,3 +152,72 @@ def test_sandbox_container_hostnames_are_internal_but_agent_local() -> None:
     with pytest.raises(browser_app.HTTPException):
         browser_app.validate_url(f"http://{hostname}/x", session_id="panel-x")
     browser_app.validate_url(f"http://{hostname}/x", session_id="agent-x")
+
+
+# --- Lote 2 / item 87: bypass por codificação alternativa de IPv4 -------------
+#
+# `socket.inet_aton` (e todo resolver real: httpx, curl, libc) aceita IPv4 em
+# decimal (`2130706433`), octal (`0177.0.0.1`), hex (`0x7f.0.0.1`) e curto
+# (`127.1`). Um bloqueio que só compara o texto `"169.254.169.254"` era
+# contornável com `http://2852039166/`. Ambos os módulos normalizam agora
+# antes de classificar (`canonical_ipv4` / `_canonical_ipv4`).
+
+# Metadados cloud e faixas privadas, codificados — bloqueados em TODOS os
+# pontos de chamada e para qualquer sessão.
+IPV4_CODIFICADO_METADADOS_E_PRIVADO = [
+    "2852039166",  # 169.254.169.254 (metadados AWS/GCP) em decimal
+    "0xa9fea9fe",  # 169.254.169.254 em hex
+    "0xA000001",  # 10.0.0.1 (privado) em hex
+    "3232235521",  # 192.168.0.1 (privado) em decimal
+]
+
+# Loopback codificado: o `validate_target_url` (firecrawl/scraping externo)
+# bloqueia — nunca deveria mirar 127.0.0.0/8. O `browser_app.validate_url`
+# canoniza para `127.0.0.1`, que é gatilho legítimo de fallback Docker-interno
+# (mesma divergência intencional de `HOSTS_GATILHO_DE_FALLBACK_DIVERGEM_DE_PROPOSITO`).
+IPV4_CODIFICADO_LOOPBACK = ["2130706433", "0x7f.0.0.1", "127.1", "0177.0.0.1"]
+
+# Ponto final de FQDN — `localhost.` resolve igual a `localhost`.
+HOSTS_COM_PONTO_FINAL = ["localhost.", "redis.", "metadata.google.internal."]
+
+
+@pytest.mark.parametrize("hostname", IPV4_CODIFICADO_METADADOS_E_PRIVADO)
+def test_encoded_ipv4_metadata_and_private_blocked_everywhere(hostname):
+    assert is_internal_hostname(hostname) is True
+    with pytest.raises(ValueError):
+        validate_target_url(f"http://{hostname}/x")
+    for session_id in ("panel-x", "agent-x"):
+        with pytest.raises(browser_app.HTTPException):
+            browser_app.validate_url(f"http://{hostname}/x", session_id=session_id)
+
+
+@pytest.mark.parametrize("hostname", IPV4_CODIFICADO_LOOPBACK)
+def test_encoded_ipv4_loopback_blocked_for_external_scraping(hostname):
+    assert is_internal_hostname(hostname) is True
+    with pytest.raises(ValueError):
+        validate_target_url(f"http://{hostname}/x")
+    # Serviço de navegador: canoniza para 127.0.0.1, que é gatilho de fallback
+    # — permitido de propósito para qualquer sessão.
+    for session_id in ("panel-x", "agent-x"):
+        browser_app.validate_url(f"http://{hostname}/x", session_id=session_id)
+
+
+@pytest.mark.parametrize("hostname", HOSTS_COM_PONTO_FINAL)
+def test_trailing_dot_hostname_is_normalized_and_blocked(hostname):
+    assert is_internal_hostname(hostname) is True
+    with pytest.raises(ValueError):
+        validate_target_url(f"http://{hostname}/x")
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://[::ffff:169.254.169.254]/",  # IPv4-mapeado em IPv6
+        "http://[::1]/",  # loopback IPv6
+        "http://[fd00::1]/",  # ULA IPv6 (privado)
+        "http://legit.example.com@169.254.169.254/",  # userinfo enganoso
+    ],
+)
+def test_ipv6_and_userinfo_ssrf_vectors_blocked(url):
+    with pytest.raises(ValueError):
+        validate_target_url(url)

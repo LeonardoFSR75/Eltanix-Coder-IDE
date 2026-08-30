@@ -61,6 +61,17 @@ def match_context_rules(
         except Exception as exc:
             log.warning("agent.context_rules.match_failed", glob=rule.glob, error=str(exc)[:200])
             continue
+
+    # Rastro para depuração via `/requests`: quais regras moldaram o system
+    # prompt desta sessão, e contra que foco. Ordem de aplicação = ordem de
+    # declaração no YAML (todas as que casarem entram, sem deduplicar).
+    if casadas:
+        log.info(
+            "agent.context_rules.matched",
+            globs=[r.glob for r in casadas],
+            count=len(casadas),
+            targets=alvos,
+        )
     return casadas
 
 

@@ -27,6 +27,12 @@ class CorrelationIdMiddleware(BaseHTTPMiddleware):
         # um id — reusar em vez de sobrescrever mantém a correlação ponta a
         # ponta em vez de quebrá-la na borda do gateway.
         request_id = request.headers.get(_HEADER) or uuid.uuid4().hex[:12]
+        # Também em `request.state`: o handler de exceção não-tratada
+        # (`api/errors.py`) roda no `ServerErrorMiddleware`, que é externo a
+        # este middleware — quando ele dispara, o `finally` abaixo já limpou
+        # os contextvars do structlog, então é daqui que ele lê o id para
+        # devolver no corpo e no header da resposta 500.
+        request.state.request_id = request_id
         structlog.contextvars.clear_contextvars()
         structlog.contextvars.bind_contextvars(request_id=request_id)
         try:

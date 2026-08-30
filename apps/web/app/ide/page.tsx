@@ -12,6 +12,7 @@ import { TopMenuBar } from "@/components/ide/TopMenuBar";
 import { IdeProvider, useIde, type PanelId } from "@/lib/ide-store";
 import { ConfirmDialog, PromptDialog, type Command } from "@/components/ide/Overlays";
 import { useToast } from "@/components/Toast";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 
 // Cada um destes é um bundle pesado (Monaco, xterm, dock do agente, overlays)
 // que só é útil depois que o usuário interage — carregá-los estaticamente
@@ -277,6 +278,19 @@ function Shell() {
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [onKeyDown]);
+
+  // Guarda contra perder edições não salvas ao fechar/recarregar a aba do
+  // browser ou navegar para fora. O prompt nativo só aparece enquanto houver
+  // pelo menos um arquivo sujo no grupo ativo.
+  useEffect(() => {
+    if (ide.dirty.size === 0) return;
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [ide.dirty.size]);
 
   // Resizing mouse move handlers
   useEffect(() => {
@@ -614,15 +628,17 @@ function Shell() {
             </div>
             {ide.projectsError && <div className="panel-error">{ide.projectsError}</div>}
 
-            {ide.panel === "explorer" && <Explorer />}
-            {ide.panel === "search" && <SearchPanel />}
-            {ide.panel === "git" && <GitPanel />}
-            {ide.panel === "debug" && <DebugPanel />}
-            {ide.panel === "browser" && <BrowserPanel />}
-            {ide.panel === "packages" && <PackagesPanel />}
-            {ide.panel === "trello" && <TrelloPanel />}
-            {ide.panel === "extensions" && <ExtensionsPanel />}
-            {ide.panel === "containers" && <ContainersPanel />}
+            <ErrorBoundary label="Painel lateral" onReset={() => ide.setPanel("explorer")}>
+              {ide.panel === "explorer" && <Explorer />}
+              {ide.panel === "search" && <SearchPanel />}
+              {ide.panel === "git" && <GitPanel />}
+              {ide.panel === "debug" && <DebugPanel />}
+              {ide.panel === "browser" && <BrowserPanel />}
+              {ide.panel === "packages" && <PackagesPanel />}
+              {ide.panel === "trello" && <TrelloPanel />}
+              {ide.panel === "extensions" && <ExtensionsPanel />}
+              {ide.panel === "containers" && <ContainersPanel />}
+            </ErrorBoundary>
           </aside>
 
         )}
@@ -636,7 +652,9 @@ function Shell() {
         )}
 
         <main className="ide-main">
-          <PaneLayout onCursorPositionChange={setCursorPos} />
+          <ErrorBoundary label="Editor">
+            <PaneLayout onCursorPositionChange={setCursorPos} />
+          </ErrorBoundary>
 
           {ide.terminalOpen && (
             <>
@@ -645,12 +663,14 @@ function Shell() {
                 onMouseDown={() => setIsResizingTerminal(true)}
                 title="Arrastar para redimensionar altura do terminal"
               />
-              <TerminalPanel
-                sessionId={sessionId}
-                project={ide.project}
-                onSessionCreated={setSessionId}
-                onClose={() => ide.setTerminalOpen(false)}
-              />
+              <ErrorBoundary label="Terminal" onReset={() => ide.setTerminalOpen(false)}>
+                <TerminalPanel
+                  sessionId={sessionId}
+                  project={ide.project}
+                  onSessionCreated={setSessionId}
+                  onClose={() => ide.setTerminalOpen(false)}
+                />
+              </ErrorBoundary>
             </>
           )}
         </main>
@@ -665,7 +685,9 @@ function Shell() {
 
         {ide.agentDockOpen && (
           <aside className="agent-dock" style={{ width: ide.agentDockWidth }}>
-            <AgentDock onFileTouched={handleAgentFileTouched} onSession={setSessionId} />
+            <ErrorBoundary label="Agente" onReset={() => ide.setAgentDockOpen(false)}>
+              <AgentDock onFileTouched={handleAgentFileTouched} onSession={setSessionId} />
+            </ErrorBoundary>
           </aside>
         )}
 

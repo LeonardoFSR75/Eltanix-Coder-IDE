@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from eltanix.config import Settings
 from eltanix.context import edges, store
+from eltanix.context import git_aware as _git_aware
 from eltanix.context.chunker import Chunk, FileChunks, chunk_file
 from eltanix.context.scanner import ScannedFile, read_text, scan
 from eltanix.db.models import CodeChunk
@@ -259,7 +260,11 @@ class ContextIndexer:
         query: str,
         limit: int = 12,
         path_prefix: str | None = None,
+        git_aware: bool = False,
     ) -> list[store.SearchHit]:
+        """`git_aware=True` (Fase 4): expande os hits por vizinhança no Code
+        Knowledge Graph e re-rankeia com recência/co-mudança do git. Degrada
+        para o `hybrid_search` puro se o grafo ou o git não colaborarem."""
         workspace = self.workspace_key(root)
         inicio = time.perf_counter()
 
@@ -279,6 +284,16 @@ class ContextIndexer:
         status = "ok"
         try:
             async with session_scope() as session:
+                if git_aware:
+                    return await _git_aware.git_aware_search(
+                        session,
+                        root=root,
+                        workspace=workspace,
+                        query_text=query,
+                        query_embedding=query_embedding,
+                        limit=limit,
+                        path_prefix=path_prefix,
+                    )
                 return await store.hybrid_search(
                     session,
                     workspace=workspace,

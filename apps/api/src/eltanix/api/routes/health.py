@@ -10,10 +10,12 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Request, status
 from pydantic import BaseModel, Field, field_validator
+from sqlalchemy import text
 
 from eltanix.api.deps import AuthDep, EngineDep, SettingsDep
+from eltanix.db.session import session_scope
 from eltanix.logging_setup import get_logger
 from eltanix.router import env_editor, providers_editor, routes_editor
 from eltanix.router.adapters.base import DiscoveredModel, DiscoveryError
@@ -130,6 +132,45 @@ async def health(engine: EngineDep) -> dict[str, Any]:
         "cache_enabled": engine.cache.enabled,
         "pricing_updated_at": engine.prices.updated_at,
     }
+
+
+@router.get("/health/ready")
+async def readiness(request: Request) -> dict[str, Any]:
+    """Prontidão para orquestrador (Compose/k8s), separada do `/health` acima —
+    aquele é vivacidade + estado do catálogo, este sonda as dependências de
+    infraestrutura de verdade.
+
+    Postgres é obrigatório: falhou, a resposta é 503 e o container é marcado
+    unhealthy. Redis é opcional por design (ver invariante "falha de serviço
+    opcional degrada, não derruba" no CLAUDE.md) — ausente ou fora do ar não
+    reprova a prontidão, só aparece como `disabled`/`error` no corpo.
+    """
+    checks: dict[str, str] = {}
+
+    try:
+        async with session_scope() as session:
+            await session.execute(text("SELECT 1"))
+        checks["postgres"] = "ok"
+    except Exception as exc:
+        log.warning("health.ready.postgres_failed", error=str(exc)[:200])
+        checks["postgres"] = "error"
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={"status": "not_ready", "checks": checks},
+        ) from exc
+
+    redis = getattr(request.app.state, "redis", None)
+    if redis is None:
+        checks["redis"] = "disabled"
+    else:
+        try:
+            await redis.ping()
+            checks["redis"] = "ok"
+        except Exception as exc:
+            log.warning("health.ready.redis_failed", error=str(exc)[:200])
+            checks["redis"] = "error"
+
+    return {"status": "ready", "checks": checks}
 
 
 @router.get("/health/providers")

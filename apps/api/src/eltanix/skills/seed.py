@@ -74,7 +74,12 @@ async def seed_agent_skills(
         return 0
 
     count = 0
-    novas: list[tuple[str, str]] = []  # (skill_id, description) — embedado fora da transação
+    # (skill_id, description) — embedado fora da transação. `novas` são skills
+    # recém-criadas; `reembedar` são skills existentes cuja `description` mudou
+    # no `.md` de origem (sem isto, o vetor de roteamento automático fica
+    # preso na descrição antiga).
+    novas: list[tuple[str, str]] = []
+    reembedar: list[tuple[str, str]] = []
     async with session_scope() as session:
         existing_skills = await store.list_skills(session)
         existing_map = {s.name: s for s in existing_skills}
@@ -100,10 +105,8 @@ async def seed_agent_skills(
                 log.info("skills.seed.imported", name=name)
             else:
                 existing = existing_map[name]
-                if (
-                    existing.system_prompt != parsed["system_prompt"]
-                    or existing.description != parsed["description"]
-                ):
+                description_mudou = existing.description != parsed["description"]
+                if description_mudou or existing.system_prompt != parsed["system_prompt"]:
                     await store.update_skill(
                         session,
                         existing.id,
@@ -115,14 +118,16 @@ async def seed_agent_skills(
                     )
                     count += 1
                     log.info("skills.seed.updated", name=name)
+                    if description_mudou:
+                        reembedar.append((str(existing.id), parsed["description"]))
 
-    if engine is not None and novas:
-        await _embed_new_skills(engine, embedding_profile, novas)
+    if engine is not None and (novas or reembedar):
+        await _embed_skill_descriptions(engine, embedding_profile, novas + reembedar)
 
     return count
 
 
-async def _embed_new_skills(
+async def _embed_skill_descriptions(
     engine: RouterEngine, embedding_profile: str, skills: list[tuple[str, str]]
 ) -> None:
     import uuid

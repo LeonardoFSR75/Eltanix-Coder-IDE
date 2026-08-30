@@ -19,6 +19,7 @@ import time
 import uuid
 
 from eltanix.config import get_settings
+from eltanix.context import git_aware
 from eltanix.context import store as context_store
 from eltanix.context.chunker import Chunk
 from eltanix.documents import store as documents_store
@@ -66,6 +67,121 @@ async def test_context_hybrid_search_finds_the_indexed_chunk(pg_session):
     assert [h.path for h in hits_sem_embedding] == [chunk.path]
     assert hits_sem_embedding[0].vector_rank is None
     assert hits_sem_embedding[0].text_rank == 1
+
+
+async def test_git_aware_graph_expansion_reads_code_edge(pg_session):
+    """Fase 4: a expansão de 1 hop (`_graph_neighbors`) resolve a aresta
+    `imports` no `code_edge` real e devolve o chunk do arquivo importado como
+    vizinho, com score derivado do hit de origem (< score da origem)."""
+    workspace = f"test-gitaware-{uuid.uuid4().hex[:8]}"
+
+    origem = Chunk(
+        path="zzqrk_origem.py",
+        content="import zzqrk_vizinho\n\ndef zzqrkorigem():\n    return zzqrk_vizinho.helper()\n",
+        start_line=1,
+        end_line=4,
+        kind="module",
+        symbol=None,
+    )
+    vizinho = Chunk(
+        path="zzqrk_vizinho.py",
+        content="def helper():\n    return 'resultado do vizinho'\n",
+        start_line=1,
+        end_line=2,
+        kind="function",
+        symbol="helper",
+    )
+    for c in (origem, vizinho):
+        _, persisted = await context_store.upsert_file(
+            pg_session,
+            workspace=workspace,
+            path=c.path,
+            content_hash=f"hash-{c.path}",
+            language="python",
+            size_bytes=100,
+            mtime=time.time(),
+            chunks=[c],
+            embeddings=[_VECTOR],
+            fallback_chunking=False,
+        )
+        if c is origem:
+            origem_chunk_id = persisted[0].id
+
+    await context_store.insert_edges(
+        pg_session,
+        workspace=workspace,
+        contains=[],
+        imports=[(origem_chunk_id, "zzqrk_vizinho.py")],
+    )
+
+    parent_hit = context_store.SearchHit(
+        path="zzqrk_origem.py",
+        symbol=None,
+        parent=None,
+        kind="module",
+        start_line=1,
+        end_line=4,
+        content="",
+        language="python",
+        token_count=10,
+        score=0.5,
+    )
+    neighbors = await git_aware._graph_neighbors(
+        pg_session, workspace=workspace, base=[parent_hit]
+    )
+    assert "zzqrk_vizinho.py" in {n.path for n in neighbors}
+    assert all(n.score < parent_hit.score for n in neighbors)
+
+    # E o fluxo completo roda contra Postgres sem erro, com a origem no topo.
+    expanded = await git_aware.git_aware_search(
+        pg_session,
+        root=None,
+        workspace=workspace,
+        query_text="zzqrkorigem",
+        query_embedding=_VECTOR,
+        limit=8,
+        recency=False,
+    )
+    assert expanded[0].path == "zzqrk_origem.py"
+
+
+async def test_git_aware_search_without_edges_matches_plain_hybrid(pg_session):
+    """Sem aresta no grafo, `git_aware_search` devolve os mesmos caminhos que
+    `hybrid_search` — a expansão não inventa vizinho."""
+    workspace = f"test-gitaware-noedge-{uuid.uuid4().hex[:8]}"
+    chunk = Chunk(
+        path="zzqrk_solo.py",
+        content="def zzqrksolo():\n    return 42\n",
+        start_line=1,
+        end_line=2,
+        kind="function",
+        symbol="zzqrksolo",
+    )
+    await context_store.upsert_file(
+        pg_session,
+        workspace=workspace,
+        path=chunk.path,
+        content_hash="hash-solo",
+        language="python",
+        size_bytes=50,
+        mtime=time.time(),
+        chunks=[chunk],
+        embeddings=[_VECTOR],
+        fallback_chunking=False,
+    )
+    plain = await context_store.hybrid_search(
+        pg_session, workspace=workspace, query_text="zzqrksolo", query_embedding=_VECTOR
+    )
+    expanded = await git_aware.git_aware_search(
+        pg_session,
+        root=None,
+        workspace=workspace,
+        query_text="zzqrksolo",
+        query_embedding=_VECTOR,
+        limit=8,
+        recency=False,
+    )
+    assert [h.path for h in expanded] == [h.path for h in plain] == ["zzqrk_solo.py"]
 
 
 async def test_documents_hybrid_search_finds_the_indexed_chunk(pg_session):

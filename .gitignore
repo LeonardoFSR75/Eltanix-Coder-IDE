@@ -9,6 +9,12 @@ __pycache__/
 dist/
 build/
 
+# Cobertura de testes (gerada por pytest-cov — ver apps/api/pyproject.toml)
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+
 # Node
 node_modules/
 .next/

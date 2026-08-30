@@ -11132,3 +11132,123 @@ button.primary:hover:not(:disabled) {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
 }
+/* ── ErrorBoundary (fronteira de erro por painel do IDE) ────────────── */
+.error-boundary-fallback {
+  margin: 10px 12px;
+  padding: 14px 16px;
+  border-radius: var(--radius-sm);
+  background: var(--danger-dim);
+  border: 1px solid color-mix(in srgb, var(--danger) 30%, transparent);
+  color: var(--danger);
+  font-size: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-start;
+}
+.error-boundary-title {
+  font-weight: 600;
+  font-size: 13px;
+}
+.error-boundary-message {
+  color: var(--text-dim);
+  word-break: break-word;
+  font-family: var(--font-mono, monospace);
+}
+.error-boundary-retry {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  color: var(--text);
+  padding: 5px 12px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.error-boundary-retry:hover {
+  border-color: var(--border-hover);
+}
+
+/* ── Skeleton de carregamento da rota /ide ─────────────────────────── */
+@keyframes ideSkeletonPulse {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 0.9; }
+}
+.ide-skeleton {
+  display: flex;
+  height: 100%;
+  width: 100%;
+  background: var(--bg);
+}
+.ide-skeleton__activity {
+  width: 48px;
+  flex: 0 0 48px;
+  background: var(--surface-1);
+  border-right: 1px solid var(--border);
+}
+.ide-skeleton__sidebar {
+  width: 260px;
+  flex: 0 0 260px;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  padding: 14px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.ide-skeleton__main {
+  flex: 1;
+  padding: 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.ide-skeleton__dock {
+  width: 360px;
+  flex: 0 0 360px;
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.ide-skeleton__bar {
+  height: 12px;
+  border-radius: 4px;
+  background: var(--surface-3);
+  animation: ideSkeletonPulse 1.4s ease-in-out infinite;
+}
+.ide-skeleton__bar--title { height: 18px; width: 40%; }
+.ide-skeleton__bar--wide { width: 100%; }
+.ide-skeleton__bar--mid { width: 75%; }
+.ide-skeleton__bar--short { width: 45%; }
+@media (prefers-reduced-motion: reduce) {
+  .ide-skeleton__bar { animation: none; }
+}
+
+/* --- 2FA / MFA (components/MfaSettings.tsx) --- */
+.mfa-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-top: 4px;
+}
+.mfa-recovery {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 28rem;
+}
+.mfa-recovery-list {
+  background: var(--bg-elev, rgba(127,127,127,0.08));
+  border: 1px solid var(--border, rgba(127,127,127,0.25));
+  border-radius: 8px;
+  padding: 12px 14px;
+  font-size: 13px;
+  line-height: 1.9;
+  letter-spacing: 0.04em;
+  white-space: pre;
+  overflow-x: auto;
+  margin: 0;
+}

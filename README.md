@@ -239,6 +239,8 @@ Para mais detalhes sobre as decisões de design, consulte:
 - [ADR 0009 — Sistema de 6 Suítes de Extensões e Auto-Update Open VSX](docs/adr/0009-sistema-de-extensoes-e-auto-update-open-vsx.md)
 - [ADR 0010 — Segurança de Servidores MCP e Cisco AI Defense Scanner](docs/adr/0010-seguranca-mcp-e-cisco-scanner.md)
 - [ADR 0011 — Sanitização Dinâmica de Prompts e Mascaramento de PII](docs/adr/0011-sanitizacao-dinamica-pii.md)
+- [ADR 0012 — Modos Customizáveis do Agente e o Gate de Ferramentas por Nome](docs/adr/0012-modos-customizaveis-e-gate-de-ferramentas.md)
+- [ADR 0013 — `apps/desktop` Congelado até a IDE Web Cruzar a Onda 1](docs/adr/0013-apps-desktop-congelado.md)
 
 ---
 

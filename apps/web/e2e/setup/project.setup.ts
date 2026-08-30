@@ -10,7 +10,22 @@ setup("garante que o projeto de fumaça do E2E existe", async ({ page }) => {
   await page.goto("/projects");
   await expect(page.getByRole("heading", { name: "Central do Projeto" })).toBeVisible();
 
-  if (await page.getByText(E2E_PROJECT_NAME, { exact: true }).count()) {
+  // O card de cada projeto mostra o nome num <h3> e o slug num <span>, e o slug
+  // do projeto de fumaça é igual ao nome — `getByText(nome, { exact })` casaria
+  // os dois (strict mode violation). Mirar no heading do card resolve isso.
+  const cardHeading = page.getByRole("heading", { name: E2E_PROJECT_NAME, exact: true });
+  const emptyState = page.getByRole("heading", { name: "Nenhum projeto encontrado" });
+
+  // A lista carrega por fetch depois que o heading da página aparece; esperar
+  // ela assentar (card presente OU estado vazio) antes de decidir criar evita
+  // a corrida que fazia o teste criar um projeto duplicado a cada tentativa.
+  await expect
+    .poll(async () => (await cardHeading.count()) > 0 || (await emptyState.count()) > 0, {
+      timeout: 15_000,
+    })
+    .toBe(true);
+
+  if (await cardHeading.count()) {
     return;
   }
 
@@ -18,5 +33,5 @@ setup("garante que o projeto de fumaça do E2E existe", async ({ page }) => {
   await page.getByPlaceholder("ex: meu-sistema-v2").fill(E2E_PROJECT_NAME);
   await page.getByRole("button", { name: "Criar Projeto" }).click();
 
-  await expect(page.getByText(E2E_PROJECT_NAME, { exact: true })).toBeVisible({ timeout: 15_000 });
+  await expect(cardHeading).toBeVisible({ timeout: 15_000 });
 });
