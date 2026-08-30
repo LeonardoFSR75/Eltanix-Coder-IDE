@@ -16,7 +16,7 @@ dependencies = [
     # Rust e as versões estáveis não publicam wheel win_amd64 — instalar exigiria
     # MSVC Build Tools. A 1.91.x ainda é py3-none-any e roda em Windows e Linux.
     # Ao subir de versão, confira o wheel antes: https://pypi.org/pypi/litellm/json
-    "litellm>=1.91.4,<1.92",
+    "litellm>=1.91.4,<1.99",
     "sqlalchemy[asyncio]>=2.0.36",
     "asyncpg>=0.30",
     "alembic>=1.14",
