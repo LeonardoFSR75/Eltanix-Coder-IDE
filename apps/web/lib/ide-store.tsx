@@ -400,7 +400,7 @@ export function IdeProvider({ children }: { children: ReactNode }) {
     async (name: string, gitInit: boolean = false) => {
       const p = await post<Project & { created: boolean }>("/api/projects", {
         name,
-        git_init: gitInit,
+        init_git: gitInit,
       });
       await reloadProjects();
       setProject(p.name);

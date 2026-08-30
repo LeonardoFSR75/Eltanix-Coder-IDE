@@ -3,19 +3,13 @@
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { useToast } from "@/components/Toast";
-import { createProject, listProjects, ProjectRecord } from "@/lib/api/projects";
+import { LinkProjectModal } from "@/components/ide/LinkProjectModal";
+import { listProjects, ProjectRecord } from "@/lib/api/projects";
 
 export default function ProjectsPage() {
   const [projects, setProjects] = useState<ProjectRecord[]>([]);
   const [loading, setLoading] = useState(true);
-  const [showModal, setShowModal] = useState(false);
-  const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
-  const [gitUrl, setGitUrl] = useState("");
-  const [initGit, setInitGit] = useState(true);
-  const [createGitHubRepo, setCreateGitHubRepo] = useState(false);
-  const [budgetLimit, setBudgetLimit] = useState("");
-  const [submitting, setSubmitting] = useState(false);
+  const [modalTab, setModalTab] = useState<"link" | "create" | "clone" | null>(null);
   const { addToast } = useToast();
 
   const loadData = async () => {
@@ -34,37 +28,6 @@ export default function ProjectsPage() {
   useEffect(() => {
     loadData();
   }, []);
-
-  const handleCreate = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!name.trim()) return;
-
-    setSubmitting(true);
-    try {
-      const created = await createProject({
-        name: name.trim(),
-        description: description.trim(),
-        git_url: gitUrl.trim() || undefined,
-        init_git: initGit,
-        create_github_repo: createGitHubRepo,
-        budget_limit_usd: budgetLimit ? parseFloat(budgetLimit) : undefined,
-      });
-      addToast(`Projeto '${created.name}' cadastrado com sucesso!`, "success");
-      setShowModal(false);
-      setName("");
-      setDescription("");
-      setGitUrl("");
-      setInitGit(true);
-      setCreateGitHubRepo(false);
-      setBudgetLimit("");
-      loadData();
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      addToast(`Falha ao cadastrar projeto: ${message}`, "error");
-    } finally {
-      setSubmitting(false);
-    }
-  };
 
   return (
     <div style={{ minHeight: "100vh", backgroundColor: "var(--bg)", color: "var(--text)" }}>
@@ -97,24 +60,44 @@ export default function ProjectsPage() {
               Cadastre e gerencie o ecossistema unificado do Eltanix Coder IDE (IDE, Segundo Cérebro, Graphify, Custos, Auditoria e Git).
             </p>
           </div>
-          <button
-            onClick={() => setShowModal(true)}
-            style={{
-              padding: "0.75rem 1.25rem",
-              borderRadius: "var(--radius)",
-              background: "var(--btn-primary-bg, var(--surface-3))",
-              color: "var(--btn-primary-text, var(--text))",
-              border: "1px solid var(--btn-primary-border, var(--border))",
-              fontWeight: 600,
-              cursor: "pointer",
-              display: "flex",
-              alignItems: "center",
-              gap: "0.5rem",
-              boxShadow: "var(--shadow-lg)",
-            }}
-          >
-            <span>✨</span> Novo Projeto
-          </button>
+          <div style={{ display: "flex", gap: "0.75rem" }}>
+            <button
+              onClick={() => setModalTab("link")}
+              style={{
+                padding: "0.75rem 1.25rem",
+                borderRadius: "var(--radius)",
+                background: "var(--surface-2)",
+                color: "var(--text)",
+                border: "1px solid var(--border)",
+                fontWeight: 600,
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                gap: "0.5rem",
+                boxShadow: "var(--shadow-sm)",
+              }}
+            >
+              <span>📂</span> Vincular Pasta do PC
+            </button>
+            <button
+              onClick={() => setModalTab("create")}
+              style={{
+                padding: "0.75rem 1.25rem",
+                borderRadius: "var(--radius)",
+                background: "var(--btn-primary-bg, var(--surface-3))",
+                color: "var(--btn-primary-text, var(--text))",
+                border: "1px solid var(--btn-primary-border, var(--border))",
+                fontWeight: 600,
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                gap: "0.5rem",
+                boxShadow: "var(--shadow-lg)",
+              }}
+            >
+              <span>✨</span> Novo Projeto
+            </button>
+          </div>
         </div>
 
         {/* Loading / Grid */}
@@ -129,28 +112,44 @@ export default function ProjectsPage() {
               textAlign: "center",
               backgroundColor: "var(--surface)",
               borderRadius: "var(--radius-lg)",
-              border: "1px border var(--border)",
+              border: "1px solid var(--border)",
             }}
           >
             <span style={{ fontSize: "3rem" }}>🚀</span>
             <h3 style={{ marginTop: "1rem", color: "var(--text)" }}>Nenhum projeto encontrado</h3>
             <p style={{ color: "var(--text-dim)", maxWidth: "500px", margin: "0.5rem auto 1.5rem" }}>
-              Crie pastas na raiz de projetos ou cadastre um novo projeto para gerenciar todo o ambiente agêntico.
+              Vincule qualquer pasta do seu computador (Windows/Linux/macOS) ou crie um novo projeto com suporte agêntico.
             </p>
-            <button
-              onClick={() => setShowModal(true)}
-              style={{
-                padding: "0.6rem 1.2rem",
-                borderRadius: "var(--radius)",
-                background: "var(--accent)",
-                color: "#000",
-                border: "none",
-                fontWeight: 600,
-                cursor: "pointer",
-              }}
-            >
-              Cadastrar Projeto
-            </button>
+            <div style={{ display: "flex", gap: "0.75rem", justifyContent: "center" }}>
+              <button
+                onClick={() => setModalTab("link")}
+                style={{
+                  padding: "0.6rem 1.2rem",
+                  borderRadius: "var(--radius)",
+                  background: "var(--surface-2)",
+                  color: "var(--text)",
+                  border: "1px solid var(--border)",
+                  fontWeight: 600,
+                  cursor: "pointer",
+                }}
+              >
+                📂 Vincular Pasta do PC
+              </button>
+              <button
+                onClick={() => setModalTab("create")}
+                style={{
+                  padding: "0.6rem 1.2rem",
+                  borderRadius: "var(--radius)",
+                  background: "var(--accent)",
+                  color: "#000",
+                  border: "none",
+                  fontWeight: 600,
+                  cursor: "pointer",
+                }}
+              >
+                ✨ Criar Novo Projeto
+              </button>
+            </div>
           </div>
         ) : (
           <div
@@ -278,199 +277,17 @@ export default function ProjectsPage() {
           </div>
         )}
 
-        {/* Modal de Cadastro */}
-        {showModal && (
-          <div
-            style={{
-              position: "fixed",
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
-              backgroundColor: "rgba(0,0,0,0.75)",
-              display: "flex",
-              justifyContent: "center",
-              alignItems: "center",
-              zIndex: 1000,
-              padding: "1rem",
+        {/* Modal Unificado de Vinculação / Criação / Clone */}
+        {modalTab && (
+          <LinkProjectModal
+            initialTab={modalTab}
+            onClose={() => setModalTab(null)}
+            onProjectOpened={(slug) => {
+              setModalTab(null);
+              loadData();
+              window.location.href = `/ide?project=${encodeURIComponent(slug)}`;
             }}
-          >
-            <div
-              style={{
-                backgroundColor: "var(--surface)",
-                borderRadius: "var(--radius-lg)",
-                border: "1px solid var(--border)",
-                padding: "2rem",
-                width: "100%",
-                maxWidth: "500px",
-                boxShadow: "var(--shadow-lg)",
-              }}
-            >
-              <h2 style={{ margin: "0 0 1.5rem 0", color: "var(--text)", fontSize: "1.4rem" }}>
-                ✨ Cadastrar Novo Projeto
-              </h2>
-              <form onSubmit={handleCreate}>
-                <div style={{ marginBottom: "1rem" }}>
-                  <label style={{ display: "block", marginBottom: "0.4rem", color: "var(--text-dim)", fontSize: "0.9rem" }}>
-                    Nome do Projeto *
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    placeholder="ex: meu-sistema-v2"
-                    style={{
-                      width: "100%",
-                      padding: "0.625rem",
-                      borderRadius: "var(--radius)",
-                      backgroundColor: "var(--surface-2)",
-                      border: "1px solid var(--border)",
-                      color: "var(--text)",
-                    }}
-                  />
-                </div>
-
-                <div style={{ marginBottom: "1rem" }}>
-                  <label style={{ display: "block", marginBottom: "0.4rem", color: "var(--text-dim)", fontSize: "0.9rem" }}>
-                    Descrição / Objetivos do Agente
-                  </label>
-                  <textarea
-                    rows={3}
-                    value={description}
-                    onChange={(e) => setDescription(e.target.value)}
-                    placeholder="Descreva o propósito e convenções do projeto..."
-                    style={{
-                      width: "100%",
-                      padding: "0.625rem",
-                      borderRadius: "var(--radius)",
-                      backgroundColor: "var(--surface-2)",
-                      border: "1px solid var(--border)",
-                      color: "var(--text)",
-                      resize: "vertical",
-                    }}
-                  />
-                </div>
-
-                <div style={{ marginBottom: "1rem" }}>
-                  <label style={{ display: "block", marginBottom: "0.4rem", color: "var(--text-dim)", fontSize: "0.9rem" }}>
-                    URL do Repositório Git (Opcional)
-                  </label>
-                  <input
-                    type="url"
-                    value={gitUrl}
-                    onChange={(e) => setGitUrl(e.target.value)}
-                    placeholder="https://github.com/org/repo.git"
-                    style={{
-                      width: "100%",
-                      padding: "0.625rem",
-                      borderRadius: "var(--radius)",
-                      backgroundColor: "var(--surface-2)",
-                      border: "1px solid var(--border)",
-                      color: "var(--text)",
-                    }}
-                  />
-                </div>
-
-                <div style={{ marginBottom: "0.75rem" }}>
-                  <label
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "0.6rem",
-                      color: "var(--text)",
-                      fontSize: "0.9rem",
-                      cursor: "pointer",
-                    }}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={initGit}
-                      onChange={(e) => setInitGit(e.target.checked)}
-                      style={{ cursor: "pointer", width: "16px", height: "16px", accentColor: "var(--accent)" }}
-                    />
-                    <span>🌱 Inicializar repositório Git local automaticamente (`git init`)</span>
-                  </label>
-                </div>
-
-                <div style={{ marginBottom: "1rem" }}>
-                  <label
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "0.6rem",
-                      color: "var(--text)",
-                      fontSize: "0.9rem",
-                      cursor: "pointer",
-                    }}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={createGitHubRepo}
-                      onChange={(e) => setCreateGitHubRepo(e.target.checked)}
-                      style={{ cursor: "pointer", width: "16px", height: "16px", accentColor: "var(--accent)" }}
-                    />
-                    <span>🔒 Criar repositório remoto **PRIVADO** no GitHub automaticamente</span>
-                  </label>
-                </div>
-
-                <div style={{ marginBottom: "1.5rem" }}>
-                  <label style={{ display: "block", marginBottom: "0.4rem", color: "var(--text-dim)", fontSize: "0.9rem" }}>
-                    Limite de Orçamento Mensal USD (Opcional)
-                  </label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    value={budgetLimit}
-                    onChange={(e) => setBudgetLimit(e.target.value)}
-                    placeholder="50.00"
-                    style={{
-                      width: "100%",
-                      padding: "0.625rem",
-                      borderRadius: "var(--radius)",
-                      backgroundColor: "var(--surface-2)",
-                      border: "1px solid var(--border)",
-                      color: "var(--text)",
-                    }}
-                  />
-                </div>
-
-                <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.75rem" }}>
-                  <button
-                    type="button"
-                    onClick={() => setShowModal(false)}
-                    style={{
-                      flex: 1,
-                      padding: "0.625rem",
-                      borderRadius: "var(--radius)",
-                      backgroundColor: "var(--surface-2)",
-                      color: "var(--text-dim)",
-                      border: "1px solid var(--border)",
-                      cursor: "pointer",
-                    }}
-                  >
-                    Cancelar
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={submitting}
-                    style={{
-                      flex: 1,
-                      padding: "0.625rem",
-                      borderRadius: "var(--radius)",
-                      background: "var(--accent-gradient)",
-                      color: "#fff",
-                      border: "none",
-                      fontWeight: 600,
-                      cursor: submitting ? "not-allowed" : "pointer",
-                    }}
-                  >
-                    {submitting ? "Criando..." : "Criar Projeto"}
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
+          />
         )}
       </main>
     </div>

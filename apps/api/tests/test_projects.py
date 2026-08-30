@@ -105,3 +105,42 @@ async def test_create_project_endpoint(tmp_path: Path):
         assert data["slug"] == "Sorteador"
         assert (tmp_path / "Sorteador").is_dir()
 
+
+@pytest.mark.asyncio
+async def test_inspect_and_browse_filesystem_endpoints(tmp_path: Path):
+    from httpx import ASGITransport, AsyncClient
+    from eltanix.api.deps import require_session
+    from eltanix.main import create_app
+
+    app = create_app()
+    app.state.projects_root = tmp_path
+    app.dependency_overrides[require_session] = lambda: None
+
+    # Cria pasta de exemplo com package.json
+    demo_dir = tmp_path / "meu-app-react"
+    demo_dir.mkdir()
+    (demo_dir / "package.json").write_text('{"dependencies": {"react": "^18.0.0", "next": "^14.0.0"}}', encoding="utf-8")
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        # 1. Teste de inspeção
+        res_inspect = await ac.post("/api/projects/inspect-path", json={"path": str(demo_dir)})
+        assert res_inspect.status_code == 200, res_inspect.text
+        data_inspect = res_inspect.json()
+        assert data_inspect["name"] == "meu-app-react"
+        assert "React" in data_inspect["frameworks"]
+        assert "Next.js" in data_inspect["frameworks"]
+
+        # 2. Teste de navegação do sistema de arquivos
+        res_browse = await ac.post("/api/projects/filesystem/browse", json={"path": str(tmp_path)})
+        assert res_browse.status_code == 200, res_browse.text
+        data_browse = res_browse.json()
+        assert data_browse["current_path"] == str(tmp_path.resolve())
+        assert any(d["name"] == "meu-app-react" for d in data_browse["directories"])
+
+        # 3. Teste de listagem de raízes quando path é vazio
+        res_roots = await ac.post("/api/projects/filesystem/browse", json={"path": None})
+        assert res_roots.status_code == 200, res_roots.text
+        data_roots = res_roots.json()
+        assert len(data_roots["roots"]) > 0
+
+

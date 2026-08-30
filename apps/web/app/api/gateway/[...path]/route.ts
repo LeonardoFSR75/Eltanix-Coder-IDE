@@ -22,6 +22,17 @@ type Params = { params: Promise<{ path: string[] }> };
 
 const UNSAFE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
+function isLoopback(hostname: string): boolean {
+  const clean = hostname.replace(/^\[|\]$/g, "").toLowerCase();
+  return (
+    clean === "localhost" ||
+    clean === "127.0.0.1" ||
+    clean === "0.0.0.0" ||
+    clean === "::1" ||
+    clean.startsWith("127.")
+  );
+}
+
 async function proxy(request: Request, { params }: Params): Promise<Response> {
   const { path } = await params;
   const url = new URL(request.url);
@@ -35,13 +46,24 @@ async function proxy(request: Request, { params }: Params): Promise<Response> {
   if (UNSAFE_METHODS.has(request.method)) {
     const origin = request.headers.get("origin");
     if (origin) {
-      let originHost: string;
+      let originUrl: URL;
       try {
-        originHost = new URL(origin).host;
+        originUrl = new URL(origin);
       } catch {
         return Response.json({ error: "Origin inválida." }, { status: 403 });
       }
-      if (originHost !== url.host) {
+
+      const hostHeader = request.headers.get("x-forwarded-host") || request.headers.get("host");
+      const allowedHosts = new Set<string>();
+      allowedHosts.add(url.host);
+      if (hostHeader) allowedHosts.add(hostHeader);
+
+      const isSameHost = allowedHosts.has(originUrl.host);
+      const isBothLoopback =
+        isLoopback(originUrl.hostname) &&
+        (isLoopback(url.hostname) || (hostHeader ? isLoopback(hostHeader.split(":")[0]) : false));
+
+      if (!isSameHost && !isBothLoopback) {
         return Response.json({ error: "Origem não permitida." }, { status: 403 });
       }
     }

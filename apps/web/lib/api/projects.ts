@@ -57,6 +57,40 @@ export interface ProjectUpdateIn {
   settings?: Record<string, any>;
 }
 
+export interface ProjectSignature {
+  name: string;
+  path: string;
+  primary_language: string;
+  frameworks: string[];
+  build_system: string;
+  has_docker: boolean;
+  has_git: boolean;
+  has_ci_cd: boolean;
+  summary: string;
+}
+
+export interface FsRoot {
+  name: string;
+  path: string;
+  icon: string;
+  type: string;
+}
+
+export interface FsDirectory {
+  name: string;
+  path: string;
+  has_git: boolean;
+  is_project: boolean;
+}
+
+export interface FsBrowseResult {
+  current_path: string | null;
+  parent_path: string | null;
+  breadcrumbs: { name: string; path: string }[];
+  roots: FsRoot[];
+  directories: FsDirectory[];
+}
+
 export async function listProjects(): Promise<ProjectRecord[]> {
   const data = await get<{ projects: ProjectRecord[] }>("/api/projects");
   return data.projects;
@@ -64,6 +98,18 @@ export async function listProjects(): Promise<ProjectRecord[]> {
 
 export async function createProject(payload: ProjectCreateIn): Promise<ProjectRecord> {
   return post<ProjectRecord>("/api/projects", payload);
+}
+
+export async function openAbsolutePath(path: string): Promise<ProjectSignature & { slug: string }> {
+  return post<ProjectSignature & { slug: string }>("/api/projects/open-path", { path });
+}
+
+export async function inspectPath(path: string): Promise<ProjectSignature> {
+  return post<ProjectSignature>("/api/projects/inspect-path", { path });
+}
+
+export async function browseFilesystem(path?: string): Promise<FsBrowseResult> {
+  return post<FsBrowseResult>("/api/projects/filesystem/browse", { path: path || null });
 }
 
 export async function getProjectSummary(slug: string): Promise<ProjectSummary> {

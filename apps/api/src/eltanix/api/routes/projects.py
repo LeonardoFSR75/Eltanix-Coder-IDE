@@ -89,6 +89,60 @@ class OpenPathIn(BaseModel):
     path: str = Field(min_length=1, description="Caminho absoluto de qualquer pasta do SO")
 
 
+class BrowsePathIn(BaseModel):
+    path: str | None = Field(default=None, description="Caminho a explorar — vazio lista unidades/raízes do sistema")
+
+
+class InspectPathIn(BaseModel):
+    path: str = Field(min_length=1, description="Caminho a inspecionar")
+
+
+def _list_system_roots(projects_root: Path) -> list[dict[str, Any]]:
+    import sys
+    roots: list[dict[str, Any]] = []
+    user_home = Path.home()
+    roots.append({
+        "name": f"Pasta do Usuário ({user_home.name})",
+        "path": str(user_home),
+        "icon": "home",
+        "type": "home",
+    })
+    docs = user_home / "Documents"
+    if docs.exists():
+        roots.append({
+            "name": "Documentos",
+            "path": str(docs),
+            "icon": "docs",
+            "type": "special",
+        })
+    if projects_root.exists():
+        roots.append({
+            "name": f"Raiz de Projetos ({projects_root.name})",
+            "path": str(projects_root),
+            "icon": "projects",
+            "type": "projects_root",
+        })
+    if sys.platform == "win32":
+        import string
+        for letter in string.ascii_uppercase:
+            drive = Path(f"{letter}:\\")
+            if drive.exists():
+                roots.append({
+                    "name": f"Disco Local ({letter}:)",
+                    "path": str(drive),
+                    "icon": "drive",
+                    "type": "drive",
+                })
+    else:
+        roots.append({
+            "name": "Raiz do Sistema (/)",
+            "path": "/",
+            "icon": "drive",
+            "type": "drive",
+        })
+    return roots
+
+
 class ProjectUpdateIn(BaseModel):
     name: str | None = Field(default=None)
     description: str | None = Field(default=None)
@@ -401,6 +455,113 @@ async def open_absolute_path(payload: OpenPathIn, request: Request) -> dict[str,
         "has_git": sig.has_git,
         "has_ci_cd": sig.has_ci_cd,
         "summary": sig.executive_summary,
+    }
+
+
+@router.post("/inspect-path")
+async def inspect_path(payload: InspectPathIn) -> dict[str, Any]:
+    """Inspeciona metadados, stack e resumo executivo de qualquer pasta antes de vincular."""
+    from eltanix.workspace.inspector import ProjectInspector
+
+    alvo = await asyncio.to_thread(lambda: Path(payload.path.strip()).expanduser().resolve())
+    if not alvo.exists() or not alvo.is_dir():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Caminho não encontrado ou não é diretório: {payload.path}",
+        )
+
+    inspector = ProjectInspector()
+    sig = inspector.inspect(alvo)
+    return {
+        "name": sig.name,
+        "path": sig.path,
+        "primary_language": sig.primary_language,
+        "frameworks": sig.frameworks,
+        "build_system": sig.build_system,
+        "has_docker": sig.has_docker,
+        "has_git": sig.has_git,
+        "has_ci_cd": sig.has_ci_cd,
+        "summary": sig.executive_summary,
+    }
+
+
+@router.post("/filesystem/browse")
+async def browse_filesystem(payload: BrowsePathIn, request: Request) -> dict[str, Any]:
+    """Lista pastas e raízes do sistema de arquivos para o explorador visual de projetos."""
+    projects_root = _projects_root(request)
+    roots = _list_system_roots(projects_root)
+
+    if not payload.path or not payload.path.strip():
+        return {
+            "current_path": None,
+            "parent_path": None,
+            "breadcrumbs": [],
+            "roots": roots,
+            "directories": [],
+        }
+
+    alvo = await asyncio.to_thread(lambda: Path(payload.path.strip()).expanduser().resolve())
+    if not alvo.exists() or not alvo.is_dir():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Caminho inválido ou não é um diretório: {payload.path}",
+        )
+
+    breadcrumbs: list[dict[str, str]] = []
+    curr = alvo
+    while curr != curr.parent:
+        breadcrumbs.append({"name": curr.name or str(curr), "path": str(curr)})
+        curr = curr.parent
+    breadcrumbs.append({"name": curr.name or str(curr), "path": str(curr)})
+    breadcrumbs.reverse()
+
+    parent_path = str(alvo.parent) if alvo.parent != alvo else None
+
+    ignorar = {
+        "$RECYCLE.BIN",
+        "System Volume Information",
+        "node_modules",
+        ".git",
+        ".venv",
+        "__pycache__",
+        ".eltanix",
+        ".next",
+        "dist",
+        "build",
+    }
+
+    def _scan() -> list[dict[str, Any]]:
+        res = []
+        for item in sorted(alvo.iterdir(), key=lambda p: p.name.lower()):
+            try:
+                if item.is_dir() and item.name not in ignorar and not item.name.startswith("."):
+                    has_git = (item / ".git").exists()
+                    has_pkg = (item / "package.json").exists()
+                    has_py = (item / "pyproject.toml").exists() or (item / "requirements.txt").exists()
+                    res.append({
+                        "name": item.name,
+                        "path": str(item),
+                        "has_git": has_git,
+                        "is_project": bool(has_git or has_pkg or has_py),
+                    })
+            except (PermissionError, OSError):
+                continue
+        return res
+
+    try:
+        dirs = await asyncio.to_thread(_scan)
+    except (PermissionError, OSError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Sem permissão para ler o diretório: {exc}",
+        ) from exc
+
+    return {
+        "current_path": str(alvo),
+        "parent_path": parent_path,
+        "breadcrumbs": breadcrumbs,
+        "roots": roots,
+        "directories": dirs[:120],
     }
 
 
