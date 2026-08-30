@@ -128,6 +128,18 @@ class Settings(BaseSettings):
     # limita (degrada, não derruba).
     ide_completion_max_per_minute: int = Field(default=120, alias="IDE_COMPLETION_MAX_PER_MINUTE")
 
+    # ── Predição do próximo edit / "tab to jump" (Onda 1.2, ADR 0015) ───────
+    # Kill switch: desligado, `POST /api/context/next-edit` responde 204 e o
+    # editor não arma a regra de Tab. Candidato a `false` se a taxa de
+    # aceitação (medida por `kind` em completion_event) não compensar o custo.
+    ide_next_edit_enabled: bool = Field(default=True, alias="IDE_NEXT_EDIT_ENABLED")
+    # Perfil de rota do next-edit. `next-edit` (routes.yaml) é mais capaz que o
+    # `completion` e mais rápido que o `coding`. Ajuste de .env, não de código.
+    ide_next_edit_profile: str = Field(default="next-edit", alias="IDE_NEXT_EDIT_PROFILE")
+    # Teto por ator por minuto. Dispara por edição assentada, bem menos que o
+    # autocompletar por tecla. Redis fora → não limita.
+    ide_next_edit_max_per_minute: int = Field(default=40, alias="IDE_NEXT_EDIT_MAX_PER_MINUTE")
+
     # ── Roteamento automático de skills (Fase 1 do upgrade do agente) ────────
     # Similaridade de cosseno mínima (0..1) para uma skill entrar no system
     # prompt por roteamento automático, e quantas skills no máximo. O default

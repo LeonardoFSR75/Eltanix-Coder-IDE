@@ -11,6 +11,7 @@ import { useIde } from "@/lib/ide-store";
 import { acceptFile, revertFile } from "@/lib/api/agent";
 import { logAuditEvent } from "@/lib/api/audit";
 import { reportCompletionOutcome, requestCompletion } from "@/lib/api/completions";
+import { requestNextEdit, type NextEditResult } from "@/lib/api/nextEdit";
 import { requestInlineEdit, type InlineEditResult } from "@/lib/api/inlineEdit";
 import { readFile, readFileOrNull, writeFile } from "@/lib/api/workspace";
 import {
@@ -170,6 +171,27 @@ export function Editor({
       { shownAt: number; latencyMs: number; chars: number; language: string | null; accepted: boolean }
     >
   >(new Map());
+  // Marca se há ghost text (1.1) na tela agora — o next-edit (1.2) não dispara
+  // enquanto uma sugestão inline está visível, e o `Tab` continua sendo do
+  // ghost text nesse caso (precedência da ADR 0015 §6).
+  const inlineSuggestVisibleRef = useRef(false);
+
+  // Predição do próximo edit / "tab to jump" (Onda 1.2, ADR 0015).
+  const [nextEdit, setNextEdit] = useState<{
+    result: NextEditResult;
+    phase: "hint" | "preview";
+    shownAt: number;
+  } | null>(null);
+  const nextEditRef = useRef<typeof nextEdit>(null);
+  const nextEditAbortRef = useRef<AbortController | null>(null);
+  const nextEditTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // true enquanto o próprio `advanceNextEdit` aplica o edit — o `onChange`
+  // disparado por esse `executeEdits` não deve tratá-lo como "usuário digitou".
+  const applyingNextEditRef = useRef(false);
+  // Conteúdo do arquivo na última vez que o histórico de edição foi "zerado"
+  // (carga do arquivo, ou um edit aceito) — o diff contra isto é o sinal de
+  // "edições recentes" mandado ao modelo.
+  const nextEditBaselineRef = useRef<string>("");
 
   // Edição inline (Fase 7, estilo Cmd+K) — independente do fluxo de sessão
   // do agente acima: `inlineEditSelection` guarda o trecho selecionado
@@ -388,11 +410,13 @@ export function Editor({
         };
       },
       handleItemDidShow: (_completions: any, item: any) => {
+        inlineSuggestVisibleRef.current = true;
         const id = item?.command?.arguments?.[0];
         const rec = id ? shownCompletionsRef.current.get(id) : undefined;
         if (rec) rec.shownAt = performance.now();
       },
       freeInlineCompletions: (completions: any) => {
+        inlineSuggestVisibleRef.current = false;
         const id = completions?.items?.[0]?.command?.arguments?.[0];
         if (!id) return;
         const rec = shownCompletionsRef.current.get(id);
@@ -427,6 +451,164 @@ export function Editor({
       completionAbortRef.current?.abort();
     };
   }, []);
+
+  // ── Predição do próximo edit (Onda 1.2, ADR 0015) ──────────────────────────
+
+  useEffect(() => {
+    nextEditRef.current = nextEdit;
+  }, [nextEdit]);
+
+  const clearNextEditTimers = useCallback(() => {
+    if (nextEditTimerRef.current) clearTimeout(nextEditTimerRef.current);
+    nextEditTimerRef.current = null;
+    nextEditAbortRef.current?.abort();
+    nextEditAbortRef.current = null;
+  }, []);
+
+  // Reporta o desfecho da sugestão pendente e a limpa. `outcome` é "accepted"
+  // quando o usuário aplicou o edit; "ignored" quando saiu sem aplicar.
+  const settleNextEdit = useCallback(
+    (outcome: "accepted" | "ignored") => {
+      const pending = nextEditRef.current;
+      if (!pending) return;
+      const { result } = pending;
+      reportCompletionOutcome({
+        suggestion_id: result.suggestion_id,
+        outcome,
+        kind: "next_edit",
+        project: project ?? null,
+        language: rawLanguage,
+        model: result.model,
+        shown_ms: Math.round(performance.now() - pending.shownAt),
+        latency_ms: result.latency_ms,
+        chars_suggested: result.edit.new_text.length,
+        chars_accepted: outcome === "accepted" ? result.edit.new_text.length : 0,
+        jump_lines: result.edit.jump_lines,
+      });
+      setNextEdit(null);
+    },
+    [project, rawLanguage],
+  );
+
+  // Diff compacto do arquivo desde o último "marco" (carga / edit aceito) — o
+  // sinal de "edições recentes" mandado ao modelo. Primeira e última linha que
+  // divergem, com um teto de tamanho.
+  const compactDiffSinceBaseline = useCallback((current: string): string | null => {
+    const before = nextEditBaselineRef.current.split("\n");
+    const after = current.split("\n");
+    if (nextEditBaselineRef.current === current) return null;
+    let lo = 0;
+    while (lo < before.length && lo < after.length && before[lo] === after[lo]) lo++;
+    let hiB = before.length - 1;
+    let hiA = after.length - 1;
+    while (hiB >= lo && hiA >= lo && before[hiB] === after[hiA]) {
+      hiB--;
+      hiA--;
+    }
+    const removed = before.slice(lo, hiB + 1).join("\n").slice(0, 1500);
+    const added = after.slice(lo, hiA + 1).join("\n").slice(0, 1500);
+    return `@@ ~linha ${lo + 1} @@\n- ${removed.replace(/\n/g, "\n- ")}\n+ ${added.replace(/\n/g, "\n+ ")}`;
+  }, []);
+
+  const triggerNextEdit = useCallback(() => {
+    if (nextEditRef.current || inlineSuggestVisibleRef.current) return;
+    const editor = editorInstanceRef.current;
+    if (!editor || !project || !path || groupId !== activeGroupId) return;
+    const model = editor.getModel();
+    if (!model) return;
+    const content: string = model.getValue();
+    const diff = compactDiffSinceBaseline(content);
+    if (!diff) return;
+
+    nextEditAbortRef.current?.abort();
+    const controller = new AbortController();
+    nextEditAbortRef.current = controller;
+    const cursorLine = editor.getPosition()?.lineNumber ?? 1;
+
+    void requestNextEdit(
+      {
+        project,
+        path,
+        file_content: content,
+        cursor_line: cursorLine,
+        recent_edits: [{ path, diff }],
+        language: rawLanguage ?? null,
+      },
+      controller.signal,
+    )
+      .then((result) => {
+        if (!result || controller.signal.aborted) return;
+        // Perto do cursor → já mostra o diff; longe → só o "pulo".
+        const phase = result.edit.jump_lines <= 4 ? "preview" : "hint";
+        setNextEdit({ result, phase, shownAt: performance.now() });
+      })
+      .catch(() => {}); // next-edit falha em silêncio
+  }, [project, path, groupId, activeGroupId, rawLanguage, compactDiffSinceBaseline]);
+
+  // `Tab` com sugestão pendente: 1º pula o cursor até o trecho, 2º aplica.
+  const advanceNextEdit = useCallback(() => {
+    const pending = nextEditRef.current;
+    const editor = editorInstanceRef.current;
+    const monaco = monacoRef.current;
+    if (!pending || !editor || !monaco) return;
+    const { result, phase } = pending;
+    const { start_line, end_line, new_text } = result.edit;
+
+    if (phase === "hint") {
+      editor.revealLineInCenter(start_line);
+      editor.setPosition({ lineNumber: start_line, column: 1 });
+      setNextEdit({ ...pending, phase: "preview" });
+      return;
+    }
+
+    const model = editor.getModel();
+    if (!model) return;
+    // O arquivo pode ter mudado desde a previsão (raro — digitar já descarta a
+    // sugestão pendente): fora dos limites, só descarta.
+    if (end_line > model.getLineCount() || start_line < 1) {
+      settleNextEdit("ignored");
+      return;
+    }
+    applyingNextEditRef.current = true;
+    try {
+      editor.executeEdits("next-edit", [
+        {
+          range: new monaco.Range(start_line, 1, end_line, model.getLineMaxColumn(end_line)),
+          text: new_text,
+          forceMoveMarkers: true,
+        },
+      ]);
+    } finally {
+      applyingNextEditRef.current = false;
+    }
+    // Marco novo: o próximo diff parte do estado já com este edit aplicado.
+    nextEditBaselineRef.current = model.getValue();
+    settleNextEdit("accepted");
+  }, [settleNextEdit]);
+
+  // Tab/Esc do next-edit em captura, para vencer o Tab-indenta nativo do Monaco
+  // só quando há sugestão pendente e nenhum ghost text na tela (ADR 0015 §6).
+  useEffect(() => {
+    const onKeyDownCapture = (event: KeyboardEvent) => {
+      if (!nextEditRef.current || groupId !== activeGroupId) return;
+      if (event.key === "Tab" && !inlineSuggestVisibleRef.current) {
+        event.preventDefault();
+        event.stopPropagation();
+        advanceNextEdit();
+      } else if (event.key === "Escape") {
+        event.preventDefault();
+        settleNextEdit("ignored");
+      }
+    };
+    window.addEventListener("keydown", onKeyDownCapture, true);
+    return () => window.removeEventListener("keydown", onKeyDownCapture, true);
+  }, [groupId, activeGroupId, advanceNextEdit, settleNextEdit]);
+
+  useEffect(() => {
+    return () => {
+      clearNextEditTimers();
+    };
+  }, [clearNextEditTimers]);
 
   const acceptAgentCode = useCallback(async () => {
     if (!path || !activeSessionId) return;
@@ -501,10 +683,16 @@ export function Editor({
     // este componente remonta por um motivo alheio ao arquivo — fechar um
     // painel vizinho reorganiza `ide.layout`, e a posição do painel
     // sobrevivente na árvore de componentes muda.
+    // Arquivo trocou: descarta qualquer sugestão de next-edit pendente e
+    // reancora o baseline do histórico de edição neste conteúdo.
+    clearNextEditTimers();
+    setNextEdit(null);
+
     const cached = getBuffer(project, path);
     if (cached) {
       setContent(cached.content);
       originalRef.current = cached.original;
+      nextEditBaselineRef.current = cached.content;
       const detected = cached.language || autoDetectLanguage(path, cached.content);
       setRawLanguage(detected);
       setLanguage(MONACO_LANGUAGE[detected] ?? "plaintext");
@@ -537,6 +725,7 @@ export function Editor({
 
         setContent(worktreeContent);
         originalRef.current = baseContent ?? worktreeContent;
+        nextEditBaselineRef.current = worktreeContent;
         setHeadContent(baseContent);
         setShowDiff(hasAgentDiff);
 
@@ -563,7 +752,7 @@ export function Editor({
     return () => {
       cancelled = true;
     };
-  }, [project, path, syncVersion, activeSessionId, groupId, markDirty]);
+  }, [project, path, syncVersion, activeSessionId, groupId, markDirty, clearNextEditTimers]);
 
 
   const save = useCallback(async () => {
@@ -955,6 +1144,41 @@ export function Editor({
               />
             </div>
           )}
+          {nextEdit && (
+            <div className="next-edit-overlay" role="status">
+              {nextEdit.phase === "hint" ? (
+                <span className="next-edit-hint">
+                  ↪ Próximo edit previsto na linha {nextEdit.result.edit.start_line} —{" "}
+                  <kbd>Tab</kbd> para ir · <kbd>Esc</kbd> descarta
+                </span>
+              ) : (
+                <div className="next-edit-preview">
+                  <div className="next-edit-preview-head">
+                    ✨ Próximo edit — linhas {nextEdit.result.edit.start_line}–
+                    {nextEdit.result.edit.end_line} · <kbd>Tab</kbd> aceita · <kbd>Esc</kbd>{" "}
+                    descarta
+                  </div>
+                  <pre className="next-edit-preview-diff">{nextEdit.result.edit.diff}</pre>
+                  <div className="next-edit-preview-actions">
+                    <button
+                      type="button"
+                      className="theme-btn primary"
+                      onClick={() => advanceNextEdit()}
+                    >
+                      Aceitar (Tab)
+                    </button>
+                    <button
+                      type="button"
+                      className="theme-btn"
+                      onClick={() => settleNextEdit("ignored")}
+                    >
+                      Descartar (Esc)
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
           {inlineEditSelection && (
             <div className="inline-edit-prompt-overlay">
               <div className="inline-edit-prompt-header">✨ Editar seleção</div>
@@ -1025,6 +1249,15 @@ export function Editor({
                   updateBufferContent(project, path, next);
                 }
                 lsp.onChange(evento);
+
+                // Next-edit (ADR 0015): ignora o `onChange` que o próprio
+                // `advanceNextEdit` provoca ao aplicar o edit.
+                if (applyingNextEditRef.current) return;
+                // Uma sugestão pendente virou obsoleta ao digitar. Reagenda o
+                // disparo 400 ms depois da edição assentar.
+                if (nextEditRef.current) settleNextEdit("ignored");
+                if (nextEditTimerRef.current) clearTimeout(nextEditTimerRef.current);
+                nextEditTimerRef.current = setTimeout(() => triggerNextEdit(), 400);
               }}
             />
           </div>

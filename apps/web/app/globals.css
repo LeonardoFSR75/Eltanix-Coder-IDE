@@ -8424,6 +8424,69 @@ button.primary:hover:not(:disabled) {
   color: var(--text-dim);
 }
 
+/* Predição do próximo edit / "tab to jump" (Onda 1.2, ADR 0015) — card
+   flutuante embaixo à direita, longe do pill do agente (topo) e do Cmd+K
+   (topo-esquerda). */
+.next-edit-overlay {
+  position: absolute;
+  right: 20px;
+  bottom: 16px;
+  z-index: 50;
+  max-width: min(460px, calc(100% - 40px));
+  font-size: 11px;
+  background: rgba(15, 23, 42, 0.94);
+  backdrop-filter: blur(8px);
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
+  color: var(--text-dim);
+}
+
+.next-edit-hint {
+  display: block;
+  padding: 6px 10px;
+}
+
+.next-edit-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+}
+
+.next-edit-preview-head {
+  font-weight: 600;
+}
+
+.next-edit-preview-diff {
+  margin: 0;
+  max-height: 180px;
+  overflow: auto;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 11px;
+  line-height: 1.45;
+  white-space: pre;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  color: var(--text);
+}
+
+.next-edit-preview-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.next-edit-overlay kbd {
+  font-family: inherit;
+  font-size: 10px;
+  padding: 1px 4px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+}
+
 /* --------------------------------------------------------------------------
    Zebra Striping (Linhas de cores alternadas para melhor leitura no editor)
    -------------------------------------------------------------------------- */

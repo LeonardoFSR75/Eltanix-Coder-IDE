@@ -1022,12 +1022,13 @@ class CorrectionProposal(Base):
 
 
 class CompletionEvent(Base):
-    """Desfecho de uma sugestão de autocompletar inline (ghost text), ADR 0014.
+    """Desfecho de uma sugestão de IA no editor — autocompletar inline (ADR
+    0014) ou predição do próximo edit (ADR 0015), distinguidos por `kind`.
 
     Custo e latência de cada chamada já vivem em `request_log` via o router
     (ADR 0001); o que falta lá é o desfecho — a sugestão foi aceita, rejeitada
     ou ignorada, e quantos chars o humano de fato aproveitou. Esse é o número
-    que diz se o autocompletar presta.
+    que diz se o recurso presta.
 
     **Não** guarda prefixo/sufixo nem o texto da sugestão: só contagem de
     chars, linguagem e modelo. O conteúdo do arquivo não precisa ser
@@ -1041,6 +1042,10 @@ class CompletionEvent(Base):
         DateTime(timezone=True), server_default=func.now(), nullable=False, index=True
     )
     suggestion_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    # inline (autocompletar no cursor) | next_edit (tab to jump)
+    kind: Mapped[str] = mapped_column(
+        String(16), default="inline", server_default="inline", nullable=False, index=True
+    )
     actor: Mapped[str | None] = mapped_column(String(128), nullable=True)
     project_slug: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
     language: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
@@ -1052,6 +1057,8 @@ class CompletionEvent(Base):
     latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
     chars_suggested: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     chars_accepted: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    # Só do next_edit: distância em linhas do cursor até o trecho previsto.
+    jump_lines: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     def __repr__(self) -> str:  # pragma: no cover
-        return f"<CompletionEvent suggestion={self.suggestion_id} outcome={self.outcome}>"
+        return f"<CompletionEvent kind={self.kind} suggestion={self.suggestion_id} outcome={self.outcome}>"

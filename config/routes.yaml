@@ -121,6 +121,19 @@ profiles:
       - groq/llama-3.1-8b-instant
       - ollama/qwen2.5-coder:7b
 
+  # Predição do próximo edit ("tab to jump", Onda 1.2, ADR 0015). Dispara
+  # depois de uma edição assentar — menos frequente que o autocompletar, então
+  # pode usar um modelo mais capaz; mas ainda precisa responder em ~1 s, então
+  # não é o `coding` de 70b puro. `latency` ordena pelo p95 medido; a lista é o
+  # desempate e o fallback. Configurável por IDE_NEXT_EDIT_PROFILE.
+  next-edit:
+    strategy: latency
+    models:
+      - groq/llama-3.3-70b-versatile
+      - databricks/llama-3.3-70b
+      - anthropic/claude-haiku-4-5-20251001
+      - ollama/qwen2.5-coder:7b
+
   # Trabalho auxiliar barato: mensagem de commit, título de PR, classificação,
   # sumarização de histórico.
   utility:
