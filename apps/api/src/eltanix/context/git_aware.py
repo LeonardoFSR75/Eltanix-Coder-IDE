@@ -155,7 +155,9 @@ async def _graph_neighbors(
     return out
 
 
-def _collect_recency(root: Path, base: list[SearchHit], candidates: list[SearchHit]) -> RecencySignal:
+def _collect_recency(
+    root: Path, base: list[SearchHit], candidates: list[SearchHit]
+) -> RecencySignal:
     """Roda `git co_change` nos top hits e `git blame`-lite (idade do commit
     mais recente do arquivo) nos caminhos mais bem ranqueados. Cada passo
     degrada isolado."""

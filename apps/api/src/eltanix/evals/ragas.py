@@ -148,7 +148,9 @@ async def score_generation(
     engine: RouterEngine, *, query: str, context_blocks: list[str], source: str = "eval"
 ) -> tuple[str, GenerationScore]:
     """Gera a resposta a partir dos trechos e a julga. Devolve `(resposta, notas)`."""
-    answer = await generate_answer(engine, query=query, context_blocks=context_blocks, source=source)
+    answer = await generate_answer(
+        engine, query=query, context_blocks=context_blocks, source=source
+    )
     score = await judge_generation(
         engine, query=query, answer=answer, context_blocks=context_blocks, source=source
     )
