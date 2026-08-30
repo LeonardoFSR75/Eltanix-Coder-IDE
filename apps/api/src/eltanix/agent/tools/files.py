@@ -354,7 +354,10 @@ async def search_code(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
         )
 
     hits = await ctx.indexer.search(
-        root=Path(ctx.workspace_root), query=args["query"], limit=args.get("limit", 8)
+        root=Path(ctx.workspace_root),
+        query=args["query"],
+        limit=args.get("limit", 8),
+        git_aware=ctx.indexer.settings.context_git_aware_search,
     )
     if not hits:
         return ToolResult(ok=True, content="Nenhum trecho encontrado.", data={"hits": []})

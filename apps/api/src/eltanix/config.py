@@ -107,6 +107,10 @@ class Settings(BaseSettings):
     embedding_dim: int = Field(default=768, alias="EMBEDDING_DIM")
     embedding_profile: str = Field(default="embedding", alias="EMBEDDING_PROFILE")
     embedding_batch_size: int = Field(default=32, alias="EMBEDDING_BATCH_SIZE")
+    # Git-Aware RAG (Fase 4 do Git Intelligence): `search_code` expande os hits
+    # por vizinhança no Code Knowledge Graph e re-rankeia por recência/co-mudança
+    # do git. Degrada para o hybrid_search puro sem grafo/git. Off = só RRF.
+    context_git_aware_search: bool = Field(default=True, alias="CONTEXT_GIT_AWARE_SEARCH")
 
     # ── Roteamento automático de skills (Fase 1 do upgrade do agente) ────────
     # Similaridade de cosseno mínima (0..1) para uma skill entrar no system
