@@ -27,7 +27,7 @@ jobs:
         working-directory: apps/api
     steps:
       - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v3
+      - uses: astral-sh/setup-uv@v5
         with:
           version: "latest"
           enable-cache: true
@@ -65,7 +65,7 @@ jobs:
         working-directory: apps/api
     steps:
       - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v3
+      - uses: astral-sh/setup-uv@v5
         with:
           version: "latest"
           enable-cache: true
@@ -107,7 +107,7 @@ jobs:
         working-directory: apps/api
     services:
       postgres:
-        image: pgvector/pgvector:pg17
+        image: pgvector/pgvector:0.8.6-pg18
         env:
           POSTGRES_USER: eltanix
           POSTGRES_PASSWORD: eltanix
@@ -124,7 +124,7 @@ jobs:
       DATABASE_URL_TEST: postgresql+asyncpg://eltanix:eltanix@localhost:5432/eltanix_test
     steps:
       - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v3
+      - uses: astral-sh/setup-uv@v5
         with:
           version: "latest"
           enable-cache: true
@@ -149,7 +149,7 @@ jobs:
         working-directory: apps/api
     services:
       postgres:
-        image: pgvector/pgvector:pg17
+        image: pgvector/pgvector:0.8.6-pg18
         env:
           POSTGRES_USER: eltanix
           POSTGRES_PASSWORD: eltanix
@@ -166,7 +166,7 @@ jobs:
       DATABASE_URL_TEST: postgresql+asyncpg://eltanix:eltanix@localhost:5432/eltanix_test
     steps:
       - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v3
+      - uses: astral-sh/setup-uv@v5
         with:
           version: "latest"
           enable-cache: true
@@ -188,7 +188,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v3
+      - uses: astral-sh/setup-uv@v5
         with:
           version: "latest"
           enable-cache: true

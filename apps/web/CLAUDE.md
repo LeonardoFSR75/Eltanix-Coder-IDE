@@ -1,3 +1,5 @@
+@AGENTS.md
+
 # apps/web
 
 Next.js (App Router) + TypeScript + Monaco + xterm. Ver [../CLAUDE.md](../CLAUDE.md) para
