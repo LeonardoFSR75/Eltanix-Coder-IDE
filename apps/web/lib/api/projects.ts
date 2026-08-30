@@ -10,12 +10,20 @@ export interface ProjectRecord {
   name: string;
   description: string;
   local_path: string | null;
+  /** `false` quando `local_path` não existe mais no disco (pasta movida ou
+   * apagada fora da IDE) — o cadastro no Postgres não tem essa invariante. */
+  local_path_exists?: boolean;
   git_url: string | null;
   default_branch: string;
   budget_limit_usd: number | null;
   settings: Record<string, any>;
   created_at?: string;
   updated_at?: string;
+  /** Papel do usuário atual neste projeto ("owner" também pra admin/canal de
+   * serviço) — dica de UI pra esconder ação que ia 403; RBAC de verdade
+   * continua sendo decidido no backend em cada rota. `null`/ausente = sem
+   * papel conhecido (ex.: banco indisponível). */
+  my_role?: "viewer" | "editor" | "owner" | null;
 }
 
 export interface ProjectSummary {
@@ -46,6 +54,12 @@ export interface ProjectCreateIn {
   git_url?: string;
   init_git?: boolean;
   create_github_repo?: boolean;
+  /** Clona o conteúdo de `git_url` de verdade (`git clone`) em vez de só
+   * inicializar um repositório vazio local — aba "Clonar do Git". */
+  clone?: boolean;
+  /** Token opcional pra clonar repositório privado. Usado uma única vez;
+   * nunca fica salvo no `ProjectRecord`. */
+  git_token?: string;
   budget_limit_usd?: number;
   settings?: Record<string, any>;
 }
@@ -127,4 +141,32 @@ export async function updateProject(slug: string, payload: ProjectUpdateIn): Pro
 
 export async function deleteProject(slug: string, deleteFiles: boolean = false): Promise<void> {
   await del(`/api/projects/${encodeURIComponent(slug)}?delete_files=${deleteFiles}`);
+}
+
+export interface ProjectMember {
+  user_id: string;
+  username: string | null;
+  display_name: string | null;
+  role: "viewer" | "editor" | "owner";
+  created_at: string;
+}
+
+export async function listMembers(slug: string): Promise<ProjectMember[]> {
+  const data = await get<{ members: ProjectMember[] }>(`/api/projects/${encodeURIComponent(slug)}/members`);
+  return data.members;
+}
+
+export async function addMember(
+  slug: string,
+  userId: string,
+  role: ProjectMember["role"]
+): Promise<ProjectMember> {
+  return post<ProjectMember>(`/api/projects/${encodeURIComponent(slug)}/members`, {
+    user_id: userId,
+    role,
+  });
+}
+
+export async function removeMember(slug: string, userId: string): Promise<void> {
+  await del(`/api/projects/${encodeURIComponent(slug)}/members/${encodeURIComponent(userId)}`);
 }

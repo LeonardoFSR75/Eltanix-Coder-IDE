@@ -4,12 +4,17 @@ import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { useToast } from "@/components/Toast";
 import { LinkProjectModal } from "@/components/ide/LinkProjectModal";
-import { listProjects, ProjectRecord } from "@/lib/api/projects";
+import { deleteProject, listProjects, ProjectRecord } from "@/lib/api/projects";
+
+type SortKey = "name" | "updated_at";
 
 export default function ProjectsPage() {
   const [projects, setProjects] = useState<ProjectRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [modalTab, setModalTab] = useState<"link" | "create" | "clone" | null>(null);
+  const [query, setQuery] = useState("");
+  const [sortKey, setSortKey] = useState<SortKey>("updated_at");
+  const [deletingSlug, setDeletingSlug] = useState<string | null>(null);
   const { addToast } = useToast();
 
   const loadData = async () => {
@@ -28,6 +33,48 @@ export default function ProjectsPage() {
   useEffect(() => {
     loadData();
   }, []);
+
+  const handleDelete = async (proj: ProjectRecord) => {
+    const apagarArquivos = confirm(
+      `Remover '${proj.name}' do Eltanix Coder IDE?\n\n` +
+        "OK = remove só o cadastro (arquivos continuam no disco).\n" +
+        "Cancelar = aborta a remoção."
+    );
+    if (!apagarArquivos) return;
+    const tambemApagarDisco = confirm(
+      `Também apagar a pasta '${proj.local_path}' do disco?\n\n` +
+        "Isso é IRREVERSÍVEL. OK apaga os arquivos; Cancelar mantém-os (só remove o cadastro)."
+    );
+    setDeletingSlug(proj.slug);
+    try {
+      await deleteProject(proj.slug, tambemApagarDisco);
+      addToast(
+        tambemApagarDisco ? "Projeto e arquivos removidos." : "Projeto removido (arquivos preservados).",
+        "success"
+      );
+      await loadData();
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      addToast(`Erro ao remover projeto: ${message}`, "error");
+    } finally {
+      setDeletingSlug(null);
+    }
+  };
+
+  const termo = query.trim().toLowerCase();
+  const filtrados = projects
+    .filter(
+      (p) =>
+        !termo ||
+        p.name.toLowerCase().includes(termo) ||
+        p.slug.toLowerCase().includes(termo) ||
+        p.description?.toLowerCase().includes(termo)
+    )
+    .sort((a, b) =>
+      sortKey === "name"
+        ? a.name.localeCompare(b.name)
+        : (b.updated_at || "").localeCompare(a.updated_at || "")
+    );
 
   return (
     <div style={{ minHeight: "100vh", backgroundColor: "var(--bg)", color: "var(--text)" }}>
@@ -100,6 +147,40 @@ export default function ProjectsPage() {
           </div>
         </div>
 
+        {/* Busca & Ordenação */}
+        {!loading && projects.length > 0 && (
+          <div style={{ display: "flex", gap: "0.75rem", marginBottom: "1.25rem", flexWrap: "wrap" }}>
+            <input
+              type="text"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="🔎 Buscar por nome, slug ou descrição..."
+              style={{
+                flex: "1 1 260px",
+                padding: "0.6rem 0.9rem",
+                borderRadius: "var(--radius)",
+                backgroundColor: "var(--surface)",
+                color: "var(--text)",
+                border: "1px solid var(--border)",
+              }}
+            />
+            <select
+              value={sortKey}
+              onChange={(e) => setSortKey(e.target.value as SortKey)}
+              style={{
+                padding: "0.6rem 0.9rem",
+                borderRadius: "var(--radius)",
+                backgroundColor: "var(--surface)",
+                color: "var(--text)",
+                border: "1px solid var(--border)",
+              }}
+            >
+              <option value="updated_at">Mais recentes</option>
+              <option value="name">Nome (A-Z)</option>
+            </select>
+          </div>
+        )}
+
         {/* Loading / Grid */}
         {loading ? (
           <div style={{ padding: "4rem", textAlign: "center", color: "var(--text-muted)" }}>
@@ -151,6 +232,19 @@ export default function ProjectsPage() {
               </button>
             </div>
           </div>
+        ) : filtrados.length === 0 ? (
+          <div
+            style={{
+              padding: "3rem 2rem",
+              textAlign: "center",
+              backgroundColor: "var(--surface)",
+              borderRadius: "var(--radius-lg)",
+              border: "1px solid var(--border)",
+              color: "var(--text-dim)",
+            }}
+          >
+            Nenhum projeto corresponde a "{query}".
+          </div>
         ) : (
           <div
             style={{
@@ -159,7 +253,7 @@ export default function ProjectsPage() {
               gap: "1.5rem",
             }}
           >
-            {projects.map((proj) => (
+            {filtrados.map((proj) => (
               <div
                 key={proj.slug}
                 style={{
@@ -229,9 +323,14 @@ export default function ProjectsPage() {
                         🔗 Git Remote
                       </span>
                     )}
-                    {proj.budget_limit_usd && (
+                    {proj.budget_limit_usd != null && (
                       <span style={{ padding: "0.2rem 0.5rem", borderRadius: "4px", backgroundColor: "var(--warn-dim)", color: "var(--warn)" }}>
                         💰 Orçamento: ${proj.budget_limit_usd.toFixed(2)} USD
+                      </span>
+                    )}
+                    {proj.local_path_exists === false && (
+                      <span style={{ padding: "0.2rem 0.5rem", borderRadius: "4px", backgroundColor: "var(--danger-dim, rgba(229,72,77,0.15))", color: "var(--danger, #e5484d)" }}>
+                        ⚠️ Pasta não encontrada
                       </span>
                     )}
                   </div>
@@ -270,6 +369,24 @@ export default function ProjectsPage() {
                     >
                       Abrir IDE
                     </Link>
+                    {proj.my_role === "owner" && (
+                      <button
+                        onClick={() => handleDelete(proj)}
+                        disabled={deletingSlug === proj.slug}
+                        title="Remover projeto"
+                        style={{
+                          padding: "0.6rem 0.75rem",
+                          borderRadius: "var(--radius)",
+                          backgroundColor: "var(--surface-2)",
+                          color: "var(--danger, #e5484d)",
+                          border: "1px solid var(--border)",
+                          fontWeight: 600,
+                          cursor: deletingSlug === proj.slug ? "default" : "pointer",
+                        }}
+                      >
+                        {deletingSlug === proj.slug ? "…" : "🗑️"}
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>

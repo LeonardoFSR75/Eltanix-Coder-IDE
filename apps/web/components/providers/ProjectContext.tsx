@@ -48,6 +48,7 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
   const pathname = usePathname();
   const [projects, setProjects] = useState<ProjectRecordView[]>([]);
+  const [projectsLoaded, setProjectsLoaded] = useState(false);
   const [currentProject, setCurrentProjectState] = useState<string | null>(null);
 
   const reloadProjects = useCallback(async () => {
@@ -56,6 +57,8 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
       setProjects(data.projects);
     } catch {
       setProjects([]);
+    } finally {
+      setProjectsLoaded(true);
     }
   }, []);
 
@@ -99,6 +102,19 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     if (slug) window.localStorage.setItem(STORAGE_KEY, slug);
     else window.localStorage.removeItem(STORAGE_KEY);
   }, []);
+
+  // Poda `currentProject` se ele não aparece na lista que acabou de carregar
+  // — projeto apagado, ou o membership do usuário mudou desde que o slug foi
+  // salvo no localStorage (ou veio de um link `?project=` velho). Sem isto,
+  // cada consumidor (IDE, RAG, Notas, Graphify, Requests) batia 403/404
+  // contra um slug morto, cada um sem saber que o motivo era esse. Só roda
+  // depois que `projects` reflete de fato uma resposta do backend — antes
+  // disso `projects` é só `[]` inicial, e podaria um slug válido à toa.
+  useEffect(() => {
+    if (!projectsLoaded || !currentProject) return;
+    const aindaExiste = projects.some((p) => p.slug === currentProject);
+    if (!aindaExiste) setCurrentProject(null);
+  }, [projectsLoaded, projects, currentProject, setCurrentProject]);
 
   return (
     <Ctx.Provider value={{ currentProject, projects, setCurrentProject, reloadProjects }}>

@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import asyncio
 import os
-import re
 import shutil
 import string
 import sys
+import urllib.parse
 import uuid
 from pathlib import Path
 from typing import Any
@@ -25,11 +25,15 @@ from eltanix.config import get_settings
 from eltanix.db.models import ProjectRecord
 from eltanix.db.session import session_scope
 from eltanix.logging_setup import get_logger
+from eltanix.security.url_safety import validate_target_url
 from eltanix.workspace.projects import (
     ProjectError,
     _branch_of,
+    find_orphaned_project_data,
     get_project_summary,
+    register_local_path,
     resolve,
+    slugify,
     sync_projects_db,
     validate_name,
 )
@@ -83,6 +87,22 @@ class ProjectCreateIn(BaseModel):
     init_git: bool = Field(default=True, description="Inicializa repositório Git automaticamente")
     create_github_repo: bool = Field(
         default=False, description="Cria repositório remoto PRIVADO no GitHub automaticamente"
+    )
+    clone: bool = Field(
+        default=False,
+        description=(
+            "Clona o conteúdo de `git_url` de verdade (`git clone`) em vez de só "
+            "inicializar um repositório vazio local apontando `origin` pra lá — "
+            "aba 'Clonar do Git' do LinkProjectModal (ADR 0016, Fase 4)."
+        ),
+    )
+    git_token: str | None = Field(
+        default=None,
+        description=(
+            "Token opcional pra clonar repositório privado. Usado uma única vez "
+            "pra montar a URL autenticada do clone; nunca persistido em "
+            "`ProjectRecord.git_url` nem logado."
+        ),
     )
     budget_limit_usd: float | None = Field(default=None)
     settings: dict[str, Any] = Field(default_factory=dict)
@@ -209,6 +229,9 @@ class ProjectUpdateIn(BaseModel):
 async def list_projects(request: Request) -> dict[str, Any]:
     """Lista todos os projetos cadastrados no Postgres (auto-sincronizados com PROJECTS_ROOT)."""
     projects_root = _projects_root(request)
+    is_privileged = getattr(request.state, "is_service", False) or getattr(
+        request.state, "is_admin", False
+    )
     try:
         async with session_scope() as session:
             records = await sync_projects_db(session, projects_root)
@@ -216,34 +239,50 @@ async def list_projects(request: Request) -> dict[str, Any]:
             # `auth/rbac.py`); um usuário convidado comum só vê projeto onde é
             # `project_member` — sem isso, RBAC restringiria escrita mas
             # continuaria vazando a existência de todo projeto na listagem.
-            if not (
-                getattr(request.state, "is_service", False)
-                or getattr(request.state, "is_admin", False)
-            ):
-                user_id = getattr(request.state, "user_id", None)
+            user_id = getattr(request.state, "user_id", None)
+            roles_por_projeto: dict[uuid.UUID, str] = {}
+            if not is_privileged:
                 if user_id is not None:
-                    member_ids = set(
-                        await auth_store.list_member_project_ids(session, user_id=user_id)
-                    )
-                    records = [r for r in records if r.id in member_ids]
-            items = [
-                {
-                    "id": str(r.id),
-                    "slug": r.slug,
-                    "name": r.name,
-                    "description": r.description,
-                    "local_path": r.local_path,
-                    "git_url": r.git_url,
-                    "default_branch": r.default_branch,
-                    "budget_limit_usd": float(r.budget_limit_usd)
-                    if r.budget_limit_usd is not None
-                    else None,
-                    "settings": r.settings,
-                    "created_at": r.created_at.isoformat(),
-                    "updated_at": r.updated_at.isoformat(),
-                }
-                for r in records
-            ]
+                    from eltanix.db.models import ProjectMember
+
+                    stmt_membros = select(ProjectMember).where(ProjectMember.user_id == user_id)
+                    roles_por_projeto = {
+                        m.project_id: m.role for m in (await session.execute(stmt_membros)).scalars()
+                    }
+                    records = [r for r in records if r.id in roles_por_projeto]
+                else:
+                    records = []
+            items: list[dict[str, Any]] = []
+            for r in records:
+                # Front usa isto pra avisar "pasta não encontrada" — pasta
+                # vinculada (ou movida/apagada fora da IDE) some do disco sem
+                # que ninguém apague o cadastro (`local_path` não tem
+                # invariante de existência, ver ADR 0016).
+                caminho_local = Path(r.local_path) if r.local_path else None
+                local_path_exists = caminho_local is not None and caminho_local.exists()
+                items.append(
+                    {
+                        "id": str(r.id),
+                        "slug": r.slug,
+                        "name": r.name,
+                        "description": r.description,
+                        "local_path": r.local_path,
+                        "local_path_exists": local_path_exists,
+                        "git_url": r.git_url,
+                        "default_branch": r.default_branch,
+                        "budget_limit_usd": float(r.budget_limit_usd)
+                        if r.budget_limit_usd is not None
+                        else None,
+                        "settings": r.settings,
+                        "created_at": r.created_at.isoformat(),
+                        "updated_at": r.updated_at.isoformat(),
+                        # `owner` pra admin/serviço só pra a UI saber que pode
+                        # gerenciar (apagar, mudar membro) — RBAC de verdade
+                        # continua sendo decidido servidor-side em cada rota,
+                        # isto é só uma dica pra esconder botão que ia 403.
+                        "my_role": "owner" if is_privileged else roles_por_projeto.get(r.id),
+                    }
+                )
         return {"projects": items}
     except Exception as exc:
         log.warning("projects.db.unavailable", error=str(exc))
@@ -255,14 +294,33 @@ async def list_projects(request: Request) -> dict[str, Any]:
                 "name": p.name,
                 "description": p.description,
                 "local_path": str(p.path),
+                "local_path_exists": True,
                 "git_url": None,
                 "default_branch": p.branch or "main",
                 "budget_limit_usd": None,
                 "settings": {},
+                # Banco fora do ar: sem Postgres não dá pra checar RBAC nem
+                # apagar registro nenhum — `my_role` fica `None` de propósito
+                # (a UI esconde ação que dependa dele).
+                "my_role": None,
             }
             for p in disk_projects
         ]
         return {"projects": items}
+
+
+async def _guard_create_github_repo(request: Request) -> None:
+    """`create_github_repo` cria um repositório PRIVADO na conta GitHub da
+    INSTÂNCIA (`settings.github_token`), não do usuário — restrito a admin/
+    canal de serviço, mesmo bypass de `auth/rbac.py::_actor_bypasses`. Sem
+    isto, qualquer sessão autenticada podia criar repositório na conta do
+    dono da instância só marcando uma flag no payload."""
+    if getattr(request.state, "is_service", False) or getattr(request.state, "is_admin", False):
+        return
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Criar repositório no GitHub da instância requer administrador.",
+    )
 
 
 @router.post("")
@@ -270,14 +328,80 @@ async def create_project(payload: ProjectCreateIn, request: Request) -> dict[str
     """Cadastra um novo projeto e cria a pasta correspondente sob PROJECTS_ROOT."""
     projects_root = _projects_root(request)
     try:
-        slug = validate_name(payload.name)
+        raw_slug = validate_name(payload.name)
     except ProjectError as err:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(err),
         ) from err
+    # Slug NOVO sempre nasce kebab-case (`"Meu Projeto"` → `"meu-projeto"`) —
+    # `raw_slug` (o nome cru, convenção anterior à slugificação) só é usado
+    # abaixo pra continuar num projeto que já existe sob ele, sem duplicar.
+    kebab_slug = slugify(payload.name)
 
-    target_path = projects_root / slug
+    if payload.create_github_repo:
+        await _guard_create_github_repo(request)
+
+    # Checagem de permissão ANTES de qualquer efeito colateral (mkdir,
+    # provisionamento de ambiente, git init, criação de repo no GitHub). Na
+    # ordem antiga, um POST pra um slug alheio já tinha criado a pasta,
+    # disparado provisionamento e inicializado git ANTES do 403 de
+    # `require_role_by_slug` no ramo de upsert — os efeitos ficavam mesmo com
+    # a requisição barrada. Também é aqui que uma falha de Postgres é
+    # detectada: falha rápido com 503 em vez de seguir criando artefatos
+    # reais em disco pra, no fim, devolver 200 com um registro fabricado que
+    # nunca foi persistido (o que o `except Exception` genérico fazia antes).
+    slug = kebab_slug
+    try:
+        async with session_scope() as session:
+            if raw_slug != kebab_slug:
+                # Já existe um `ProjectRecord` sob o slug "cru" (criado antes
+                # desta mudança)? Continua nele — reenviar o mesmo `name` de
+                # sempre não pode virar um projeto duplicado só porque o slug
+                # novo seria diferente.
+                stmt_raw = select(ProjectRecord.slug).where(ProjectRecord.slug == raw_slug)
+                if (await session.execute(stmt_raw)).scalar_one_or_none() is not None:
+                    slug = raw_slug
+
+            target_path = projects_root / slug
+
+            stmt = select(ProjectRecord).where(ProjectRecord.slug == slug)
+            existing = (await session.execute(stmt)).scalar_one_or_none()
+            if existing is not None:
+                # POST é upsert-por-slug: sem esta checagem, um `editor` (ou
+                # qualquer autenticado, hoje) reenviando o mesmo nome
+                # reescreveria metadado de um projeto que não é dono.
+                await require_role_by_slug(
+                    session, request, project_slug=slug, min_role="editor"
+                )
+            else:
+                # Slug novo, mas pode ter sido apagado antes (`delete_project`
+                # só remove o `ProjectRecord`, não nota/documento/grafo/
+                # auditoria/custo — sem FK, ver `find_orphaned_project_data`).
+                # Sem este bloqueio, o projeto novo "herdaria" silenciosamente
+                # o histórico do projeto morto.
+                orfaos = await find_orphaned_project_data(
+                    session,
+                    slug=slug,
+                    workspace_path=str(target_path.resolve()).replace("\\", "/"),
+                )
+                if orfaos:
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail=(
+                            f"O slug '{slug}' já teve um projeto apagado, mas ainda existe dado "
+                            f"associado a ele em: {', '.join(orfaos)}. Escolha outro nome, ou peça "
+                            "a um administrador para limpar esse histórico antes de reusar o slug."
+                        ),
+                    )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        log.warning("projects.db.unavailable", error=str(exc))
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Banco de dados indisponível — não é possível cadastrar o projeto agora.",
+        ) from exc
 
     if not target_path.exists():
         target_path.mkdir(parents=True, exist_ok=True)
@@ -294,7 +418,62 @@ async def create_project(payload: ProjectCreateIn, request: Request) -> dict[str
 
     effective_git_url = payload.git_url
 
-    if payload.init_git and not (target_path / ".git").exists():
+    if payload.clone and payload.git_url:
+        # ADR 0016, Fase 4: a aba "Clonar do Git" prometia baixar o conteúdo
+        # do repositório, mas até aqui só fazia `git init` + `remote add
+        # origin` numa pasta vazia — nunca puxava um único arquivo. `clone`
+        # é o sinal explícito de que o chamador quer o conteúdo de verdade.
+        try:
+            validate_target_url(payload.git_url)
+        except ValueError as exc:
+            shutil.rmtree(target_path, ignore_errors=True)
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+        clone_url = payload.git_url
+        if payload.git_token:
+            # Token embutido só nesta URL efêmera (nunca persistida) — jeito
+            # padrão do Git de autenticar HTTPS sem `GIT_ASKPASS`/credential
+            # helper. `validate_target_url` já garantiu http(s)-only acima,
+            # então `parsed.netloc` sempre existe aqui.
+            parsed = urllib.parse.urlsplit(clone_url)
+            netloc_com_token = f"{payload.git_token}@{parsed.netloc}"
+            clone_url = urllib.parse.urlunsplit(
+                (parsed.scheme, netloc_com_token, parsed.path, parsed.query, parsed.fragment)
+            )
+
+        try:
+            from git import Repo
+
+            await asyncio.wait_for(
+                asyncio.to_thread(Repo.clone_from, clone_url, target_path),
+                timeout=300,
+            )
+        except Exception as exc:
+            # `_provision_env_background` já foi disparada sobre esta pasta —
+            # ela é best-effort e tolera a pasta sumir no meio (falha vira só
+            # um log, ver o próprio `_provision_env_background`), mas cancelar
+            # aqui evita trabalho às cegas.
+            _task.cancel()
+            shutil.rmtree(target_path, ignore_errors=True)
+            if isinstance(exc, TimeoutError):
+                raise HTTPException(
+                    status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+                    detail="Clone excedeu o tempo limite (5 min) — verifique a URL e a conectividade.",
+                ) from exc
+            # `GitCommandError`/stderr do git costuma ecoar a URL completa —
+            # com o token embutido, se veio um. Nunca repassar `str(exc)` bruto
+            # pro cliente nem pro log; `effective_git_url` (sem token) já basta
+            # pra diagnosticar.
+            log.warning("git.clone.failed", slug=slug, git_url=effective_git_url)
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    f"Falha ao clonar '{effective_git_url}' — verifique a URL, "
+                    "credenciais e se o repositório existe."
+                ),
+            ) from exc
+
+    elif payload.init_git and not (target_path / ".git").exists():
         try:
             from git import Repo
 
@@ -362,11 +541,12 @@ async def create_project(payload: ProjectCreateIn, request: Request) -> dict[str
                         session, project_id=rec.id, user_id=user_id, role="owner"
                     )
             else:
-                # POST é upsert-por-slug: sem esta checagem, um `editor` (ou
-                # qualquer autenticado, hoje) reenviando o mesmo nome
-                # reescreveria metadado de um projeto que não é dono — e essa
-                # rota fica fora do PATCH normal (`update_project` abaixo), que
-                # já teria barrado o mesmo autor.
+                # Segunda checagem (a primeira, antes de qualquer efeito
+                # colateral, está no topo da rota) — cobre a corrida entre um
+                # POST concorrente ter criado o registro entre as duas. POST
+                # é upsert-por-slug: sem isto, um `editor` (ou qualquer
+                # autenticado) reenviando o mesmo nome reescreveria metadado
+                # de um projeto que não é dono.
                 await require_role_by_slug(session, request, project_slug=slug, min_role="editor")
                 rec.name = payload.name
                 rec.description = payload.description
@@ -390,22 +570,25 @@ async def create_project(payload: ProjectCreateIn, request: Request) -> dict[str
             }
     except HTTPException:
         # `require_role_by_slug` levanta 403 acima — sem este re-raise, o
-        # `except Exception` genérico logo abaixo (pensado só para Postgres
-        # fora do ar) a engoliria e devolveria 200 com o fallback em disco,
-        # deixando RBAC sem efeito nenhum aqui.
+        # `except Exception` genérico logo abaixo a engoliria e devolveria
+        # 503 no lugar do 403, deixando RBAC sem efeito nenhum aqui.
         raise
     except Exception as exc:
-        log.warning("projects.db.unavailable", error=str(exc))
-        res = {
-            "id": slug,
-            "slug": slug,
-            "name": payload.name,
-            "description": payload.description,
-            "local_path": str(target_path),
-            "git_url": payload.git_url,
-            "budget_limit_usd": payload.budget_limit_usd,
-            "settings": payload.settings,
-        }
+        # A pasta e o `.git` (se pedidos) já foram criados em disco a essa
+        # altura — não dá mais pra "cancelar" isso, mas não fabricamos mais
+        # um 200 fingindo que o cadastro no Postgres também aconteceu (antes:
+        # devolvia um registro que nunca foi persistido, sem `project_member`
+        # nenhum — a primeira operação de escrita no projeto batia num 403
+        # "sem acesso" que fazia zero sentido pra quem tinha acabado de
+        # "criar" o projeto).
+        log.error("projects.db.unavailable_on_create", slug=slug, error=str(exc))
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=(
+                f"Pasta '{slug}' criada em disco, mas o banco de dados está indisponível — "
+                "o cadastro não foi salvo. Tente novamente em instantes."
+            ),
+        ) from exc
 
     if audit := _audit(request):
         try:
@@ -475,24 +658,48 @@ async def open_absolute_path(payload: OpenPathIn, request: Request) -> dict[str,
     inspector = ProjectInspector()
     sig = inspector.inspect(alvo)
 
-    try:
-        slug = validate_name(alvo.name)
-    except ProjectError:
-        slug = re.sub(r"[^A-Za-z0-9._-]", "-", alvo.name).strip("-") or "projeto"
+    slug = slugify(alvo.name)
 
     async with session_scope() as session:
-        stmt = select(ProjectRecord).where(ProjectRecord.slug == slug)
-        rec = (await session.execute(stmt)).scalar_one_or_none()
-        if rec and rec.local_path != str(alvo):
-            # Slug já usado por outro caminho — sufixa para não colidir.
-            base_slug, suffix = slug, 2
-            while rec and rec.local_path != str(alvo):
-                slug = f"{base_slug}-{suffix}"
-                stmt = select(ProjectRecord).where(ProjectRecord.slug == slug)
-                rec = (await session.execute(stmt)).scalar_one_or_none()
-                suffix += 1
+        # Procura primeiro por `local_path` — não por slug: é a MESMA pasta
+        # física, então é o mesmo projeto, não importa sob qual slug ela foi
+        # registrada da primeira vez (inclusive um slug da convenção antiga,
+        # anterior a `slugify` existir). Sem isto, reabrir a mesma pasta
+        # externa duas vezes podia criar um SEGUNDO `ProjectRecord` pra ela,
+        # só porque o algoritmo de derivar slug a partir do nome mudou.
+        stmt_path = select(ProjectRecord).where(ProjectRecord.local_path == str(alvo))
+        rec = (await session.execute(stmt_path)).scalar_one_or_none()
+        if rec:
+            slug = rec.slug
 
         if not rec:
+            stmt = select(ProjectRecord).where(ProjectRecord.slug == slug)
+            rec = (await session.execute(stmt)).scalar_one_or_none()
+            if rec and rec.local_path != str(alvo):
+                # Slug já usado por outra pasta — sufixa para não colidir.
+                base_slug, suffix = slug, 2
+                while rec and rec.local_path != str(alvo):
+                    slug = f"{base_slug}-{suffix}"
+                    stmt = select(ProjectRecord).where(ProjectRecord.slug == slug)
+                    rec = (await session.execute(stmt)).scalar_one_or_none()
+                    suffix += 1
+
+        if not rec:
+            # Mesmo bloqueio de `create_project`: slug livre pode ter sido
+            # apagado antes, com dado órfão ainda vivo em outra tabela (sem
+            # FK) — ver `find_orphaned_project_data`.
+            orfaos = await find_orphaned_project_data(
+                session, slug=slug, workspace_path=str(alvo).replace("\\", "/")
+            )
+            if orfaos:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=(
+                        f"O slug '{slug}' já teve um projeto apagado, mas ainda existe dado "
+                        f"associado a ele em: {', '.join(orfaos)}. Renomeie a pasta, ou peça a um "
+                        "administrador para limpar esse histórico antes de reabrir aqui."
+                    ),
+                )
             rec = ProjectRecord(
                 slug=slug,
                 name=sig.name,
@@ -512,6 +719,12 @@ async def open_absolute_path(payload: OpenPathIn, request: Request) -> dict[str,
             rec.local_path = str(alvo)
 
         await session.flush()
+
+    # ADR 0016: `resolve()` (workspace/projects.py) é o que faz arquivo,
+    # agente, índice, LSP, packages, git etc. encontrarem este projeto — sem
+    # isto, ele só resolveria depois de alguém abrir `GET /api/projects`
+    # (que rehidrata o cache) ou reiniciar a API.
+    register_local_path(slug, str(alvo))
 
     if audit := _audit(request):
         try:
@@ -731,16 +944,44 @@ async def update_project(slug: str, payload: ProjectUpdateIn, request: Request) 
                 status_code=status.HTTP_404_NOT_FOUND, detail=f"Projeto {slug} não encontrado."
             )
 
-        if payload.name is not None:
+        # `model_fields_set` (Pydantic v2) distingue "campo ausente do JSON"
+        # de "campo mandado como `null`" — o `is not None` de antes tratava
+        # os dois igual, então não havia como limpar `git_url`/
+        # `budget_limit_usd` (colunas anuláveis) de volta pra `null` num PATCH
+        # parcial: mandar `{"git_url": null}` simplesmente não fazia nada.
+        campos = payload.model_fields_set
+
+        if "name" in campos:
+            if payload.name is None:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="`name` não pode ser nulo — a coluna não aceita.",
+                )
             rec.name = payload.name
-        if payload.description is not None:
-            rec.description = payload.description
-        if payload.git_url is not None:
+        if "description" in campos:
+            # Coluna NOT NULL com default `""` — `null` no payload limpa pra
+            # vazio, igual o default, em vez de rejeitar.
+            rec.description = payload.description or ""
+        if "git_url" in campos:
             rec.git_url = payload.git_url
-        if payload.budget_limit_usd is not None:
+        if "budget_limit_usd" in campos:
             rec.budget_limit_usd = payload.budget_limit_usd
-        if payload.settings is not None:
-            rec.settings = payload.settings
+        if "settings" in campos:
+            if payload.settings is None:
+                rec.settings = {}
+            else:
+                # MERGE raso, não substituição: um PATCH mandando só uma
+                # chave nova não pode apagar as outras que já existiam. Uma
+                # chave explicitamente `null` dentro de `settings` remove
+                # só ela — a única forma de apagar uma chave sem reescrever
+                # o dict inteiro.
+                merged = dict(rec.settings or {})
+                for chave, valor in payload.settings.items():
+                    if valor is None:
+                        merged.pop(chave, None)
+                    else:
+                        merged[chave] = valor
+                rec.settings = merged
 
         await session.flush()
         await session.refresh(rec)
@@ -781,6 +1022,16 @@ async def delete_project(slug: str, request: Request, delete_files: bool = False
 
     projects_root = _projects_root(request)
 
+    # Resolvido ANTES de apagar o registro/cache abaixo — depois disso
+    # `resolve()` não teria mais como achar um projeto vinculado fora de
+    # PROJECTS_ROOT (ADR 0016, `register_local_path`).
+    target_path: Path | None = None
+    if delete_files:
+        try:
+            target_path = resolve(projects_root, slug_valido)
+        except ProjectError:
+            target_path = None  # nada no disco sob esse slug — segue sem erro
+
     async with session_scope() as session:
         await require_role_by_slug(session, request, project_slug=slug_valido, min_role="owner")
         rec = (
@@ -789,27 +1040,56 @@ async def delete_project(slug: str, request: Request, delete_files: bool = False
         if rec:
             await session.delete(rec)
 
-    if delete_files:
+    # Fora do `if delete_files` de propósito: sem isto, um slug reaproveitado
+    # por `create_project` logo depois herdaria o `local_path` do projeto já
+    # apagado, até o próximo restart/rehidratação (ADR 0016).
+    register_local_path(slug_valido, None)
+
+    files_deleted = False
+    delete_error: str | None = None
+    if delete_files and target_path is not None:
         try:
-            target_path = resolve(projects_root, slug_valido)
-            shutil.rmtree(target_path, ignore_errors=True)
-        except ProjectError:
-            pass
+            shutil.rmtree(target_path)
+            files_deleted = True
+        except FileNotFoundError:
+            files_deleted = True  # já não existia — mesmo resultado do ponto de vista do pedido
+        except OSError as exc:
+            # Antes era `ignore_errors=True`: um arquivo travado por outro
+            # processo, ou uma permissão faltando, virava silenciosamente
+            # "apagado com sucesso" sem nada ter sido apagado.
+            delete_error = str(exc)
+            log.warning("projects.delete.rmtree_failed", slug=slug_valido, error=delete_error)
 
     if audit := _audit(request):
         try:
+            detail_extra = f", erro={delete_error}" if delete_error else ""
             await audit.record(
                 actor="user",
                 module="projects",
                 action="delete",
-                details=f"Projeto removido: {slug_valido} (arquivos_apagados={delete_files})",
-                metadata={"slug": slug_valido, "delete_files": delete_files},
+                details=(
+                    f"Projeto removido: {slug_valido} "
+                    f"(arquivos_apagados={files_deleted}{detail_extra})"
+                ),
+                metadata={
+                    "slug": slug_valido,
+                    "delete_files": delete_files,
+                    "files_deleted": files_deleted,
+                },
                 project_slug=slug_valido,
+                risk_level="critical" if delete_files else "medium",
             )
         except Exception as exc:
             log.warning("projects.audit.failed", error=str(exc))
 
-    return {"status": "ok", "slug": slug_valido, "files_deleted": delete_files}
+    return {
+        "status": "ok",
+        "slug": slug_valido,
+        "files_deleted": files_deleted,
+        # Presente só quando `delete_files=True` e o rmtree falhou de verdade
+        # — o cadastro já foi removido de qualquer forma (ver acima).
+        "delete_error": delete_error,
+    }
 
 
 @router.post("/{slug}/prewarm")
@@ -823,7 +1103,11 @@ async def prewarm_project(slug: str, request: Request) -> dict[str, Any]:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(err)) from err
 
     async with session_scope() as session:
-        await require_role_by_slug(session, request, project_slug=slug_valido, min_role="viewer")
+        # `viewer` era o mínimo antes — permite mudar de papel só de olhar um
+        # projeto: cria/reaproveita sessão de agente e sobe container de
+        # sandbox, o mesmo raio de alcance de operações que em outro lugar
+        # exigem `editor`.
+        await require_role_by_slug(session, request, project_slug=slug_valido, min_role="editor")
 
     # 1. Garante o ambiente de pacotes do projeto (.venv, etc.)
     try:
@@ -838,11 +1122,7 @@ async def prewarm_project(slug: str, request: Request) -> dict[str, Any]:
         return {"status": "ok", "slug": slug_valido, "sandbox_ready": False}
 
     # 2. Reutiliza ou cria uma sessão pré-aquecida para a IDE
-    sessao_ativa = None
-    for s in runner._sessions.values():
-        if s.workspace_root == workspace_root and s.sandbox_available:
-            sessao_ativa = s
-            break
+    sessao_ativa = runner.find_session_for_workspace(workspace_root)
 
     if sessao_ativa is None:
         try:
@@ -889,15 +1169,47 @@ async def _get_project_record_or_404(session: AsyncSession, slug: str) -> Projec
     return rec
 
 
+async def _is_last_owner(
+    session: AsyncSession, *, project_id: uuid.UUID, user_id: uuid.UUID
+) -> bool:
+    """`True` se `user_id` é `owner` do projeto e ninguém mais é — usado para
+    bloquear remover ou rebaixar o último dono. Sem isto, um `owner` sozinho
+    podia se auto-remover (ou ser rebaixado) e deixar o projeto sem nenhum
+    `owner`, recuperável só pelo admin da instância (`AdminDep` bypassa RBAC
+    por projeto, mas ninguém deveria precisar disso pra uma operação normal
+    de gestão de membro)."""
+    membros = await auth_store.list_members(session, project_id=project_id)
+    atual = next((m for m in membros if m.user_id == user_id), None)
+    if atual is None or atual.role != "owner":
+        return False
+    outros_owners = [m for m in membros if m.role == "owner" and m.user_id != user_id]
+    return not outros_owners
+
+
 @router.get("/{slug}/members")
 async def list_members(slug: str, request: Request) -> dict[str, Any]:
+    from eltanix.db.models import AppUser
+
     async with session_scope() as session:
         await require_role_by_slug(session, request, project_slug=slug, min_role="viewer")
         rec = await _get_project_record_or_404(session, slug)
         members = await auth_store.list_members(session, project_id=rec.id)
+        # `ProjectMember` só guarda `user_id` — a UI (aba "Membros" do Hub
+        # 360°) precisa de `username`/`display_name` pra listar gente por
+        # nome, não por UUID cru.
+        usuarios: dict[uuid.UUID, AppUser] = {}
+        if members:
+            stmt_users = select(AppUser).where(AppUser.id.in_({m.user_id for m in members}))
+            usuarios = {u.id: u for u in (await session.execute(stmt_users)).scalars()}
         return {
             "members": [
-                {"user_id": str(m.user_id), "role": m.role, "created_at": m.created_at.isoformat()}
+                {
+                    "user_id": str(m.user_id),
+                    "username": usuarios[m.user_id].username if m.user_id in usuarios else None,
+                    "display_name": usuarios[m.user_id].display_name if m.user_id in usuarios else None,
+                    "role": m.role,
+                    "created_at": m.created_at.isoformat(),
+                }
                 for m in members
             ]
         }
@@ -914,6 +1226,19 @@ async def add_member(slug: str, payload: MemberIn, request: Request) -> dict[str
     async with session_scope() as session:
         await require_role_by_slug(session, request, project_slug=slug, min_role="owner")
         rec = await _get_project_record_or_404(session, slug)
+        if payload.role != "owner" and await _is_last_owner(
+            session, project_id=rec.id, user_id=payload.user_id
+        ):
+            # `add_member` é upsert: rebaixar o único `owner` pra
+            # `editor`/`viewer` orfana o projeto do mesmo jeito que removê-lo
+            # — mesmo guard de `remove_member` abaixo.
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    "Este usuário é o único owner do projeto — promova outro membro a "
+                    "owner antes de rebaixá-lo."
+                ),
+            )
         member = await auth_store.add_member(
             session, project_id=rec.id, user_id=payload.user_id, role=payload.role
         )
@@ -940,6 +1265,14 @@ async def remove_member(slug: str, user_id: uuid.UUID, request: Request) -> dict
     async with session_scope() as session:
         await require_role_by_slug(session, request, project_slug=slug, min_role="owner")
         rec = await _get_project_record_or_404(session, slug)
+        if await _is_last_owner(session, project_id=rec.id, user_id=user_id):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    "Este usuário é o único owner do projeto — promova outro membro a "
+                    "owner antes de removê-lo."
+                ),
+            )
         removed = await auth_store.remove_member(session, project_id=rec.id, user_id=user_id)
 
     if not removed:

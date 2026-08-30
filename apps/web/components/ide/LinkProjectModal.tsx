@@ -46,6 +46,7 @@ export function LinkProjectModal({
   // ── Tab 3: Clonar do Git
   const [cloneUrl, setCloneUrl] = useState("");
   const [cloneName, setCloneName] = useState("");
+  const [cloneToken, setCloneToken] = useState("");
   const [cloning, setCloning] = useState(false);
 
   // Carrega o sistema de arquivos ao abrir a aba "link"
@@ -176,9 +177,10 @@ export function LinkProjectModal({
       const created = await createProject({
         name: derivedName,
         git_url: cloneUrl.trim(),
-        init_git: true,
+        clone: true,
+        git_token: cloneToken.trim() || undefined,
       });
-      addToast(`Projeto '${created.name}' vinculado ao repositório Git!`, "success");
+      addToast(`Projeto '${created.name}' clonado com sucesso!`, "success");
       onProjectOpened(created.slug, created.name);
       onClose();
     } catch (err) {
@@ -961,7 +963,7 @@ export function LinkProjectModal({
             <form onSubmit={handleCloneProject} style={{ display: "flex", flexDirection: "column", gap: "1.1rem" }}>
               <div>
                 <label style={{ display: "block", marginBottom: "0.3rem", fontSize: "0.85rem", color: "var(--text-dim, #a6adc8)", fontWeight: 500 }}>
-                  URL do Repositório Git (HTTPS / SSH) *
+                  URL do Repositório Git (HTTPS) *
                 </label>
                 <input
                   type="url"
@@ -1002,6 +1004,28 @@ export function LinkProjectModal({
                 />
               </div>
 
+              <div>
+                <label style={{ display: "block", marginBottom: "0.3rem", fontSize: "0.85rem", color: "var(--text-dim, #a6adc8)", fontWeight: 500 }}>
+                  Token de Acesso (Opcional — repositório privado)
+                </label>
+                <input
+                  type="password"
+                  value={cloneToken}
+                  onChange={(e) => setCloneToken(e.target.value)}
+                  placeholder="ghp_... (usado uma única vez, nunca é salvo)"
+                  autoComplete="off"
+                  style={{
+                    width: "100%",
+                    padding: "0.65rem 0.8rem",
+                    borderRadius: "8px",
+                    backgroundColor: "var(--surface-2, #1e1e2e)",
+                    border: "1px solid var(--border, #313244)",
+                    color: "var(--text, #cdd6f4)",
+                    fontSize: "0.9rem",
+                  }}
+                />
+              </div>
+
               <div
                 style={{
                   backgroundColor: "rgba(137, 180, 250, 0.05)",
@@ -1012,7 +1036,9 @@ export function LinkProjectModal({
                   color: "var(--text-dim, #a6adc8)",
                 }}
               >
-                💡 O repositório será inicializado em <code>PROJECTS_ROOT</code> com a branch principal configurada e o remote <code>origin</code> apontando para a URL informada.
+                💡 O conteúdo do repositório é clonado de verdade (<code>git clone</code>) para dentro de{" "}
+                <code>PROJECTS_ROOT</code>, com um limite de 5 minutos. Só URLs HTTPS são aceitas (SSH/<code>git://</code>{" "}
+                não) e hosts internos/privados são bloqueados por segurança.
               </div>
 
               {/* Botões de Ação */}
