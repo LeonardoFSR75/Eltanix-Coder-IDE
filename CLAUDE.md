@@ -33,6 +33,9 @@ Guias específicos: [apps/api/CLAUDE.md](apps/api/CLAUDE.md), [apps/web/CLAUDE.m
    - `ADR 0011 — Sanitização Dinâmica de PII`
    - `ADR 0012 — Modos Customizáveis do Agente e o Gate de Ferramentas por Nome`
    - `ADR 0013 — apps/desktop Congelado até a IDE Web Cruzar a Onda 1`
+   - `ADR 0014 — Autocompletar Inline (Ghost Text) no Editor`
+   - `ADR 0015 — Predição do Próximo Edit ("Tab to Jump")`
+   - `ADR 0016 — ProjectRecord.local_path é a Fonte de Verdade da Localização do Projeto`
 3. **Histórico de Fases & Roadmap (`01 - 📑 Documentos & ADRs/Notas de Projeto (Roadmap & Fases)/`)**:
    - 20 notas sequenciais (`00-MOC.md` a `19-robustez-agente-router-orquestracao-multiagente.md`).
 4. **Ferramenta `graph_search` (em tempo de execução)**:
@@ -81,6 +84,17 @@ Guias específicos: [apps/api/CLAUDE.md](apps/api/CLAUDE.md), [apps/web/CLAUDE.m
 - **Login é obrigatório para o browser** (`docs/adr/0005-login-obrigatorio.md`): toda rota
   usa `AuthDep = Depends(require_session)` (`api/deps.py`) — aceita `ELTANIX_API_KEY`
   válida OU cookie de sessão válido, e nunca fica aberta por omissão.
+- **`local_path` é a fonte de verdade da localização do projeto**
+  (`docs/adr/0016-local-path-fonte-de-verdade.md`): `workspace/projects.py::resolve()` consulta
+  `ProjectRecord.local_path` (via cache `_slug_to_local_path`, rehidratado no `lifespan` e em
+  `sync_projects_db`) antes do fallback `PROJECTS_ROOT/<slug>`, e só confia no cache se o
+  caminho ainda existe e está autorizado no `PathGuard`. Não reintroduzir resolução por slug
+  puro nos ~8 pontos de chamada (fs, agente, contexto, LSP, pacotes, git, Trello, Graphify).
+- **Inteligência do editor não abre caminho próprio para LLM**
+  (`docs/adr/0014`, `0015`): `/api/context/completions` (ghost text) e `/api/context/next-edit`
+  são READ-only, nunca passam por `ApprovalPolicy`, e fazem egress só por
+  `RouterEngine.complete()` com `source="ide:completion"` / `"ide:next_edit"`. O modelo é
+  escolhido pelos perfis `completion`/`next-edit` em `routes.yaml`, nunca por constante no código.
 
 ---
 

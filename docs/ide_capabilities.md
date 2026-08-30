@@ -16,6 +16,7 @@ Este documento estratifica a arquitetura, ferramentas, classes de risco, fluxos 
 8. [🐛 Debug (Observabilidade, Testes & Diagnósticos)](#8--debug-observabilidade-testes--diagnósticos)
 9. [🧠 RAG & Segundo Cérebro (Grafo de Conhecimento e Ingestão)](#9--rag--segundo-cérebro-grafo-de-conhecimento-e-ingestão)
 10. [🛡️ Segurança & Sandboxing (Políticas e Classes de Risco)](#10--segurança--sandboxing-políticas-e-classes-de-risco)
+11. [✍️ Editor (Inteligência Inline: Ghost Text, Next-Edit & Cmd+K)](#11--editor-inteligência-inline-ghost-text-next-edit--cmd-k)
 
 ---
 
@@ -152,6 +153,32 @@ Modelagem de ameaças e controle de privilégios em todas as operações agênti
   - `EXEC`: Execução de comandos de terminal, mutação de infraestrutura ou instalações (exigem aprovação explícita do usuário).
 - **Autenticação Obrigatória ([ADR 0005](adr/0005-login-obrigatorio.md))**: Toda rota HTTP exige `AuthDep` (sessão via cookie HttpOnly ou chave `ELTANIX_API_KEY`).
 - **Prevenção contra Perda de Dados (`accidental-data-loss-prevention`)**: Confirmação mandatória antes de comandos destrutivos (`DROP TABLE`, `rm -rf`, deleção de projetos/buckets).
+
+---
+
+## 11. ✍️ Editor (Inteligência Inline: Ghost Text, Next-Edit & Cmd+K)
+
+Camada de assistência dentro do Monaco, entregue na **Onda 1** do roadmap ponta a ponta.
+
+- **Autocompletar inline / ghost text ([ADR 0014](adr/0014-autocompletar-inline-ghost-text.md))**:
+  cursor parado ~250 ms → sugestão cinza de 1–8 linhas, aceita com `Tab`.
+  `POST /api/context/completions`, **READ-only** (não passa por `ApprovalPolicy`).
+  Egress só por `RouterEngine.complete()` (`source="ide:completion"`); perfil de rota
+  `completion` em `routes.yaml` (modelos tiny/locais por latência). Kill switch
+  `IDE_INLINE_COMPLETIONS_ENABLED`; rate limit `IDE_COMPLETION_MAX_PER_MINUTE`.
+- **Predição do próximo edit / "tab to jump" ([ADR 0015](adr/0015-predicao-do-proximo-edit.md))**:
+  após uma edição assentar, o modelo prevê o próximo trecho a mudar no arquivo aberto.
+  `POST /api/context/next-edit`, **READ-only**, `source="ide:next_edit"`, perfil `next-edit`.
+  Precedência de `Tab`: sugestão inline (1.1) → next-edit pendente (1.2) → indentar.
+  Kill switch `IDE_NEXT_EDIT_ENABLED`.
+- **Cmd+K (edição inline sob demanda)**: `POST /api/agent/inline-edit` — seleção +
+  instrução, streaming e accept/reject por hunk. **`WRITE`**: passa por `ApprovalPolicy`
+  porque escreve arquivo.
+- **Gutter intelligence (Onda 1.5)**: blame, cobertura de testes e CVEs na margem do editor.
+- **Busca semântica no painel Search (Onda 1.4)**: consulta o índice `pgvector` do projeto.
+- **Telemetria**: aceitação em `completion_event` (migrações 0029 e 0030, coluna `kind`
+  `inline`/`next_edit`); custo/latência de cada chamada em `request_log`.
+  `GET /api/context/completions/stats?days=` agrega taxa de aceitação por `kind` e linguagem.
 
 ---
 

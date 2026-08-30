@@ -241,6 +241,9 @@ Para mais detalhes sobre as decisões de design, consulte:
 - [ADR 0011 — Sanitização Dinâmica de Prompts e Mascaramento de PII](docs/adr/0011-sanitizacao-dinamica-pii.md)
 - [ADR 0012 — Modos Customizáveis do Agente e o Gate de Ferramentas por Nome](docs/adr/0012-modos-customizaveis-e-gate-de-ferramentas.md)
 - [ADR 0013 — `apps/desktop` Congelado até a IDE Web Cruzar a Onda 1](docs/adr/0013-apps-desktop-congelado.md)
+- [ADR 0014 — Autocompletar inline (ghost text) no editor](docs/adr/0014-autocompletar-inline-ghost-text.md)
+- [ADR 0015 — Predição do próximo edit ("tab to jump")](docs/adr/0015-predicao-do-proximo-edit.md)
+- [ADR 0016 — `ProjectRecord.local_path` é a fonte de verdade da localização do projeto](docs/adr/0016-local-path-fonte-de-verdade.md)
 
 ---
 

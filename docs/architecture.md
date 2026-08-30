@@ -30,6 +30,7 @@
 │  auth:       AppUser/AuthSession, scrypt, rate limit (ADR 0005)│
 │  optimizer:  cache exato + semântico (Redis) · compressor      │
 │  context:    chunker (tree-sitter) · indexer · store (pgvector)│
+│              + /completions (ghost text) + /next-edit (ADR 14/15)│
 │  firecrawl:  FirecrawlService · anti-SSRF guard · RAG ingest   │
 │  documents:  AnyDoc (Rust Calamine) + pdf-inspector (Rust)     │
 │  agent:      LangGraph (think→approve→act) · tools (RiskClass) │
@@ -37,6 +38,7 @@
 │              + tools/firecrawl.py (scrape/clone_ui/research)   │
 │              + tools/skills.py (Self-Improving Skills)         │
 │  workspace:  WorkspaceFS · git (+ blame/co-change) · projects  │
+│              projects.resolve() usa local_path (ADR 0016)       │
 │  mcp:        MCPManager · conexões stdio/HTTP · scanner cisco  │
 │  lsp:        ponte WebSocket ↔ language server                 │
 │  rag:        4x RAG: documents + notes + context + graphify    │
@@ -98,6 +100,26 @@
 - **6 Suítes Nativas**: Frontend/Design System (Shadcn, DaisyUI, Lucide, Live Server, Chart.js), IA/Scraping (Firecrawl Workflow Builder, Data Connectors, MCP Marketplace), Bancos/RAG (pgvector Studio, Redis Commander, MinIO Explorer), Segurança (SAST Semgrep, Dependency CVEs, Token Profiler), Testes/APIs (Playwright Studio, Bruno Runner, Coverage Gutters) e Segundo Cérebro (Graphify Live Canvas, ADR Assistant, Git Smart Blame).
 - **Auto-Update Contínuo**: Sincronização periódica com a API pública do **Open VSX Registry** e VS Code Marketplace, detecção de atualizações em lote e aplicação de updates com 1 clique.
 
+### 7. Inteligência do Editor (Onda 1 — ghost text, next-edit, Cmd+K)
+- **ADR 0014 — Autocompletar inline (ghost text)**: cursor parado ~250 ms →
+  sugestão cinza de 1–8 linhas aceita com `Tab`. `POST /api/context/completions`
+  (READ-only, nunca passa por `ApprovalPolicy`), egress só por
+  `RouterEngine.complete()` com `source="ide:completion"`. Perfil de rota
+  `completion` em `routes.yaml` (modelos tiny/locais, ordenados por latência).
+  Telemetria de aceitação em `completion_event` (migração 0029). Kill switch
+  `IDE_INLINE_COMPLETIONS_ENABLED`.
+- **ADR 0015 — Predição do próximo edit ("tab to jump")**: depois de uma edição
+  assentar, o modelo prevê o próximo trecho a mudar. `POST /api/context/next-edit`
+  (READ-only), `source="ide:next_edit"`, perfil de rota `next-edit` (modelos mais
+  capazes, ainda ~1 s). MVP restrito ao arquivo aberto; histórico de edições vive
+  no cliente. Migração 0030 adiciona `kind`/`jump_lines` a `completion_event`.
+  Kill switch `IDE_NEXT_EDIT_ENABLED`.
+- **Cmd+K (edição inline sob demanda)**: `POST /api/agent/inline-edit` (Fase 7 do
+  roadmap do agente) — seleção + instrução, streaming e accept/reject por hunk;
+  este passa por `ApprovalPolicy` porque escreve arquivo.
+- **Gutter intelligence**: blame, cobertura e CVEs renderizados na margem do
+  editor (Onda 1.5).
+
 ---
 
 ## Trilha de Decisões de Arquitetura (ADRs)
@@ -115,4 +137,7 @@
 11. [ADR 0011: Sanitização Dinâmica de Prompts e Mascaramento PII](adr/0011-sanitizacao-dinamica-pii.md)
 12. [ADR 0012: Modos Customizáveis do Agente e o Gate de Ferramentas por Nome](adr/0012-modos-customizaveis-e-gate-de-ferramentas.md)
 13. [ADR 0013: `apps/desktop` Congelado até a IDE Web Cruzar a Onda 1](adr/0013-apps-desktop-congelado.md)
+14. [ADR 0014: Autocompletar Inline (Ghost Text) no Editor](adr/0014-autocompletar-inline-ghost-text.md)
+15. [ADR 0015: Predição do Próximo Edit ("Tab to Jump")](adr/0015-predicao-do-proximo-edit.md)
+16. [ADR 0016: `ProjectRecord.local_path` é a Fonte de Verdade da Localização do Projeto](adr/0016-local-path-fonte-de-verdade.md)
 
