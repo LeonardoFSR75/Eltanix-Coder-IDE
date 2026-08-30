@@ -10,7 +10,11 @@
 import { useState } from "react";
 import { useIde } from "@/lib/ide-store";
 import { Editor } from "./Editor";
+import { EditorBrowserView } from "./EditorBrowserView";
 import { TabStrip, TAB_DRAG_MIME } from "./TabStrip";
+
+const BROWSER_PREFIX = "browser:";
+const BROWSER_AGENT_PREFIX = "browser-agent:";
 
 type DropZone = "left" | "right" | "top" | "bottom" | "center";
 
@@ -32,8 +36,16 @@ export function EditorGroupView({
   groupId: string;
   onCursorPositionChange?: (pos: { line: number; column: number }) => void;
 }) {
-  const { groups, activeGroupId, setActiveGroup, closeGroup, splitGroup, moveTabToGroup, openFile } =
-    useIde();
+  const {
+    groups,
+    activeGroupId,
+    setActiveGroup,
+    closeGroup,
+    splitGroup,
+    moveTabToGroup,
+    openFile,
+    activeSessionId,
+  } = useIde();
   const [dropZone, setDropZone] = useState<DropZone | null>(null);
   const group = groups[groupId];
   const isMultiGroup = Object.keys(groups).length > 1;
@@ -41,7 +53,14 @@ export function EditorGroupView({
   if (!group) return null;
 
   const active = group.active;
-  const trilha = active ? active.split("/") : [];
+  // Abas de browser (`browser:`/`browser-agent:`) são roteadas para
+  // `EditorBrowserView` aqui, ANTES de montar `Editor` — decidir qual
+  // componente instanciar neste nível evita que a mesma instância do
+  // `Editor` troque de "arquivo" para "browser" sem remount, o que quebraria
+  // as Rules of Hooks (dezenas de hooks abaixo do antigo early-return).
+  const isBrowserTab = !!active && active.startsWith(BROWSER_PREFIX);
+  const isBrowserAgentTab = !!active && active.startsWith(BROWSER_AGENT_PREFIX);
+  const trilha = active && !isBrowserTab && !isBrowserAgentTab ? active.split("/") : [];
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
@@ -105,11 +124,29 @@ export function EditorGroupView({
         onDrop={handleDrop}
       >
         {dropZone && <div className={`pane-drop-indicator pane-drop-${dropZone}`} />}
-        <Editor
-          groupId={groupId}
-          onNavigate={(destino, linha, coluna) => openFile(destino, { line: linha, column: coluna }, groupId)}
-          onCursorPositionChange={onCursorPositionChange}
-        />
+        {isBrowserTab ? (
+          <EditorBrowserView
+            initialUrl={active!.slice(BROWSER_PREFIX.length)}
+            sessionId={activeSessionId || undefined}
+          />
+        ) : isBrowserAgentTab ? (
+          // Força o modo 🤖 Agente na primeira aba — usado para URLs que só
+          // o serviço de navegador consegue resolver (ex.: porta de um
+          // sandbox via `eltanix-<sessionId>`), nunca alcançáveis por um
+          // iframe direto no navegador real (ver StatusBar.tsx, botões de
+          // porta do sandbox).
+          <EditorBrowserView
+            initialUrl={active!.slice(BROWSER_AGENT_PREFIX.length)}
+            sessionId={activeSessionId || undefined}
+            initialMode="headless"
+          />
+        ) : (
+          <Editor
+            groupId={groupId}
+            onNavigate={(destino, linha, coluna) => openFile(destino, { line: linha, column: coluna }, groupId)}
+            onCursorPositionChange={onCursorPositionChange}
+          />
+        )}
       </div>
     </div>
   );

@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import case, func, select
 
 from eltanix.api._client_disconnect import await_or_abandon_on_disconnect
-from eltanix.api.deps import AuthDep, EngineDep, SettingsDep
+from eltanix.api.deps import AdminDep, AuthDep, EngineDep, SettingsDep
 from eltanix.auth.rbac import require_role_by_slug
 from eltanix.context import completions as completion_engine
 from eltanix.context import next_edit as next_edit_engine
@@ -342,12 +342,24 @@ class CompletionOutcome(BaseModel):
     jump_lines: int | None = Field(default=None, ge=0, le=1_000_000)
 
 
+# Não liga a nenhum `Settings.ide_*_max_per_minute` de propósito: cada evento
+# de outcome corresponde a UMA sugestão já mostrada (accepted/ignored), então
+# está naturalmente limitado pela soma dos tetos de `completion` + `next_edit`
+# — isto aqui só é o teto absoluto contra alguém martelando o endpoint com
+# `suggestion_id` inventado pra inflar `completion_event` sem nunca ter
+# pedido uma sugestão de verdade.
+_COMPLETION_OUTCOME_MAX_PER_MINUTE = 200
+
+
 @router.post("/completions/outcome", status_code=status.HTTP_202_ACCEPTED)
 async def completion_outcome(payload: CompletionOutcome, request: Request) -> dict[str, Any]:
     """Desfecho de uma sugestão (`accepted`/`rejected`/`ignored`) — o número que
     diz se o recurso presta. Cobre autocompletar (`kind=inline`) e next-edit
     (`kind=next_edit`). Best-effort: nunca falha o editor por causa de
     telemetria de aceitação. Não grava conteúdo, só contagens."""
+    await _guard_editor_ai_rate(
+        request, feature="completion_outcome", limit=_COMPLETION_OUTCOME_MAX_PER_MINUTE
+    )
     ator = getattr(request.state, "actor", None)
     try:
         async with session_scope() as session:
@@ -372,11 +384,16 @@ async def completion_outcome(payload: CompletionOutcome, request: Request) -> di
     return {"ok": True}
 
 
-@router.get("/completions/stats")
+@router.get("/completions/stats", dependencies=[AdminDep])
 async def completion_stats(
     request: Request, days: int = Query(default=7, ge=1, le=90)
 ) -> dict[str, Any]:
-    """Taxa de aceitação do autocompletar, derivada de `completion_event`."""
+    """Taxa de aceitação do autocompletar, derivada de `completion_event`.
+
+    Agrega TODOS os projetos (não recebe `project` nem filtra por RBAC de
+    projeto) — por isso `AdminDep`: sem essa restrição, qualquer sessão
+    autenticada em qualquer projeto enxergava a telemetria de aceitação do
+    editor da instância inteira."""
     since = datetime.now(UTC) - timedelta(days=days)
     _accepted = func.coalesce(
         func.sum(case((CompletionEvent.outcome == "accepted", 1), else_=0)), 0

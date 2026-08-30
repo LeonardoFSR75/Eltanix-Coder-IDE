@@ -80,9 +80,11 @@ export async function getBlame(
   project: string,
   path: string,
   rev = "HEAD",
+  signal?: AbortSignal,
 ): Promise<BlameHunk[]> {
   const { hunks } = await get<{ hunks: BlameHunk[] }>(
     `/api/git/blame?project=${encodeURIComponent(project)}&path=${encodeURIComponent(path)}&rev=${encodeURIComponent(rev)}`,
+    signal,
   );
   return hunks;
 }

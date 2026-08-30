@@ -6,6 +6,8 @@ import asyncio
 import os
 import re
 import shutil
+import string
+import sys
 import uuid
 from pathlib import Path
 from typing import Any
@@ -15,7 +17,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from eltanix.api.deps import AuthDep
+from eltanix.api.deps import AdminDep, AuthDep
 from eltanix.audit.service import AuditService
 from eltanix.auth import store as auth_store
 from eltanix.auth.rbac import ROLE_RANK, require_role_by_slug
@@ -99,7 +101,6 @@ class InspectPathIn(BaseModel):
 
 
 def _list_system_roots(projects_root: Path) -> list[dict[str, Any]]:
-    import sys
     roots: list[dict[str, Any]] = []
     if projects_root.exists():
         roots.append({
@@ -124,7 +125,6 @@ def _list_system_roots(projects_root: Path) -> list[dict[str, Any]]:
             "type": "special",
         })
     if sys.platform == "win32":
-        import string
         for letter in string.ascii_uppercase:
             drive = Path(f"{letter}:\\")
             if drive.exists():
@@ -146,18 +146,32 @@ def _list_system_roots(projects_root: Path) -> list[dict[str, Any]]:
 
 def _resolve_user_path(raw_path: str, projects_root: Path) -> Path:
     """Resolve qualquer caminho informado pelo usuário com suporte a:
-    1. Nome simples de pasta (ex: 'Sorteador' -> projects_root / 'Sorteador')
-    2. Caminho relativo (ex: './Sorteador')
-    3. Caminhos absolutos do host Windows (ex: 'C:\\Users\\...\\Projetos\\Sorteador') mapeados para /projects
-    4. Caminhos diretos do container / SO (ex: '/projects/Sorteador')
-    """
+    1. Nome simples de pasta ou subcaminho, sob a raiz de projetos (ex: 'Sorteador' -> projects_root / 'Sorteador')
+    2. Caminhos absolutos do host Windows (ex: 'C:\\Users\\...\\Projetos\\Sorteador') mapeados para /projects
+    3. Caminhos diretos do container / SO (ex: '/projects/Sorteador', 'D:\\work\\outro-projeto')
+
+    Esta função alimenta `open-path` (que vincula a pasta devolvida como
+    projeto) e `browse`/`inspect` — por isso NÃO tem um passo de "se nada
+    bateu, tenta achar uma pasta com esse *nome* em `projects_root`": isso já
+    existiu aqui e causava vinculação silenciosa da pasta errada sempre que o
+    caminho pedido não resolvia (ex.: o seletor nativo do browser, que só
+    consegue entregar o NOME da pasta escolhida — nunca o caminho completo —
+    fazia todo `/projects/<nome-coincidente>` existente "vencer" no lugar da
+    pasta que o usuário via na tela; ver `LinkProjectModal.tsx`)."""
     clean = (raw_path or "").strip().strip("'\"")
     if not clean:
         return projects_root
 
-    # 1. Se for apenas o nome da pasta ou subcaminho sob a raiz de projetos
+    # 1. Se for apenas o nome da pasta ou subcaminho sob a raiz de projetos.
+    # `..` seria "resolvido" para fora de `projects_root` por `.resolve()`
+    # sozinho — o `is_relative_to` abaixo é o que garante que este passo só
+    # aceita algo realmente dentro da raiz, nunca uma fuga por travessia.
     candidate_in_root = (projects_root / clean).resolve()
-    if candidate_in_root.exists() and candidate_in_root.is_dir():
+    if (
+        candidate_in_root.exists()
+        and candidate_in_root.is_dir()
+        and candidate_in_root.is_relative_to(projects_root.resolve())
+    ):
         return candidate_in_root
 
     # 2. Tradução de caminhos Windows (se estiver rodando dentro do container Docker)
@@ -168,18 +182,10 @@ def _resolve_user_path(raw_path: str, projects_root: Path) -> Path:
         if norm.lower().startswith(host_norm.lower()):
             rel_part = norm[len(host_norm):].lstrip("/")
             target = (projects_root / rel_part).resolve()
-            if target.exists():
+            if target.exists() and target.is_relative_to(projects_root.resolve()):
                 return target
 
-    # 3. Se o caminho contiver partes Windows (ex: C:/.../Projetos/NomeDoProjeto)
-    parts = [p for p in norm.split("/") if p]
-    if parts:
-        last_name = parts[-1]
-        named_candidate = (projects_root / last_name).resolve()
-        if named_candidate.exists() and named_candidate.is_dir():
-            return named_candidate
-
-    # 4. Resolução direta pelo filesystem do sistema operacional
+    # 3. Resolução direta pelo filesystem do sistema operacional
     try:
         direct = Path(clean).expanduser().resolve()
         if direct.exists():
@@ -417,7 +423,28 @@ async def create_project(payload: ProjectCreateIn, request: Request) -> dict[str
     return res
 
 
-@router.post("/open-path")
+def _reject_filesystem_root(alvo: Path) -> None:
+    """`PathGuard.allow()` (chamado logo abaixo) ADICIONA `alvo` à allowlist
+    global do processo — não é uma validação, é uma concessão permanente de
+    acesso a tudo dentro dele. Autorizar a raiz de um drive (`C:\\`), `/` ou a
+    pasta do usuário inteira faria esse `allow()` liberar o disco todo (ou o
+    `$HOME` todo) pro resto da vida do processo. `AdminDep` no router já
+    restringe quem chega aqui a dono da instância / canal de serviço; isto é
+    a segunda camada, que barra o alvo mais perigoso mesmo vindo de um admin
+    legítimo por engano."""
+    if alvo.parent == alvo:  # raiz de filesystem: "/" ou "C:\\"
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Não é permitido vincular a raiz de um disco ou do sistema de arquivos.",
+        )
+    if alvo == Path.home().resolve():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Não é permitido vincular a pasta inteira do usuário — escolha uma subpasta.",
+        )
+
+
+@router.post("/open-path", dependencies=[AdminDep])
 async def open_absolute_path(payload: OpenPathIn, request: Request) -> dict[str, Any]:
     """Abre e autoriza qualquer pasta do SO como projeto — fora de PROJECTS_ROOT.
 
@@ -425,6 +452,11 @@ async def open_absolute_path(payload: OpenPathIn, request: Request) -> dict[str,
     a fronteira de segurança aqui é o `PathGuard` (autorização explícita por
     caminho), não `resolve()`. O registro em `ProjectRecord` é o que faz essa
     pasta aparecer na Central de Projetos depois de aberta.
+
+    Restrita a `AdminDep` (dono da instância / canal de serviço): o
+    `PathGuard.allow()` abaixo concede acesso de leitura a QUALQUER caminho do
+    host para o processo inteiro, não só para quem pediu — não é algo que uma
+    sessão comum (`viewer`/`editor`) deveria poder disparar.
     """
     from eltanix.workspace.inspector import ProjectInspector
     from eltanix.workspace.path_guard import default_path_guard
@@ -436,6 +468,7 @@ async def open_absolute_path(payload: OpenPathIn, request: Request) -> dict[str,
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Caminho não encontrado ou não é diretório: {payload.path}",
         )
+    _reject_filesystem_root(alvo)
 
     default_path_guard.allow(alvo)
 
@@ -507,9 +540,12 @@ async def open_absolute_path(payload: OpenPathIn, request: Request) -> dict[str,
     }
 
 
-@router.post("/inspect-path")
+@router.post("/inspect-path", dependencies=[AdminDep])
 async def inspect_path(payload: InspectPathIn, request: Request) -> dict[str, Any]:
-    """Inspeciona metadados, stack e resumo executivo de qualquer pasta antes de vincular."""
+    """Inspeciona metadados, stack e resumo executivo de qualquer pasta antes
+    de vincular. Restrita a `AdminDep`: lê arquivos (`package.json`,
+    manifestos etc.) de qualquer diretório do host que o admin apontar, o
+    mesmo raio de alcance de `/open-path` — ver o comentário lá."""
     from eltanix.workspace.inspector import ProjectInspector
 
     projects_root = _projects_root(request)
@@ -535,9 +571,13 @@ async def inspect_path(payload: InspectPathIn, request: Request) -> dict[str, An
     }
 
 
-@router.post("/filesystem/browse")
+@router.post("/filesystem/browse", dependencies=[AdminDep])
 async def browse_filesystem(payload: BrowsePathIn, request: Request) -> dict[str, Any]:
-    """Lista pastas e raízes do sistema de arquivos para o explorador visual de projetos."""
+    """Lista pastas e raízes do sistema de arquivos para o explorador visual
+    de projetos. Restrita a `AdminDep`: `_list_system_roots` devolve de
+    propósito TODA letra de drive (Windows) ou `/` (Unix), e a listagem em si
+    enumera o conteúdo de qualquer diretório do host — uma sessão comum não
+    deveria conseguir varrer o disco inteiro pela IDE."""
     projects_root = _projects_root(request)
     roots = _list_system_roots(projects_root)
 
@@ -603,6 +643,10 @@ async def browse_filesystem(payload: BrowsePathIn, request: Request) -> dict[str
         "breadcrumbs": breadcrumbs,
         "roots": roots,
         "directories": dirs[:120],
+        # Sem isto o cliente não tinha como saber que a lista foi cortada —
+        # uma pasta com mais de 120 subpastas escondia o resto em silêncio.
+        "truncated": len(dirs) > 120,
+        "total_directories": len(dirs),
     }
 
 

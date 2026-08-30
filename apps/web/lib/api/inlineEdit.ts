@@ -90,7 +90,11 @@ export interface InlineEditApplyRequest {
   path: string;
   before: string;
   after: string;
-  hunks: InlineEditHunk[];
+  // Os hunks NÃO vão no payload — o backend os recalcula a partir de
+  // `before`/`after` (mesmo `split_hunks` usado para gerá-los), em vez de
+  // confiar numa lista vinda do cliente que poderia estar fora de ordem,
+  // sobreposta, ou simplesmente não reconstruir `after`. Só os ids aceitos
+  // (que o servidor recomputa e cruza) precisam viajar.
   accepted_ids: string[];
 }
 

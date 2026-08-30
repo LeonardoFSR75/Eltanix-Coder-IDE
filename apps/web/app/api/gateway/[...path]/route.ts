@@ -113,6 +113,16 @@ async function proxy(request: Request, { params }: Params): Promise<Response> {
   const upstreamType = upstream.headers.get("content-type");
   if (upstreamType) responseHeaders.set("content-type", upstreamType);
 
+  // Repassa outros cabeçalhos de resposta que o cliente pode precisar ler —
+  // antes só `content-type` passava, então `Content-Disposition` (download
+  // de arquivo) e `Retry-After` (429 do rate limit do editor, ex.:
+  // `context.py::_guard_editor_ai_rate`) desapareciam no meio do caminho.
+  const passthrough = ["content-disposition", "retry-after"];
+  for (const name of passthrough) {
+    const value = upstream.headers.get(name);
+    if (value) responseHeaders.set(name, value);
+  }
+
   if (upstreamType?.includes("text/event-stream")) {
     responseHeaders.set("cache-control", "no-cache");
     responseHeaders.set("connection", "keep-alive");

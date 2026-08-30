@@ -26,6 +26,16 @@ export default defineConfig({
     // Docker inteira, ver e2e/README ou apps/web/CLAUDE.md) — sem isto, o
     // glob padrão de spec do Vitest as pega também e elas quebram, porque
     // usam o `test()`/`test.use()` do @playwright/test, não do Vitest.
-    exclude: ["**/node_modules/**", "**/dist/**", "e2e/**"],
+    // `.claude/worktrees/**` são cópias temporárias do próprio repo criadas
+    // por agentes (`EnterWorktree`) — sem excluir, o Vitest roda a suíte
+    // inteira DUAS vezes (uma por cópia), o que também dobra o tempo de
+    // execução e reporta falhas fantasmas vindas de código já obsoleto lá
+    // dentro.
+    exclude: ["**/node_modules/**", "**/dist/**", "e2e/**", "**/.claude/**"],
+    // Padrão do Vitest 4 é 5s — curto demais para specs com `userEvent`
+    // (várias interações de teclado/clique em sequência) rodando sob carga
+    // paralela; a suíte ficava com falhas por timeout que só reproduziam
+    // rodando o arquivo isolado.
+    testTimeout: 15_000,
   },
 });

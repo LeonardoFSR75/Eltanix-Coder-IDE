@@ -125,7 +125,7 @@ export function useGutterIntelligence(opts: {
     void (async () => {
       const [blame, coverage, cve] = await Promise.all([
         layers.blame
-          ? getBlame(project, path).catch(() => null)
+          ? getBlame(project, path, "HEAD", controller.signal).catch(() => null)
           : Promise.resolve(null),
         layers.coverage
           ? getCoverage(project, path, controller.signal).catch(() => null)

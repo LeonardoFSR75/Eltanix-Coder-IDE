@@ -90,6 +90,10 @@ export interface FsBrowseResult {
   breadcrumbs: { name: string; path: string }[];
   roots: FsRoot[];
   directories: FsDirectory[];
+  // Quando `true`, `directories` foi cortada em 120 entradas — há mais
+  // subpastas do que o listado (`total_directories` diz quantas ao todo).
+  truncated?: boolean;
+  total_directories?: number;
 }
 
 export async function listProjects(): Promise<ProjectRecord[]> {

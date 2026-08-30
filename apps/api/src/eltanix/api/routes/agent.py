@@ -18,7 +18,6 @@ from eltanix.agent.approval_policy_config import load_approval_policy
 from eltanix.agent.inline_edit_hunks import (
     apply_hunks,
     count_changed_lines,
-    hunk_from_dict,
     hunk_to_dict,
     split_hunks,
 )
@@ -390,7 +389,6 @@ class InlineEditApplyRequest(BaseModel):
     path: str = Field(min_length=1)
     before: str = Field(max_length=200_000)
     after: str = Field(max_length=200_000)
-    hunks: list[dict[str, Any]] = Field(default_factory=list, max_length=400)
     accepted_ids: list[str] = Field(default_factory=list, max_length=400)
 
 
@@ -400,7 +398,18 @@ async def inline_edit_apply(
 ) -> dict[str, Any]:
     """Grava o arquivo aplicando só os hunks aceitos (Cmd+K nível 2). O
     `before` recebido tem que ainda bater com o arquivo em disco — senão 409
-    (o arquivo mudou desde a geração)."""
+    (o arquivo mudou desde a geração).
+
+    Os hunks são RECALCULADOS aqui a partir de `before`/`after` — o mesmo
+    `split_hunks` usado para gerá-los em `/inline-edit/stream` — em vez de
+    aceitar a lista de hunks que o cliente mandar de volta. `before`/`after`
+    já passam pelo `max_length=200_000` do Pydantic e o `before` é checado
+    contra o disco logo abaixo; um `hunks` vindo do payload não teria
+    nenhuma dessas garantias (índices fora de ordem, sobrepostos, ou que
+    simplesmente não reconstroem `after`), e o único uso real do resultado é
+    reconstruir texto a partir de linhas de `before`/`after` que o servidor
+    já tem. `split_hunks` é determinístico para o mesmo par, então os `id`
+    (`h1`, `h2`, ...) batem com os que o frontend mostrou na revisão."""
     raiz = settings.effective_projects_root
     if raiz is None:
         raise HTTPException(
@@ -429,7 +438,7 @@ async def inline_edit_apply(
             detail="O arquivo mudou desde a geração da edição. Recarregue e refaça.",
         )
 
-    hunks = [hunk_from_dict(h) for h in payload.hunks]
+    hunks = split_hunks(payload.before, payload.after)
     aceitos = {h.id for h in hunks} & set(payload.accepted_ids)
     todos = {h.id for h in hunks}
     final = (

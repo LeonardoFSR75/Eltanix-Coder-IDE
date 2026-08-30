@@ -27,14 +27,10 @@ import {
   type GutterLayers,
 } from "@/lib/use-gutter-intelligence";
 import { readFile, readFileOrNull, writeFile } from "@/lib/api/workspace";
-import {
-  discardChanges as discardGitChanges,
-  getFileVersions,
-} from "@/lib/api/git";
+import { getFileVersions } from "@/lib/api/git";
 
 import { Breadcrumbs } from "@/components/ide/Breadcrumbs";
 import { InlineDiffApprovalBar } from "@/components/ide/InlineDiffApprovalBar";
-import { EditorBrowserView } from "./EditorBrowserView";
 
 
 // O nome da linguagem no nosso catálogo nem sempre é o id do Monaco.
@@ -102,6 +98,55 @@ export function autoDetectLanguage(filePath: string, fileContent?: string): stri
   return "plaintext";
 }
 
+/** Aspas simples POSIX em volta de um caminho, pra colar seguro num comando
+ * de shell — o terminal do sandbox é bash. Sem isto, o botão ▶ montava
+ * `python ${path}` cru: um nome de arquivo com espaço já quebrava o comando,
+ * e um nome com `;`/`&&`/backtick (de um repo clonado de fonte não confiável,
+ * ou escrito pelo próprio agente) executava algo além do arquivo — sem o
+ * usuário ter digitado nada, só clicado em ▶. */
+function shellQuote(path: string): string {
+  return `'${path.replace(/'/g, `'\\''`)}'`;
+}
+
+// ── Registro compartilhado do ghost text (ADR 0014) ─────────────────────────
+//
+// `monaco.languages.registerInlineCompletionsProvider` é GLOBAL: é o mesmo
+// objeto `monaco` para todo `<MonacoEditor>` da página, porque o loader do
+// `@monaco-editor/react` carrega o módulo uma vez só e reusa a instância.
+// Registrar um provider por instância de `Editor` (split view, várias abas)
+// fazia o Monaco chamar TODOS eles a cada tecla — N chamadas de LLM
+// redundantes por edição, e o provider de um painel podia responder com o
+// `project`/`path` de outro (o último a montar "vencia" via um ref
+// compartilhado por engano). Aqui há UM único provider para o processo
+// inteiro, registrado uma vez, roteado por `model` do Monaco — que é estável
+// por instância de `Editor` já que `<MonacoEditor>` aqui não usa a prop
+// `path`, então troca de arquivo reaproveita o mesmo model (`setValue`), só
+// remontando quando o próprio painel desmonta.
+type CompletionSlot = {
+  ctxRef: { current: { project: string | null; path: string | null; language: string | null } };
+  abortRef: { current: AbortController | null };
+  acceptCommandId: string;
+  visibleRef: { current: boolean };
+};
+const inlineCompletionSlots = new WeakMap<object, CompletionSlot>();
+// Telemetria por `suggestion_id` — o backend gera um UUID por sugestão
+// (`context.py::completions`), já globalmente único, então não precisa de
+// roteamento por model como o registro acima: uma única Map compartilhada
+// serve todas as instâncias de `Editor` sem risco de colisão.
+const shownCompletions = new Map<
+  string,
+  {
+    shownAt: number;
+    latencyMs: number;
+    chars: number;
+    language: string | null;
+    project: string | null;
+    accepted: boolean;
+    visibleRef: { current: boolean };
+  }
+>();
+let sharedCompletionsProviderRegistered = false;
+
 export function Editor({
   groupId,
   onNavigate,
@@ -130,24 +175,13 @@ export function Editor({
   const group = groups[groupId];
   const path = group?.active ?? null;
 
-  if (path && path.startsWith("browser:")) {
-    const browserUrl = path.slice("browser:".length);
-    return <EditorBrowserView initialUrl={browserUrl} sessionId={activeSessionId || undefined} />;
-  }
-  // Mesma coisa, mas força o modo 🤖 Agente na primeira aba — usado para
-  // URLs que só o serviço de navegador consegue resolver (ex.: porta de um
-  // sandbox via `eltanix-<sessionId>`), nunca alcançáveis por um iframe
-  // direto no navegador real (ver StatusBar.tsx, botões de porta do sandbox).
-  if (path && path.startsWith("browser-agent:")) {
-    const browserUrl = path.slice("browser-agent:".length);
-    return (
-      <EditorBrowserView
-        initialUrl={browserUrl}
-        sessionId={activeSessionId || undefined}
-        initialMode="headless"
-      />
-    );
-  }
+  // As abas `browser:`/`browser-agent:` são roteadas para `EditorBrowserView`
+  // por `EditorGroupView` (que decide qual componente montar) ANTES deste
+  // componente ser instanciado — nunca aqui dentro. Um early return depois
+  // deste ponto, com dezenas de hooks abaixo, quebra as Rules of Hooks assim
+  // que a mesma instância do `Editor` trocar de uma aba de arquivo para uma
+  // aba de browser (grupo reaproveitado, sem remount): React lançaria
+  // "Rendered fewer hooks than expected" no react ~19.
 
   const reveal = globalReveal?.path === path ? globalReveal : null;
   const syncVersion = path ? fileSyncVersion[path] ?? 0 : 0;
@@ -187,25 +221,22 @@ export function Editor({
   });
 
   // Autocompletar inline / ghost text (Onda 1.1, ADR 0014). O provider do
-  // Monaco lê o contexto vivo por ref (o modelo muda de arquivo sem re-registrar
+  // Monaco (compartilhado entre instâncias — ver o registro de módulo acima)
+  // lê o contexto vivo por ref (o modelo muda de arquivo sem re-registrar
   // o provider), aborta a chamada anterior a cada tecla e degrada em silêncio —
   // 204/erro do backend vira simplesmente "nenhuma sugestão".
-  const inlineCompletionsDisposableRef = useRef<any>(null);
+  const registeredCompletionModelRef = useRef<any>(null);
   const completionAbortRef = useRef<AbortController | null>(null);
   const completionCtxRef = useRef<{
     project: string | null;
     path: string | null;
     language: string | null;
   }>({ project: null, path: null, language: null });
-  const shownCompletionsRef = useRef<
-    Map<
-      string,
-      { shownAt: number; latencyMs: number; chars: number; language: string | null; accepted: boolean }
-    >
-  >(new Map());
   // Marca se há ghost text (1.1) na tela agora — o next-edit (1.2) não dispara
   // enquanto uma sugestão inline está visível, e o `Tab` continua sendo do
-  // ghost text nesse caso (precedência da ADR 0015 §6).
+  // ghost text nesse caso (precedência da ADR 0015 §6). Também é o que o
+  // provider compartilhado toca via `CompletionSlot.visibleRef`, para que o
+  // sinal chegue à instância certa em split view.
   const inlineSuggestVisibleRef = useRef(false);
 
   // Predição do próximo edit / "tab to jump" (Onda 1.2, ADR 0015).
@@ -369,7 +400,6 @@ export function Editor({
           path,
           before: inlineEditResult.before,
           after: inlineEditResult.after,
-          hunks: inlineEditResult.hunks,
           accepted_ids: acceptedIds,
         });
         applyInlineEditContent(res.after);
@@ -395,18 +425,21 @@ export function Editor({
   }, [project, path, rawLanguage]);
 
   const registerInlineCompletions = useCallback((editor: any, monaco: any) => {
-    if (inlineCompletionsDisposableRef.current) return;
+    const model = editor.getModel();
+    if (!model || inlineCompletionSlots.has(model)) return;
 
     // Comando sem tecla associada — roda quando o usuário aceita a sugestão
     // (Tab). É o sinal de "accepted" da telemetria de aceitação (ADR 0014 §7).
+    // `editor.addCommand` é genuinamente escopado a ESTE editor pelo próprio
+    // Monaco, então não precisa de roteamento por model como o provider.
     const acceptCommandId = editor.addCommand(0, (_: unknown, suggestionId: string) => {
-      const rec = shownCompletionsRef.current.get(suggestionId);
+      const rec = shownCompletions.get(suggestionId);
       if (!rec) return;
       rec.accepted = true;
       reportCompletionOutcome({
         suggestion_id: suggestionId,
         outcome: "accepted",
-        project: completionCtxRef.current.project,
+        project: rec.project,
         language: rec.language,
         model: null,
         shown_ms: Math.round(performance.now() - rec.shownAt),
@@ -414,17 +447,34 @@ export function Editor({
         chars_suggested: rec.chars,
         chars_accepted: rec.chars,
       });
-      shownCompletionsRef.current.delete(suggestionId);
+      shownCompletions.delete(suggestionId);
     });
+
+    registeredCompletionModelRef.current = model;
+    inlineCompletionSlots.set(model, {
+      ctxRef: completionCtxRef,
+      abortRef: completionAbortRef,
+      acceptCommandId,
+      visibleRef: inlineSuggestVisibleRef,
+    });
+
+    // O provider em si só é registrado uma vez para o processo inteiro — uma
+    // segunda instância de `Editor` só precisa que o SEU model esteja no
+    // `inlineCompletionSlots` acima; o provider já registrado por outra
+    // instância vai encontrá-lo.
+    if (sharedCompletionsProviderRegistered) return;
+    sharedCompletionsProviderRegistered = true;
 
     const provider = {
       provideInlineCompletions: async (model: any, position: any, _c: any, token: any) => {
-        const ctx = completionCtxRef.current;
+        const slot = inlineCompletionSlots.get(model);
+        if (!slot) return { items: [] }; // model sem editor Eltanix vivo — não deveria ocorrer
+        const ctx = slot.ctxRef.current;
         if (!ctx.project || !ctx.path) return { items: [] };
 
-        completionAbortRef.current?.abort();
+        slot.abortRef.current?.abort();
         const controller = new AbortController();
-        completionAbortRef.current = controller;
+        slot.abortRef.current = controller;
 
         // Debounce de 250 ms; uma tecla nova cancela via token do Monaco.
         const proceed = await new Promise<boolean>((resolve) => {
@@ -438,8 +488,12 @@ export function Editor({
 
         const offset = model.getOffsetAt(position);
         const full = model.getValue();
-        const prefix = full.slice(Math.max(0, offset - 8000), offset);
-        const suffix = full.slice(offset, offset + 4000);
+        // Mesmo teto do backend (`completions.py::MAX_PREFIX_CHARS`/
+        // `MAX_SUFFIX_CHARS`) — mandar mais do que isso só duplicava o
+        // payload de toda tecla digitada pra ser cortado de novo do outro
+        // lado, sem nenhum contexto a mais chegando ao modelo.
+        const prefix = full.slice(Math.max(0, offset - 4000), offset);
+        const suffix = full.slice(offset, offset + 2000);
         if (!prefix.trim() && !suffix.trim()) return { items: [] };
 
         let result;
@@ -453,12 +507,14 @@ export function Editor({
         }
         if (!result || !result.completion) return { items: [] };
 
-        shownCompletionsRef.current.set(result.suggestion_id, {
+        shownCompletions.set(result.suggestion_id, {
           shownAt: performance.now(),
           latencyMs: result.latency_ms,
           chars: result.completion.length,
           language: ctx.language,
+          project: ctx.project,
           accepted: false,
+          visibleRef: slot.visibleRef,
         });
 
         return {
@@ -471,28 +527,31 @@ export function Editor({
                 position.lineNumber,
                 position.column,
               ),
-              command: { id: acceptCommandId, title: "", arguments: [result.suggestion_id] },
+              command: { id: slot.acceptCommandId, title: "", arguments: [result.suggestion_id] },
             },
           ],
           enableForwardStability: true,
         };
       },
       handleItemDidShow: (_completions: any, item: any) => {
-        inlineSuggestVisibleRef.current = true;
         const id = item?.command?.arguments?.[0];
-        const rec = id ? shownCompletionsRef.current.get(id) : undefined;
-        if (rec) rec.shownAt = performance.now();
+        const rec = id ? shownCompletions.get(id) : undefined;
+        if (rec) {
+          rec.visibleRef.current = true;
+          rec.shownAt = performance.now();
+        }
       },
       freeInlineCompletions: (completions: any) => {
-        inlineSuggestVisibleRef.current = false;
         const id = completions?.items?.[0]?.command?.arguments?.[0];
         if (!id) return;
-        const rec = shownCompletionsRef.current.get(id);
-        if (rec && !rec.accepted) {
+        const rec = shownCompletions.get(id);
+        if (!rec) return;
+        rec.visibleRef.current = false;
+        if (!rec.accepted) {
           reportCompletionOutcome({
             suggestion_id: id,
             outcome: "ignored",
-            project: completionCtxRef.current.project,
+            project: rec.project,
             language: rec.language,
             model: null,
             shown_ms: Math.round(performance.now() - rec.shownAt),
@@ -500,22 +559,25 @@ export function Editor({
             chars_suggested: rec.chars,
             chars_accepted: 0,
           });
-          shownCompletionsRef.current.delete(id);
+          shownCompletions.delete(id);
         }
       },
     };
 
     const languages = Array.from(new Set([...Object.values(MONACO_LANGUAGE), "plaintext"]));
-    inlineCompletionsDisposableRef.current = monaco.languages.registerInlineCompletionsProvider(
-      languages,
-      provider,
-    );
+    monaco.languages.registerInlineCompletionsProvider(languages, provider);
   }, []);
 
   useEffect(() => {
     return () => {
-      inlineCompletionsDisposableRef.current?.dispose?.();
-      inlineCompletionsDisposableRef.current = null;
+      // O provider Monaco em si é compartilhado (ver comentário acima) e
+      // nunca é desregistrado — só o slot desta instância some, senão o
+      // provider (que continua vivo para as outras instâncias) ficaria
+      // roteando para um `ctxRef`/`abortRef` de um editor já desmontado.
+      if (registeredCompletionModelRef.current) {
+        inlineCompletionSlots.delete(registeredCompletionModelRef.current);
+        registeredCompletionModelRef.current = null;
+      }
       completionAbortRef.current?.abort();
     };
   }, []);
@@ -659,6 +721,13 @@ export function Editor({
   useEffect(() => {
     const onKeyDownCapture = (event: KeyboardEvent) => {
       if (!nextEditRef.current || groupId !== activeGroupId) return;
+      // Sem isto, um Tab digitado em QUALQUER lugar da página (chat do
+      // agente, campo de busca, o próprio textarea do Cmd+K) com uma
+      // sugestão pendente aplicava o edit no arquivo — o listener é em
+      // `window`/capture só para vencer o Tab-indenta nativo do Monaco, não
+      // para agir fora do editor. `hasTextFocus()` é o mesmo teste que o
+      // próprio Monaco usa para saber se é o alvo do teclado.
+      if (!editorInstanceRef.current?.hasTextFocus?.()) return;
       if (event.key === "Tab" && !inlineSuggestVisibleRef.current) {
         event.preventDefault();
         event.stopPropagation();
@@ -850,30 +919,28 @@ export function Editor({
     }
   }, [project, path, content, saving, lsp, groupId, markDirty, rawLanguage]);
 
-  const discardChanges = useCallback(async () => {
+  // Descarta só o BUFFER do editor (edição não salva, `content` != o que foi
+  // lido/salvo por último) — nunca toca o arquivo em disco nem o Git. Antes
+  // este botão também disparava `discardGitChanges` (== `git checkout --`),
+  // que reverte o disco para o HEAD; para um arquivo salvo mas ainda não
+  // commitado isso apaga trabalho que o usuário achava seguro só porque
+  // tinha apertado Ctrl+S — sem relação com o que o confirm() promete
+  // ("alterações NÃO SALVAS"). Reverter para o HEAD do Git é uma operação
+  // distinta e mais destrutiva; se for reintroduzida, precisa do próprio
+  // texto de confirmação e viver no painel de Git, não emboscada aqui.
+  const discardChanges = useCallback(() => {
     if (!path || !project) return;
-    if (!window.confirm(`Descartar as alterações não salvas de "${path}"? Essa ação não pode ser desfeita.`)) {
+    if (
+      !window.confirm(
+        `Descartar as alterações não salvas de "${path}" no editor? Essa ação não pode ser desfeita.`,
+      )
+    ) {
       return;
     }
     setContent(originalRef.current);
     setDirty(false);
     markDirty(path, false, groupId);
     setBuffer(project, path, { content: originalRef.current, original: originalRef.current, language: rawLanguage });
-
-    try {
-      await discardGitChanges(project, [path]);
-
-      logAuditEvent({
-        actor: "Usuário Desenvolvedor (IDE)",
-        module: "IDE",
-        action: "Descarte de Alterações Git",
-        details: `Alterações não salvas do arquivo "${path}" foram descartadas.`,
-        risk_level: "medium",
-        status: "warning",
-      }).catch(() => {});
-    } catch {
-      // Ignora erro se arquivo não estava sob controle do Git
-    }
   }, [path, project, groupId, markDirty, rawLanguage]);
 
   const toggleDiffView = useCallback(async () => {
@@ -956,14 +1023,18 @@ export function Editor({
     return <div className="editor-empty">Selecione um arquivo na árvore à esquerda para editar.</div>;
   }
 
+  // Base em `EDITOR_OPTIONS` (o mesmo objeto que o `DiffView` usa) — antes
+  // este editor tinha um segundo objeto de opções, hand-rolled e sem
+  // `bracketPairColorization`, JetBrains Mono, `smoothScrolling` ou
+  // `padding`, então a superfície principal de edição divergia visualmente
+  // da revisão de diff sem nenhuma razão funcional pra isso. Objeto literal
+  // comum (não `useMemo`) DE PROPÓSITO: este ponto do componente já está
+  // depois do early-return de `!path` logo acima — um hook aqui violaria as
+  // Rules of Hooks assim que `path` virasse null com a MESMA instância do
+  // `Editor` ainda montada (grupo com foco perdendo a última aba).
   const editorOptions = {
-    fontSize: 13,
-    fontFamily: 'ui-monospace, "SF Mono", Menlo, Consolas, monospace',
+    ...EDITOR_OPTIONS,
     minimap: { enabled: showMinimap },
-    scrollBeyondLastLine: false,
-    renderWhitespace: "selection" as const,
-    tabSize: 2,
-    automaticLayout: true,
     // Ghost text (ADR 0014) — o provider inline é registrado no onMount.
     inlineSuggest: { enabled: true },
     // Reservado para os marcadores de CVE (Onda 1.5).
@@ -1150,12 +1221,13 @@ export function Editor({
                 await save();
               }
               setTerminalOpen(true);
+              const quoted = shellQuote(path);
               const cmd =
                 language === "python"
-                  ? `python ${path}`
+                  ? `python ${quoted}`
                   : language === "javascript" || language === "typescript"
-                  ? `node ${path}`
-                  : `./${path}`;
+                  ? `node ${quoted}`
+                  : shellQuote(`./${path}`);
               const evt = new CustomEvent("eltanix:terminal:exec", { detail: { command: cmd } });
               window.dispatchEvent(evt);
             }}

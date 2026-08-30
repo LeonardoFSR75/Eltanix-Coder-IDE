@@ -109,12 +109,16 @@ async def test_create_project_endpoint(tmp_path: Path):
 @pytest.mark.asyncio
 async def test_inspect_and_browse_filesystem_endpoints(tmp_path: Path):
     from httpx import ASGITransport, AsyncClient
-    from eltanix.api.deps import require_session
+    from eltanix.api.deps import require_admin, require_session
     from eltanix.main import create_app
 
     app = create_app()
     app.state.projects_root = tmp_path
     app.dependency_overrides[require_session] = lambda: None
+    # `/inspect-path` e `/filesystem/browse` são restritas a `AdminDep`
+    # (enumeram/leem qualquer diretório do host) — sem este override, o teste
+    # bateria 403 em vez de exercitar o comportamento das rotas.
+    app.dependency_overrides[require_admin] = lambda: None
 
     # Cria pasta de exemplo com package.json
     demo_dir = tmp_path / "meu-app-react"

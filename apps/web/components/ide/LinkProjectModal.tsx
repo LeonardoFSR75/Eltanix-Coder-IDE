@@ -93,27 +93,15 @@ export function LinkProjectModal({
     }
   }, [tab, fsData, carregarFs]);
 
-  // Seletor nativo do sistema operacional (File System Access API)
-  const handleNativeDirectoryPicker = async () => {
-    try {
-      if ("showDirectoryPicker" in window) {
-        // @ts-expect-error - File System Access API nativa do browser
-        const dirHandle = await window.showDirectoryPicker({ mode: "read" });
-        if (dirHandle && dirHandle.name) {
-          addToast(`Pasta selecionada: ${dirHandle.name}`, "info");
-          setSelectedPath(dirHandle.name);
-          void inspecionar(dirHandle.name);
-          void carregarFs(dirHandle.name);
-        }
-      } else {
-        addToast("Seletor nativo não suportado neste navegador. Use o navegador de pastas abaixo.", "warning");
-      }
-    } catch (err: unknown) {
-      if ((err as Error).name !== "AbortError") {
-        addToast("Cancelado ou erro ao selecionar pasta.", "info");
-      }
-    }
-  };
+  // Não há mais um botão de "seletor nativo" (File System Access API) aqui:
+  // `window.showDirectoryPicker()` entrega só o NOME da pasta escolhida,
+  // nunca o caminho absoluto — é assim de propósito, por sandboxing do
+  // browser. Usar `dirHandle.name` como se fosse um caminho vinculava a
+  // pasta errada sempre que outra pasta com o mesmo nome já existisse sob
+  // `PROJECTS_ROOT` (ex.: escolher "D:\work\Sorteador" na janela nativa e a
+  // IDE silenciosamente abrir `PROJECTS_ROOT/Sorteador` no lugar). O
+  // navegador de pastas abaixo (`browseFilesystem`) é a via correta: devolve
+  // caminhos absolutos de verdade, resolvidos no backend.
 
   const handleLinkFolder = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -360,7 +348,7 @@ export function LinkProjectModal({
           {/* ══════════════════ TAB 1: VINCULAR PASTA EXISTENTE ══════════════════ */}
           {tab === "link" && (
             <form onSubmit={handleLinkFolder} style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
-              {/* Seletor Nativo + Atalho */}
+              {/* Atalhos de Raízes/Unidades */}
               <div
                 style={{
                   display: "flex",
@@ -369,27 +357,6 @@ export function LinkProjectModal({
                   flexWrap: "wrap",
                 }}
               >
-                <button
-                  type="button"
-                  onClick={handleNativeDirectoryPicker}
-                  style={{
-                    padding: "0.6rem 1.1rem",
-                    borderRadius: "8px",
-                    backgroundColor: "var(--surface-3, #313244)",
-                    color: "var(--text, #cdd6f4)",
-                    border: "1px solid var(--border, #45475a)",
-                    fontSize: "0.85rem",
-                    fontWeight: 600,
-                    cursor: "pointer",
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "0.5rem",
-                  }}
-                  title="Abrir a janela nativa do Windows Explorer / Finder para selecionar a pasta"
-                >
-                  <span>📁</span> Selecionar Pasta no Windows / SO
-                </button>
-
                 {/* Botões Rápidos de Raízes/Unidades */}
                 {fsData?.roots && (
                   <div style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap" }}>
@@ -614,6 +581,19 @@ export function LinkProjectModal({
                     </div>
                   )}
                 </div>
+                {fsData?.truncated && (
+                  <div
+                    style={{
+                      padding: "0.4rem 0.6rem",
+                      fontSize: "0.75rem",
+                      color: "var(--text-dim, #a6adc8)",
+                      textAlign: "center",
+                    }}
+                  >
+                    Mostrando 120 de {fsData.total_directories} subpastas — digite ou navegue para
+                    dentro para ver o restante.
+                  </div>
+                )}
               </div>
 
               {/* Input manual do caminho absoluto com auto-inspeção */}
