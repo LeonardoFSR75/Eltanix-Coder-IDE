@@ -42,6 +42,24 @@ class _FakeEngine:
         )
         return _FakeCompletionResult(payload={"choices": [{"message": {"content": self.resposta}}]})
 
+    async def stream(self, *, requested_model, params, source, session_id=None):
+        self.chamadas.append(
+            {"requested_model": requested_model, "params": params, "source": source, "stream": True}
+        )
+        # Parte a resposta em pedaços para exercitar o acúmulo do lado da rota.
+        for i in range(0, len(self.resposta), 5):
+            yield {"choices": [{"delta": {"content": self.resposta[i : i + 5]}}]}
+
+
+def _sse_events(text: str) -> list[dict[str, Any]]:
+    import json
+
+    out: list[dict[str, Any]] = []
+    for linha in text.splitlines():
+        if linha.startswith("data: ") and linha != "data: [DONE]":
+            out.append(json.loads(linha[6:]))
+    return out
+
 
 def _write_app_py(root) -> None:
     (root / "src").mkdir()
@@ -193,6 +211,99 @@ def test_requires_auth(client):
         },
     )
     assert resposta.status_code == 401
+
+
+# ── /inline-edit/stream + /inline-edit/apply (Cmd+K nível 2, Onda 1.3) ──
+
+
+def test_stream_emits_tokens_then_done_with_hunks(client):
+    _set_engine(client, "    return a + b + 1")
+
+    resposta = client.post(
+        "/api/agent/inline-edit/stream",
+        json={
+            "project": "demo",
+            "path": "src/app.py",
+            "selected_text": "    return a + b",
+            "instruction": "soma 1",
+            "context_before": "def soma(a, b):\n",
+            "context_after": "",
+        },
+        headers=AUTH,
+    )
+    assert resposta.status_code == 200
+    eventos = _sse_events(resposta.text)
+    tipos = [e["type"] for e in eventos]
+    assert tipos.count("token") >= 1
+    assert tipos[-1] == "done"
+
+    done = eventos[-1]
+    assert done["applied"] is False
+    assert done["new_text"] == "    return a + b + 1"
+    assert isinstance(done["hunks"], list) and len(done["hunks"]) >= 1
+    assert "".join(e["delta"] for e in eventos if e["type"] == "token") == "    return a + b + 1"
+
+
+def test_stream_reports_ambiguous_selection_before_streaming(client):
+    _set_engine(client, "nunca chega a ser usado")
+    resposta = client.post(
+        "/api/agent/inline-edit/stream",
+        json={
+            "project": "demo",
+            "path": "src/app.py",
+            "selected_text": "trecho inexistente",
+            "instruction": "x",
+        },
+        headers=AUTH,
+    )
+    assert resposta.status_code == 409
+
+
+def test_apply_writes_only_accepted_hunks(client, workspace):
+    # before/after com dois blocos trocados; aceita só o primeiro.
+    before = "L1\nL2\nL3\nL4\nL5\n"
+    after = "L1\nX2\nL3\nX4\nL5\n"
+    (workspace / "demo" / "src" / "multi.py").write_text(before)
+
+    from eltanix.agent.inline_edit_hunks import hunk_to_dict, split_hunks
+
+    hunks = [hunk_to_dict(h) for h in split_hunks(before, after)]
+    assert len(hunks) == 2
+
+    resposta = client.post(
+        "/api/agent/inline-edit/apply",
+        json={
+            "project": "demo",
+            "path": "src/multi.py",
+            "before": before,
+            "after": after,
+            "hunks": hunks,
+            "accepted_ids": [hunks[0]["id"]],
+        },
+        headers=AUTH,
+    )
+    assert resposta.status_code == 200
+    corpo = resposta.json()
+    assert corpo["applied"] is True
+    assert corpo["after"] == "L1\nX2\nL3\nL4\nL5\n"
+    assert (workspace / "demo" / "src" / "multi.py").read_text() == "L1\nX2\nL3\nL4\nL5\n"
+
+
+def test_apply_rejects_stale_before(client, workspace):
+    (workspace / "demo" / "src" / "stale.py").write_text("atual no disco\n")
+    resposta = client.post(
+        "/api/agent/inline-edit/apply",
+        json={
+            "project": "demo",
+            "path": "src/stale.py",
+            "before": "conteúdo diferente do disco\n",
+            "after": "qualquer\n",
+            "hunks": [],
+            "accepted_ids": [],
+        },
+        headers=AUTH,
+    )
+    assert resposta.status_code == 409
 
 
 class _FakeRedisPipeline:

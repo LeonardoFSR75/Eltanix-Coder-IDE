@@ -12,7 +12,12 @@ import { acceptFile, revertFile } from "@/lib/api/agent";
 import { logAuditEvent } from "@/lib/api/audit";
 import { reportCompletionOutcome, requestCompletion } from "@/lib/api/completions";
 import { requestNextEdit, type NextEditResult } from "@/lib/api/nextEdit";
-import { requestInlineEdit, type InlineEditResult } from "@/lib/api/inlineEdit";
+import {
+  applyInlineEditHunks,
+  streamInlineEdit,
+  type InlineEditResult,
+} from "@/lib/api/inlineEdit";
+import { InlineEditHunkReview } from "@/components/ide/InlineEditHunkReview";
 import { readFile, readFileOrNull, writeFile } from "@/lib/api/workspace";
 import {
   discardChanges as discardGitChanges,
@@ -207,6 +212,9 @@ export function Editor({
   const [inlineEditBusy, setInlineEditBusy] = useState(false);
   const [inlineEditError, setInlineEditError] = useState<string | null>(null);
   const [inlineEditResult, setInlineEditResult] = useState<InlineEditResult | null>(null);
+  // Texto da substituição chegando em streaming (Cmd+K nível 2, Onda 1.3) —
+  // mostrado enquanto o modelo gera, antes do review.
+  const [inlineEditStreamText, setInlineEditStreamText] = useState("");
   // Aborta a chamada `POST /api/agent/inline-edit` em voo quando o usuário
   // cancela o Cmd+K (Esc/"Cancelar") — o backend, ao ver a conexão cair,
   // cancela o `engine.complete()`, então nenhum token é gasto à toa.
@@ -269,8 +277,9 @@ export function Editor({
     inlineEditAbortRef.current = controller;
     setInlineEditBusy(true);
     setInlineEditError(null);
+    setInlineEditStreamText("");
     try {
-      const result = await requestInlineEdit(
+      const result = await streamInlineEdit(
         {
           project,
           path,
@@ -279,6 +288,7 @@ export function Editor({
           context_before: inlineEditSelection.contextBefore,
           context_after: inlineEditSelection.contextAfter,
         },
+        { onToken: (delta) => setInlineEditStreamText((prev) => prev + delta) },
         controller.signal,
       );
       if (result.applied) {
@@ -297,9 +307,12 @@ export function Editor({
     } finally {
       if (inlineEditAbortRef.current === controller) inlineEditAbortRef.current = null;
       setInlineEditBusy(false);
+      setInlineEditStreamText("");
     }
   }, [inlineEditSelection, project, path, inlineEditInstruction, applyInlineEditContent]);
 
+  // Aceita a substituição inteira (usado quando há um único hunk — o
+  // `InlineEditHunkReview` cuida do caso de vários).
   const acceptInlineEdit = useCallback(async () => {
     if (!inlineEditResult || !project || !path) return;
     setInlineEditBusy(true);
@@ -315,6 +328,34 @@ export function Editor({
       setInlineEditBusy(false);
     }
   }, [inlineEditResult, project, path, applyInlineEditContent]);
+
+  // Aplica só os hunks marcados (Cmd+K nível 2). O backend grava o arquivo e
+  // devolve o conteúdo final.
+  const acceptInlineEditHunks = useCallback(
+    async (acceptedIds: string[]) => {
+      if (!inlineEditResult || !project || !path) return;
+      setInlineEditBusy(true);
+      setInlineEditError(null);
+      try {
+        const res = await applyInlineEditHunks({
+          project,
+          path,
+          before: inlineEditResult.before,
+          after: inlineEditResult.after,
+          hunks: inlineEditResult.hunks,
+          accepted_ids: acceptedIds,
+        });
+        applyInlineEditContent(res.after);
+        setInlineEditResult(null);
+        setInlineEditSelection(null);
+      } catch (err) {
+        setInlineEditError(err instanceof Error ? err.message : String(err));
+      } finally {
+        setInlineEditBusy(false);
+      }
+    },
+    [inlineEditResult, project, path, applyInlineEditContent],
+  );
 
   const rejectInlineEdit = useCallback(() => {
     setInlineEditResult(null);
@@ -1117,19 +1158,30 @@ export function Editor({
         />
       ) : inlineEditResult ? (
         <div className="editor-container-grid">
-          <div className="inline-edit-review-banner">
-            ✨ Edição inline — {inlineEditResult.changed_lines} linha(s) alterada(s). Revise antes
-            de gravar no projeto.
-          </div>
-          <DiffView
-            original={inlineEditResult.before}
-            modified={inlineEditResult.after}
-            language={rawLanguage}
-            onAccept={() => void acceptInlineEdit()}
-            onReject={rejectInlineEdit}
-            busy={inlineEditBusy}
-            zebra={showZebra}
-          />
+          {inlineEditResult.hunks.length > 1 ? (
+            <InlineEditHunkReview
+              hunks={inlineEditResult.hunks}
+              busy={inlineEditBusy}
+              onApply={(ids) => void acceptInlineEditHunks(ids)}
+              onCancel={rejectInlineEdit}
+            />
+          ) : (
+            <>
+              <div className="inline-edit-review-banner">
+                ✨ Edição inline — {inlineEditResult.changed_lines} linha(s) alterada(s). Revise
+                antes de gravar no projeto.
+              </div>
+              <DiffView
+                original={inlineEditResult.before}
+                modified={inlineEditResult.after}
+                language={rawLanguage}
+                onAccept={() => void acceptInlineEdit()}
+                onReject={rejectInlineEdit}
+                busy={inlineEditBusy}
+                zebra={showZebra}
+              />
+            </>
+          )}
         </div>
       ) : (
         <div className="editor-container-grid">
@@ -1199,6 +1251,9 @@ export function Editor({
                   }
                 }}
               />
+              {inlineEditBusy && inlineEditStreamText && (
+                <pre className="inline-edit-stream-preview">{inlineEditStreamText}</pre>
+              )}
               {inlineEditError && <div className="inline-edit-prompt-error">{inlineEditError}</div>}
               <div className="inline-edit-prompt-actions">
                 <button

@@ -8493,6 +8493,107 @@ button.primary:hover:not(:disabled) {
   color: var(--text-dim);
 }
 
+/* Preview em streaming da substituição do Cmd+K nível 2 (Onda 1.3) — o texto
+   bruto que o modelo gera, mostrado dentro do overlay de prompt enquanto
+   `inlineEditBusy`. */
+.inline-edit-stream-preview {
+  margin: 0;
+  max-height: 160px;
+  overflow: auto;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 11px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+}
+
+/* Revisão hunk a hunk da edição inline (Cmd+K nível 2, Onda 1.3) — ocupa a
+   área do editor no lugar do DiffView quando a substituição tem >1 bloco. */
+.hunk-review {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg);
+}
+
+.hunk-review-head {
+  flex: 0 0 auto;
+  padding: 8px 14px;
+  font-size: 11px;
+  color: var(--text-dim);
+  border-bottom: 1px solid var(--border);
+}
+
+.hunk-review-list {
+  flex: 1 1 auto;
+  overflow: auto;
+  padding: 10px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.hunk-item {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 8px;
+  align-items: start;
+  padding: 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  cursor: pointer;
+}
+
+.hunk-item.off {
+  opacity: 0.5;
+}
+
+.hunk-item input {
+  margin-top: 2px;
+}
+
+.hunk-diff {
+  margin: 0;
+  overflow-x: auto;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: pre;
+}
+
+.hunk-ln {
+  display: block;
+}
+
+.hunk-ln.ctx {
+  color: var(--text-dim);
+}
+
+.hunk-ln.del {
+  color: var(--danger, #f87171);
+  background: color-mix(in srgb, var(--danger, #f87171) 12%, transparent);
+}
+
+.hunk-ln.add {
+  color: var(--success, #4ade80);
+  background: color-mix(in srgb, var(--success, #22c55e) 14%, transparent);
+}
+
+.hunk-review-actions {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 8px;
+  padding: 8px 14px;
+  border-top: 1px solid var(--border);
+}
+
 /* Predição do próximo edit / "tab to jump" (Onda 1.2, ADR 0015) — card
    flutuante embaixo à direita, longe do pill do agente (topo) e do Cmd+K
    (topo-esquerda). */

@@ -15,6 +15,13 @@ from pydantic import BaseModel, Field
 from eltanix.agent import session_store
 from eltanix.agent.approval_policy import evaluate_policy
 from eltanix.agent.approval_policy_config import load_approval_policy
+from eltanix.agent.inline_edit_hunks import (
+    apply_hunks,
+    count_changed_lines,
+    hunk_from_dict,
+    hunk_to_dict,
+    split_hunks,
+)
 from eltanix.agent.prompts import compose_system_prompt
 from eltanix.agent.runner import AgentRunner, AgentSession
 from eltanix.agent.slash_commands import SLASH_COMMANDS
@@ -171,23 +178,29 @@ class InlineEditRequest(BaseModel):
     context_after: str = Field(default="", max_length=4000)
 
 
-@router.post("/inline-edit")
-async def inline_edit(
-    payload: InlineEditRequest, request: Request, settings: SettingsDep, engine: EngineDep
-) -> dict[str, Any]:
-    """Edição inline (Fase 7 do upgrade do agente, estilo Cmd+K) — fora do
-    grafo do LangGraph de propósito: uma seleção pontual não precisa de
-    sessão/checkpoint completo, só de uma chamada de LLM isolada (mesmo
-    padrão de `agent/review_common.py`) sobre o trecho selecionado.
+def _inline_edit_messages(payload: InlineEditRequest) -> list[dict[str, str]]:
+    return [
+        {"role": "system", "content": _INLINE_EDIT_SYSTEM_PROMPT},
+        {
+            "role": "user",
+            "content": (
+                f"Arquivo: {payload.path}\n\n"
+                f"Contexto antes:\n{payload.context_before}\n\n"
+                f"Trecho selecionado:\n{payload.selected_text}\n\n"
+                f"Contexto depois:\n{payload.context_after}\n\n"
+                f"Instrução: {payload.instruction}"
+            ),
+        },
+    ]
 
-    Reaproveita `ApprovalPolicy`/`evaluate_policy` já existentes: se o
-    caminho editado bate numa regra de auto-aprovação, escreve direto;
-    senão, nunca escreve — devolve o diff para o frontend mostrar a barra de
-    aceitar/rejeitar (mesmo componente `InlineDiffApprovalBar` já usado para
-    revisar o diff de uma sessão do agente).
-    """
-    await _guard_inline_edit_rate(request)
 
+async def _prepare_inline_edit(
+    payload: InlineEditRequest, request: Request, settings: SettingsDep
+) -> tuple[Path, WorkspaceFS]:
+    """Resolve raiz + projeto, checa RBAC `editor`, lê o arquivo e garante que a
+    seleção aparece uma única vez. Erros viram `HTTPException` — roda antes de
+    abrir qualquer `StreamingResponse`, senão o status certo se perderia no
+    meio do stream."""
     raiz = settings.effective_projects_root
     if raiz is None:
         raise HTTPException(
@@ -210,9 +223,7 @@ async def inline_edit(
     except (PathEscapeError, FileNotFoundError, FileTooLargeError, ValueError) as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
-    atual_norm = atual.replace("\r\n", "\n")
-    selecao_norm = payload.selected_text.replace("\r\n", "\n")
-    if atual_norm.count(selecao_norm) != 1:
+    if atual.replace("\r\n", "\n").count(payload.selected_text.replace("\r\n", "\n")) != 1:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=(
@@ -220,48 +231,15 @@ async def inline_edit(
                 "o arquivo pode ter mudado. Recarregue e tente de novo."
             ),
         )
+    return root, fs
 
-    try:
-        resultado = await await_or_abandon_on_disconnect(
-            request,
-            engine.complete(
-                requested_model="coding",
-                params={
-                    "messages": [
-                        {"role": "system", "content": _INLINE_EDIT_SYSTEM_PROMPT},
-                        {
-                            "role": "user",
-                            "content": (
-                                f"Arquivo: {payload.path}\n\n"
-                                f"Contexto antes:\n{payload.context_before}\n\n"
-                                f"Trecho selecionado:\n{payload.selected_text}\n\n"
-                                f"Contexto depois:\n{payload.context_after}\n\n"
-                                f"Instrução: {payload.instruction}"
-                            ),
-                        },
-                    ],
-                    "temperature": 0,
-                },
-                source="ide:inline_edit",
-            ),
-        )
-    except asyncio.CancelledError:
-        # Cliente desistiu — nada a devolver, a resposta nem vai ser lida.
-        log.info("agent.inline_edit.abandoned", path=payload.path)
-        raise
-    except Exception as exc:
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Falha ao chamar o modelo: {exc}"
-        ) from exc
 
-    escolha = (resultado.payload.get("choices") or [{}])[0]
-    novo_texto = _strip_fence((escolha.get("message") or {}).get("content") or "")
-    if not novo_texto.strip():
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="O modelo não devolveu uma substituição válida.",
-        )
-
+def _finalize_inline_edit(
+    *, root: Path, fs: WorkspaceFS, payload: InlineEditRequest, novo_texto: str
+) -> dict[str, Any]:
+    """Do texto proposto pelo modelo até a resposta: diff, hunks e a
+    auto-aprovação da `ApprovalPolicy` (escreve o arquivo se bater numa regra).
+    Compartilhado entre `/inline-edit` e `/inline-edit/stream`."""
     ctx = ToolContext(session_id="inline-edit", workspace_root=root, fs=fs)
     proposto = compute_proposed_diff(
         ctx,
@@ -273,6 +251,8 @@ async def inline_edit(
             status_code=status.HTTP_409_CONFLICT,
             detail="Não foi possível calcular o diff da edição proposta.",
         )
+
+    hunks = split_hunks(proposto.before, proposto.after)
 
     policy = load_approval_policy(root)
     pending: PendingApproval = {
@@ -300,8 +280,167 @@ async def inline_edit(
         "after": proposto.after,
         "diff": proposto.diff,
         "changed_lines": proposto.changed_lines,
+        "hunks": [hunk_to_dict(h) for h in hunks],
         "applied": aplicado,
         "auto_approved_reason": motivo_auto_aprovacao,
+    }
+
+
+@router.post("/inline-edit")
+async def inline_edit(
+    payload: InlineEditRequest, request: Request, settings: SettingsDep, engine: EngineDep
+) -> dict[str, Any]:
+    """Edição inline (Fase 7 do upgrade do agente, estilo Cmd+K) — fora do
+    grafo do LangGraph de propósito: uma seleção pontual não precisa de
+    sessão/checkpoint completo, só de uma chamada de LLM isolada (mesmo
+    padrão de `agent/review_common.py`) sobre o trecho selecionado.
+
+    Reaproveita `ApprovalPolicy`/`evaluate_policy` já existentes: se o
+    caminho editado bate numa regra de auto-aprovação, escreve direto;
+    senão, nunca escreve — devolve o diff (e os `hunks`) para o frontend
+    mostrar a barra de aceitar/rejeitar. Ver `/inline-edit/stream` para a
+    versão nível 2 (streaming + hunk a hunk).
+    """
+    await _guard_inline_edit_rate(request)
+    root, fs = await _prepare_inline_edit(payload, request, settings)
+
+    try:
+        resultado = await await_or_abandon_on_disconnect(
+            request,
+            engine.complete(
+                requested_model="coding",
+                params={"messages": _inline_edit_messages(payload), "temperature": 0},
+                source="ide:inline_edit",
+            ),
+        )
+    except asyncio.CancelledError:
+        # Cliente desistiu — nada a devolver, a resposta nem vai ser lida.
+        log.info("agent.inline_edit.abandoned", path=payload.path)
+        raise
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Falha ao chamar o modelo: {exc}"
+        ) from exc
+
+    escolha = (resultado.payload.get("choices") or [{}])[0]
+    novo_texto = _strip_fence((escolha.get("message") or {}).get("content") or "")
+    if not novo_texto.strip():
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="O modelo não devolveu uma substituição válida.",
+        )
+    return _finalize_inline_edit(root=root, fs=fs, payload=payload, novo_texto=novo_texto)
+
+
+@router.post("/inline-edit/stream")
+async def inline_edit_stream(
+    payload: InlineEditRequest, request: Request, settings: SettingsDep, engine: EngineDep
+):
+    """Cmd+K nível 2 (Onda 1.3): a substituição chega em streaming
+    (`{"type": "token", "delta": "..."}`), e no fim um `{"type": "done", ...}`
+    com o mesmo shape de `/inline-edit` mais `hunks` para aceitar/rejeitar
+    bloco a bloco via `/inline-edit/apply`. A auto-aprovação da `ApprovalPolicy`
+    continua valendo (escreve e manda `applied: true`)."""
+    await _guard_inline_edit_rate(request)
+    root, fs = await _prepare_inline_edit(payload, request, settings)
+
+    async def eventos() -> AsyncIterator[str]:
+        partes: list[str] = []
+        try:
+            async for chunk in engine.stream(
+                requested_model="coding",
+                params={"messages": _inline_edit_messages(payload), "temperature": 0},
+                source="ide:inline_edit",
+            ):
+                for escolha in chunk.get("choices") or []:
+                    delta = (escolha.get("delta") or {}).get("content")
+                    if delta:
+                        partes.append(str(delta))
+                        yield sse_event({"type": "token", "delta": str(delta)}, ensure_ascii=False)
+            novo_texto = _strip_fence("".join(partes))
+            if not novo_texto.strip():
+                yield sse_event(
+                    {"type": "error", "detail": "O modelo não devolveu uma substituição válida."},
+                    ensure_ascii=False,
+                )
+            else:
+                final = _finalize_inline_edit(
+                    root=root, fs=fs, payload=payload, novo_texto=novo_texto
+                )
+                yield sse_event({"type": "done", **final}, default=str, ensure_ascii=False)
+        except HTTPException as exc:
+            yield sse_event({"type": "error", "detail": exc.detail}, ensure_ascii=False)
+        except Exception as exc:
+            log.warning("agent.inline_edit.stream_failed", path=payload.path, error=str(exc)[:200])
+            yield sse_event(
+                {"type": "error", "detail": f"Falha ao gerar a edição: {exc}"}, ensure_ascii=False
+            )
+        finally:
+            yield SSE_DONE
+
+    return StreamingResponse(
+        eventos(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+class InlineEditApplyRequest(BaseModel):
+    project: str = Field(min_length=1)
+    path: str = Field(min_length=1)
+    before: str = Field(max_length=200_000)
+    after: str = Field(max_length=200_000)
+    hunks: list[dict[str, Any]] = Field(default_factory=list, max_length=400)
+    accepted_ids: list[str] = Field(default_factory=list, max_length=400)
+
+
+@router.post("/inline-edit/apply")
+async def inline_edit_apply(
+    payload: InlineEditApplyRequest, request: Request, settings: SettingsDep
+) -> dict[str, Any]:
+    """Grava o arquivo aplicando só os hunks aceitos (Cmd+K nível 2). O
+    `before` recebido tem que ainda bater com o arquivo em disco — senão 409
+    (o arquivo mudou desde a geração)."""
+    raiz = settings.effective_projects_root
+    if raiz is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Defina PROJECTS_ROOT para editar arquivos.",
+        )
+    try:
+        root = project_ops.resolve(Path(raiz), payload.project)
+    except ProjectError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    async with session_scope() as session:
+        await require_role_by_slug(
+            session, request, project_slug=payload.project, min_role="editor"
+        )
+
+    fs = WorkspaceFS(root)
+    try:
+        atual = fs.read(payload.path)
+    except (PathEscapeError, FileNotFoundError, FileTooLargeError, ValueError) as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    if atual.replace("\r\n", "\n") != payload.before.replace("\r\n", "\n"):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="O arquivo mudou desde a geração da edição. Recarregue e refaça.",
+        )
+
+    hunks = [hunk_from_dict(h) for h in payload.hunks]
+    aceitos = {h.id for h in hunks} & set(payload.accepted_ids)
+    todos = {h.id for h in hunks}
+    final = (
+        payload.after if todos and aceitos == todos else apply_hunks(payload.before, hunks, aceitos)
+    )
+    fs.write(payload.path, final)
+    return {
+        "applied": True,
+        "after": final,
+        "accepted": sorted(aceitos),
+        "changed_lines": count_changed_lines(hunks, aceitos),
     }
 
 
