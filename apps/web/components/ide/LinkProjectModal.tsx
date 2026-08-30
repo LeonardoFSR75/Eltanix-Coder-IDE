@@ -101,9 +101,9 @@ export function LinkProjectModal({
         const dirHandle = await window.showDirectoryPicker({ mode: "read" });
         if (dirHandle && dirHandle.name) {
           addToast(`Pasta selecionada: ${dirHandle.name}`, "info");
-          // Se o nome corresponder a um caminho que o usuário possa digitar, ou tentamos explorar
           setSelectedPath(dirHandle.name);
           void inspecionar(dirHandle.name);
+          void carregarFs(dirHandle.name);
         }
       } else {
         addToast("Seletor nativo não suportado neste navegador. Use o navegador de pastas abaixo.", "warning");
@@ -516,7 +516,11 @@ export function LinkProjectModal({
                     fsData.directories.map((dir) => (
                       <div
                         key={dir.path}
-                        onClick={() => void carregarFs(dir.path)}
+                        onClick={() => {
+                          setSelectedPath(dir.path);
+                          void inspecionar(dir.path);
+                        }}
+                        onDoubleClick={() => void carregarFs(dir.path)}
                         style={{
                           padding: "0.45rem 0.6rem",
                           borderRadius: "6px",
@@ -535,6 +539,7 @@ export function LinkProjectModal({
                           gap: "0.4rem",
                           transition: "all 0.15s ease",
                         }}
+                        title={`Clique para selecionar '${dir.name}' ou duplo clique para navegar para dentro.`}
                       >
                         <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", overflow: "hidden" }}>
                           <span style={{ fontSize: "1rem" }}>📁</span>
@@ -551,7 +556,7 @@ export function LinkProjectModal({
                             {dir.name}
                           </span>
                         </div>
-                        <div style={{ display: "flex", gap: "0.2rem" }}>
+                        <div style={{ display: "flex", gap: "0.2rem", alignItems: "center" }}>
                           {dir.has_git && (
                             <span
                               style={{
@@ -580,6 +585,25 @@ export function LinkProjectModal({
                               app
                             </span>
                           )}
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              void carregarFs(dir.path);
+                            }}
+                            style={{
+                              background: "none",
+                              border: "none",
+                              color: "var(--text-dim, #a6adc8)",
+                              fontSize: "0.75rem",
+                              cursor: "pointer",
+                              padding: "2px",
+                              opacity: 0.7,
+                            }}
+                            title="Entrar na pasta"
+                          >
+                            ➔
+                          </button>
                         </div>
                       </div>
                     ))
@@ -593,9 +617,14 @@ export function LinkProjectModal({
 
               {/* Input manual do caminho absoluto com auto-inspeção */}
               <div>
-                <label style={{ display: "block", marginBottom: "0.3rem", fontSize: "0.82rem", color: "var(--text-dim, #a6adc8)", fontWeight: 500 }}>
-                  Caminho Absoluto da Pasta:
-                </label>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: "0.3rem" }}>
+                  <label style={{ fontSize: "0.82rem", color: "var(--text-dim, #a6adc8)", fontWeight: 500 }}>
+                    Caminho ou Nome da Pasta:
+                  </label>
+                  <span style={{ fontSize: "0.72rem", color: "var(--text-dim, #6c7086)" }}>
+                    💡 Digite o nome da pasta (ex: Sorteador) ou o caminho Windows
+                  </span>
+                </div>
                 <div style={{ display: "flex", gap: "0.5rem" }}>
                   <input
                     type="text"
@@ -604,7 +633,7 @@ export function LinkProjectModal({
                       setSelectedPath(e.target.value);
                       void inspecionar(e.target.value);
                     }}
-                    placeholder="ex: C:\Users\leona\Documents\Projetos\meu-sistema ou /home/user/app"
+                    placeholder="ex: Sorteador ou C:\Users\leona\Documents\Projetos\Sorteador"
                     style={{
                       flex: 1,
                       padding: "0.6rem 0.8rem",
@@ -670,9 +699,14 @@ export function LinkProjectModal({
                     </span>
                   </div>
 
+                  <div style={{ fontSize: "0.76rem", color: "var(--text-dim, #6c7086)", fontFamily: "var(--font-mono, monospace)" }}>
+                    📍 Localização: {signature.path}
+                  </div>
+
                   <p style={{ fontSize: "0.82rem", color: "var(--text-dim, #a6adc8)", margin: 0 }}>
                     {signature.summary || "Projeto detectado no caminho especificado."}
                   </p>
+
 
                   <div style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap", marginTop: "0.2rem" }}>
                     {signature.frameworks.map((fw) => (

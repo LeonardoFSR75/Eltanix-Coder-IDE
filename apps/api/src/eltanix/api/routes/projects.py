@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import re
 import shutil
 import uuid
@@ -100,9 +101,16 @@ class InspectPathIn(BaseModel):
 def _list_system_roots(projects_root: Path) -> list[dict[str, Any]]:
     import sys
     roots: list[dict[str, Any]] = []
+    if projects_root.exists():
+        roots.append({
+            "name": f"⚡ Raiz de Projetos ({projects_root.name})",
+            "path": str(projects_root),
+            "icon": "projects",
+            "type": "projects_root",
+        })
     user_home = Path.home()
     roots.append({
-        "name": f"Pasta do Usuário ({user_home.name})",
+        "name": f"🏠 Pasta do Usuário ({user_home.name})",
         "path": str(user_home),
         "icon": "home",
         "type": "home",
@@ -110,17 +118,10 @@ def _list_system_roots(projects_root: Path) -> list[dict[str, Any]]:
     docs = user_home / "Documents"
     if docs.exists():
         roots.append({
-            "name": "Documentos",
+            "name": "📁 Documentos",
             "path": str(docs),
             "icon": "docs",
             "type": "special",
-        })
-    if projects_root.exists():
-        roots.append({
-            "name": f"Raiz de Projetos ({projects_root.name})",
-            "path": str(projects_root),
-            "icon": "projects",
-            "type": "projects_root",
         })
     if sys.platform == "win32":
         import string
@@ -128,19 +129,66 @@ def _list_system_roots(projects_root: Path) -> list[dict[str, Any]]:
             drive = Path(f"{letter}:\\")
             if drive.exists():
                 roots.append({
-                    "name": f"Disco Local ({letter}:)",
+                    "name": f"💽 Disco Local ({letter}:)",
                     "path": str(drive),
                     "icon": "drive",
                     "type": "drive",
                 })
     else:
         roots.append({
-            "name": "Raiz do Sistema (/)",
+            "name": "💽 Raiz do Sistema (/)",
             "path": "/",
             "icon": "drive",
             "type": "drive",
         })
     return roots
+
+
+def _resolve_user_path(raw_path: str, projects_root: Path) -> Path:
+    """Resolve qualquer caminho informado pelo usuário com suporte a:
+    1. Nome simples de pasta (ex: 'Sorteador' -> projects_root / 'Sorteador')
+    2. Caminho relativo (ex: './Sorteador')
+    3. Caminhos absolutos do host Windows (ex: 'C:\\Users\\...\\Projetos\\Sorteador') mapeados para /projects
+    4. Caminhos diretos do container / SO (ex: '/projects/Sorteador')
+    """
+    clean = (raw_path or "").strip().strip("'\"")
+    if not clean:
+        return projects_root
+
+    # 1. Se for apenas o nome da pasta ou subcaminho sob a raiz de projetos
+    candidate_in_root = (projects_root / clean).resolve()
+    if candidate_in_root.exists() and candidate_in_root.is_dir():
+        return candidate_in_root
+
+    # 2. Tradução de caminhos Windows (se estiver rodando dentro do container Docker)
+    norm = clean.replace("\\", "/")
+    projects_root_host = os.environ.get("PROJECTS_ROOT_HOST", "")
+    if projects_root_host:
+        host_norm = projects_root_host.replace("\\", "/").rstrip("/")
+        if norm.lower().startswith(host_norm.lower()):
+            rel_part = norm[len(host_norm):].lstrip("/")
+            target = (projects_root / rel_part).resolve()
+            if target.exists():
+                return target
+
+    # 3. Se o caminho contiver partes Windows (ex: C:/.../Projetos/NomeDoProjeto)
+    parts = [p for p in norm.split("/") if p]
+    if parts:
+        last_name = parts[-1]
+        named_candidate = (projects_root / last_name).resolve()
+        if named_candidate.exists() and named_candidate.is_dir():
+            return named_candidate
+
+    # 4. Resolução direta pelo filesystem do sistema operacional
+    try:
+        direct = Path(clean).expanduser().resolve()
+        if direct.exists():
+            return direct
+    except Exception:
+        pass
+
+    return candidate_in_root
+
 
 
 class ProjectUpdateIn(BaseModel):
@@ -381,7 +429,8 @@ async def open_absolute_path(payload: OpenPathIn, request: Request) -> dict[str,
     from eltanix.workspace.inspector import ProjectInspector
     from eltanix.workspace.path_guard import default_path_guard
 
-    alvo = await asyncio.to_thread(lambda: Path(payload.path).resolve())
+    projects_root = _projects_root(request)
+    alvo = await asyncio.to_thread(lambda: _resolve_user_path(payload.path, projects_root))
     if not alvo.exists() or not alvo.is_dir():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -459,11 +508,12 @@ async def open_absolute_path(payload: OpenPathIn, request: Request) -> dict[str,
 
 
 @router.post("/inspect-path")
-async def inspect_path(payload: InspectPathIn) -> dict[str, Any]:
+async def inspect_path(payload: InspectPathIn, request: Request) -> dict[str, Any]:
     """Inspeciona metadados, stack e resumo executivo de qualquer pasta antes de vincular."""
     from eltanix.workspace.inspector import ProjectInspector
 
-    alvo = await asyncio.to_thread(lambda: Path(payload.path.strip()).expanduser().resolve())
+    projects_root = _projects_root(request)
+    alvo = await asyncio.to_thread(lambda: _resolve_user_path(payload.path, projects_root))
     if not alvo.exists() or not alvo.is_dir():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -491,21 +541,12 @@ async def browse_filesystem(payload: BrowsePathIn, request: Request) -> dict[str
     projects_root = _projects_root(request)
     roots = _list_system_roots(projects_root)
 
-    if not payload.path or not payload.path.strip():
-        return {
-            "current_path": None,
-            "parent_path": None,
-            "breadcrumbs": [],
-            "roots": roots,
-            "directories": [],
-        }
+    # Se nenhum caminho foi informado, inicia explorando a Raiz de Projetos
+    raw_path = payload.path.strip() if payload.path and payload.path.strip() else str(projects_root)
+    alvo = await asyncio.to_thread(lambda: _resolve_user_path(raw_path, projects_root))
 
-    alvo = await asyncio.to_thread(lambda: Path(payload.path.strip()).expanduser().resolve())
     if not alvo.exists() or not alvo.is_dir():
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Caminho inválido ou não é um diretório: {payload.path}",
-        )
+        alvo = projects_root if projects_root.exists() else Path.home()
 
     breadcrumbs: list[dict[str, str]] = []
     curr = alvo
@@ -563,6 +604,7 @@ async def browse_filesystem(payload: BrowsePathIn, request: Request) -> dict[str
         "roots": roots,
         "directories": dirs[:120],
     }
+
 
 
 @router.get("/{slug}/summary")
