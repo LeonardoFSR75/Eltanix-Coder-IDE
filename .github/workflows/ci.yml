@@ -46,7 +46,7 @@ jobs:
           --cov-fail-under=0
       - name: Publicar cobertura
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: coverage-api
           path: apps/api/coverage.xml
