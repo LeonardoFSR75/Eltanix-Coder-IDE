@@ -1,9 +1,11 @@
 # `apps/desktop` — Gap de Paridade com `apps/web` (Fases 2–8 do agente)
 
 **Status:** rastreado, não acionável agora. `apps/desktop` (Svelte 5 + Tauri,
-"o lite") está **em standby** por decisão do time — o foco é completar a IDE
-agêntica em `apps/web/components/ide/` primeiro. Ver a nota de memória
-`project-desktop-standby` / `review_ide_dual_implementation`.
+"o lite") está **congelado** por [ADR 0013](adr/0013-apps-desktop-congelado.md)
+— sai do standby quando `apps/web` cruzar a barra da Onda 1 do roadmap ponta a
+ponta. Ver também a nota de memória `project-desktop-standby` /
+`review_ide_dual_implementation`. Este documento é o inventário que o ADR 0013
+manda fechar de uma vez na retomada.
 
 O desktop é um **porte manual** de `apps/web` (os próprios arquivos admitem em
 comentário: `sessionTypes.ts`, `modes.ts` dizem "porta de
