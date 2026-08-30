@@ -21,6 +21,7 @@ from eltanix.api.routes.metrics import router as metrics_router
 from eltanix.api.routes.notes import router as notes_router
 from eltanix.api.routes.packages import router as packages_router
 from eltanix.api.routes.projects import router as projects_router
+from eltanix.api.routes.quality import router as quality_router
 from eltanix.api.routes.security import router as security_router
 from eltanix.api.routes.skills import router as skills_router
 from eltanix.api.routes.telemetry import router as telemetry_router
@@ -54,6 +55,7 @@ __all__ = [
     "notes_router",
     "packages_router",
     "projects_router",
+    "quality_router",
     "security_router",
     "skills_router",
     "telemetry_router",

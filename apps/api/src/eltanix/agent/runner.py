@@ -958,6 +958,16 @@ class AgentRunner:
     def get_session(self, session_id: str) -> AgentSession | None:
         return self._sessions.get(session_id)
 
+    def find_session_for_workspace(self, workspace_root: Path) -> AgentSession | None:
+        """Sessão já pré-aquecida (sandbox disponível) para este workspace, se
+        houver — usado por `POST /api/projects/{slug}/prewarm` pra reaproveitar
+        em vez de criar sessão nova toda vez. Acessor público em vez do
+        chamador iterar `_sessions` diretamente (atributo privado)."""
+        for sessao in self._sessions.values():
+            if sessao.workspace_root == workspace_root and sessao.sandbox_available:
+                return sessao
+        return None
+
     async def reconnect_session(self, session_id: str) -> AgentSession | None:
         """Reidrata uma sessão cujo runtime (sandbox, `ToolContext`) morreu —
         por exemplo depois de um restart do Docker — mas cujo registro em

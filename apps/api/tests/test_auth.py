@@ -289,3 +289,65 @@ async def test_rate_limiting_in_memory():
     await service.reset_failed_attempts(ip)
     assert await service.check_and_register_attempt(ip)
 
+
+@pytest.mark.asyncio
+async def test_search_users_endpoint_visible_to_non_admin():
+    """ADR 0016, Fase 3: `/api/auth/users/search` não tem `AdminDep` — o
+    `owner` de um projeto precisa achar gente pra convidar
+    (`POST /api/projects/{slug}/members`) sem ser admin da instância. Exercita
+    a rota via HTTP de verdade (mesmo padrão de
+    `test_projects.py::test_create_project_endpoint`), pois `list_users()`
+    passa por `session_scope()`, não pela `pg_session` injetável."""
+    import os
+
+    url = os.environ.get("DATABASE_URL_TEST")
+    if not url:
+        pytest.skip("DATABASE_URL_TEST não definida — teste de integração com Postgres pulado")
+
+    from httpx import ASGITransport, AsyncClient
+    from sqlalchemy import select
+
+    from eltanix.auth.service import AuthService, _hash_password
+    from eltanix.db.models import AppUser
+    from eltanix.db.session import init_engine, session_scope, shutdown_engine
+    from eltanix.main import create_app
+
+    username = f"busca-teste-{uuid.uuid4().hex[:8]}"
+    init_engine(url)
+    try:
+        async with session_scope() as session:
+            session.add(
+                AppUser(
+                    username=username,
+                    password_hash=_hash_password("x"),
+                    display_name="Fulano de Busca",
+                )
+            )
+
+        app = create_app()
+        # `app.state.auth` só é setado no `lifespan()` (que `ASGITransport`
+        # não dispara) — mesmo atalho de `test_mfa.py`, sem rodar a subida
+        # inteira (seed user, hydrate de extensão etc.) só pra isto.
+        app.state.auth = AuthService()
+        app.dependency_overrides[require_session] = lambda: None
+
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+            res = await ac.get(f"/api/auth/users/search?q={username[:12]}")
+            assert res.status_code == 200, res.text
+            data = res.json()
+            assert any(u["username"] == username for u in data["users"])
+            # Só o essencial pro seletor de convite — nada admin-only.
+            achado = next(u for u in data["users"] if u["username"] == username)
+            assert set(achado.keys()) == {"id", "username", "display_name"}
+
+            # Busca vazia não deve estourar — só limita a 20 resultados.
+            res_vazia = await ac.get("/api/auth/users/search?q=")
+            assert res_vazia.status_code == 200, res_vazia.text
+    finally:
+        async with session_scope() as session:
+            stmt = select(AppUser).where(AppUser.username == username)
+            rec = (await session.execute(stmt)).scalar_one_or_none()
+            if rec:
+                await session.delete(rec)
+        await shutdown_engine()
+

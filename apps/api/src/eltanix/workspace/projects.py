@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import re
+import unicodedata
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -98,10 +99,65 @@ def validate_name(name: str) -> str:
     return limpo
 
 
+def slugify(name: str) -> str:
+    """Nome de exibição → slug kebab-case (`"Meu Projeto"` → `"meu-projeto"`):
+    minúsculas, acento removido, tudo que não é `[a-z0-9-]` vira hífen,
+    hífens redundantes colapsam.
+
+    Só usado ao CRIAR um slug novo (`create_project`/`open-path`) — antes,
+    `slug` era o `name` cru, com espaço e maiúscula indo direto pro nome da
+    pasta em disco e pras chaves de partição do RAG (`project_slug` em
+    `Note`/`Document`/etc.). `validate_name` continua aceitando o charset
+    mais largo (inclui espaço) de propósito: projeto já cadastrado com um
+    slug antigo, sem passar por esta função, precisa continuar resolvendo."""
+    normalizado = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode("ascii")
+    kebab = re.sub(r"[^a-z0-9]+", "-", normalizado.lower()).strip("-")
+    return kebab or "projeto"
+
+
+# Cache em memória slug -> `local_path` absoluto (ADR 0016) — MESMO padrão já
+# usado por `default_path_guard` logo abaixo: um registry de processo,
+# rehidratado do Postgres na subida (`main.py::lifespan`) e sempre que a
+# Central de Projetos lista (`sync_projects_db`). Existe porque `resolve()` é
+# chamado de ~8 lugares síncronos, sem sessão de banco à mão (dependências
+# FastAPI, funções de workspace, etc.) — threadar `AsyncSession` por todos
+# eles pra ler `ProjectRecord.local_path` a cada chamada seria um refactor
+# muito maior só pra obter o mesmo resultado que este cache dá de graça.
+_slug_to_local_path: dict[str, str] = {}
+
+
+def register_local_path(slug: str, local_path: str | None) -> None:
+    """Atualiza o cache acima. Chamado pelas rotas que gravam/apagam
+    `ProjectRecord.local_path` (`open-path`, `delete`) pra manter `resolve()`
+    consistente com o Postgres sem esperar a próxima rehidratação."""
+    if local_path:
+        _slug_to_local_path[slug] = local_path
+    else:
+        _slug_to_local_path.pop(slug, None)
+
+
 def resolve(projects_root: Path, name: str) -> Path:
-    """Caminho absoluto do projeto, garantidamente dentro da raiz."""
-    raiz = projects_root.resolve()
+    """Caminho absoluto do projeto.
+
+    `ProjectRecord.local_path` é a fonte de verdade (ADR 0016): se `name` é o
+    slug de um projeto vinculado fora de `PROJECTS_ROOT` via `open-path` — e
+    esse caminho ainda existe e está autorizado no `PathGuard` — ele vence.
+    Senão, cai no comportamento legado: `PROJECTS_ROOT / <nome>` (com
+    fallback insensível a maiúsculas/minúsculas), que também é o que sempre
+    foi usado para todo projeto criado por `create_project` (`local_path`
+    sempre é `PROJECTS_ROOT/<slug>` nesse caso, então o cache nem entra em
+    jogo — a checagem de containment abaixo continua valendo pra esse caminho)."""
     valid_name = validate_name(name)
+
+    cached = _slug_to_local_path.get(valid_name)
+    if cached:
+        candidate = Path(cached)
+        if candidate.is_dir() and (
+            _is_within(candidate, projects_root) or default_path_guard.is_allowed(candidate)
+        ):
+            return candidate.resolve()
+
+    raiz = projects_root.resolve()
     destino = (raiz / valid_name).resolve()
     if destino != raiz and raiz not in destino.parents:
         raise ProjectError(f"Projeto fora de PROJECTS_ROOT: {name}")
@@ -154,35 +210,53 @@ def list_projects(projects_root: Path) -> list[Project]:
     return projetos
 
 
-def _allow_existing_dirs(paths: list[str]) -> int:
+def _allow_existing_dirs(records: list[tuple[str, str | None]]) -> int:
     """Parte bloqueante (stat + registro em memória) de `rehydrate_path_guard`
-    — isolada para rodar em thread, já que `Path.is_dir()` é I/O síncrono."""
+    — isolada para rodar em thread, já que `Path.is_dir()` é I/O síncrono.
+    Popula os dois registries de processo a partir do que já está persistido:
+    o `PathGuard` (autorização) e `_slug_to_local_path` (ADR 0016 — de onde
+    `resolve()` lê `local_path` sem precisar de sessão de banco)."""
     count = 0
-    for local_path in paths:
+    for slug, local_path in records:
         if not local_path:
             continue
         path = Path(local_path)
         if path.is_dir():
             try:
                 default_path_guard.allow(path)
-                count += 1
             except ValueError:
                 continue
+            register_local_path(slug, local_path)
+            count += 1
     return count
 
 
 async def rehydrate_path_guard(session: AsyncSession) -> int:
-    """Re-registra no `PathGuard` os projetos abertos via `open-path` em
-    execuções anteriores da API — o allowlist em memória não sobrevive a um
-    restart; sem isto, um projeto legitimamente aberto fora de
-    `PROJECTS_ROOT` perderia acesso ao próprio metadado git até ser reaberto
-    manualmente pela UI."""
-    registros = (await session.execute(select(ProjectRecord.local_path))).scalars().all()
-    return await asyncio.to_thread(_allow_existing_dirs, list(registros))
+    """Re-registra no `PathGuard`/`_slug_to_local_path` os projetos abertos
+    via `open-path` em execuções anteriores da API — nenhum dos dois
+    registries em memória sobrevive a um restart; sem isto, um projeto
+    legitimamente aberto fora de `PROJECTS_ROOT` perderia acesso ao próprio
+    metadado git (e a tudo mais que `resolve()` alimenta — arquivos, agente,
+    índice, LSP) até ser reaberto manualmente pela UI."""
+    registros = (
+        await session.execute(select(ProjectRecord.slug, ProjectRecord.local_path))
+    ).all()
+    return await asyncio.to_thread(_allow_existing_dirs, [(r[0], r[1]) for r in registros])
 
 
 async def sync_projects_db(session: AsyncSession, projects_root: Path) -> list[ProjectRecord]:
-    """Sincroniza as pastas no filesystem com a tabela `project_record` do Postgres."""
+    """Sincroniza as pastas no filesystem com a tabela `project_record` do Postgres.
+
+    Pasta nova sob `PROJECTS_ROOT` não tem dono natural — sem `ProjectMember`,
+    o projeto fica "órfão" (RBAC nega qualquer membro comum, só admin/serviço
+    enxergam, ver `list_projects` em `api/routes/projects.py`). Em vez de um
+    fluxo de "claim" separado, atribui-se `owner` ao admin da instância
+    (o usuário seed, `AuthService.ensure_seed_user`) na hora da descoberta —
+    ver ADR 0016. Sem admin cadastrado ainda (banco vazio), fica mesmo
+    órfão até o seed rodar.
+    """
+    from eltanix.db.models import AppUser, ProjectMember
+
     disk_projects = list_projects(projects_root)
     records = list((await session.execute(select(ProjectRecord))).scalars().all())
     by_slug = {r.slug: r for r in records}
@@ -203,7 +277,15 @@ async def sync_projects_db(session: AsyncSession, projects_root: Path) -> list[P
 
     if novos:
         await session.flush()
-        log.info("projects.sync_db.added", count=len(novos))
+        admin_id = (
+            await session.execute(
+                select(AppUser.id).where(AppUser.is_admin.is_(True)).order_by(AppUser.created_at).limit(1)
+            )
+        ).scalar_one_or_none()
+        if admin_id is not None:
+            for rec in novos:
+                session.add(ProjectMember(project_id=rec.id, user_id=admin_id, role="owner"))
+        log.info("projects.sync_db.added", count=len(novos), owner_assigned=admin_id is not None)
 
     # O allowlist do PathGuard é em memória — não sobrevive a um restart do
     # processo. Este é o ponto de sincronização natural (chamado sempre que a
@@ -233,6 +315,61 @@ async def ensure_project_slug_exists(session: AsyncSession, slug: str) -> None:
     encontrado = (await session.execute(stmt)).scalar_one_or_none()
     if encontrado is None:
         raise ProjectError(f"Projeto não cadastrado: {slug!r}")
+
+
+async def find_orphaned_project_data(
+    session: AsyncSession, *, slug: str, workspace_path: str | None = None
+) -> list[str]:
+    """Nomes (legíveis) das fontes de dado que ainda têm registro sob `slug`
+    (ou `workspace_path`) sem nenhum `ProjectRecord` dono — `delete_project`
+    só apaga o `ProjectRecord`; `Note`/`Document`/`AuditLogEntry`/
+    `RequestLog` (`project_slug`) e `AgentSessionRecord` (`project`) e
+    `IndexedFile`/`CodeChunk` (`workspace`, convenção de
+    `context/indexer.py::workspace_key` — caminho absoluto, ao contrário de
+    `GraphNode`/`GraphEdge`, que usam o slug) não têm FK pra isso, então
+    continuam existindo (ver `ensure_project_slug_exists` acima pro contexto
+    completo).
+
+    Usado para BLOQUEAR reaproveitar um slug recém-apagado antes de uma FK de
+    verdade existir: sem isto, `create_project`/`open-path` criando um
+    `ProjectRecord` novo com o mesmo slug faria esse projeto "herdar" nota,
+    documento, grafo, auditoria e custo do projeto morto, silenciosamente.
+
+    Cobre as fontes primárias de cada uma das quatro origens de RAG mais
+    auditoria/custo — não every tabela auxiliar (`DocumentChunk`/`NoteChunk`/
+    `CodeEdge`/`GraphChunkMapping`/`GraphMetrics` seguem a mesma chave da
+    tabela pai e ficam implícitas: se a pai está limpa, a auxiliar também
+    está, pela FK que ELAS têm entre si)."""
+    from eltanix.db.models import CodeChunk, IndexedFile
+
+    achados: list[str] = []
+
+    por_slug: list[tuple[str, Any]] = [
+        ("notas (Segundo Cérebro)", Note.project_slug),
+        ("documentos (RAG)", Document.project_slug),
+        ("eventos de auditoria", AuditLogEntry.project_slug),
+        ("telemetria de custo", RequestLog.project_slug),
+        ("sessões do agente", AgentSessionRecord.project),
+        ("grafo de conhecimento (Graphify)", GraphNode.workspace),
+    ]
+    for label, coluna in por_slug:
+        existe = (await session.execute(select(coluna).where(coluna == slug).limit(1))).first()
+        if existe:
+            achados.append(label)
+
+    if workspace_path:
+        por_workspace: list[tuple[str, Any]] = [
+            ("índice semântico de código", IndexedFile.workspace),
+            ("chunks de código indexados", CodeChunk.workspace),
+        ]
+        for label, coluna in por_workspace:
+            existe = (
+                await session.execute(select(coluna).where(coluna == workspace_path).limit(1))
+            ).first()
+            if existe:
+                achados.append(label)
+
+    return achados
 
 
 async def get_project_summary(

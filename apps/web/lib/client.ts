@@ -39,6 +39,17 @@ export async function get<T>(path: string, signal?: AbortSignal): Promise<T> {
   return (await response.json()) as T;
 }
 
+/** Como `get`, mas devolve `null` num `204 No Content` (ou corpo vazio) — para
+ * endpoints em que "sem dado" é um desfecho normal, não um erro. Ex.: as
+ * gutters de cobertura, que respondem 204 quando o projeto não tem relatório. */
+export async function getOrNull<T>(path: string, signal?: AbortSignal): Promise<T | null> {
+  const response = await fetch(`${GATEWAY}${path}`, { cache: "no-store", signal });
+  if (!response.ok) await failFrom(response);
+  if (response.status === 204) return null;
+  const text = await response.text();
+  return text ? (JSON.parse(text) as T) : null;
+}
+
 export async function post<T>(path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
   const response = await fetch(`${GATEWAY}${path}`, {
     method: "POST",
@@ -48,6 +59,27 @@ export async function post<T>(path: string, body?: unknown, signal?: AbortSignal
   });
   if (!response.ok) await failFrom(response);
   return (await response.json()) as T;
+}
+
+/** Como `post`, mas devolve `null` quando o backend responde `204 No Content`
+ * (ou um corpo vazio). Para endpoints em que "sem resultado" é um desfecho
+ * normal e não um erro — ex.: o autocompletar inline, que responde 204 quando
+ * não há sugestão a mostrar. */
+export async function postOrNull<T>(
+  path: string,
+  body?: unknown,
+  signal?: AbortSignal,
+): Promise<T | null> {
+  const response = await fetch(`${GATEWAY}${path}`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body ?? {}),
+    signal,
+  });
+  if (!response.ok) await failFrom(response);
+  if (response.status === 204) return null;
+  const text = await response.text();
+  return text ? (JSON.parse(text) as T) : null;
 }
 
 export async function put<T>(path: string, body: unknown, signal?: AbortSignal): Promise<T> {

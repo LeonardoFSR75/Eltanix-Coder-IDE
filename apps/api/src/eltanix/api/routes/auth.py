@@ -8,7 +8,7 @@ import uuid
 from typing import Any
 
 import segno
-from fastapi import APIRouter, Cookie, Header, HTTPException, Request, Response, status
+from fastapi import APIRouter, Cookie, Header, HTTPException, Query, Request, Response, status
 from pydantic import BaseModel, Field
 
 from eltanix.api.deps import AdminDep, AuthDep
@@ -423,3 +423,26 @@ async def create_user(payload: CreateUserRequest, request: Request) -> dict[str,
 async def list_users(request: Request) -> dict[str, Any]:
     users = await _service(request).list_users()
     return {"users": [_user_view(u) for u in users]}
+
+
+@router.get("/users/search", dependencies=[AuthDep])
+async def search_users(request: Request, q: str = Query(default="", max_length=64)) -> dict[str, Any]:
+    """Busca leve por `username`/`display_name`, sem `AdminDep` — o owner de
+    um projeto precisa achar gente pra convidar (`POST /api/projects/{slug}/members`)
+    sem ser admin da instância (ver ADR 0016, Fase 3). Devolve só o essencial
+    pro seletor de convite — nada de `is_admin`/`is_active`/`created_at`, que
+    `/users` (admin-only) já expõe pra quem precisa."""
+    users = await _service(request).list_users()
+    termo = q.strip().lower()
+    if termo:
+        users = [
+            u
+            for u in users
+            if termo in u.username.lower() or (u.display_name and termo in u.display_name.lower())
+        ]
+    return {
+        "users": [
+            {"id": str(u.id), "username": u.username, "display_name": u.display_name}
+            for u in users[:20]
+        ]
+    }

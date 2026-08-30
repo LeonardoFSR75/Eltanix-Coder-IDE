@@ -46,6 +46,7 @@ from eltanix.api.routes import (
     notes_router,
     packages_router,
     projects_router,
+    quality_router,
     security_router,
     skills_router,
     telemetry_router,
@@ -197,6 +198,20 @@ async def lifespan(app: FastAPI):
         # Mesmo espírito do Redis/MinIO opcionais: sem o overlay do Postgres,
         # o catálogo ainda funciona com os defaults estáticos em memória.
         log.warning("extensions.hydrate_failed", error=str(exc)[:200])
+
+    # ADR 0016: rehidrata o PathGuard e o cache de `local_path` (workspace/
+    # projects.py::resolve) na subida — sem isto, um projeto vinculado fora
+    # de PROJECTS_ROOT via `open-path` ficava inacessível (arquivo, agente,
+    # índice, LSP...) até alguém abrir `GET /api/projects` pela UI depois do
+    # restart.
+    try:
+        from eltanix.workspace.projects import rehydrate_path_guard
+
+        async with session_scope() as session:
+            count = await rehydrate_path_guard(session)
+        log.info("projects.path_guard.rehydrated", count=count)
+    except Exception as exc:
+        log.warning("projects.path_guard.rehydrate_failed", error=str(exc)[:200])
 
     auth = AuthService()
     admin_password = settings.admin_password
@@ -431,6 +446,7 @@ def create_app() -> FastAPI:
     app.include_router(trello_router)
     app.include_router(containers_router)
     app.include_router(git_router)
+    app.include_router(quality_router)
 
     app.include_router(lsp_router)
     app.include_router(lsp_ws_router)

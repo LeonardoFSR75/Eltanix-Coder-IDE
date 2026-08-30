@@ -3,19 +3,18 @@
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { useToast } from "@/components/Toast";
-import { createProject, listProjects, ProjectRecord } from "@/lib/api/projects";
+import { LinkProjectModal } from "@/components/ide/LinkProjectModal";
+import { deleteProject, listProjects, ProjectRecord } from "@/lib/api/projects";
+
+type SortKey = "name" | "updated_at";
 
 export default function ProjectsPage() {
   const [projects, setProjects] = useState<ProjectRecord[]>([]);
   const [loading, setLoading] = useState(true);
-  const [showModal, setShowModal] = useState(false);
-  const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
-  const [gitUrl, setGitUrl] = useState("");
-  const [initGit, setInitGit] = useState(true);
-  const [createGitHubRepo, setCreateGitHubRepo] = useState(false);
-  const [budgetLimit, setBudgetLimit] = useState("");
-  const [submitting, setSubmitting] = useState(false);
+  const [modalTab, setModalTab] = useState<"link" | "create" | "clone" | null>(null);
+  const [query, setQuery] = useState("");
+  const [sortKey, setSortKey] = useState<SortKey>("updated_at");
+  const [deletingSlug, setDeletingSlug] = useState<string | null>(null);
   const { addToast } = useToast();
 
   const loadData = async () => {
@@ -35,36 +34,47 @@ export default function ProjectsPage() {
     loadData();
   }, []);
 
-  const handleCreate = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!name.trim()) return;
-
-    setSubmitting(true);
+  const handleDelete = async (proj: ProjectRecord) => {
+    const apagarArquivos = confirm(
+      `Remover '${proj.name}' do Eltanix Coder IDE?\n\n` +
+        "OK = remove só o cadastro (arquivos continuam no disco).\n" +
+        "Cancelar = aborta a remoção."
+    );
+    if (!apagarArquivos) return;
+    const tambemApagarDisco = confirm(
+      `Também apagar a pasta '${proj.local_path}' do disco?\n\n` +
+        "Isso é IRREVERSÍVEL. OK apaga os arquivos; Cancelar mantém-os (só remove o cadastro)."
+    );
+    setDeletingSlug(proj.slug);
     try {
-      const created = await createProject({
-        name: name.trim(),
-        description: description.trim(),
-        git_url: gitUrl.trim() || undefined,
-        init_git: initGit,
-        create_github_repo: createGitHubRepo,
-        budget_limit_usd: budgetLimit ? parseFloat(budgetLimit) : undefined,
-      });
-      addToast(`Projeto '${created.name}' cadastrado com sucesso!`, "success");
-      setShowModal(false);
-      setName("");
-      setDescription("");
-      setGitUrl("");
-      setInitGit(true);
-      setCreateGitHubRepo(false);
-      setBudgetLimit("");
-      loadData();
+      await deleteProject(proj.slug, tambemApagarDisco);
+      addToast(
+        tambemApagarDisco ? "Projeto e arquivos removidos." : "Projeto removido (arquivos preservados).",
+        "success"
+      );
+      await loadData();
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
-      addToast(`Falha ao cadastrar projeto: ${message}`, "error");
+      addToast(`Erro ao remover projeto: ${message}`, "error");
     } finally {
-      setSubmitting(false);
+      setDeletingSlug(null);
     }
   };
+
+  const termo = query.trim().toLowerCase();
+  const filtrados = projects
+    .filter(
+      (p) =>
+        !termo ||
+        p.name.toLowerCase().includes(termo) ||
+        p.slug.toLowerCase().includes(termo) ||
+        p.description?.toLowerCase().includes(termo)
+    )
+    .sort((a, b) =>
+      sortKey === "name"
+        ? a.name.localeCompare(b.name)
+        : (b.updated_at || "").localeCompare(a.updated_at || "")
+    );
 
   return (
     <div style={{ minHeight: "100vh", backgroundColor: "var(--bg)", color: "var(--text)" }}>
@@ -97,25 +107,79 @@ export default function ProjectsPage() {
               Cadastre e gerencie o ecossistema unificado do Eltanix Coder IDE (IDE, Segundo Cérebro, Graphify, Custos, Auditoria e Git).
             </p>
           </div>
-          <button
-            onClick={() => setShowModal(true)}
-            style={{
-              padding: "0.75rem 1.25rem",
-              borderRadius: "var(--radius)",
-              background: "var(--btn-primary-bg, var(--surface-3))",
-              color: "var(--btn-primary-text, var(--text))",
-              border: "1px solid var(--btn-primary-border, var(--border))",
-              fontWeight: 600,
-              cursor: "pointer",
-              display: "flex",
-              alignItems: "center",
-              gap: "0.5rem",
-              boxShadow: "var(--shadow-lg)",
-            }}
-          >
-            <span>✨</span> Novo Projeto
-          </button>
+          <div style={{ display: "flex", gap: "0.75rem" }}>
+            <button
+              onClick={() => setModalTab("link")}
+              style={{
+                padding: "0.75rem 1.25rem",
+                borderRadius: "var(--radius)",
+                background: "var(--surface-2)",
+                color: "var(--text)",
+                border: "1px solid var(--border)",
+                fontWeight: 600,
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                gap: "0.5rem",
+                boxShadow: "var(--shadow-sm)",
+              }}
+            >
+              <span>📂</span> Vincular Pasta do PC
+            </button>
+            <button
+              onClick={() => setModalTab("create")}
+              style={{
+                padding: "0.75rem 1.25rem",
+                borderRadius: "var(--radius)",
+                background: "var(--btn-primary-bg, var(--surface-3))",
+                color: "var(--btn-primary-text, var(--text))",
+                border: "1px solid var(--btn-primary-border, var(--border))",
+                fontWeight: 600,
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                gap: "0.5rem",
+                boxShadow: "var(--shadow-lg)",
+              }}
+            >
+              <span>✨</span> Novo Projeto
+            </button>
+          </div>
         </div>
+
+        {/* Busca & Ordenação */}
+        {!loading && projects.length > 0 && (
+          <div style={{ display: "flex", gap: "0.75rem", marginBottom: "1.25rem", flexWrap: "wrap" }}>
+            <input
+              type="text"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="🔎 Buscar por nome, slug ou descrição..."
+              style={{
+                flex: "1 1 260px",
+                padding: "0.6rem 0.9rem",
+                borderRadius: "var(--radius)",
+                backgroundColor: "var(--surface)",
+                color: "var(--text)",
+                border: "1px solid var(--border)",
+              }}
+            />
+            <select
+              value={sortKey}
+              onChange={(e) => setSortKey(e.target.value as SortKey)}
+              style={{
+                padding: "0.6rem 0.9rem",
+                borderRadius: "var(--radius)",
+                backgroundColor: "var(--surface)",
+                color: "var(--text)",
+                border: "1px solid var(--border)",
+              }}
+            >
+              <option value="updated_at">Mais recentes</option>
+              <option value="name">Nome (A-Z)</option>
+            </select>
+          </div>
+        )}
 
         {/* Loading / Grid */}
         {loading ? (
@@ -129,28 +193,57 @@ export default function ProjectsPage() {
               textAlign: "center",
               backgroundColor: "var(--surface)",
               borderRadius: "var(--radius-lg)",
-              border: "1px border var(--border)",
+              border: "1px solid var(--border)",
             }}
           >
             <span style={{ fontSize: "3rem" }}>🚀</span>
             <h3 style={{ marginTop: "1rem", color: "var(--text)" }}>Nenhum projeto encontrado</h3>
             <p style={{ color: "var(--text-dim)", maxWidth: "500px", margin: "0.5rem auto 1.5rem" }}>
-              Crie pastas na raiz de projetos ou cadastre um novo projeto para gerenciar todo o ambiente agêntico.
+              Vincule qualquer pasta do seu computador (Windows/Linux/macOS) ou crie um novo projeto com suporte agêntico.
             </p>
-            <button
-              onClick={() => setShowModal(true)}
-              style={{
-                padding: "0.6rem 1.2rem",
-                borderRadius: "var(--radius)",
-                background: "var(--accent)",
-                color: "#000",
-                border: "none",
-                fontWeight: 600,
-                cursor: "pointer",
-              }}
-            >
-              Cadastrar Projeto
-            </button>
+            <div style={{ display: "flex", gap: "0.75rem", justifyContent: "center" }}>
+              <button
+                onClick={() => setModalTab("link")}
+                style={{
+                  padding: "0.6rem 1.2rem",
+                  borderRadius: "var(--radius)",
+                  background: "var(--surface-2)",
+                  color: "var(--text)",
+                  border: "1px solid var(--border)",
+                  fontWeight: 600,
+                  cursor: "pointer",
+                }}
+              >
+                📂 Vincular Pasta do PC
+              </button>
+              <button
+                onClick={() => setModalTab("create")}
+                style={{
+                  padding: "0.6rem 1.2rem",
+                  borderRadius: "var(--radius)",
+                  background: "var(--accent)",
+                  color: "#000",
+                  border: "none",
+                  fontWeight: 600,
+                  cursor: "pointer",
+                }}
+              >
+                ✨ Criar Novo Projeto
+              </button>
+            </div>
+          </div>
+        ) : filtrados.length === 0 ? (
+          <div
+            style={{
+              padding: "3rem 2rem",
+              textAlign: "center",
+              backgroundColor: "var(--surface)",
+              borderRadius: "var(--radius-lg)",
+              border: "1px solid var(--border)",
+              color: "var(--text-dim)",
+            }}
+          >
+            Nenhum projeto corresponde a "{query}".
           </div>
         ) : (
           <div
@@ -160,7 +253,7 @@ export default function ProjectsPage() {
               gap: "1.5rem",
             }}
           >
-            {projects.map((proj) => (
+            {filtrados.map((proj) => (
               <div
                 key={proj.slug}
                 style={{
@@ -230,9 +323,14 @@ export default function ProjectsPage() {
                         🔗 Git Remote
                       </span>
                     )}
-                    {proj.budget_limit_usd && (
+                    {proj.budget_limit_usd != null && (
                       <span style={{ padding: "0.2rem 0.5rem", borderRadius: "4px", backgroundColor: "var(--warn-dim)", color: "var(--warn)" }}>
                         💰 Orçamento: ${proj.budget_limit_usd.toFixed(2)} USD
+                      </span>
+                    )}
+                    {proj.local_path_exists === false && (
+                      <span style={{ padding: "0.2rem 0.5rem", borderRadius: "4px", backgroundColor: "var(--danger-dim, rgba(229,72,77,0.15))", color: "var(--danger, #e5484d)" }}>
+                        ⚠️ Pasta não encontrada
                       </span>
                     )}
                   </div>
@@ -271,6 +369,24 @@ export default function ProjectsPage() {
                     >
                       Abrir IDE
                     </Link>
+                    {proj.my_role === "owner" && (
+                      <button
+                        onClick={() => handleDelete(proj)}
+                        disabled={deletingSlug === proj.slug}
+                        title="Remover projeto"
+                        style={{
+                          padding: "0.6rem 0.75rem",
+                          borderRadius: "var(--radius)",
+                          backgroundColor: "var(--surface-2)",
+                          color: "var(--danger, #e5484d)",
+                          border: "1px solid var(--border)",
+                          fontWeight: 600,
+                          cursor: deletingSlug === proj.slug ? "default" : "pointer",
+                        }}
+                      >
+                        {deletingSlug === proj.slug ? "…" : "🗑️"}
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>
@@ -278,199 +394,17 @@ export default function ProjectsPage() {
           </div>
         )}
 
-        {/* Modal de Cadastro */}
-        {showModal && (
-          <div
-            style={{
-              position: "fixed",
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
-              backgroundColor: "rgba(0,0,0,0.75)",
-              display: "flex",
-              justifyContent: "center",
-              alignItems: "center",
-              zIndex: 1000,
-              padding: "1rem",
+        {/* Modal Unificado de Vinculação / Criação / Clone */}
+        {modalTab && (
+          <LinkProjectModal
+            initialTab={modalTab}
+            onClose={() => setModalTab(null)}
+            onProjectOpened={(slug) => {
+              setModalTab(null);
+              loadData();
+              window.location.href = `/ide?project=${encodeURIComponent(slug)}`;
             }}
-          >
-            <div
-              style={{
-                backgroundColor: "var(--surface)",
-                borderRadius: "var(--radius-lg)",
-                border: "1px solid var(--border)",
-                padding: "2rem",
-                width: "100%",
-                maxWidth: "500px",
-                boxShadow: "var(--shadow-lg)",
-              }}
-            >
-              <h2 style={{ margin: "0 0 1.5rem 0", color: "var(--text)", fontSize: "1.4rem" }}>
-                ✨ Cadastrar Novo Projeto
-              </h2>
-              <form onSubmit={handleCreate}>
-                <div style={{ marginBottom: "1rem" }}>
-                  <label style={{ display: "block", marginBottom: "0.4rem", color: "var(--text-dim)", fontSize: "0.9rem" }}>
-                    Nome do Projeto *
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    placeholder="ex: meu-sistema-v2"
-                    style={{
-                      width: "100%",
-                      padding: "0.625rem",
-                      borderRadius: "var(--radius)",
-                      backgroundColor: "var(--surface-2)",
-                      border: "1px solid var(--border)",
-                      color: "var(--text)",
-                    }}
-                  />
-                </div>
-
-                <div style={{ marginBottom: "1rem" }}>
-                  <label style={{ display: "block", marginBottom: "0.4rem", color: "var(--text-dim)", fontSize: "0.9rem" }}>
-                    Descrição / Objetivos do Agente
-                  </label>
-                  <textarea
-                    rows={3}
-                    value={description}
-                    onChange={(e) => setDescription(e.target.value)}
-                    placeholder="Descreva o propósito e convenções do projeto..."
-                    style={{
-                      width: "100%",
-                      padding: "0.625rem",
-                      borderRadius: "var(--radius)",
-                      backgroundColor: "var(--surface-2)",
-                      border: "1px solid var(--border)",
-                      color: "var(--text)",
-                      resize: "vertical",
-                    }}
-                  />
-                </div>
-
-                <div style={{ marginBottom: "1rem" }}>
-                  <label style={{ display: "block", marginBottom: "0.4rem", color: "var(--text-dim)", fontSize: "0.9rem" }}>
-                    URL do Repositório Git (Opcional)
-                  </label>
-                  <input
-                    type="url"
-                    value={gitUrl}
-                    onChange={(e) => setGitUrl(e.target.value)}
-                    placeholder="https://github.com/org/repo.git"
-                    style={{
-                      width: "100%",
-                      padding: "0.625rem",
-                      borderRadius: "var(--radius)",
-                      backgroundColor: "var(--surface-2)",
-                      border: "1px solid var(--border)",
-                      color: "var(--text)",
-                    }}
-                  />
-                </div>
-
-                <div style={{ marginBottom: "0.75rem" }}>
-                  <label
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "0.6rem",
-                      color: "var(--text)",
-                      fontSize: "0.9rem",
-                      cursor: "pointer",
-                    }}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={initGit}
-                      onChange={(e) => setInitGit(e.target.checked)}
-                      style={{ cursor: "pointer", width: "16px", height: "16px", accentColor: "var(--accent)" }}
-                    />
-                    <span>🌱 Inicializar repositório Git local automaticamente (`git init`)</span>
-                  </label>
-                </div>
-
-                <div style={{ marginBottom: "1rem" }}>
-                  <label
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "0.6rem",
-                      color: "var(--text)",
-                      fontSize: "0.9rem",
-                      cursor: "pointer",
-                    }}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={createGitHubRepo}
-                      onChange={(e) => setCreateGitHubRepo(e.target.checked)}
-                      style={{ cursor: "pointer", width: "16px", height: "16px", accentColor: "var(--accent)" }}
-                    />
-                    <span>🔒 Criar repositório remoto **PRIVADO** no GitHub automaticamente</span>
-                  </label>
-                </div>
-
-                <div style={{ marginBottom: "1.5rem" }}>
-                  <label style={{ display: "block", marginBottom: "0.4rem", color: "var(--text-dim)", fontSize: "0.9rem" }}>
-                    Limite de Orçamento Mensal USD (Opcional)
-                  </label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    value={budgetLimit}
-                    onChange={(e) => setBudgetLimit(e.target.value)}
-                    placeholder="50.00"
-                    style={{
-                      width: "100%",
-                      padding: "0.625rem",
-                      borderRadius: "var(--radius)",
-                      backgroundColor: "var(--surface-2)",
-                      border: "1px solid var(--border)",
-                      color: "var(--text)",
-                    }}
-                  />
-                </div>
-
-                <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.75rem" }}>
-                  <button
-                    type="button"
-                    onClick={() => setShowModal(false)}
-                    style={{
-                      flex: 1,
-                      padding: "0.625rem",
-                      borderRadius: "var(--radius)",
-                      backgroundColor: "var(--surface-2)",
-                      color: "var(--text-dim)",
-                      border: "1px solid var(--border)",
-                      cursor: "pointer",
-                    }}
-                  >
-                    Cancelar
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={submitting}
-                    style={{
-                      flex: 1,
-                      padding: "0.625rem",
-                      borderRadius: "var(--radius)",
-                      background: "var(--accent-gradient)",
-                      color: "#fff",
-                      border: "none",
-                      fontWeight: 600,
-                      cursor: submitting ? "not-allowed" : "pointer",
-                    }}
-                  >
-                    {submitting ? "Criando..." : "Criar Projeto"}
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
+          />
         )}
       </main>
     </div>

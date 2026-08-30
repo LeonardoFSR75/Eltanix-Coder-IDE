@@ -20,6 +20,12 @@ import {
   type WorkspaceEntry as Entry,
 } from "@/lib/api/workspace";
 import {
+  contextIndexStatus,
+  indexContext,
+  semanticSearch,
+  type SemanticHit,
+} from "@/lib/api/searchSemantic";
+import {
   checkoutBranch,
   commitChanges,
   getGitBranches,
@@ -618,33 +624,83 @@ interface Match {
 
 export function SearchPanel() {
   const { project, openFile, bumpRevision } = useIde();
+  const [mode, setMode] = useState<"text" | "semantic">("text");
   const [query, setQuery] = useState("");
   const [replacement, setReplacement] = useState("");
   const [showReplace, setShowReplace] = useState(false);
   const [regex, setRegex] = useState(false);
   const [caseSensitive, setCaseSensitive] = useState(false);
   const [matches, setMatches] = useState<Match[]>([]);
+  const [semHits, setSemHits] = useState<SemanticHit[]>([]);
+  // null = ainda não checado; false = projeto não indexado; true = indexado.
+  const [indexed, setIndexed] = useState<boolean | null>(null);
+  const [indexing, setIndexing] = useState(false);
   const [resumo, setResumo] = useState<string | null>(null);
   const [buscando, setBuscando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const [confirmar, setConfirmar] = useState(false);
+
+  const buscarTexto = async () => {
+    const data = await searchWorkspace(project!, query, { regex, caseSensitive });
+    setMatches(data.matches);
+    setSemHits([]);
+    setResumo(
+      `${data.matches.length}${data.truncated ? "+" : ""} ocorrências em ` +
+        `${data.files_with_matches} de ${data.files_searched} arquivos`,
+    );
+  };
+
+  const buscarSemantica = async () => {
+    const data = await semanticSearch(project!, query, { limit: 20 });
+    setSemHits(data.hits);
+    setMatches([]);
+    setResumo(
+      data.hits.length
+        ? `${data.hits.length} trechos por relevância semântica`
+        : "nenhum trecho relevante — o projeto pode não estar indexado",
+    );
+    if (!data.hits.length) {
+      // Só bate no /status quando não veio nada, para explicar o vazio.
+      try {
+        const st = await contextIndexStatus(project!);
+        setIndexed(st.chunks > 0);
+      } catch {
+        setIndexed(null);
+      }
+    } else {
+      setIndexed(true);
+    }
+  };
 
   const buscar = async () => {
     if (!project || !query.trim()) return;
     setBuscando(true);
     setErro(null);
     try {
-      const data = await searchWorkspace(project, query, { regex, caseSensitive });
-      setMatches(data.matches);
-      setResumo(
-        `${data.matches.length}${data.truncated ? "+" : ""} ocorrências em ` +
-          `${data.files_with_matches} de ${data.files_searched} arquivos`,
-      );
+      if (mode === "semantic") await buscarSemantica();
+      else await buscarTexto();
     } catch (err) {
       setErro(err instanceof Error ? err.message : String(err));
       setMatches([]);
+      setSemHits([]);
     } finally {
       setBuscando(false);
+    }
+  };
+
+  const indexar = async () => {
+    if (!project) return;
+    setIndexing(true);
+    setErro(null);
+    try {
+      const rep = await indexContext(project);
+      setIndexed(rep.chunks > 0);
+      setResumo(`indexado: ${rep.indexed} arquivos, ${rep.chunks} trechos`);
+      if (query.trim()) await buscarSemantica();
+    } catch (err) {
+      setErro(err instanceof Error ? err.message : String(err));
+    } finally {
+      setIndexing(false);
     }
   };
 
@@ -666,7 +722,25 @@ export function SearchPanel() {
   return (
     <div className="panel-body search-panel-body">
       <div className="panel-header">
-        <span className="panel-header-title">Busca & Substituição</span>
+        <span className="panel-header-title">Busca</span>
+        <div className="search-mode-toggle">
+          <button
+            type="button"
+            className={`search-mode-btn ${mode === "text" ? "active" : ""}`}
+            onClick={() => setMode("text")}
+            title="Busca literal / regex sobre os arquivos"
+          >
+            Texto
+          </button>
+          <button
+            type="button"
+            className={`search-mode-btn ${mode === "semantic" ? "active" : ""}`}
+            onClick={() => setMode("semantic")}
+            title="Busca por significado (RRF: vetor + texto) sobre o índice do projeto"
+          >
+            ✦ Semântica
+          </button>
+        </div>
       </div>
       <div className="search-form">
         {/* Campo de Busca Principal */}
@@ -680,44 +754,52 @@ export function SearchPanel() {
               type="text"
               className="search-field-input"
               value={query}
-              placeholder="Localizar no código..."
+              placeholder={
+                mode === "semantic"
+                  ? "Descreva o que procura (ex.: “onde o cookie de sessão é validado”)"
+                  : "Localizar no código..."
+              }
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && void buscar()}
             />
-            <div className="search-field-options">
-              <button
-                type="button"
-                className={`search-opt-btn ${caseSensitive ? "active" : ""}`}
-                onClick={() => setCaseSensitive(!caseSensitive)}
-                title="Diferenciar maiúsculas/minúsculas (Aa)"
-              >
-                Aa
-              </button>
-              <button
-                type="button"
-                className={`search-opt-btn ${regex ? "active" : ""}`}
-                onClick={() => setRegex(!regex)}
-                title="Usar Expressão Regular (.*)"
-              >
-                .*
-              </button>
-            </div>
+            {mode === "text" && (
+              <div className="search-field-options">
+                <button
+                  type="button"
+                  className={`search-opt-btn ${caseSensitive ? "active" : ""}`}
+                  onClick={() => setCaseSensitive(!caseSensitive)}
+                  title="Diferenciar maiúsculas/minúsculas (Aa)"
+                >
+                  Aa
+                </button>
+                <button
+                  type="button"
+                  className={`search-opt-btn ${regex ? "active" : ""}`}
+                  onClick={() => setRegex(!regex)}
+                  title="Usar Expressão Regular (.*)"
+                >
+                  .*
+                </button>
+              </div>
+            )}
           </div>
-          <button
-            type="button"
-            className={`search-toggle-btn ${showReplace ? "active" : ""}`}
-            onClick={() => setShowReplace(!showReplace)}
-            title="Alternar campo de Substituir"
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-              <polyline points="7 10 12 15 17 10" />
-              <polyline points="7 14 12 9 17 14" />
-            </svg>
-          </button>
+          {mode === "text" && (
+            <button
+              type="button"
+              className={`search-toggle-btn ${showReplace ? "active" : ""}`}
+              onClick={() => setShowReplace(!showReplace)}
+              title="Alternar campo de Substituir"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                <polyline points="7 10 12 15 17 10" />
+                <polyline points="7 14 12 9 17 14" />
+              </svg>
+            </button>
+          )}
         </div>
 
         {/* Campo de Substituição */}
-        {showReplace && (
+        {mode === "text" && showReplace && (
           <div className="search-field-row">
             <div className="search-input-container">
               <svg className="search-field-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -745,7 +827,7 @@ export function SearchPanel() {
           >
             {buscando ? "Buscando..." : "Localizar"}
           </button>
-          {showReplace && (
+          {mode === "text" && showReplace && (
             <button
               type="button"
               className="search-btn-danger"
@@ -761,27 +843,76 @@ export function SearchPanel() {
       {erro && <div className="panel-error">{erro}</div>}
       {resumo && <div className="search-summary">{resumo}</div>}
 
+      {mode === "semantic" && indexed === false && (
+        <div className="search-index-hint">
+          <span>Este projeto ainda não foi indexado para busca semântica.</span>
+          <button
+            type="button"
+            className="search-btn-primary"
+            onClick={() => void indexar()}
+            disabled={indexing}
+          >
+            {indexing ? "Indexando..." : "Indexar agora"}
+          </button>
+        </div>
+      )}
+
       {/* Lista de Resultados Encontrados */}
       <div className="search-results-list">
-        {matches.map((m, i) => {
-          const filename = m.path.split("/").pop() ?? m.path;
-          const dir = m.path.includes("/") ? m.path.substring(0, m.path.lastIndexOf("/")) : "";
-          return (
-            <button
-              key={`${m.path}:${m.line}:${m.column}:${i}`}
-              type="button"
-              className="search-match-card"
-              onClick={() => openFile(m.path, { line: m.line, column: m.column })}
-            >
-              <div className="search-match-header">
-                <span className="search-match-filename">{filename}</span>
-                <span className="search-match-pos">:{m.line}:{m.column}</span>
-                {dir && <span className="search-match-dir">{dir}</span>}
-              </div>
-              <div className="search-match-preview">{m.preview || m.text}</div>
-            </button>
-          );
-        })}
+        {mode === "text" &&
+          matches.map((m, i) => {
+            const filename = m.path.split("/").pop() ?? m.path;
+            const dir = m.path.includes("/") ? m.path.substring(0, m.path.lastIndexOf("/")) : "";
+            return (
+              <button
+                key={`${m.path}:${m.line}:${m.column}:${i}`}
+                type="button"
+                className="search-match-card"
+                onClick={() => openFile(m.path, { line: m.line, column: m.column })}
+              >
+                <div className="search-match-header">
+                  <span className="search-match-filename">{filename}</span>
+                  <span className="search-match-pos">:{m.line}:{m.column}</span>
+                  {dir && <span className="search-match-dir">{dir}</span>}
+                </div>
+                <div className="search-match-preview">{m.preview || m.text}</div>
+              </button>
+            );
+          })}
+
+        {mode === "semantic" &&
+          semHits.map((h, i) => {
+            const filename = h.path.split("/").pop() ?? h.path;
+            const dir = h.path.includes("/") ? h.path.substring(0, h.path.lastIndexOf("/")) : "";
+            const snippet = (h.content ?? "").split("\n").slice(0, 4).join("\n");
+            const pct = Math.max(4, Math.min(100, Math.round(h.score * 100)));
+            return (
+              <button
+                key={`${h.path}:${h.start_line}:${i}`}
+                type="button"
+                className="search-match-card"
+                onClick={() => openFile(h.path, { line: h.start_line, column: 1 })}
+              >
+                <div className="search-match-header">
+                  <span className="search-match-filename">{filename}</span>
+                  <span className="search-match-pos">
+                    :{h.start_line}
+                    {h.end_line !== h.start_line ? `-${h.end_line}` : ""}
+                  </span>
+                  {h.symbol && (
+                    <span className="search-sem-symbol">
+                      {[h.kind, h.symbol].filter(Boolean).join(" ")}
+                    </span>
+                  )}
+                  {dir && <span className="search-match-dir">{dir}</span>}
+                </div>
+                <div className="search-sem-score" title={`score RRF ${h.score.toFixed(4)}`}>
+                  <span className="search-sem-score-bar" style={{ width: `${pct}%` }} />
+                </div>
+                {snippet && <pre className="search-sem-snippet">{snippet}</pre>}
+              </button>
+            );
+          })}
       </div>
 
       {confirmar && (
