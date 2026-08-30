@@ -38,7 +38,7 @@ networks:
 
 services:
   postgres:
-    image: pgvector/pgvector:0.8.6-pg18
+    image: pgvector/pgvector:0.8.6-pg17
     environment:
       POSTGRES_USER: eltanix
       POSTGRES_PASSWORD: eltanix
