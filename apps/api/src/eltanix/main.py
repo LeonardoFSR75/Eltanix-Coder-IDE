@@ -46,6 +46,7 @@ from eltanix.api.routes import (
     notes_router,
     packages_router,
     projects_router,
+    quality_router,
     security_router,
     skills_router,
     telemetry_router,
@@ -431,6 +432,7 @@ def create_app() -> FastAPI:
     app.include_router(trello_router)
     app.include_router(containers_router)
     app.include_router(git_router)
+    app.include_router(quality_router)
 
     app.include_router(lsp_router)
     app.include_router(lsp_ws_router)

@@ -18,6 +18,14 @@ import {
   type InlineEditResult,
 } from "@/lib/api/inlineEdit";
 import { InlineEditHunkReview } from "@/components/ide/InlineEditHunkReview";
+import { GutterIntelligenceControl } from "@/components/ide/GutterIntelligenceControl";
+import {
+  DEFAULT_GUTTER_LAYERS,
+  loadGutterLayers,
+  saveGutterLayers,
+  useGutterIntelligence,
+  type GutterLayers,
+} from "@/lib/use-gutter-intelligence";
 import { readFile, readFileOrNull, writeFile } from "@/lib/api/workspace";
 import {
   discardChanges as discardGitChanges,
@@ -158,6 +166,25 @@ export function Editor({
   const originalRef = useRef("");
   const editorInstanceRef = useRef<any>(null);
   const monacoRef = useRef<any>(null);
+  // Sinaliza o `onMount` do Monaco para os hooks que precisam da instância
+  // (uma ref sozinha não re-renderiza) — ver `useGutterIntelligence`.
+  const [editorReady, setEditorReady] = useState(false);
+
+  // Gutter intelligence (Onda 1.5): blame + cobertura + CVEs na margem,
+  // ligáveis por camada e lembrados por navegador.
+  const [gutterLayers, setGutterLayers] = useState<GutterLayers>(DEFAULT_GUTTER_LAYERS);
+  useEffect(() => {
+    setGutterLayers(loadGutterLayers());
+  }, []);
+  useGutterIntelligence({
+    editor: editorReady ? editorInstanceRef.current : null,
+    monaco: monacoRef.current,
+    project: project ?? null,
+    path,
+    language: rawLanguage,
+    layers: gutterLayers,
+    refreshKey: `${loadedPath ?? ""}:${syncVersion}`,
+  });
 
   // Autocompletar inline / ghost text (Onda 1.1, ADR 0014). O provider do
   // Monaco lê o contexto vivo por ref (o modelo muda de arquivo sem re-registrar
@@ -939,6 +966,8 @@ export function Editor({
     automaticLayout: true,
     // Ghost text (ADR 0014) — o provider inline é registrado no onMount.
     inlineSuggest: { enabled: true },
+    // Reservado para os marcadores de CVE (Onda 1.5).
+    glyphMargin: true,
   };
 
   return (
@@ -981,6 +1010,14 @@ export function Editor({
             </span>
           )}
 
+
+          <GutterIntelligenceControl
+            layers={gutterLayers}
+            onChange={(next) => {
+              setGutterLayers(next);
+              saveGutterLayers(next);
+            }}
+          />
 
           <button
             type="button"
@@ -1285,6 +1322,7 @@ export function Editor({
               onMount={(editor, monaco) => {
                 editorInstanceRef.current = editor;
                 monacoRef.current = monaco;
+                setEditorReady(true);
                 lsp.onMount(editor, monaco);
                 registerInlineCompletions(editor, monaco);
                 editor.onDidChangeCursorPosition((e) => {

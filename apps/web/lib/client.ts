@@ -39,6 +39,17 @@ export async function get<T>(path: string, signal?: AbortSignal): Promise<T> {
   return (await response.json()) as T;
 }
 
+/** Como `get`, mas devolve `null` num `204 No Content` (ou corpo vazio) — para
+ * endpoints em que "sem dado" é um desfecho normal, não um erro. Ex.: as
+ * gutters de cobertura, que respondem 204 quando o projeto não tem relatório. */
+export async function getOrNull<T>(path: string, signal?: AbortSignal): Promise<T | null> {
+  const response = await fetch(`${GATEWAY}${path}`, { cache: "no-store", signal });
+  if (!response.ok) await failFrom(response);
+  if (response.status === 204) return null;
+  const text = await response.text();
+  return text ? (JSON.parse(text) as T) : null;
+}
+
 export async function post<T>(path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
   const response = await fetch(`${GATEWAY}${path}`, {
     method: "POST",

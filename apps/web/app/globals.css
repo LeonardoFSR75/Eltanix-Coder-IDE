@@ -8658,6 +8658,103 @@ button.primary:hover:not(:disabled) {
 }
 
 /* --------------------------------------------------------------------------
+   Gutter intelligence (Onda 1.5) — blame · cobertura · CVEs na margem
+   -------------------------------------------------------------------------- */
+
+/* Blame: barra fina na gutter, cor pela idade do commit (a0 = recente). */
+.monaco-editor .gt-blame {
+  width: 3px !important;
+  margin-left: 3px;
+}
+.monaco-editor .gt-blame-a0 { background: rgba(56, 189, 248, 0.9); }
+.monaco-editor .gt-blame-a1 { background: rgba(56, 189, 248, 0.6); }
+.monaco-editor .gt-blame-a2 { background: rgba(148, 163, 184, 0.55); }
+.monaco-editor .gt-blame-a3 { background: rgba(148, 163, 184, 0.38); }
+.monaco-editor .gt-blame-a4 { background: rgba(148, 163, 184, 0.22); }
+
+/* Cobertura: realce de fundo da linha + barra opcional na gutter. */
+.monaco-editor .gt-cov-hit { background: rgba(52, 211, 153, 0.07); }
+.monaco-editor .gt-cov-part { background: rgba(251, 191, 36, 0.10); }
+.monaco-editor .gt-cov-miss { background: rgba(248, 113, 113, 0.11); }
+.monaco-editor .gt-covbar {
+  width: 3px !important;
+  margin-left: 3px;
+}
+.monaco-editor .gt-covbar-hit { background: rgba(52, 211, 153, 0.8); }
+.monaco-editor .gt-covbar-part { background: rgba(251, 191, 36, 0.85); }
+.monaco-editor .gt-covbar-miss { background: rgba(248, 113, 113, 0.85); }
+
+/* CVE: glyph de aviso no glyph margin + leve tinta na linha do manifesto. */
+.monaco-editor .gt-cve {
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 12px 12px;
+  cursor: pointer;
+}
+.monaco-editor .gt-cve-high {
+  background-image: url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23f87171'%3E%3Cpath d='M12 2 1 21h22L12 2zm0 6 6.5 11h-13L12 8zm-1 3v4h2v-4h-2zm0 5v2h2v-2h-2z'/%3E%3C/svg%3E");
+}
+.monaco-editor .gt-cve-mod {
+  background-image: url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23fbbf24'%3E%3Cpath d='M12 2 1 21h22L12 2zm0 6 6.5 11h-13L12 8zm-1 3v4h2v-4h-2zm0 5v2h2v-2h-2z'/%3E%3C/svg%3E");
+}
+.monaco-editor .gt-cve-low {
+  background-image: url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23a1a1aa'%3E%3Cpath d='M12 2 1 21h22L12 2zm0 6 6.5 11h-13L12 8zm-1 3v4h2v-4h-2zm0 5v2h2v-2h-2z'/%3E%3C/svg%3E");
+}
+.monaco-editor .gt-cve-row { background: rgba(251, 191, 36, 0.06); }
+
+/* Controle na barra do editor */
+.gutter-int-control {
+  position: relative;
+  display: inline-flex;
+}
+.gutter-int-badge {
+  font-size: 9px;
+  line-height: 1;
+  padding: 1px 3px;
+  border-radius: 6px;
+  background: var(--accent);
+  color: #06121b;
+  font-weight: 700;
+}
+.gutter-int-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 60;
+  min-width: 240px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+.gutter-int-item {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px 8px;
+  align-items: center;
+  padding: 6px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.gutter-int-item:hover {
+  background: var(--accent-dim);
+}
+.gutter-int-item-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+}
+.gutter-int-item-hint {
+  grid-column: 2;
+  font-size: 10px;
+  color: var(--text-dim);
+}
+
+/* --------------------------------------------------------------------------
    Zebra Striping (Linhas de cores alternadas para melhor leitura no editor)
    -------------------------------------------------------------------------- */
 .zebra-stripes .monaco-editor .view-lines .view-line:nth-child(even),
