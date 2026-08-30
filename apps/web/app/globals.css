@@ -1884,6 +1884,75 @@ textarea:focus-visible,
   border: 1px solid var(--border);
 }
 
+/* Busca semântica (Onda 1.4) */
+.search-mode-toggle {
+  display: flex;
+  gap: 2px;
+  margin-left: auto;
+}
+
+.search-mode-btn {
+  font-size: 10px;
+  padding: 2px 7px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text-dim);
+  cursor: pointer;
+}
+
+.search-mode-btn.active {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  color: var(--text);
+}
+
+.search-index-hint {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: flex-start;
+  font-size: 11px;
+  color: var(--text-dim);
+  padding: 8px;
+  border: 1px dashed var(--border);
+  border-radius: 6px;
+}
+
+.search-sem-symbol {
+  color: var(--text-muted);
+  font-size: 10px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.search-sem-score {
+  height: 3px;
+  border-radius: 2px;
+  background: var(--surface-1);
+  overflow: hidden;
+}
+
+.search-sem-score-bar {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+}
+
+.search-sem-snippet {
+  margin: 0;
+  font-size: 10.5px;
+  font-family: var(--font-mono);
+  color: var(--text-dim);
+  background: var(--surface-1);
+  padding: 4px 6px;
+  border-radius: 4px;
+  white-space: pre;
+  overflow-x: auto;
+  border: 1px solid var(--border);
+}
+
 
 /* --------------------------------------------------------------------------
    SEÇÃO 5: Área de Trabalho do Editor, Abas de Arquivo & Visão Dividida (Split View)
