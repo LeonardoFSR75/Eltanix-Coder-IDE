@@ -40,9 +40,7 @@ _NONCE_LEN = 12
 
 
 def _derive_key(material: str) -> bytes:
-    return hashlib.scrypt(
-        material.encode("utf-8"), salt=_KDF_SALT, n=2**14, r=8, p=1, dklen=32
-    )
+    return hashlib.scrypt(material.encode("utf-8"), salt=_KDF_SALT, n=2**14, r=8, p=1, dklen=32)
 
 
 class SecretBox:

@@ -495,8 +495,10 @@ class AuthService:
         hashes = [_hash_token(_normalize_recovery_code(c)) for c in codigos]
         async with session_scope() as session:
             row = await store.get_mfa(session, user_id=user_id)
-            if row is None or row.enabled or not totp.verify(
-                self._secret_box.decrypt(row.secret), code
+            if (
+                row is None
+                or row.enabled
+                or not totp.verify(self._secret_box.decrypt(row.secret), code)
             ):
                 return None
             now = datetime.now(UTC)
