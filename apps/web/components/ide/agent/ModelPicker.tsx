@@ -59,6 +59,15 @@ export function ModelPicker({
     };
   }, []);
 
+  // `value === ""` significa "não escolhi nada": o backend usa o perfil
+  // padrão de `config/routes.yaml`. O rótulo tem que dizer QUAL é esse perfil,
+  // lido do catálogo — aqui havia um `⚡ Gemini 3.6 Flash (High)` fixo no
+  // código, que mentia sempre que o padrão não era esse modelo (e mentiria de
+  // novo a cada troca em `routes.yaml`, ver ADR 0001).
+  const perfilPadrao = data?.profiles.find((p) => p.is_default);
+  const rotuloPadrao = perfilPadrao
+    ? `⚡ Padrão do roteador · ${perfilPadrao.name}`
+    : "⚡ Padrão do roteador";
   const hasSelectedInProfiles = data?.profiles.some((p) => p.name === value);
   const hasSelectedInModels = data?.models.some((m) => m.id === value);
   const isCustomSelection = value && !hasSelectedInProfiles && !hasSelectedInModels;
@@ -85,7 +94,7 @@ export function ModelPicker({
           </>
         ) : (
           <>
-            <option value="">⚡ Gemini 3.6 Flash (High)</option>
+            <option value="">{rotuloPadrao}</option>
 
             {isCustomSelection && (
               <option value={value}>

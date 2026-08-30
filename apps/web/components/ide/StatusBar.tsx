@@ -176,7 +176,8 @@ export function StatusBar({ lspStatus, cursorPosition }: StatusBarProps) {
   const { project, projects, routerLatency, routerStatus, activeSessionId } = useIde();
   const { theme, toggleTheme } = useTheme();
 
-  const activeProjObj = projects.find((p) => p.name === project);
+  // `project` é o slug (ver `IdeState.project`), não o nome de exibição.
+  const activeProjObj = projects.find((p) => p.slug === project);
 
   return (
     <footer className="ide-statusbar">
@@ -188,7 +189,7 @@ export function StatusBar({ lspStatus, cursorPosition }: StatusBarProps) {
             <circle cx="6" cy="18" r="3" />
             <path d="M18 9a9 9 0 0 1-9 9" />
           </svg>
-          {activeProjObj?.branch ?? "main*"}
+          {activeProjObj?.default_branch ?? "—"}
         </span>
         <Sep />
 

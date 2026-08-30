@@ -60,7 +60,7 @@ function EditorSplash({ project }: { project: string | null }) {
           </svg>
         </div>
         <p className="editor-splash-title">
-          {project ? project : "Eltanix Coder IDE IDE"}
+          {project ? project : "Eltanix Coder IDE"}
         </p>
         <p className="editor-splash-sub">
           Abra um arquivo pelo Explorer ou use os atalhos abaixo
@@ -181,11 +181,11 @@ function Shell() {
       { id: "refresh", title: "Recarregar árvore de arquivos", run: () => ide.bumpRevision() },
       { id: "reload-projects", title: "Recarregar lista de projetos", run: () => void ide.reloadProjects() },
       ...ide.projects
-        .filter((p) => p.name !== ide.project)
+        .filter((p) => p.slug !== ide.project)
         .map((p) => ({
-          id: `project-${p.name}`,
-          title: `Trocar para projeto: ${p.name}${p.branch ? ` (${p.branch})` : ""}`,
-          run: () => ide.setProject(p.name),
+          id: `project-${p.slug}`,
+          title: `Trocar para projeto: ${p.name}${p.default_branch ? ` (${p.default_branch})` : ""}`,
+          run: () => ide.setProject(p.slug),
         })),
       ...PAGINAS_NAVEGAVEIS.map((pagina) => ({
         id: `nav-${pagina.id}`,
@@ -555,8 +555,18 @@ function Shell() {
                 >
                   {ide.projects.length === 0 && <option value="">Nenhum projeto aberto</option>}
                   {ide.projects.map((p) => (
-                    <option key={p.name} value={p.name}>
-                      {p.name}{p.branch ? ` (${p.branch})` : ""}
+                    <option key={p.slug} value={p.slug}>
+                      {/* `local_path_exists === false`: o cadastro existe mas a
+                          pasta sumiu do disco. Sem esta marca o projeto parecia
+                          normal na lista e só falhava depois de selecionado,
+                          com um 400 cru no Explorer. */}
+                      {p.local_path_exists === false ? "⚠ " : ""}
+                      {p.name}
+                      {p.local_path_exists === false
+                        ? " (pasta não encontrada)"
+                        : p.default_branch
+                          ? ` (${p.default_branch})`
+                          : ""}
                     </option>
                   ))}
                 </select>
@@ -681,7 +691,8 @@ function Shell() {
             onProjectOpened={async (slug, name) => {
               setLinkModalTab(null);
               await ide.reloadProjects();
-              ide.setProject(name || slug);
+              // `slug`, não `name`: é o slug que a API resolve em `?project=`.
+              ide.setProject(slug);
               addToast(`Projeto '${name || slug}' ativo no workspace!`, "success");
             }}
           />
