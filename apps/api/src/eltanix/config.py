@@ -112,6 +112,22 @@ class Settings(BaseSettings):
     # do git. Degrada para o hybrid_search puro sem grafo/git. Off = só RRF.
     context_git_aware_search: bool = Field(default=True, alias="CONTEXT_GIT_AWARE_SEARCH")
 
+    # ── Autocompletar inline / ghost text (Onda 1.1, ADR 0014) ──────────────
+    # Kill switch: desligado, `POST /api/context/completions` responde 204 e o
+    # provider do Monaco não registra nada. Falha de modelo já degrada para
+    # completion vazia — isto é para desligar o recurso inteiro sem deploy.
+    ide_inline_completions_enabled: bool = Field(
+        default=True, alias="IDE_INLINE_COMPLETIONS_ENABLED"
+    )
+    # Perfil de rota que responde o autocompletar. `completion` (routes.yaml) é
+    # ordenado por latência com modelo local à frente; trocar para `fast` ou um
+    # id concreto é ajuste de .env, não de código (ADR 0014 §2).
+    ide_completion_profile: str = Field(default="completion", alias="IDE_COMPLETION_PROFILE")
+    # Teto de chamadas de autocompletar por ator por minuto. Ghost text dispara
+    # muito mais que o Cmd+K (20/min), daí o teto mais alto. Redis fora → não
+    # limita (degrada, não derruba).
+    ide_completion_max_per_minute: int = Field(default=120, alias="IDE_COMPLETION_MAX_PER_MINUTE")
+
     # ── Roteamento automático de skills (Fase 1 do upgrade do agente) ────────
     # Similaridade de cosseno mínima (0..1) para uma skill entrar no system
     # prompt por roteamento automático, e quantas skills no máximo. O default

@@ -1019,3 +1019,39 @@ class CorrectionProposal(Base):
 
     def __repr__(self) -> str:  # pragma: no cover
         return f"<CorrectionProposal title={self.title!r} type={self.proposal_type} status={self.status}>"
+
+
+class CompletionEvent(Base):
+    """Desfecho de uma sugestão de autocompletar inline (ghost text), ADR 0014.
+
+    Custo e latência de cada chamada já vivem em `request_log` via o router
+    (ADR 0001); o que falta lá é o desfecho — a sugestão foi aceita, rejeitada
+    ou ignorada, e quantos chars o humano de fato aproveitou. Esse é o número
+    que diz se o autocompletar presta.
+
+    **Não** guarda prefixo/sufixo nem o texto da sugestão: só contagem de
+    chars, linguagem e modelo. O conteúdo do arquivo não precisa ser
+    reespelhado aqui.
+    """
+
+    __tablename__ = "completion_event"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False, index=True
+    )
+    suggestion_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    actor: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    project_slug: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
+    language: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    model: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    # accepted | rejected | ignored — `ignored` é a sugestão que ficou visível e
+    # o timeout de exibição disparou sem o usuário aceitar nem digitar por cima.
+    outcome: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
+    shown_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    chars_suggested: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    chars_accepted: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+
+    def __repr__(self) -> str:  # pragma: no cover
+        return f"<CompletionEvent suggestion={self.suggestion_id} outcome={self.outcome}>"

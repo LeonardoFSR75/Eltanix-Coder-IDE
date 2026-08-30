@@ -109,6 +109,18 @@ profiles:
       - foundry/gpt-4o-mini
       - ollama/qwen2.5-coder:1.5b
 
+  # Autocompletar inline / ghost text no editor (Onda 1.1, ADR 0014). Dispara a
+  # cada pausa de digitação, então o que importa é latência de teclado, não
+  # capacidade: um modelo de código de 70b a 2–4 s é inutilizável aqui.
+  # `latency` ordena pelo p95 medido; a lista é o desempate e o fallback quando
+  # o circuito abre. Configurável por IDE_COMPLETION_PROFILE.
+  completion:
+    strategy: latency
+    models:
+      - ollama/qwen2.5-coder:1.5b
+      - groq/llama-3.1-8b-instant
+      - ollama/qwen2.5-coder:7b
+
   # Trabalho auxiliar barato: mensagem de commit, título de PR, classificação,
   # sumarização de histórico.
   utility:

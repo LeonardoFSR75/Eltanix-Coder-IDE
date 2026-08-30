@@ -50,6 +50,27 @@ export async function post<T>(path: string, body?: unknown, signal?: AbortSignal
   return (await response.json()) as T;
 }
 
+/** Como `post`, mas devolve `null` quando o backend responde `204 No Content`
+ * (ou um corpo vazio). Para endpoints em que "sem resultado" é um desfecho
+ * normal e não um erro — ex.: o autocompletar inline, que responde 204 quando
+ * não há sugestão a mostrar. */
+export async function postOrNull<T>(
+  path: string,
+  body?: unknown,
+  signal?: AbortSignal,
+): Promise<T | null> {
+  const response = await fetch(`${GATEWAY}${path}`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body ?? {}),
+    signal,
+  });
+  if (!response.ok) await failFrom(response);
+  if (response.status === 204) return null;
+  const text = await response.text();
+  return text ? (JSON.parse(text) as T) : null;
+}
+
 export async function put<T>(path: string, body: unknown, signal?: AbortSignal): Promise<T> {
   const response = await fetch(`${GATEWAY}${path}`, {
     method: "PUT",

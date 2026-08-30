@@ -4,8 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import re
-from collections.abc import AsyncIterator, Awaitable
-from contextlib import suppress
+from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any, Literal
 
@@ -23,6 +22,7 @@ from eltanix.agent.state import AgentMode, PendingApproval
 from eltanix.agent.tools import registry
 from eltanix.agent.tools.base import ToolContext
 from eltanix.agent.tools.diffing import compute_proposed_diff
+from eltanix.api._client_disconnect import await_or_abandon_on_disconnect
 from eltanix.api.deps import AuthDep, DbSessionDep, EngineDep, SettingsDep
 from eltanix.api.sse import SSE_DONE, sse_event
 from eltanix.auth.rbac import require_role_by_slug
@@ -38,37 +38,6 @@ from eltanix.workspace.projects import ProjectError
 log = get_logger(__name__)
 
 router = APIRouter(prefix="/api/agent", tags=["agent"], dependencies=[AuthDep])
-
-
-async def _await_or_abandon_on_disconnect[T](request: Request, coro: Awaitable[T]) -> T:
-    """Aguarda `coro`, mas cancela se o cliente fechar a conexão no meio.
-
-    A edição inline chama `engine.complete()` fora do grafo — sem isto, um
-    Cmd+K cancelado no editor (Esc enquanto "gerando…") deixava a chamada de
-    LLM correndo até o fim, gastando tokens por um resultado que ninguém ia
-    ler. O adaptador de provedor é httpx por baixo, que aborta a request HTTP
-    quando a task é cancelada."""
-    task: asyncio.Task[T] = asyncio.ensure_future(coro)
-
-    async def _watch() -> None:
-        try:
-            while not task.done():
-                if await request.is_disconnected():
-                    task.cancel()
-                    return
-                await asyncio.sleep(0.25)
-        except asyncio.CancelledError:
-            raise
-        except Exception as exc:  # um watcher com problema nunca derruba a request
-            log.warning("agent.disconnect_watch_failed", error=str(exc)[:200])
-
-    watcher = asyncio.ensure_future(_watch())
-    try:
-        return await task
-    finally:
-        watcher.cancel()
-        with suppress(asyncio.CancelledError):
-            await watcher
 
 
 def _runner(request: Request) -> AgentRunner:
@@ -253,7 +222,7 @@ async def inline_edit(
         )
 
     try:
-        resultado = await _await_or_abandon_on_disconnect(
+        resultado = await await_or_abandon_on_disconnect(
             request,
             engine.complete(
                 requested_model="coding",

@@ -2,20 +2,31 @@
 
 from __future__ import annotations
 
+import asyncio
+import time
+import uuid
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
-from fastapi import APIRouter, HTTPException, Query, Request, status
+from fastapi import APIRouter, HTTPException, Query, Request, Response, status
 from pydantic import BaseModel, Field
+from sqlalchemy import case, func, select
 
-from eltanix.api.deps import AuthDep, SettingsDep
+from eltanix.api._client_disconnect import await_or_abandon_on_disconnect
+from eltanix.api.deps import AuthDep, EngineDep, SettingsDep
 from eltanix.auth.rbac import require_role_by_slug
+from eltanix.context import completions as completion_engine
 from eltanix.context import store as context_store
 from eltanix.context.indexer import ContextIndexer
 from eltanix.context.repomap import DEFAULT_TOKEN_BUDGET, build_repo_map
+from eltanix.db.models import CompletionEvent
 from eltanix.db.session import session_scope
+from eltanix.logging_setup import get_logger
 from eltanix.workspace import projects as project_ops
 from eltanix.workspace.projects import ProjectError
+
+log = get_logger(__name__)
 
 router = APIRouter(prefix="/api/context", tags=["context"], dependencies=[AuthDep])
 
@@ -192,4 +203,222 @@ async def graph(
         "contained_by": _node(result.contained_by) if result.contained_by else None,
         "imports": result.imports,
         "imported_by": result.imported_by,
+    }
+
+
+# ── Autocompletar inline / ghost text (Onda 1.1, ADR 0014) ──────────────────
+
+# Timeout duro do lado do servidor. Além disso a sugestão já nasceu velha — o
+# usuário digitou mais e o ghost text não serve mais para aquele cursor.
+_COMPLETION_HARD_TIMEOUT_S = 2.0
+
+
+async def _guard_completion_rate(request: Request, limit: int) -> None:
+    """`INCR`+`expire` por ator numa janela de 60 s (mesmo padrão do Cmd+K em
+    `agent.py::_guard_inline_edit_rate`). Ghost text dispara muito mais, daí o
+    teto mais alto. Redis fora → não limita (degrada, não derruba)."""
+    redis = getattr(request.app.state, "redis", None)
+    if redis is None:
+        return
+    ator = getattr(request.state, "actor", "unknown")
+    try:
+        pipe = redis.pipeline()
+        pipe.incr(f"context:completion:ratelimit:{ator}")
+        pipe.expire(f"context:completion:ratelimit:{ator}", 60)
+        count, _ = await pipe.execute()
+    except Exception as exc:  # degradação intencional: Redis fora não barra o editor
+        log.warning("context.completion.ratelimit_redis_failed", error=str(exc)[:200])
+        return
+    if int(count) > limit:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Muitas requisições de autocompletar em sequência; aguarde um instante.",
+        )
+
+
+class CompletionRequest(BaseModel):
+    project: str = Field(min_length=1)
+    path: str = Field(min_length=1)
+    # Prefixo (até o cursor) e sufixo (depois). O teto largo aqui só rejeita
+    # payload absurdo; `completions.clamp_context` corta para 4000/2000 chars
+    # colados no cursor antes de ir ao modelo.
+    prefix: str = Field(default="", max_length=20_000)
+    suffix: str = Field(default="", max_length=20_000)
+    language: str | None = Field(default=None, max_length=64)
+
+
+@router.post("/completions")
+async def completions(
+    payload: CompletionRequest,
+    request: Request,
+    settings: SettingsDep,
+    engine: EngineDep,
+) -> Any:
+    """Uma sugestão de autocompletar inline na posição do cursor (ADR 0014).
+
+    READ-only: nunca escreve arquivo, não passa por `ApprovalPolicy` — a
+    inserção só acontece no cliente quando o humano aperta `Tab`. Toda falha
+    (kill switch, modelo fora, timeout, resposta vazia) degrada para `204 No
+    Content`: ghost text falha em silêncio, nunca com um erro visível no
+    editor.
+    """
+    if not settings.ide_inline_completions_enabled:
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+    if not payload.prefix.strip() and not payload.suffix.strip():
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+    await _guard_completion_rate(request, settings.ide_completion_max_per_minute)
+    await _check_project_access(request, payload.project, min_role="viewer")
+
+    messages = completion_engine.build_messages(
+        prefix=payload.prefix,
+        suffix=payload.suffix,
+        path=payload.path,
+        language=payload.language,
+    )
+    started = time.perf_counter()
+    try:
+        result = await asyncio.wait_for(
+            await_or_abandon_on_disconnect(
+                request,
+                engine.complete(
+                    requested_model=settings.ide_completion_profile,
+                    params={
+                        "messages": messages,
+                        "temperature": 0,
+                        "max_tokens": completion_engine.MAX_TOKENS,
+                    },
+                    source="ide:completion",
+                ),
+            ),
+            timeout=_COMPLETION_HARD_TIMEOUT_S,
+        )
+    except asyncio.CancelledError:
+        # Cliente digitou de novo e abortou a request — nada a devolver.
+        raise
+    except Exception as exc:
+        # Timeout duro, modelo fora, circuito aberto — ghost text degrada em
+        # silêncio (204), nunca um erro visível no editor.
+        log.warning("context.completion.unavailable", error=str(exc)[:200])
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+    text = completion_engine.extract_completion(
+        result.payload, prefix=payload.prefix, suffix=payload.suffix
+    )
+    if not text:
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+    return {
+        "completion": text,
+        "suggestion_id": uuid.uuid4().hex,
+        "model": result.model_id,
+        "cached": result.cache_hit,
+        "latency_ms": int((time.perf_counter() - started) * 1000),
+    }
+
+
+class CompletionOutcome(BaseModel):
+    suggestion_id: str = Field(min_length=1, max_length=64)
+    outcome: Literal["accepted", "rejected", "ignored"]
+    project: str | None = Field(default=None, max_length=128)
+    language: str | None = Field(default=None, max_length=64)
+    model: str | None = Field(default=None, max_length=128)
+    shown_ms: int | None = Field(default=None, ge=0, le=3_600_000)
+    latency_ms: int | None = Field(default=None, ge=0, le=3_600_000)
+    chars_suggested: int = Field(default=0, ge=0, le=100_000)
+    chars_accepted: int = Field(default=0, ge=0, le=100_000)
+
+
+@router.post("/completions/outcome", status_code=status.HTTP_202_ACCEPTED)
+async def completion_outcome(payload: CompletionOutcome, request: Request) -> dict[str, Any]:
+    """Desfecho de uma sugestão (`accepted`/`rejected`/`ignored`) — o número que
+    diz se o autocompletar presta. Best-effort: nunca falha o editor por causa
+    de telemetria de aceitação. Não grava prefixo/sufixo, só contagens."""
+    ator = getattr(request.state, "actor", None)
+    try:
+        async with session_scope() as session:
+            session.add(
+                CompletionEvent(
+                    suggestion_id=payload.suggestion_id,
+                    actor=ator,
+                    project_slug=payload.project,
+                    language=payload.language,
+                    model=payload.model,
+                    outcome=payload.outcome,
+                    shown_ms=payload.shown_ms,
+                    latency_ms=payload.latency_ms,
+                    chars_suggested=payload.chars_suggested,
+                    chars_accepted=payload.chars_accepted,
+                )
+            )
+    except Exception as exc:  # telemetria best-effort
+        log.warning("context.completion.outcome_persist_failed", error=str(exc)[:200])
+    return {"ok": True}
+
+
+@router.get("/completions/stats")
+async def completion_stats(
+    request: Request, days: int = Query(default=7, ge=1, le=90)
+) -> dict[str, Any]:
+    """Taxa de aceitação do autocompletar, derivada de `completion_event`."""
+    since = datetime.now(UTC) - timedelta(days=days)
+    _accepted = func.coalesce(
+        func.sum(case((CompletionEvent.outcome == "accepted", 1), else_=0)), 0
+    )
+    async with session_scope() as session:
+        total, accepted, ignored, rejected, sug_chars, acc_chars, avg_latency, avg_shown = (
+            await session.execute(
+                select(
+                    func.count(CompletionEvent.id),
+                    _accepted,
+                    func.coalesce(
+                        func.sum(case((CompletionEvent.outcome == "ignored", 1), else_=0)), 0
+                    ),
+                    func.coalesce(
+                        func.sum(case((CompletionEvent.outcome == "rejected", 1), else_=0)), 0
+                    ),
+                    func.coalesce(func.sum(CompletionEvent.chars_suggested), 0),
+                    func.coalesce(func.sum(CompletionEvent.chars_accepted), 0),
+                    func.avg(CompletionEvent.latency_ms),
+                    func.avg(CompletionEvent.shown_ms),
+                ).where(CompletionEvent.created_at >= since)
+            )
+        ).one()
+
+        by_lang = (
+            await session.execute(
+                select(
+                    CompletionEvent.language,
+                    func.count(CompletionEvent.id),
+                    _accepted,
+                )
+                .where(CompletionEvent.created_at >= since)
+                .group_by(CompletionEvent.language)
+                .order_by(func.count(CompletionEvent.id).desc())
+            )
+        ).all()
+
+    total = int(total)
+    sug_chars = int(sug_chars)
+    return {
+        "window_days": days,
+        "suggestions": total,
+        "accepted": int(accepted),
+        "ignored": int(ignored),
+        "rejected": int(rejected),
+        "acceptance_rate": round(int(accepted) / total, 4) if total else 0.0,
+        "chars_suggested": sug_chars,
+        "chars_accepted": int(acc_chars),
+        "char_acceptance_rate": round(int(acc_chars) / sug_chars, 4) if sug_chars else 0.0,
+        "avg_latency_ms": int(avg_latency) if avg_latency is not None else None,
+        "avg_shown_ms": int(avg_shown) if avg_shown is not None else None,
+        "by_language": [
+            {
+                "language": lang,
+                "suggestions": int(count),
+                "accepted": int(acc),
+                "acceptance_rate": round(int(acc) / int(count), 4) if count else 0.0,
+            }
+            for lang, count, acc in by_lang
+        ],
     }

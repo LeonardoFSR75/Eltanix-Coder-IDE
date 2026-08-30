@@ -10,6 +10,7 @@ import { useIde } from "@/lib/ide-store";
 
 import { acceptFile, revertFile } from "@/lib/api/agent";
 import { logAuditEvent } from "@/lib/api/audit";
+import { reportCompletionOutcome, requestCompletion } from "@/lib/api/completions";
 import { requestInlineEdit, type InlineEditResult } from "@/lib/api/inlineEdit";
 import { readFile, readFileOrNull, writeFile } from "@/lib/api/workspace";
 import {
@@ -150,6 +151,25 @@ export function Editor({
   const [headContent, setHeadContent] = useState<string | null>(null);
   const originalRef = useRef("");
   const editorInstanceRef = useRef<any>(null);
+  const monacoRef = useRef<any>(null);
+
+  // Autocompletar inline / ghost text (Onda 1.1, ADR 0014). O provider do
+  // Monaco lê o contexto vivo por ref (o modelo muda de arquivo sem re-registrar
+  // o provider), aborta a chamada anterior a cada tecla e degrada em silêncio —
+  // 204/erro do backend vira simplesmente "nenhuma sugestão".
+  const inlineCompletionsDisposableRef = useRef<any>(null);
+  const completionAbortRef = useRef<AbortController | null>(null);
+  const completionCtxRef = useRef<{
+    project: string | null;
+    path: string | null;
+    language: string | null;
+  }>({ project: null, path: null, language: null });
+  const shownCompletionsRef = useRef<
+    Map<
+      string,
+      { shownAt: number; latencyMs: number; chars: number; language: string | null; accepted: boolean }
+    >
+  >(new Map());
 
   // Edição inline (Fase 7, estilo Cmd+K) — independente do fluxo de sessão
   // do agente acima: `inlineEditSelection` guarda o trecho selecionado
@@ -277,6 +297,135 @@ export function Editor({
   const rejectInlineEdit = useCallback(() => {
     setInlineEditResult(null);
     setInlineEditSelection(null);
+  }, []);
+
+  // Mantém o contexto que o provider de ghost text lê sempre no valor atual.
+  useEffect(() => {
+    completionCtxRef.current = { project: project ?? null, path, language: rawLanguage };
+  }, [project, path, rawLanguage]);
+
+  const registerInlineCompletions = useCallback((editor: any, monaco: any) => {
+    if (inlineCompletionsDisposableRef.current) return;
+
+    // Comando sem tecla associada — roda quando o usuário aceita a sugestão
+    // (Tab). É o sinal de "accepted" da telemetria de aceitação (ADR 0014 §7).
+    const acceptCommandId = editor.addCommand(0, (_: unknown, suggestionId: string) => {
+      const rec = shownCompletionsRef.current.get(suggestionId);
+      if (!rec) return;
+      rec.accepted = true;
+      reportCompletionOutcome({
+        suggestion_id: suggestionId,
+        outcome: "accepted",
+        project: completionCtxRef.current.project,
+        language: rec.language,
+        model: null,
+        shown_ms: Math.round(performance.now() - rec.shownAt),
+        latency_ms: rec.latencyMs,
+        chars_suggested: rec.chars,
+        chars_accepted: rec.chars,
+      });
+      shownCompletionsRef.current.delete(suggestionId);
+    });
+
+    const provider = {
+      provideInlineCompletions: async (model: any, position: any, _c: any, token: any) => {
+        const ctx = completionCtxRef.current;
+        if (!ctx.project || !ctx.path) return { items: [] };
+
+        completionAbortRef.current?.abort();
+        const controller = new AbortController();
+        completionAbortRef.current = controller;
+
+        // Debounce de 250 ms; uma tecla nova cancela via token do Monaco.
+        const proceed = await new Promise<boolean>((resolve) => {
+          const timer = setTimeout(() => resolve(true), 250);
+          token.onCancellationRequested(() => {
+            clearTimeout(timer);
+            resolve(false);
+          });
+        });
+        if (!proceed || token.isCancellationRequested) return { items: [] };
+
+        const offset = model.getOffsetAt(position);
+        const full = model.getValue();
+        const prefix = full.slice(Math.max(0, offset - 8000), offset);
+        const suffix = full.slice(offset, offset + 4000);
+        if (!prefix.trim() && !suffix.trim()) return { items: [] };
+
+        let result;
+        try {
+          result = await requestCompletion(
+            { project: ctx.project, path: ctx.path, prefix, suffix, language: ctx.language },
+            controller.signal,
+          );
+        } catch {
+          return { items: [] }; // ghost text falha em silêncio
+        }
+        if (!result || !result.completion) return { items: [] };
+
+        shownCompletionsRef.current.set(result.suggestion_id, {
+          shownAt: performance.now(),
+          latencyMs: result.latency_ms,
+          chars: result.completion.length,
+          language: ctx.language,
+          accepted: false,
+        });
+
+        return {
+          items: [
+            {
+              insertText: result.completion,
+              range: new monaco.Range(
+                position.lineNumber,
+                position.column,
+                position.lineNumber,
+                position.column,
+              ),
+              command: { id: acceptCommandId, title: "", arguments: [result.suggestion_id] },
+            },
+          ],
+          enableForwardStability: true,
+        };
+      },
+      handleItemDidShow: (_completions: any, item: any) => {
+        const id = item?.command?.arguments?.[0];
+        const rec = id ? shownCompletionsRef.current.get(id) : undefined;
+        if (rec) rec.shownAt = performance.now();
+      },
+      freeInlineCompletions: (completions: any) => {
+        const id = completions?.items?.[0]?.command?.arguments?.[0];
+        if (!id) return;
+        const rec = shownCompletionsRef.current.get(id);
+        if (rec && !rec.accepted) {
+          reportCompletionOutcome({
+            suggestion_id: id,
+            outcome: "ignored",
+            project: completionCtxRef.current.project,
+            language: rec.language,
+            model: null,
+            shown_ms: Math.round(performance.now() - rec.shownAt),
+            latency_ms: rec.latencyMs,
+            chars_suggested: rec.chars,
+            chars_accepted: 0,
+          });
+          shownCompletionsRef.current.delete(id);
+        }
+      },
+    };
+
+    const languages = Array.from(new Set([...Object.values(MONACO_LANGUAGE), "plaintext"]));
+    inlineCompletionsDisposableRef.current = monaco.languages.registerInlineCompletionsProvider(
+      languages,
+      provider,
+    );
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      inlineCompletionsDisposableRef.current?.dispose?.();
+      inlineCompletionsDisposableRef.current = null;
+      completionAbortRef.current?.abort();
+    };
   }, []);
 
   const acceptAgentCode = useCallback(async () => {
@@ -558,6 +707,8 @@ export function Editor({
     renderWhitespace: "selection" as const,
     tabSize: 2,
     automaticLayout: true,
+    // Ghost text (ADR 0014) — o provider inline é registrado no onMount.
+    inlineSuggest: { enabled: true },
   };
 
   return (
@@ -854,7 +1005,9 @@ export function Editor({
               options={editorOptions}
               onMount={(editor, monaco) => {
                 editorInstanceRef.current = editor;
+                monacoRef.current = monaco;
                 lsp.onMount(editor, monaco);
+                registerInlineCompletions(editor, monaco);
                 editor.onDidChangeCursorPosition((e) => {
                   onCursorPositionChange?.({
                     line: e.position.lineNumber,
