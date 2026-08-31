@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import os
+
 import pytest
 from fastapi.testclient import TestClient
+
+os.environ["ELTANIX_API_KEY"] = "chave-de-teste"
 
 from eltanix.config import get_settings
 from eltanix.main import create_app
