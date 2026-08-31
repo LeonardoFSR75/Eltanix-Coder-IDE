@@ -53,7 +53,10 @@ target/
 # Workspaces, worktrees e sessões locais
 .eltanix/
 .sicoobito/
-.claude/worktrees/
+**/.sicoobito/worktrees/
+.claude/
+**/.claude/
+**/.claude/worktrees/
 
 # Saída gerada pelo graphify (ferramenta de dev, grafo de conhecimento do repo)
 graphify-out/
