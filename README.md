@@ -31,40 +31,53 @@ de código ([ADR 0001](docs/adr/0001-camada-unica-de-llm.md)).
 
 ```mermaid
 flowchart TD
-    subgraph Clients[" 🖥️ Clientes Front-End "]
-        Web["Web IDE (Next.js 16 + React 19 + Monaco 0.56 + xterm 6)"]
-        Desktop["Desktop Shell Preview (Tauri 2.0 + Svelte 5 + Vite 8)"]
+    subgraph Clients["🖥️ Clientes Front-End"]
+        Web["Web IDE (Next.js 16 + React 19 + Monaco 0.56)"]
+        Desktop["Desktop Preview (Tauri 2.0 + Svelte 5 + Vite 8)"]
     end
 
-    subgraph Core[" ⚡ Eltanix Core Gateway (FastAPI) "]
-        Router["RouterEngine (Multi-Model Gateway & Dynamic Prefixes)"]
-        Agent["LangGraph Agent (Think / Approve / Act + Multi-Agent Orchestra)"]
-        Retrieval["Hybrid Retrieval Engine (Vector HNSW + Code-Aware FTS + Trigram + HyDE + Listwise Rerank)"]
-        InlineAI["Inline Intelligence (Ghost Text, Next-Edit & Cmd+K)"]
-        Graphify["Graphify & Knowledge Graph 360° (Obsidian MOCs & Canvas)"]
-        AnyDoc["AnyDoc (Rust Calamine Multi-Format RAG) + PDF Inspector"]
-        SecBERT["SecureBERT (SAST, PII Sanitizer & Vulnerability Audit)"]
-        Evals["Quality Gate & Evals (eltanix-eval-rag / gate / judge)"]
+    subgraph Core["⚡ Eltanix Core Gateway (FastAPI)"]
+        Router["RouterEngine (Multi-Model Gateway)"]
+        Agent["LangGraph Agent (Orquestração Multiagente)"]
+        Retrieval["Hybrid Retrieval (pgvector + FTS + Trigram + HyDE)"]
+        InlineAI["Inline Intelligence (Ghost Text e Next-Edit)"]
+        Graphify["Graphify 360 (Obsidian MOCs e Knowledge Graph)"]
+        AnyDoc["AnyDoc (Rust Calamine RAG) + PDF Inspector"]
+        SecBERT["SecureBERT (SAST e PII Sanitizer)"]
+        Evals["Quality Gate (eltanix-eval-rag e gate)"]
     end
 
-    subgraph Sandbox[" 🛡️ Ambiente Isolado & Serviços "]
-        Exec["Container Sandbox (Docker Executor com cap_drop: ALL e isolamento)"]
+    subgraph Sandbox["🛡️ Ambiente Isolado"]
+        Exec["Container Sandbox (Docker Executor sem root)"]
         BrowserHeadless["Playwright CDP Headless"]
-        Lightpanda["Lightpanda C/C++ Browser (Ultra-fast 20ms startup)"]
+        Lightpanda["Lightpanda C/C++ Browser (20ms startup)"]
         MCP["Cisco AI Defense MCP Security Scanner"]
     end
 
-    subgraph Data[" 💾 Armazenamento & Inferência Local "]
+    subgraph Storage["💾 Armazenamento e Inferência"]
         PG[("PostgreSQL 17 + pgvector 0.8.6")]
-        Redis[("Redis 8 (Cache, Queues & Circuit Breaker)")]
-        MinIO[("MinIO (Blob & Artifacts S3)")]
-        Ollama[("Ollama (Local LLMs & Embeddings)")]
+        Redis[("Redis 8 (Cache e Filas)")]
+        MinIO[("MinIO (Blob Storage S3)")]
+        Ollama[("Ollama (Modelos Locais)")]
     end
 
-    Web -->|REST / SSE / WS| Core
-    Desktop -->|REST / SSE / IPC| Core
-    Core --> Sandbox
-    Core --> Data
+    Web --> Router
+    Desktop --> Router
+    Router --> Agent
+    Agent --> Retrieval
+    Agent --> InlineAI
+    Agent --> Graphify
+    Agent --> AnyDoc
+    Agent --> SecBERT
+    Agent --> Evals
+    Agent --> Exec
+    Agent --> BrowserHeadless
+    Agent --> Lightpanda
+    Agent --> MCP
+    Retrieval --> PG
+    Router --> Redis
+    AnyDoc --> MinIO
+    Router --> Ollama
 ```
 
 ---
@@ -203,20 +216,30 @@ A camada `retrieval/` ([ADR 0019](docs/adr/0019-camada-de-recuperacao.md)) orque
 
 ```mermaid
 flowchart LR
-    Q[Pergunta do Usuário] --> P[1. Preparo & HyDE]
-    P --> S[2. Consulta às Fontes]
-    subgraph Sources[" Fontes Independentes "]
-        S1[Código: pgvector HNSW + FTS + Trigram]
-        S2[Documentos: AnyDoc / PDF]
-        S3[Notas: Markdown / Obsidian]
-        S4[Grafo: Graphify Relacional]
+    Q["Pergunta do Usuário"] --> P["1. Preparo e HyDE"]
+    P --> S["2. Consulta às Fontes"]
+
+    subgraph Sources["Fontes Independentes"]
+        S1["Código: pgvector HNSW + FTS + Trigram"]
+        S2["Documentos: AnyDoc / PDF"]
+        S3["Notas: Markdown / Obsidian"]
+        S4["Grafo: Graphify Relacional"]
     end
-    S --> S1 & S2 & S3 & S4
-    S1 & S2 & S3 & S4 --> F[3. Fusão por Rank RRF]
-    F --> R[4. Rerank Listwise / Léxico]
-    R --> D[5. Diversidade MMR & Dedupe]
-    D --> B[6. Packing por Token Budget]
-    B --> Ctx[Contexto Final para LLM]
+
+    S --> S1
+    S --> S2
+    S --> S3
+    S --> S4
+
+    S1 --> F["3. Fusão por Rank RRF"]
+    S2 --> F
+    S3 --> F
+    S4 --> F
+
+    F --> R["4. Rerank Listwise e Léxico"]
+    R --> D["5. Diversidade MMR e Dedupe"]
+    D --> B["6. Packing por Token Budget"]
+    B --> Ctx["Contexto Final para LLM"]
 ```
 
 - **Três Sinais por Fonte de Código**: Vetores densos (HNSW `pgvector`), busca textual *code-aware* (com suporte a `camelCase` e `snake_case` indexados via função SQL dedicada) e trigramas `pg_trgm` para tolerância a erros e buscas parciais.
