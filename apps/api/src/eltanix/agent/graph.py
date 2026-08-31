@@ -643,7 +643,7 @@ def build_graph(engine: RouterEngine, context: ToolContext):
                 # desfazer esta escrita específica depois.
                 try:
                     proposto = compute_proposed_diff(context, nome, argumentos)
-                    if proposto is not None:
+                    if proposto is not None and context.snapshots is not None:
                         await context.snapshots.record(
                             session_id=state.get("session_id", ""),
                             iteration=state.get("iterations", 0),

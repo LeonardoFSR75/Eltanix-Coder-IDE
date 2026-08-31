@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import re
 import sys
+from collections.abc import MutableMapping
 from typing import Any
 
 import structlog
@@ -45,8 +46,10 @@ def _redact(value: Any, depth: int = 0) -> Any:
     return value
 
 
-def _redact_processor(_logger: Any, _name: str, event_dict: dict) -> dict:
-    return _redact(event_dict)  # type: ignore[return-value]
+def _redact_processor(
+    _logger: Any, _name: str, event_dict: MutableMapping[str, Any]
+) -> MutableMapping[str, Any]:
+    return _redact(dict(event_dict))
 
 
 def setup_logging(level: str = "INFO", as_json: bool = False) -> None:

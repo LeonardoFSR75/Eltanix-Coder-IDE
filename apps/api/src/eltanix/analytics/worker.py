@@ -85,7 +85,7 @@ class AnalyticsBatchWorker:
                 if not first_traj:
                     continue
 
-                category = first_traj["failure_category"]
+                category = str(first_traj["failure_category"] or "")
                 rca_res = await self.rca_engine.analyze_failure(first_traj, category)
                 proposal_dict = await self.proposal_generator.generate_proposal(first_traj, rca_res)
 

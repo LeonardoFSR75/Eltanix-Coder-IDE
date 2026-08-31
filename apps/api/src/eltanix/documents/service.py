@@ -11,7 +11,7 @@ import io
 import time
 import uuid
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Literal, cast, get_args
 
 from pypdf import PdfReader
 
@@ -25,6 +25,14 @@ from eltanix.router.engine import RouterEngine
 from eltanix.storage.blob import BlobStore
 
 log = get_logger(__name__)
+
+# Formatos que o `anydoc.to_markdown_bytes` aceita no parâmetro `format`. O
+# detector pode devolver variantes fora desta lista (ex. `docm`, `xlsb`) —
+# nesses casos passamos `None` e deixamos o anydoc inferir pelo conteúdo.
+AnydocFormat = Literal[
+    "doc", "docx", "odt", "pdf", "ppt", "pptx", "rtf", "epub", "xlsx", "ods", "odp", "csv"
+]
+_ANYDOC_FORMATS: frozenset[str] = frozenset(get_args(AnydocFormat))
 
 # Um PDF pequeno mas adversarial (streams/objetos aninhados propositalmente)
 # pode fazer o parser gastar minutos numa única extração — o teto de upload
@@ -211,7 +219,8 @@ def _extract_document_content(
     try:
         import anydoc
 
-        markdown = anydoc.to_markdown_bytes(data, format=fmt)
+        anydoc_fmt = cast("AnydocFormat | None", fmt if fmt in _ANYDOC_FORMATS else None)
+        markdown = anydoc.to_markdown_bytes(data, format=anydoc_fmt)
         if not markdown or not markdown.strip():
             raise ValueError(f"Nenhum texto pôde ser extraído do arquivo '{filename}'.")
 

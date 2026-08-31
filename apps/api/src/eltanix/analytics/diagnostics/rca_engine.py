@@ -46,8 +46,17 @@ class RCAEngine:
 
         if self.router:
             try:
-                res = await self.router.complete(prompt=analysis_prompt, max_tokens=256)
-                explanation = res.text.strip()
+                res = await self.router.complete(
+                    requested_model=self.router.settings.default_route_profile,
+                    params={
+                        "messages": [{"role": "user", "content": analysis_prompt}],
+                        "max_tokens": 256,
+                        "temperature": 0,
+                    },
+                    source="analytics:rca",
+                )
+                escolha = (res.payload.get("choices") or [{}])[0]
+                explanation = ((escolha.get("message") or {}).get("content") or "").strip()
             except Exception as e:
                 logger.warning("rca_engine.completion_failed", error=str(e))
                 explanation = (

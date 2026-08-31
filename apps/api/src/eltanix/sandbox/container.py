@@ -443,7 +443,7 @@ class SandboxManager:
             if session in self._sandboxes:
                 continue
             try:
-                await asyncio.to_thread(lambda c=container: c.remove(force=True))
+                await asyncio.to_thread(container.remove, force=True)
                 removidos += 1
                 log.info("sandbox.orphan.removed", session=session, container=container.short_id)
             except Exception as exc:

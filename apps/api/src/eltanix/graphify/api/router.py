@@ -14,6 +14,7 @@ from eltanix.graphify.metrics.analytics import GraphAnalytics
 from eltanix.graphify.pipeline.indexer import GraphIndexer
 from eltanix.graphify.rag.graph_rag import GraphRAGQueryEngine
 from eltanix.graphify.schema import (
+    GraphEdgeRead,
     GraphMetricsSummary,
     GraphNodeRead,
     GraphRAGQueryRequest,
@@ -206,21 +207,7 @@ async def get_ego_subgraph(
             )
             for n in nodes
         ],
-        edges=[
-            {
-                "id": e.id,
-                "workspace": e.workspace,
-                "source_id": e.source_id,
-                "target_id": e.target_id,
-                "relation_type": e.relation_type,
-                "layer": e.layer,
-                "weight": float(e.weight),
-                "evidence": e.evidence,
-                "edge_metadata": e.edge_metadata,
-                "created_at": e.created_at,
-            }
-            for e in edges
-        ],
+        edges=[GraphEdgeRead.model_validate(e) for e in edges],
     )
 
 

@@ -35,7 +35,10 @@ def _get_callback_class() -> Any:
 
             return CallbackHandler
         except ImportError:
-            from langfuse import CallbackHandler  # type: ignore[no-redef]
+            # Layout antigo da lib (< 2.x): a classe morava no pacote raiz.
+            # `attr-defined` ignorado porque as versões atuais do stub não a
+            # expõem aqui — este é o último fallback de um import dinâmico.
+            from langfuse import CallbackHandler  # type: ignore[no-redef,attr-defined]
 
             return CallbackHandler
 

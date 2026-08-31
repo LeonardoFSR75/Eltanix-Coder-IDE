@@ -197,7 +197,7 @@ class ExtensionsManager:
 
         results = await self.client.search_marketplace(query)
 
-        if cache_key is not None and results:
+        if cache_key is not None and self._redis is not None and results:
             try:
                 await self._redis.set(
                     cache_key, json.dumps(results, ensure_ascii=False), ex=_SEARCH_CACHE_TTL_SECONDS

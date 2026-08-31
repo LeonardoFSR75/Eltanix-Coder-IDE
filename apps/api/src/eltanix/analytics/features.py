@@ -36,8 +36,16 @@ class FeatureExtractor:
             if error_snippets:
                 summary_text += "Errors:\n" + "\n".join(error_snippets[:5])
 
-            res = await self.router.embed(input_text=summary_text[:2000])
-            return res.vector
+            res = await self.router.embed(
+                requested_model=self.router.settings.embedding_profile,
+                inputs=[summary_text[:2000]],
+                source="analytics",
+            )
+            data = res.payload.get("data") or []
+            if not data:
+                return None
+            vector = data[0].get("embedding")
+            return list(vector) if vector is not None else None
         except Exception as e:
             logger.warning("analytics.embedding_generation_failed", error=str(e))
             return None

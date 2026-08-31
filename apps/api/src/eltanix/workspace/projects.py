@@ -154,7 +154,7 @@ def list_projects(projects_root: Path) -> list[Project]:
     return projetos
 
 
-def _allow_existing_dirs(paths: list[str]) -> int:
+def _allow_existing_dirs(paths: list[str | None]) -> int:
     """Parte bloqueante (stat + registro em memória) de `rehydrate_path_guard`
     — isolada para rodar em thread, já que `Path.is_dir()` é I/O síncrono."""
     count = 0

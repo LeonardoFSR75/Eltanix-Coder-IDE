@@ -118,7 +118,7 @@ def _run_command_status(resultado: ToolResult) -> str:
     status_from_result=_run_command_status,
 )
 async def run_command(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
-    if ctx.sandbox is None and getattr(ctx, "sandboxes", None) is not None:
+    if ctx.sandbox is None and ctx.sandboxes is not None:
         try:
             ctx.sandbox = await ctx.sandboxes.acquire(ctx.session_id, ctx.workspace_root)
         except Exception:

@@ -35,9 +35,13 @@ log = get_logger(__name__)
 _DANGEROUS_COMMAND_CHARS = (";", "&", "|", "`", "$(", ">", "<", "\n")
 
 
+def _default_edit_tools() -> list[Literal["edit_file", "write_file"]]:
+    return ["edit_file"]
+
+
 class EditPathRule(BaseModel):
     kind: Literal["edit_path_glob"] = "edit_path_glob"
-    tools: list[Literal["edit_file", "write_file"]] = Field(default_factory=lambda: ["edit_file"])
+    tools: list[Literal["edit_file", "write_file"]] = Field(default_factory=_default_edit_tools)
     # Glob simples (fnmatch: *, ?, [seq]) sobre o caminho relativo ao
     # workspace — não trata "/" como especial (mesmo espírito "sem DSL": um
     # glob mais expressivo é complexidade que essa regra não precisa).
