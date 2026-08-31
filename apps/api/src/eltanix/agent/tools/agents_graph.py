@@ -280,13 +280,10 @@ async def wait_for_agents(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
     summarize=lambda a: f"finalizar agente: {a.get('result_summary', '')[:60]}",
 )
 async def agent_finish(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
-    resumo = args.get("result_summary", "").strip()
-    sucesso = bool(args.get("success", True))
     if ctx.parent_session_id is None:
-        return ToolResult(
-            ok=True,
-            content=f"Tarefa concluída com sucesso: {resumo or 'Sem resumo adicional'}",
-            data={"finished": True, "success": sucesso, "summary": resumo},
+        return ToolResult.failure(
+            "`agent_finish` é só pra sub-agentes com pai (spawnados via `spawn_agent`). "
+            "Uma sessão raiz sem pai simplesmente para de chamar ferramentas quando termina."
         )
     if ctx.coordinator is None:
         return _sem_coordenador()
