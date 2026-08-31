@@ -13,7 +13,7 @@ from typing import Any
 import pytest
 
 from eltanix.optimizer import semantic_cache as semantic_cache_module
-from eltanix.optimizer.cache import CachedResponse, ResponseCache
+from eltanix.optimizer.cache import ResponseCache
 from eltanix.optimizer.semantic_cache import SemanticCache, _extract_query_text
 
 

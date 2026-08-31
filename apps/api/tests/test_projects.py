@@ -180,6 +180,7 @@ async def test_create_project_fails_fast_without_db(tmp_path: Path):
     `DATABASE_URL_TEST` de propósito: é exatamente a ausência de engine que
     este teste verifica."""
     from httpx import ASGITransport, AsyncClient
+
     from eltanix.api.deps import require_session
     from eltanix.main import create_app
 

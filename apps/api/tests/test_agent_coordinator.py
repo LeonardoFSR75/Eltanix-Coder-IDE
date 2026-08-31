@@ -20,7 +20,7 @@ def _session_id() -> str:
 
 
 class _FakePipeline:
-    def __init__(self, redis: "_FakeRedis") -> None:
+    def __init__(self, redis: _FakeRedis) -> None:
         self._redis = redis
         self._ops: list[tuple[str, tuple, dict]] = []
 
@@ -101,7 +101,7 @@ class _FakeRedis:
         retirados, self.lists[name] = itens[:count], itens[count:]
         return retirados or None
 
-    async def blpop(self, keys, timeout):
+    async def blpop(self, keys, timeout):  # noqa: ASYNC109 - assinatura espelha redis.asyncio
         # Sem bloqueio real de propósito: os testes que exercitam mensagem já
         # chegada não precisam de concorrência, e o teste de timeout mede o
         # comportamento do coordinator (retorna [] em vez de lançar), não o

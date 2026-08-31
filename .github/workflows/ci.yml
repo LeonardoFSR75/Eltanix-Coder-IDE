@@ -37,7 +37,7 @@ jobs:
       - name: ruff format --check
         run: uv run ruff format --check src
       - name: ruff check
-        run: uv run ruff check src
+        run: uv run ruff check src tests
       - name: pytest
         # `--cov` sem valor usa o `source` de [tool.coverage.run] no pyproject.
         run: >-

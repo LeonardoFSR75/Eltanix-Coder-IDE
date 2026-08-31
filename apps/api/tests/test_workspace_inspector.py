@@ -1,9 +1,11 @@
 """Testes unitários para PathGuard, ProjectInspector e endpoint de abertura de caminhos arbitrários."""
 
 from pathlib import Path
+
 import pytest
-from eltanix.workspace.path_guard import PathGuard, PathEscapeError
+
 from eltanix.workspace.inspector import ProjectInspector
+from eltanix.workspace.path_guard import PathEscapeError, PathGuard
 
 
 def test_path_guard_allow_and_validate(tmp_path: Path):

@@ -109,6 +109,12 @@ select = ["E", "F", "I", "UP", "B", "ASYNC", "RUF"]
 # cada ocorrência como "caractere ambíguo".
 ignore = ["E501", "RUF001", "RUF002", "RUF003"]
 
+[tool.ruff.lint.per-file-ignores]
+# Carrega os apps `executor` e `browser` via importlib.util antes de importar os
+# módulos de `eltanix`, então os imports do pacote ficam de propósito após código
+# executável.
+"tests/test_security_pentest.py" = ["E402"]
+
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]

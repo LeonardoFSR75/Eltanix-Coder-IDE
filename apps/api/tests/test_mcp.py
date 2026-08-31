@@ -12,8 +12,6 @@ from __future__ import annotations
 import asyncio
 from types import SimpleNamespace
 
-import pytest
-
 from eltanix.agent.tools.base import RiskClass, ToolRegistry
 from eltanix.config import Settings
 from eltanix.mcp.client import MCPServerConnection
