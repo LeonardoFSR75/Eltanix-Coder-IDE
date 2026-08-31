@@ -140,6 +140,31 @@ Sistema de recuperação de informação multi-modal e grafo de conhecimento int
 - **RAG Multi-Formato ([ADR 0008](adr/0008-rag-multi-formato-anydoc-e-pdf-inspector.md))**:
   - Ingestão de arquivos de escritório (Word, Excel, PowerPoint) via motor `calamine` (`firecrawl-anydoc`).
   - Inspeção de PDFs por `pdf-inspector` em Rust com fallback para `pypdf`.
+- **Camada de recuperação ([ADR 0019](adr/0019-camada-de-recuperacao.md))**: pipeline
+  `preparo → fontes → fusão → rerank → diversidade → packing`, **acima** das quatro
+  fontes, sem fundi-las. `search_code` e `POST /api/context/retrieve` passam por ela;
+  `RETRIEVAL_ENABLED=false` volta ao caminho anterior.
+  - **Três sinais por fonte de código**: vetor (pgvector HNSW), full-text
+    code-aware (`camelCase`/`snake_case` separados no índice e na consulta pela
+    mesma função SQL, migração 0032) e trigrama (`pg_trgm` sobre `symbol`/`path`,
+    para nome parcial e erro de digitação).
+  - **Fusão entre fontes por rank**, nunca por score: os scores de código, documento
+    e nota vivem em escalas incomparáveis.
+  - **Rerank de segunda passagem**: léxico determinístico (identificador da pergunta
+    presente no trecho, valendo mais na assinatura que no corpo) + listwise por LLM
+    no perfil `utility`. Modelo caído ou resposta fora do formato mantém a ordem.
+  - **MMR + dedupe**: oito trechos do mesmo arquivo deixam de ocupar o orçamento
+    inteiro; cobertura vale mais que repetição dentro de um limite fixo.
+  - **Packing por orçamento de tokens** (`RETRIEVAL_TOKEN_BUDGET`), com citação
+    estável por bloco. Nada entra pela metade.
+- **Contrato do espaço vetorial ([ADR 0017](adr/0017-contrato-do-espaco-vetorial.md))**:
+  cada vetor guarda o modelo que o gerou (`embedding_model`) e a busca filtra por ele;
+  modelo de embedding com dimensão incompatível é desabilitado na carga do catálogo.
+- **Régua versionada ([ADR 0018](adr/0018-gate-de-qualidade-de-recuperacao.md))**:
+  `eltanix-eval-rag` (recall@k, MRR, nDCG) contra `config/eval_dataset.yaml`,
+  `eltanix-eval-gate` contra o baseline em commit, e `eltanix-eval-judge` calibrando o
+  juiz de geração com rótulo humano, concordância inter-execução e intervalo de
+  confiança por bootstrap.
 
 ---
 

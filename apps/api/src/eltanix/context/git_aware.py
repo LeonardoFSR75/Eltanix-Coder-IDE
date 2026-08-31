@@ -207,11 +207,22 @@ async def git_aware_search(
     path_prefix: str | None = None,
     expand: bool = True,
     recency: bool = True,
+    embedding_model: str | None = None,
+    ef_search: int | None = None,
+    vector_weight: float = 1.0,
+    text_weight: float = 1.0,
+    trigram_weight: float = 0.5,
+    rrf_k: int = store.RRF_K,
 ) -> list[SearchHit]:
     """`hybrid_search` de código + expansão de grafo + re-rank por git.
 
     Puxa um pool maior que `limit` do `hybrid_search` para a expansão e o
     re-rank terem folga, depois trunca em `limit`.
+
+    Os pesos das pernas são repassados sem interpretação: quem afina o RRF
+    (evals, `RETRIEVAL_WEIGHT_*`) tem de afinar os dois caminhos de busca de
+    código, ou ligar o git-aware muda a ordenação por um motivo que não é o
+    git.
     """
     base = await store.hybrid_search(
         session,
@@ -220,6 +231,12 @@ async def git_aware_search(
         query_embedding=query_embedding,
         limit=max(limit * 2, limit + 6),
         path_prefix=path_prefix,
+        embedding_model=embedding_model,
+        ef_search=ef_search,
+        vector_weight=vector_weight,
+        text_weight=text_weight,
+        trigram_weight=trigram_weight,
+        rrf_k=rrf_k,
     )
     if not base:
         return []

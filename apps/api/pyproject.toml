@@ -73,6 +73,8 @@ securebert = [
 
 [project.scripts]
 eltanix-eval-rag = "eltanix.evals.runner:main"
+eltanix-eval-gate = "eltanix.evals.gate:main"
+eltanix-eval-judge = "eltanix.evals.judge:main"
 
 [dependency-groups]
 dev = [

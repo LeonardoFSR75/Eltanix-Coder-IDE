@@ -1,0 +1,196 @@
+# Conjunto rotulado para calibrar o juiz de geração (`evals/judge.py`, item 47).
+#
+# Cada caso traz uma PERGUNTA, uma RESPOSTA já escrita e os TRECHOS que ela
+# deveria estar usando. A resposta vem pronta de propósito: o objetivo é medir o
+# **juiz**, e regerá-la a cada execução mediria o gerador junto.
+#
+# Os rótulos são de humano e valem 0..1:
+#   faithfulness     — quanto do que a resposta afirma os trechos sustentam
+#   answer_relevance — quanto a resposta endereça a pergunta (independente de
+#                      estar certa)
+#
+# Os casos abaixo foram construídos com verdade inequívoca — resposta copiada do
+# trecho, resposta inventada, resposta correta mas fora do tópico — porque uma
+# calibração ajustada em casos ambíguos mede a discordância entre humanos, não o
+# viés do juiz. **Expandir com casos reais colhidos em produção é o que faz esta
+# calibração valer**: rodar `eltanix-eval-judge` com 12 casos construídos diz se
+# o juiz é grosseiramente enviesado; não diz o que ele faz na cauda difícil.
+#
+#   uv run eltanix-eval-judge --repeats 3 --out config/judge_calibration.json
+
+cases:
+  # ── resposta fiel e no tópico ──────────────────────────────────────────────
+  - id: fiel-01
+    query: Qual porta de saída um módulo deve usar para chamar um LLM?
+    answer: >-
+      Todo consumo de LLM passa por RouterEngine.complete() ou .embed(); nenhum
+      módulo fora de eltanix.router importa SDK de provedor.
+    context:
+      - >-
+        Uma única porta de saída para LLM: nenhum módulo fora de eltanix.router
+        importa litellm/openai/anthropic/SDK de provedor. Todo consumo passa por
+        RouterEngine.complete()/.embed().
+    faithfulness: 1.0
+    answer_relevance: 1.0
+    note: cópia fiel do trecho, responde exatamente o que foi perguntado
+
+  - id: fiel-02
+    query: O que decide se uma ferramenta do agente precisa de aprovação humana?
+    answer: >-
+      A RiskClass declarada na própria ferramenta. WRITE e EXEC param no grafo
+      esperando aprovação; quem chama não participa dessa decisão.
+    context:
+      - >-
+        Toda ferramenta do agente declara uma RiskClass (READ/WRITE/EXEC) em
+        agent/tools/base.py. WRITE/EXEC sempre param no grafo (agent/graph.py)
+        esperando aprovação humana via interrupt() do LangGraph — isso é
+        decidido pela ferramenta, nunca pelo chamador.
+    faithfulness: 1.0
+    answer_relevance: 1.0
+
+  - id: fiel-03
+    query: O que acontece com a busca de documentos quando o MinIO cai?
+    answer: >-
+      O upload de documento fica indisponível, mas a plataforma continua no ar —
+      falha de serviço opcional degrada em vez de derrubar.
+    context:
+      - >-
+        Falha de serviço opcional degrada, não derruba: Redis fora → sem
+        cache/circuit breaker; MinIO fora → upload de documento indisponível;
+        MCP com comando inválido → aquele servidor marca status "error", os
+        outros continuam.
+    faithfulness: 1.0
+    answer_relevance: 1.0
+
+  # ── resposta inventada (não sustentada pelos trechos) ──────────────────────
+  - id: alucina-01
+    query: Qual é o valor padrão de hnsw.ef_search na busca?
+    answer: >-
+      O padrão é 512, definido diretamente na migração do índice HNSW e não
+      configurável por ambiente.
+    context:
+      - >-
+        hnsw.ef_search por query de busca. O default do pgvector (40) é baixo
+        para um pool de 50 candidatos. HNSW_EF_SEARCH, padrão 100.
+    faithfulness: 0.0
+    answer_relevance: 1.0
+    note: responde a pergunta certa, com número e afirmação que o trecho contradiz
+
+  - id: alucina-02
+    query: Como o executor isolado é autenticado?
+    answer: >-
+      Por mTLS com certificado emitido pelo próprio daemon Docker, renovado a
+      cada 24 horas pelo serviço de rotação.
+    context:
+      - >-
+        Em produção/container, run_command passa pelo serviço executor isolado,
+        autenticado por EXECUTOR_TOKEN.
+    faithfulness: 0.0
+    answer_relevance: 1.0
+
+  - id: alucina-03
+    query: Quantas fontes de RAG existem e elas compartilham código?
+    answer: >-
+      São três fontes e todas passam por um helper comum de busca híbrida, para
+      evitar duplicação.
+    context:
+      - >-
+        RAG tem fontes independentes (context/store.py, documents/store.py,
+        notes/store.py, graphify/store.py) — a duplicação entre as rotinas de
+        busca é deliberada, documentada nos próprios arquivos. Não abstrair num
+        helper compartilhado.
+    faithfulness: 0.0
+    answer_relevance: 1.0
+    note: erra a contagem e afirma o oposto do trecho
+
+  # ── resposta sustentada pelos trechos, mas fora do tópico ──────────────────
+  - id: fora-01
+    query: Como o projeto resolve o caminho local de um projeto?
+    answer: >-
+      Os logs do structlog carregam request_id em todo request HTTP e session_id
+      nas sessões de agente.
+    context:
+      - >-
+        Logs (structlog) carregam request_id (todo request HTTP, via
+        api/middleware.py::CorrelationIdMiddleware) e session_id (sessões de
+        agente, via agent/runner.py::stream_run).
+      - >-
+        local_path é a fonte de verdade da localização do projeto:
+        workspace/projects.py::resolve() consulta ProjectRecord.local_path antes
+        do fallback PROJECTS_ROOT/<slug>.
+    faithfulness: 1.0
+    answer_relevance: 0.0
+    note: tudo que afirma está nos trechos, mas não é o que foi perguntado
+
+  - id: fora-02
+    query: O que o pdf-inspector faz?
+    answer: >-
+      Toda requisição externa é validada por validate_target_url(), bloqueando
+      RFC 1918, loopback e metadados de nuvem.
+    context:
+      - >-
+        Proteção Anti-SSRF para chamadas Web: toda requisição externa
+        (Firecrawl / Scrape / Deep Research) deve ser validada por
+        validate_target_url(), bloqueando RFC 1918, loopback, metadados cloud e
+        nomes de contêineres Docker.
+      - >-
+        Extração de arquivos de escritório via firecrawl-anydoc (motor calamine)
+        e classificação de PDFs via pdf-inspector com fallback transparente para
+        pypdf.
+    faithfulness: 1.0
+    answer_relevance: 0.0
+
+  # ── resposta parcialmente sustentada ───────────────────────────────────────
+  - id: parcial-01
+    query: Como uma ferramenta MCP externa recebe sua classe de risco?
+    answer: >-
+      Ferramentas MCP nascem WRITE por padrão e só viram READ se o servidor for
+      marcado trust_annotations. O administrador também pode rebaixar qualquer
+      ferramenta para READ pela interface de /mcp.
+    context:
+      - >-
+        Ferramentas MCP (servidores externos conectados em /mcp) nascem WRITE
+        por padrão; só viram READ se o servidor for marcado
+        trust_annotations: true e a tool anunciar read_only_hint: true.
+    faithfulness: 0.5
+    answer_relevance: 1.0
+    note: primeira frase fiel; segunda inventa um caminho de UI que não está no trecho
+
+  - id: parcial-02
+    query: O que a camada de autocompletar inline pode fazer?
+    answer: >-
+      /api/context/completions é READ-only e não passa por ApprovalPolicy. O
+      modelo usado é o mesmo perfil coding do agente, fixado no código.
+    context:
+      - >-
+        /api/context/completions (ghost text) e /api/context/next-edit são
+        READ-only, nunca passam por ApprovalPolicy, e fazem egress só por
+        RouterEngine.complete(). O modelo é escolhido pelos perfis
+        completion/next-edit em routes.yaml, nunca por constante no código.
+    faithfulness: 0.5
+    answer_relevance: 1.0
+
+  # ── recusa correta (trechos não contêm a resposta) ─────────────────────────
+  - id: recusa-01
+    query: Qual é o custo mensal da infraestrutura em produção?
+    answer: Não há informação suficiente nos trechos.
+    context:
+      - >-
+        Spans de ferramentas e RAG são gravados em TraceRecorder e tabelas
+        request_log no Postgres.
+    faithfulness: 1.0
+    answer_relevance: 1.0
+    note: >-
+      recusar quando o contexto não sustenta é o comportamento pedido ao gerador;
+      um juiz que pune isso empurra o sistema para alucinar
+
+  - id: recusa-02
+    query: Qual porta o Postgres usa no docker-compose?
+    answer: Não há informação suficiente nos trechos.
+    context:
+      - >-
+        Login é obrigatório para o browser: toda rota usa
+        AuthDep = Depends(require_session), que aceita ELTANIX_API_KEY válida OU
+        cookie de sessão válido.
+    faithfulness: 1.0
+    answer_relevance: 1.0

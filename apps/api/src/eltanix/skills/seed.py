@@ -148,4 +148,6 @@ async def _embed_skill_descriptions(
             vetor = item.get("embedding")
             if not vetor:
                 continue
-            await store.set_description_embedding(session, uuid.UUID(skill_id), vetor)
+            await store.set_description_embedding(
+                session, uuid.UUID(skill_id), vetor, resultado.provenance_tag
+            )

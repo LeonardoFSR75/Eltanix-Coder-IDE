@@ -131,6 +131,14 @@ async def health(engine: EngineDep) -> dict[str, Any]:
         "profiles": sorted(engine.catalog.profiles),
         "cache_enabled": engine.cache.enabled,
         "pricing_updated_at": engine.prices.updated_at,
+        # Modelo desabilitado por `validate_catalog` (dimensão de embedding
+        # incompatível, capability trocada — ver ADR 0017) some silenciosamente
+        # do pool: sem isto, o sintoma é só "models_usable" menor do que se
+        # esperava, sem dizer qual nem por quê.
+        "catalog_issues": [
+            {"model": i.model_id, "detail": i.message, "fatal": i.fatal}
+            for i in engine.catalog.issues
+        ],
     }
 
 

@@ -281,6 +281,7 @@ class AgentRunner:
         browser_config: BrowserConfig | None = None,
         documents: DocumentService | None = None,
         notes: NoteService | None = None,
+        retrieval: Any | None = None,  # RetrievalService
         skills: SkillService | None = None,
         custom_modes: CustomModeService | None = None,
         snapshots: SnapshotService | None = None,
@@ -299,6 +300,7 @@ class AgentRunner:
         self.browser_config = browser_config
         self.documents = documents
         self.notes = notes
+        self.retrieval = retrieval
         self.skills = skills
         self.custom_modes = custom_modes
         self.snapshots = snapshots
@@ -509,13 +511,17 @@ class AgentRunner:
                     requested_model=self.settings.embedding_profile,
                     inputs=[task],
                     source="agent.skill_routing",
+                    purpose="query",
                 )
                 dados = resultado.payload.get("data") or []
                 vetor = dados[0].get("embedding") if dados else None
                 if vetor:
                     top_k, min_score = self._skill_routing_params()
                     relevantes = await self.skills.find_relevant(
-                        vetor, top_k=top_k, min_score=min_score
+                        vetor,
+                        top_k=top_k,
+                        min_score=min_score,
+                        embedding_model=resultado.provenance_tag,
                     )
                     for skill in relevantes:
                         if skill.name in nomes_vistos:
@@ -776,6 +782,7 @@ class AgentRunner:
             browser=browser,
             documents=self.documents,
             notes=self.notes,
+            retrieval=self.retrieval,
             skills=self.skills,
             audit=self.audit,
             firecrawl=self.firecrawl,

@@ -49,7 +49,8 @@ API sem escrever `curl` — abra a pasta como coleção, selecione o ambiente `l
 | `notes/` | Segundo Cérebro: `store.py`, `service.py` (resolução de wikilinks `[[...]]`, fatiamento consciente de prosa e indexação vetorial) |
 | `mcp/` | Cliente MCP real — `config.py`/`config_editor.py` (YAML), `client.py` (conexão stdio/HTTP), `manager.py` (registra tools no `ToolRegistry`) |
 | `telemetry/` | `TraceRecorder` — buffer em memória de spans de tool/RAG (não confundir com `router/telemetry.py`, que é custo de LLM em Postgres) |
-| `evals/` | Harness de hit@k/MRR contra os buscadores reais — `uv run eltanix-eval-rag` |
+| `retrieval/` | Pipeline que roda **por cima** das fontes: preparo de query (`query.py`), fusão entre fontes por rank (`fusion.py`), rerank de segunda passagem (`rerank.py`), MMR/dedupe (`diversity.py`), packing por orçamento (`pack.py`), política de fontes (`policy.py`), orquestração (`service.py`). Importa dos stores; nenhum store importa daqui. Ver ADR 0019 |
+| `evals/` | Harness de recall@k/MRR/nDCG contra os buscadores reais (`eltanix-eval-rag`), gate contra o baseline versionado (`eltanix-eval-gate`), calibração do juiz de geração (`eltanix-eval-judge`) e indexação por CLI para CI (`python -m eltanix.evals.index_workspace`). Ver ADR 0018 e 0019 |
 | `db/` | `session.py` (engine/session_scope), `models.py`, migrações Alembic em `alembic/versions/` |
 | `sandbox/` | `container.py` (Docker local) / `executor.py` (cliente do serviço isolado, ver ADR 0002) |
 | `analytics/` | Subsistema de Diagnóstico e Anomalias — clusterização não-supervisionada de trajetórias por similaridade de cosseno de embeddings e heurísticas de regras |
@@ -70,6 +71,19 @@ Agentes e desenvolvedores trabalhando nesta API **devem** consultar o grafo e as
   `GENERATED ALWAYS AS (to_tsvector(...)) STORED` e índice HNSW pgvector não saem de
   `op.create_table` — usar `op.execute()` com o DDL cru (ver `0005_documents.py` como
   exemplo).
+- **Tabela nova com coluna de vetor**: além do índice HNSW, precisa de
+  `embedding_model` (String(128), nullable) preenchida com o **modelo resolvido**
+  que gerou o vetor, e a busca tem de filtrar por ela — ver ADR 0017. Vetor nulo
+  ⇒ `embedding_model` nulo.
+- **Mudança que afeta recuperação** (chunker, RRF, `ef_search`, prompt de busca,
+  modelo de embedding, qualquer `RETRIEVAL_*`): rodar `eltanix-eval-rag --json` e
+  `eltanix-eval-gate` antes de fechar o PR — o workflow `rag-quality.yml` é noturno,
+  não roda por PR.
+- **Etapa nova no pipeline de recuperação**: entra em `retrieval/` como função pura
+  sobre `list[RetrievedItem]`, testável sem banco (ver `tests/test_retrieval_pipeline.py`),
+  e é encaixada na ordem em `retrieval/service.py::retrieve`. Só o empacotador descarta —
+  etapa nova reordena ou rebaixa. Se precisar de LLM, usa o perfil
+  `RETRIEVAL_UTILITY_PROFILE` e degrada para a ordem de entrada quando falhar.
 - **Ferramenta nova do agente**: decorar com `@tool(name=..., risk=RiskClass.READ|WRITE|EXEC, ...)`
   em `agent/tools/`, handler assina `(ctx: ToolContext, args: dict) -> ToolResult`. A
   classe de risco é a única coisa que decide aprovação — não adicionar checagem própria.

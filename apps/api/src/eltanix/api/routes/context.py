@@ -24,6 +24,7 @@ from eltanix.context.repomap import DEFAULT_TOKEN_BUDGET, build_repo_map
 from eltanix.db.models import CompletionEvent
 from eltanix.db.session import session_scope
 from eltanix.logging_setup import get_logger
+from eltanix.retrieval.service import RetrievalRequest, RetrievalService
 from eltanix.workspace import projects as project_ops
 from eltanix.workspace.projects import ProjectError
 
@@ -39,6 +40,16 @@ def _indexer(request: Request) -> ContextIndexer:
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Indexador não inicializado."
         )
     return indexer
+
+
+def _retrieval(request: Request) -> RetrievalService:
+    servico: RetrievalService | None = getattr(request.app.state, "retrieval", None)
+    if servico is None:  # pragma: no cover - só ocorre se o lifespan falhar
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Camada de recuperação não inicializada.",
+        )
+    return servico
 
 
 def _resolve_root(settings: SettingsDep, project: str | None) -> Path:
@@ -135,6 +146,79 @@ async def search(payload: SearchRequest, request: Request, settings: SettingsDep
             }
             for hit in hits
         ],
+    }
+
+
+class RetrieveRequest(BaseModel):
+    """Entrada do pipeline completo (ADR 0019).
+
+    Separada de `SearchRequest` de propósito: `/search` é a busca de código do
+    painel da IDE e devolve campos de código (símbolo, linha, linguagem).
+    `/retrieve` mistura fontes e devolve trechos com citação — mudar o formato
+    de `/search` para caber as duas coisas quebraria o painel sem melhorar
+    nenhuma das duas.
+    """
+
+    query: str = Field(min_length=1)
+    project: str
+    limit: int = Field(default=8, ge=1, le=50)
+    path_prefix: str | None = None
+    token_budget: int | None = Field(default=None, ge=256, le=200_000)
+    sources: list[Literal["context", "documents", "notes"]] | None = None
+    # `None` em cada um destes deixa a configuração decidir. Existem para
+    # comparar caminhos numa mesma base durante as evals, sem redeploy.
+    expand: bool | None = None
+    hyde: bool | None = None
+    rerank: bool | None = None
+    include_content: bool = True
+
+
+@router.post("/retrieve")
+async def retrieve(
+    payload: RetrieveRequest, request: Request, settings: SettingsDep
+) -> dict[str, Any]:
+    await _check_project_access(request, payload.project, min_role="viewer")
+    root = _resolve_root(settings, payload.project)
+    resultado = await _retrieval(request).retrieve(
+        RetrievalRequest(
+            query=payload.query,
+            root=root,
+            project_slug=payload.project,
+            limit=payload.limit,
+            token_budget=payload.token_budget,
+            path_prefix=payload.path_prefix,
+            sources=tuple(payload.sources) if payload.sources else None,
+            expand=payload.expand,
+            hyde=payload.hyde,
+            use_rerank=payload.rerank,
+        )
+    )
+    return {
+        "query": payload.query,
+        # A consulta normalizada e as variantes voltam para o chamador porque
+        # "por que este resultado?" é a pergunta seguinte, sempre, e sem isto
+        # ela só se responde lendo log de servidor.
+        "normalized": resultado.prepared.lexical,
+        "variants": list(resultado.prepared.variants),
+        "plan": {"sources": list(resultado.plan.sources), "reason": resultado.plan.reason},
+        "stats": resultado.stats,
+        "items": [
+            {
+                "source": item.source,
+                "key": item.key,
+                "citation": item.citation,
+                "path": item.path,
+                "score": round(item.score, 6),
+                "token_count": item.token_count,
+                "vector_rank": item.vector_rank,
+                "text_rank": item.text_rank,
+                "trigram_rank": item.trigram_rank,
+                "meta": item.meta,
+                "content": item.content if payload.include_content else None,
+            }
+            for item in resultado.items
+        ],
+        "context": resultado.packed.text if payload.include_content else None,
     }
 
 

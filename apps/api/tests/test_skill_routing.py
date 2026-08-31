@@ -40,10 +40,13 @@ async def test_find_relevant_delegates_to_store(monkeypatch):
 
     chamada = {}
 
-    async def _fake_search_by_similarity(session, *, query_embedding, top_k, min_score):
+    async def _fake_search_by_similarity(
+        session, *, query_embedding, top_k, min_score, embedding_model=None
+    ):
         chamada["query_embedding"] = query_embedding
         chamada["top_k"] = top_k
         chamada["min_score"] = min_score
+        chamada["embedding_model"] = embedding_model
         return esperado
 
     from eltanix.skills import service as skills_service_module
@@ -54,10 +57,17 @@ async def test_find_relevant_delegates_to_store(monkeypatch):
     )
 
     service = SkillService()
-    resultado = await service.find_relevant([0.1, 0.2, 0.3], top_k=2, min_score=0.72)
+    resultado = await service.find_relevant(
+        [0.1, 0.2, 0.3], top_k=2, min_score=0.72, embedding_model="ollama/nomic-embed-text"
+    )
 
     assert resultado == esperado
-    assert chamada == {"query_embedding": [0.1, 0.2, 0.3], "top_k": 2, "min_score": 0.72}
+    assert chamada == {
+        "query_embedding": [0.1, 0.2, 0.3],
+        "top_k": 2,
+        "min_score": 0.72,
+        "embedding_model": "ollama/nomic-embed-text",
+    }
 
 
 def _make_runner(*, skills: SkillService | None) -> AgentRunner:
@@ -94,7 +104,11 @@ async def test_route_skills_embed_failure_degrades_to_none():
 async def test_route_skills_no_match_returns_none():
     runner = _make_runner(skills=AsyncMock(spec=SkillService))
     runner.engine.embed = AsyncMock(
-        return_value=SimpleNamespace(payload={"data": [{"embedding": [0.1, 0.2]}]})
+        return_value=SimpleNamespace(
+            payload={"data": [{"embedding": [0.1, 0.2]}]},
+            model_id="ollama/nomic-embed-text",
+            provenance_tag="ollama/nomic-embed-text",
+        )
     )
     runner.skills.find_relevant.return_value = []
 
@@ -105,7 +119,11 @@ async def test_route_skills_no_match_returns_none():
 async def test_route_skills_injects_matched_skill_section():
     runner = _make_runner(skills=AsyncMock(spec=SkillService))
     runner.engine.embed = AsyncMock(
-        return_value=SimpleNamespace(payload={"data": [{"embedding": [0.1, 0.2]}]})
+        return_value=SimpleNamespace(
+            payload={"data": [{"embedding": [0.1, 0.2]}]},
+            model_id="ollama/nomic-embed-text",
+            provenance_tag="ollama/nomic-embed-text",
+        )
     )
     runner.skills.find_relevant.return_value = [
         Skill(
@@ -125,7 +143,10 @@ async def test_route_skills_injects_matched_skill_section():
     assert "### test-driven-development (roteada automaticamente" in resultado
     assert "Escreva o teste antes da implementação." in resultado
     runner.skills.find_relevant.assert_awaited_once_with(
-        [0.1, 0.2], top_k=AgentRunner._SKILLS_TOP_K, min_score=AgentRunner._SKILLS_MIN_SCORE
+        [0.1, 0.2],
+        top_k=AgentRunner._SKILLS_TOP_K,
+        min_score=AgentRunner._SKILLS_MIN_SCORE,
+        embedding_model="ollama/nomic-embed-text",
     )
 
 
@@ -133,7 +154,11 @@ async def test_route_skills_injects_matched_skill_section():
 async def test_route_skills_slash_command_forces_skill_without_embedding_match():
     runner = _make_runner(skills=AsyncMock(spec=SkillService))
     runner.engine.embed = AsyncMock(
-        return_value=SimpleNamespace(payload={"data": [{"embedding": [0.1, 0.2]}]})
+        return_value=SimpleNamespace(
+            payload={"data": [{"embedding": [0.1, 0.2]}]},
+            model_id="ollama/nomic-embed-text",
+            provenance_tag="ollama/nomic-embed-text",
+        )
     )
     runner.skills.get_by_name.return_value = Skill(
         id=MagicMock(),
@@ -156,7 +181,11 @@ async def test_route_skills_slash_command_forces_skill_without_embedding_match()
 async def test_route_skills_forced_and_routed_skill_never_duplicate():
     runner = _make_runner(skills=AsyncMock(spec=SkillService))
     runner.engine.embed = AsyncMock(
-        return_value=SimpleNamespace(payload={"data": [{"embedding": [0.1, 0.2]}]})
+        return_value=SimpleNamespace(
+            payload={"data": [{"embedding": [0.1, 0.2]}]},
+            model_id="ollama/nomic-embed-text",
+            provenance_tag="ollama/nomic-embed-text",
+        )
     )
     mesma_skill = Skill(
         id=MagicMock(),
@@ -181,7 +210,11 @@ async def test_route_skills_forced_and_routed_skill_never_duplicate():
 async def test_route_skills_unrecognized_slash_command_falls_back_to_routing():
     runner = _make_runner(skills=AsyncMock(spec=SkillService))
     runner.engine.embed = AsyncMock(
-        return_value=SimpleNamespace(payload={"data": [{"embedding": [0.1, 0.2]}]})
+        return_value=SimpleNamespace(
+            payload={"data": [{"embedding": [0.1, 0.2]}]},
+            model_id="ollama/nomic-embed-text",
+            provenance_tag="ollama/nomic-embed-text",
+        )
     )
     runner.skills.find_relevant.return_value = []
 
@@ -206,7 +239,11 @@ def _skill(name: str) -> Skill:
 async def test_route_skills_plan_mode_forces_spec_and_planning_skills():
     runner = _make_runner(skills=AsyncMock(spec=SkillService))
     runner.engine.embed = AsyncMock(
-        return_value=SimpleNamespace(payload={"data": [{"embedding": [0.1, 0.2]}]})
+        return_value=SimpleNamespace(
+            payload={"data": [{"embedding": [0.1, 0.2]}]},
+            model_id="ollama/nomic-embed-text",
+            provenance_tag="ollama/nomic-embed-text",
+        )
     )
     runner.skills.find_relevant.return_value = []
     runner.skills.get_by_name.side_effect = lambda nome: _skill(nome)
@@ -223,7 +260,11 @@ async def test_route_skills_plan_mode_forces_spec_and_planning_skills():
 async def test_route_skills_non_plan_mode_does_not_force_spec_skills():
     runner = _make_runner(skills=AsyncMock(spec=SkillService))
     runner.engine.embed = AsyncMock(
-        return_value=SimpleNamespace(payload={"data": [{"embedding": [0.1, 0.2]}]})
+        return_value=SimpleNamespace(
+            payload={"data": [{"embedding": [0.1, 0.2]}]},
+            model_id="ollama/nomic-embed-text",
+            provenance_tag="ollama/nomic-embed-text",
+        )
     )
     runner.skills.find_relevant.return_value = []
 
@@ -237,7 +278,11 @@ async def test_route_skills_non_plan_mode_does_not_force_spec_skills():
 async def test_route_skills_plan_mode_slash_spec_does_not_duplicate_forced_skill():
     runner = _make_runner(skills=AsyncMock(spec=SkillService))
     runner.engine.embed = AsyncMock(
-        return_value=SimpleNamespace(payload={"data": [{"embedding": [0.1, 0.2]}]})
+        return_value=SimpleNamespace(
+            payload={"data": [{"embedding": [0.1, 0.2]}]},
+            model_id="ollama/nomic-embed-text",
+            provenance_tag="ollama/nomic-embed-text",
+        )
     )
     runner.skills.find_relevant.return_value = []
     runner.skills.get_by_name.side_effect = lambda nome: _skill(nome)
@@ -296,9 +341,7 @@ def test_eval_dataset_has_no_duplicate_tasks():
 async def test_timed_prompt_phase_records_rag_span_on_success():
     runner = _make_runner(skills=None)
     gravados: list[dict] = []
-    runner.trace_recorder = SimpleNamespace(
-        record=lambda **kw: gravados.append(kw)
-    )
+    runner.trace_recorder = SimpleNamespace(record=lambda **kw: gravados.append(kw))
 
     async def _fase() -> str:
         return "prompt-x"
@@ -343,6 +386,7 @@ async def test_timed_prompt_phase_is_a_noop_passthrough_without_recorder():
     async def _fase() -> str:
         return "ok"
 
-    assert await runner._timed_prompt_phase(
-        session_id="s", name="custom_mode_resolve", coro=_fase()
-    ) == "ok"
+    assert (
+        await runner._timed_prompt_phase(session_id="s", name="custom_mode_resolve", coro=_fase())
+        == "ok"
+    )

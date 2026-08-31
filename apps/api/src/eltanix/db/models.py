@@ -252,6 +252,12 @@ class CodeChunk(Base):
     token_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
     embedding: Mapped[list[float] | None] = mapped_column(VECTOR_TYPE, nullable=True)
+    # Qual modelo produziu `embedding`. Sem isso, trocar o perfil de embedding
+    # mistura espaços vetoriais no mesmo índice em silêncio — a distância de
+    # cosseno entre vetores de modelos diferentes é ruído, não similaridade.
+    # A busca filtra por ele (ver `hybrid_search`); NULL é vetor legado, de
+    # antes desta coluna existir.
+    embedding_model: Mapped[str | None] = mapped_column(String(128), nullable=True)
     # Coluna gerada pelo Postgres (ver migração 0002): não precisa manutenção e
     # nunca fica dessincronizada do `content`. Config `simple` porque stemming
     # de inglês estraga identificador de código.
@@ -260,7 +266,13 @@ class CodeChunk(Base):
     # o Postgres recusa qualquer escrita numa coluna GENERATED ALWAYS.
     tsv: Mapped[str | None] = mapped_column(
         TSVECTOR_TYPE,
-        Computed("to_tsvector('simple', content)", persisted=True),
+        Computed(
+            # Espelha a migração 0032: o conteúdo original mais a versão com
+            # identificadores separados (`getUserById` -> `get User By Id`), para
+            # que a busca lexical case as duas convenções de nome.
+            "to_tsvector('simple', content || ' ' || eltanix_split_identifiers(content))",
+            persisted=True,
+        ),
         nullable=True,
     )
 
@@ -359,9 +371,17 @@ class DocumentChunk(Base):
     content: Mapped[str] = mapped_column(Text, nullable=False)
     token_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     embedding: Mapped[list[float] | None] = mapped_column(VECTOR_TYPE, nullable=True)
+    # Ver `CodeChunk.embedding_model`: proveniência do vetor.
+    embedding_model: Mapped[str | None] = mapped_column(String(128), nullable=True)
     tsv: Mapped[str | None] = mapped_column(
         TSVECTOR_TYPE,
-        Computed("to_tsvector('simple', content)", persisted=True),
+        Computed(
+            # Espelha a migração 0032: o conteúdo original mais a versão com
+            # identificadores separados (`getUserById` -> `get User By Id`), para
+            # que a busca lexical case as duas convenções de nome.
+            "to_tsvector('simple', content || ' ' || eltanix_split_identifiers(content))",
+            persisted=True,
+        ),
         nullable=True,
     )
 
@@ -414,9 +434,17 @@ class NoteChunk(Base):
     content: Mapped[str] = mapped_column(Text, nullable=False)
     token_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     embedding: Mapped[list[float] | None] = mapped_column(VECTOR_TYPE, nullable=True)
+    # Ver `CodeChunk.embedding_model`: proveniência do vetor.
+    embedding_model: Mapped[str | None] = mapped_column(String(128), nullable=True)
     tsv: Mapped[str | None] = mapped_column(
         TSVECTOR_TYPE,
-        Computed("to_tsvector('simple', content)", persisted=True),
+        Computed(
+            # Espelha a migração 0032: o conteúdo original mais a versão com
+            # identificadores separados (`getUserById` -> `get User By Id`), para
+            # que a busca lexical case as duas convenções de nome.
+            "to_tsvector('simple', content || ' ' || eltanix_split_identifiers(content))",
+            persisted=True,
+        ),
         nullable=True,
     )
 
@@ -448,6 +476,8 @@ class Skill(Base):
     # para o roteamento automático (`SkillService.find_relevant`) — nulo até o seed/CRUD
     # conseguir calculá-lo (embedding indisponível não impede a skill de existir).
     description_embedding: Mapped[list[float] | None] = mapped_column(VECTOR_TYPE, nullable=True)
+    # Ver `CodeChunk.embedding_model`: proveniência de `description_embedding`.
+    embedding_model: Mapped[str | None] = mapped_column(String(128), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -667,6 +697,10 @@ class GraphNode(Base):
     properties: Mapped[dict] = mapped_column(JSON_TYPE, default=dict, nullable=False)
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     embedding: Mapped[list[float] | None] = mapped_column(VECTOR_TYPE, nullable=True)
+    # Ver `CodeChunk.embedding_model`: proveniência do vetor. Hoje o pipeline
+    # do Graphify só grava arestas L1 e não produz vetor de nó — a coluna
+    # existe para que a camada L2 (ADR 0003) já nasça com proveniência.
+    embedding_model: Mapped[str | None] = mapped_column(String(128), nullable=True)
 
     tsv: Mapped[str | None] = mapped_column(
         TSVECTOR_TYPE,

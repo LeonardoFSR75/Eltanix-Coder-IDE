@@ -103,13 +103,17 @@ async def delete_skill(session: AsyncSession, skill_id: uuid.UUID) -> Skill | No
 
 
 async def set_description_embedding(
-    session: AsyncSession, skill_id: uuid.UUID, embedding: list[float]
+    session: AsyncSession,
+    skill_id: uuid.UUID,
+    embedding: list[float],
+    embedding_model: str | None = None,
 ) -> None:
     """Grava o vetor de `description` calculado fora da transação (a chamada ao
     provedor de embedding não pode acontecer dentro de um `session_scope`)."""
     skill = await session.get(Skill, skill_id)
     if skill is not None:
         skill.description_embedding = embedding
+        skill.embedding_model = embedding_model
 
 
 async def search_by_similarity(
@@ -118,6 +122,7 @@ async def search_by_similarity(
     query_embedding: list[float],
     top_k: int = 2,
     min_score: float = 0.72,
+    embedding_model: str | None = None,
 ) -> list[Skill]:
     """Top-k skills habilitadas por similaridade de cosseno entre
     `query_embedding` e `description_embedding`. `1 - (a <=> b)` converte a
@@ -127,19 +132,24 @@ async def search_by_similarity(
     (`description_embedding IS NULL`) nunca aparecem — silenciosamente
     ausentes do roteamento automático até o próximo seed/CRUD as recalcular,
     não um erro.
+
+    `embedding_model` restringe às skills vetorizadas pelo mesmo modelo que
+    gerou `query_embedding`: um score de cosseno entre modelos diferentes não
+    significa nada, e aqui ele vira decisão (o corte por `min_score`).
     """
-    sql = """
+    params: dict[str, object] = {"embedding": str(query_embedding), "top_k": top_k}
+    modelo_filtro = ""
+    if embedding_model:
+        params["embedding_model"] = embedding_model
+        modelo_filtro = "AND embedding_model = :embedding_model"
+    sql = f"""
         SELECT id, 1 - (description_embedding <=> CAST(:embedding AS vector)) AS score
         FROM skill
-        WHERE enabled = true AND description_embedding IS NOT NULL
+        WHERE enabled = true AND description_embedding IS NOT NULL {modelo_filtro}
         ORDER BY description_embedding <=> CAST(:embedding AS vector)
         LIMIT :top_k
     """
-    rows = (
-        (await session.execute(text(sql), {"embedding": str(query_embedding), "top_k": top_k}))
-        .mappings()
-        .all()
-    )
+    rows = (await session.execute(text(sql), params)).mappings().all()
 
     matched_ids = [row["id"] for row in rows if float(row["score"]) >= min_score]
     if not matched_ids:

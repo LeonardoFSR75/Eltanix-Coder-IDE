@@ -120,6 +120,26 @@
 - **Gutter intelligence**: blame, cobertura e CVEs renderizados na margem do
   editor (Onda 1.5).
 
+### 8. Camada de Recuperação (`retrieval/`)
+- **ADR 0019**: pipeline que roda **acima** das quatro fontes de RAG sem fundi-las.
+  `retrieval/` importa dos stores; nenhum store importa de `retrieval/`.
+- **Ordem fixa**: preparo da consulta → fontes → fusão entre fontes por rank →
+  rerank de segunda passagem → MMR/dedupe → packing por orçamento de tokens.
+  Só o empacotador descarta; as etapas anteriores reordenam e rebaixam.
+- **Duas fusões em níveis distintos**: vetor + full-text + trigrama por RRF
+  ponderado dentro do SQL de cada store; código/documentos/notas por **rank**
+  entre si, porque os scores das fontes vivem em escalas incomparáveis.
+- **Contrato do vetor** (ADR 0017): `embedding_model` por linha, filtrado na
+  busca. Prefixos assimétricos (`search_query:`/`search_document:`) declarados em
+  `providers.yaml` e aplicados dentro de `RouterEngine.embed()`; ligá-los muda o
+  espaço vetorial e a etiqueta ganha `#prefixed`.
+- **Degradação por etapa**: sem embedding cai para as pernas lexicais, sem
+  reranker fica a ordem da fusão, resposta fora do formato preserva a entrada.
+  O span de RAG (`name="retrieval"`) registra qual caminho foi tomado.
+- **Régua** (ADR 0018): `eltanix-eval-rag` + `eltanix-eval-gate` contra baseline
+  versionado; `eltanix-eval-judge` calibra o juiz de geração com rótulo humano,
+  concordância inter-execução e intervalo de confiança por bootstrap.
+
 ---
 
 ## Trilha de Decisões de Arquitetura (ADRs)
@@ -140,4 +160,7 @@
 14. [ADR 0014: Autocompletar Inline (Ghost Text) no Editor](adr/0014-autocompletar-inline-ghost-text.md)
 15. [ADR 0015: Predição do Próximo Edit ("Tab to Jump")](adr/0015-predicao-do-proximo-edit.md)
 16. [ADR 0016: `ProjectRecord.local_path` é a Fonte de Verdade da Localização do Projeto](adr/0016-local-path-fonte-de-verdade.md)
+17. [ADR 0017: Contrato do Espaço Vetorial](adr/0017-contrato-do-espaco-vetorial.md)
+18. [ADR 0018: Gate de Qualidade de Recuperação](adr/0018-gate-de-qualidade-de-recuperacao.md)
+19. [ADR 0019: Camada de Recuperação (`retrieval/`)](adr/0019-camada-de-recuperacao.md)
 

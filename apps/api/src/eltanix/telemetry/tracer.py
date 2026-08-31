@@ -10,8 +10,8 @@ import asyncio
 import json
 import time
 from collections import deque
-from dataclasses import dataclass
-from typing import Literal
+from dataclasses import dataclass, field
+from typing import Any, Literal
 
 import structlog
 from redis.asyncio import Redis
@@ -23,6 +23,25 @@ TraceStatus = Literal["ok", "error"]
 
 _REDIS_KEY = "eltanix:telemetry:spans"
 
+# Chaves que o próprio `log.info` do span já usa — ver `TraceRecorder.record`.
+_RESERVADOS_NO_LOG = frozenset({"event", "kind", "name", "latency_ms", "status"})
+
+
+def _otlp_value(value: Any) -> dict[str, Any]:
+    """Converte um atributo Python para o `AnyValue` do OTLP.
+
+    `bool` antes de `int` de propósito: em Python `True` é instância de `int`,
+    e um atributo booleano viraria `intValue: 1` — legível, mas com o tipo
+    errado para quem consome o trace.
+    """
+    if isinstance(value, bool):
+        return {"boolValue": value}
+    if isinstance(value, int):
+        return {"intValue": str(value)}
+    if isinstance(value, float):
+        return {"doubleValue": value}
+    return {"stringValue": str(value)}
+
 
 @dataclass(slots=True)
 class TraceEntry:
@@ -33,6 +52,10 @@ class TraceEntry:
     status: TraceStatus
     session_id: str = ""
     error: str | None = None
+    # Detalhe específico do span. Num span de RAG é o que separa "a busca
+    # demorou 200 ms" de "a busca degradou para full-text e devolveu 2 hits":
+    # sem isso, uma resposta ruim não diz se a culpa foi da recuperação.
+    attributes: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict:
         return {
@@ -43,6 +66,7 @@ class TraceEntry:
             "status": self.status,
             "session_id": self.session_id,
             "error": self.error,
+            "attributes": self.attributes,
         }
 
     def to_otlp_json(self) -> dict:
@@ -79,6 +103,10 @@ class TraceEntry:
                                     "key": "eltanix.session_id",
                                     "value": {"stringValue": self.session_id},
                                 },
+                                *(
+                                    {"key": f"eltanix.{k}", "value": _otlp_value(v)}
+                                    for k, v in self.attributes.items()
+                                ),
                             ],
                             "status": {
                                 "code": 1 if self.status == "ok" else 2,
@@ -100,6 +128,7 @@ class TraceEntry:
             status=d.get("status", "ok"),
             session_id=str(d.get("session_id", "")),
             error=d.get("error"),
+            attributes=dict(d.get("attributes") or {}),
         )
 
 
@@ -121,6 +150,7 @@ class TraceRecorder:
         status: TraceStatus,
         session_id: str = "",
         error: str | None = None,
+        attributes: dict[str, Any] | None = None,
     ) -> None:
         entry = TraceEntry(
             ts=time.time(),
@@ -130,9 +160,19 @@ class TraceRecorder:
             status=status,
             session_id=session_id,
             error=error[:300] if error else None,
+            attributes=dict(attributes or {}),
         )
         self._entries.append(entry)
-        log.info("telemetry.span", kind=kind, name=name, latency_ms=entry.latency_ms, status=status)
+        log.info(
+            "telemetry.span",
+            kind=kind,
+            name=name,
+            latency_ms=entry.latency_ms,
+            status=status,
+            # Um atributo chamado `name` (ou `event`, do structlog) chegaria
+            # como argumento duplicado e derrubaria quem chamou `record`.
+            **{k: v for k, v in entry.attributes.items() if k not in _RESERVADOS_NO_LOG},
+        )
 
         if self._redis is not None:
             try:

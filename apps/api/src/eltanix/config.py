@@ -107,10 +107,80 @@ class Settings(BaseSettings):
     embedding_dim: int = Field(default=768, alias="EMBEDDING_DIM")
     embedding_profile: str = Field(default="embedding", alias="EMBEDDING_PROFILE")
     embedding_batch_size: int = Field(default=32, alias="EMBEDDING_BATCH_SIZE")
+    # Prefixos assimétricos (`search_query:` / `search_document:`) declarados por
+    # modelo em providers.yaml. Desligado por padrão de propósito: ligar muda o
+    # espaço vetorial, e o índice existente vira legado. A troca é segura —
+    # a etiqueta de proveniência ganha `#prefixed` e o filtro do ADR 0017 tira os
+    # vetores antigos do ramo vetorial sozinho — mas até reindexar a busca cai
+    # para as pernas lexicais. É rollout em dois passos, decidido por quem opera.
+    embedding_prefixes_enabled: bool = Field(default=False, alias="EMBEDDING_PREFIXES_ENABLED")
+    # `validate_catalog` já desabilita o modelo de embedding com dimensão
+    # incompatível. Ligado, o boot também falha em vez de subir degradado —
+    # o que se quer em produção, onde subir sem embedding é subir sem RAG.
+    catalog_strict: bool = Field(default=False, alias="ELTANIX_CATALOG_STRICT")
+    # `hnsw.ef_search` por query de busca. O default do pgvector (40) é baixo
+    # para um pool de 50 candidatos: o índice devolve menos vizinhos do que a
+    # fusão RRF pede, e a metade vetorial chega truncada. Custa latência, então
+    # é ajuste por deployment, medido pelo `eltanix-eval-rag`.
+    hnsw_ef_search: int = Field(default=100, alias="HNSW_EF_SEARCH")
+    # Reaper que reindexa workspaces com embedding pendente (arquivos marcados
+    # `pendente:<hash>` porque o modelo estava fora do ar). 0 desliga.
+    embedding_backfill_interval_seconds: int = Field(
+        default=1800, alias="EMBEDDING_BACKFILL_INTERVAL_SECONDS"
+    )
     # Git-Aware RAG (Fase 4 do Git Intelligence): `search_code` expande os hits
     # por vizinhança no Code Knowledge Graph e re-rankeia por recência/co-mudança
     # do git. Degrada para o hybrid_search puro sem grafo/git. Off = só RRF.
     context_git_aware_search: bool = Field(default=True, alias="CONTEXT_GIT_AWARE_SEARCH")
+
+    # ── Camada de recuperação (`retrieval/`, ADR 0019) ──────────────────────
+    # Kill switch da camada inteira. Desligada, quem chama volta ao caminho
+    # antigo (`IndexerService.search` direto) — que continua existindo e
+    # funcionando, justamente para que desligar isto seja possível.
+    retrieval_enabled: bool = Field(default=True, alias="RETRIEVAL_ENABLED")
+    # Candidatos pedidos a cada fonte antes da fusão. Maior que o `limit` final
+    # de propósito: rerank e MMR precisam de material para escolher, e um pool
+    # do tamanho do resultado transforma as duas etapas em no-op.
+    retrieval_candidate_pool: int = Field(default=50, alias="RETRIEVAL_CANDIDATE_POOL")
+    # Quantos candidatos da lista fundida entram na chamada do reranker.
+    retrieval_rerank_candidates: int = Field(default=40, alias="RETRIEVAL_RERANK_CANDIDATES")
+    # Fator de sobreamostragem entre rerank e MMR: o reranker devolve
+    # `limit × isto` para o MMR ter o que diversificar.
+    retrieval_oversample: int = Field(default=3, alias="RETRIEVAL_OVERSAMPLE")
+    retrieval_rerank_enabled: bool = Field(default=True, alias="RETRIEVAL_RERANK_ENABLED")
+    # Expansão só dispara em pergunta curta e sem identificador citado (ver
+    # `retrieval/query.py::should_expand`), então ligada por padrão ela não
+    # cobra latência da busca típica do agente, que cita nome de símbolo.
+    retrieval_expansion_enabled: bool = Field(default=True, alias="RETRIEVAL_EXPANSION_ENABLED")
+    # HyDE desligado por padrão: paga uma chamada em *toda* busca (não tem
+    # heurística de porta como a expansão) e o ganho depende do corpus.
+    # Ligar é decisão medida pelo `eltanix-eval-rag`.
+    retrieval_hyde_enabled: bool = Field(default=False, alias="RETRIEVAL_HYDE_ENABLED")
+    retrieval_max_variants: int = Field(default=3, alias="RETRIEVAL_MAX_VARIANTS")
+    retrieval_documents_enabled: bool = Field(default=True, alias="RETRIEVAL_DOCUMENTS_ENABLED")
+    retrieval_notes_enabled: bool = Field(default=True, alias="RETRIEVAL_NOTES_ENABLED")
+    # Perfil usado por expansão, HyDE e rerank. Perfil, não modelo: a escolha do
+    # modelo é do `routes.yaml`, nunca de constante no código (ADR 0001).
+    retrieval_utility_profile: str = Field(default="utility", alias="RETRIEVAL_UTILITY_PROFILE")
+    # Orçamento de tokens do bloco de contexto montado pelo empacotador.
+    retrieval_token_budget: int = Field(default=6000, alias="RETRIEVAL_TOKEN_BUDGET")
+    # λ do MMR: 1.0 = só relevância (MMR vira no-op), 0.0 = só diversidade.
+    retrieval_mmr_lambda: float = Field(default=0.7, alias="RETRIEVAL_MMR_LAMBDA")
+    # Pesos das pernas dentro de cada fonte, repassados ao SQL dos stores, e o
+    # `k` do RRF. São os parâmetros que as evals afinam (item 8 da revisão) —
+    # por isso saíram de constante de módulo para configuração.
+    retrieval_weight_vector: float = Field(default=1.0, alias="RETRIEVAL_WEIGHT_VECTOR")
+    retrieval_weight_text: float = Field(default=1.0, alias="RETRIEVAL_WEIGHT_TEXT")
+    retrieval_weight_trigram: float = Field(default=0.5, alias="RETRIEVAL_WEIGHT_TRIGRAM")
+    retrieval_rrf_k: int = Field(default=60, alias="RETRIEVAL_RRF_K")
+    # Peso de cada fonte na fusão entre fontes. Código pesa mais numa IDE.
+    retrieval_source_weight_context: float = Field(
+        default=1.0, alias="RETRIEVAL_SOURCE_WEIGHT_CONTEXT"
+    )
+    retrieval_source_weight_documents: float = Field(
+        default=0.7, alias="RETRIEVAL_SOURCE_WEIGHT_DOCUMENTS"
+    )
+    retrieval_source_weight_notes: float = Field(default=0.7, alias="RETRIEVAL_SOURCE_WEIGHT_NOTES")
 
     # ── Autocompletar inline / ghost text (Onda 1.1, ADR 0014) ──────────────
     # Kill switch: desligado, `POST /api/context/completions` responde 204 e o
