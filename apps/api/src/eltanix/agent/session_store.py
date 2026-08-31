@@ -8,8 +8,9 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from datetime import datetime
+from typing import Any, cast
 
-from sqlalchemy import select, update
+from sqlalchemy import CursorResult, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from eltanix.db.models import AgentSessionRecord
@@ -121,7 +122,7 @@ async def mark_abandoned(session: AsyncSession, *, older_than: datetime) -> int:
         .where(AgentSessionRecord.updated_at < older_than)
         .values(status="abandoned")
     )
-    resultado = await session.execute(stmt)
+    resultado = cast("CursorResult[Any]", await session.execute(stmt))
     await session.flush()
     return resultado.rowcount or 0
 

@@ -75,6 +75,22 @@ jobs:
       - name: mypy
         run: uv run mypy src
 
+  api-typecheck:
+    name: API — mypy
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/api
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+        with:
+          version: "latest"
+      - name: Instalar dependências
+        run: uv sync --dev
+      - name: mypy
+        run: uv run mypy src
+
   web-build:
     name: Web — typecheck, testes & build
     runs-on: ubuntu-latest

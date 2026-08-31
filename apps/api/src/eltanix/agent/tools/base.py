@@ -337,7 +337,7 @@ def tool(
     *,
     name: str,
     description: str,
-    risk: RiskClass | Callable[[dict[str, Any]], RiskClass],
+    risk: RiskClass | Callable[[dict[str, Any], ToolContext | None], RiskClass],
     parameters: dict[str, Any],
     summarize: Callable[[dict[str, Any]], str] | None = None,
     status_from_result: Callable[[ToolResult], str] | None = None,

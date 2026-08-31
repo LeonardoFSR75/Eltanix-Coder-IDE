@@ -130,7 +130,10 @@ async def list_recent_replays(redis: Redis | None, *, limit: int = 30) -> list[d
         session_ids = await redis.zrevrange(_REDIS_INDEX_KEY, 0, max(limit - 1, 0))
         if not session_ids:
             return []
-        chaves = [f"{_REDIS_HASH_PREFIX}{sid}" for sid in session_ids]
+        chaves = [
+            f"{_REDIS_HASH_PREFIX}{sid.decode() if isinstance(sid, bytes) else sid}"
+            for sid in session_ids
+        ]
         brutos = await redis.mget(chaves)
     except Exception as exc:
         log.warning("browser.replay.list_failed", error=str(exc))

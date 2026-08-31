@@ -202,7 +202,7 @@ class GraphIndexer:
 
             try:
                 content = await asyncio.to_thread(
-                    lambda p=scanned.absolute: p.read_text(encoding="utf-8", errors="ignore")
+                    scanned.absolute.read_text, encoding="utf-8", errors="ignore"
                 )
             except Exception:
                 continue

@@ -8,6 +8,7 @@ campo novo em `ToolContext`: o handler já sabe com qual servidor falar.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any
 
 from eltanix.agent.tools.base import RiskClass, Tool, ToolContext, ToolRegistry, ToolResult
@@ -84,6 +85,13 @@ class MCPManager:
 
                     return _handler
 
+                def _make_summarize(display_name: str) -> Callable[[dict[str, Any]], str]:
+                    def _summarize(a: dict[str, Any]) -> str:
+                        pares = ", ".join(f"{k}={v!r}" for k, v in (a or {}).items())
+                        return f"{display_name}({pares})"[:200]
+
+                    return _summarize
+
                 try:
                     registry.register(
                         Tool(
@@ -96,11 +104,7 @@ class MCPManager:
                             parameters=remote_tool.input_schema
                             or {"type": "object", "properties": {}},
                             handler=_make_handler(connection, remote_tool.name),
-                            summarize=lambda a, n=local_name: (
-                                f"{n}({', '.join(f'{k}={v!r}' for k, v in (a or {}).items())})"[
-                                    :200
-                                ]
-                            ),
+                            summarize=_make_summarize(local_name),
                         )
                     )
                     self._registered_names.append(local_name)

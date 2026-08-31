@@ -7,8 +7,9 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
+from typing import Any, cast
 
-from sqlalchemy import delete, func, or_, select
+from sqlalchemy import CursorResult, delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from eltanix.db.models import AppUser, AuthSession, ProjectMember, UserMfa
@@ -146,7 +147,7 @@ async def purge_expired_sessions(session: AsyncSession, *, now: datetime) -> int
             AuthSession.revoked_at.is_not(None),
         )
     )
-    result = await session.execute(stmt)
+    result = cast("CursorResult[Any]", await session.execute(stmt))
     return result.rowcount or 0
 
 

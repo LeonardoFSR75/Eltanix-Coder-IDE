@@ -41,6 +41,17 @@ class GitError(RuntimeError):
     pass
 
 
+def _first_line(text: str | bytes | None) -> str:
+    """Primeira linha de uma mensagem de commit. GitPython tipa `Commit.message`
+    como `str | bytes` (decodifica na prática, mas o stub não garante)."""
+    if text is None:
+        return ""
+    if isinstance(text, bytes):
+        text = text.decode("utf-8", "replace")
+    linhas = text.splitlines()
+    return linhas[0] if linhas else ""
+
+
 @dataclass(slots=True)
 class FileStatus:
     path: str
@@ -136,13 +147,15 @@ def status(root: Path) -> RepoStatus:
     files: list[FileStatus] = []
     try:
         for item in repo.index.diff(None):  # working tree vs index
-            files.append(FileStatus(path=item.a_path, status=_change_label(item.change_type)))
+            files.append(
+                FileStatus(path=item.a_path or "", status=_change_label(item.change_type))
+            )
     except Exception:
         pass
 
     try:
         for item in repo.index.diff("HEAD"):  # index vs HEAD
-            files.append(FileStatus(path=item.a_path, status="staged"))
+            files.append(FileStatus(path=item.a_path or "", status="staged"))
     except Exception:
         # Repositório sem commit ainda: não há HEAD para comparar.
         pass
@@ -417,7 +430,7 @@ def log_recent(root: Path, limit: int = 20) -> list[dict[str, str]]:
             "sha": c.hexsha[:8],
             "author": str(c.author),
             "date": datetime.fromtimestamp(c.committed_date, tz=UTC).isoformat(),
-            "message": c.message.splitlines()[0] if c.message else "",
+            "message": _first_line(c.message),
         }
         for c in repo.iter_commits(max_count=limit)
     ]
@@ -439,10 +452,10 @@ def blame(root: Path, path: str, rev: str = "HEAD") -> list[BlameHunk]:
     hunks: list[BlameHunk] = []
     linha = 1
     for item in entradas or []:
-        commit, linhas = item
-        quantidade = len(linhas) if hasattr(linhas, "__len__") else 1
-        commit_msg = str(getattr(commit, "message", "") or "").splitlines()
-        first_line = commit_msg[0] if commit_msg else ""
+        commit = item[0]
+        linhas = item[1]
+        quantidade = len(linhas) if isinstance(linhas, (list, tuple, str, bytes)) else 1
+        first_line = _first_line(getattr(commit, "message", ""))
         hunks.append(
             BlameHunk(
                 start_line=linha,

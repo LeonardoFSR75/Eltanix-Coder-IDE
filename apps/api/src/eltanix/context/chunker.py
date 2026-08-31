@@ -319,7 +319,7 @@ def _line_chunks(path: str, text: str, language: str | None) -> list[Chunk]:
 def _gap_chunks(path: str, text: str, symbols: list[Chunk], language: str) -> list[Chunk]:
     """Captura o que sobra entre símbolos: imports, constantes, código de topo."""
     lines = text.splitlines()
-    covered = set()
+    covered: set[int] = set()
     for symbol in symbols:
         covered.update(range(symbol.start_line, symbol.end_line + 1))
 

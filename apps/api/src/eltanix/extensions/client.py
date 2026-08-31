@@ -60,7 +60,7 @@ class OpenVSXClient:
     async def search_marketplace(self, query: str, limit: int = 20) -> list[dict[str, Any]]:
         """Busca extensões públicas no Open VSX Registry por palavra-chave."""
         url = f"{self.base_url}/-/search"
-        params = {"query": query, "size": limit}
+        params: dict[str, str | int] = {"query": query, "size": limit}
 
         results: list[dict[str, Any]] = []
         try:
