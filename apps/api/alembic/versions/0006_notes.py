@@ -34,12 +34,15 @@ def upgrade() -> None:
         # IDs (texto) de outras notas ligadas via [[wikilink]] — resolvido no
         # servidor a cada save, não confiado ao cliente.
         sa.Column("links", postgresql.JSONB(), nullable=False, server_default="[]"),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
         sa.Column(
             "updated_at",
             sa.DateTime(timezone=True),
             server_default=sa.func.now(),
             onupdate=sa.func.now(),
+            nullable=False,
         ),
         sa.PrimaryKeyConstraint("id"),
     )

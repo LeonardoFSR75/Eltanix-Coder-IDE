@@ -140,39 +140,35 @@ jobs:
     name: API — migrações (drift & reversibilidade)
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    # Não bloqueante na estreia: se houver drift model↔migração ou um
-    # downgrade quebrado pré-existente, isto revela sem travar todo PR.
-    # Trocar para bloqueante depois da primeira execução verde.
-    continue-on-error: true
     defaults:
       run:
         working-directory: apps/api
-    services:
-      postgres:
-        image: pgvector/pgvector:0.8.6-pg18
-        env:
-          POSTGRES_USER: eltanix
-          POSTGRES_PASSWORD: eltanix
-          POSTGRES_DB: eltanix_test
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U eltanix -d eltanix_test"
-          --health-interval 5s
-          --health-timeout 3s
-          --health-retries 20
-    env:
-      DATABASE_URL: postgresql+asyncpg://eltanix:eltanix@localhost:5432/eltanix_test
-      DATABASE_URL_TEST: postgresql+asyncpg://eltanix:eltanix@localhost:5432/eltanix_test
-    steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
-        with:
-          version: "latest"
-          enable-cache: true
-          cache-dependency-glob: "apps/api/uv.lock"
-      - name: Instalar dependências
-        run: uv sync --dev
+      services:
+        postgres:
+          image: pgvector/pgvector:0.8.6-pg17
+          env:
+            POSTGRES_USER: eltanix
+            POSTGRES_PASSWORD: eltanix
+            POSTGRES_DB: eltanix_test
+          ports:
+            - 5432:5432
+          options: >-
+            --health-cmd "pg_isready -U eltanix -d eltanix_test"
+            --health-interval 5s
+            --health-timeout 3s
+            --health-retries 20
+      env:
+        DATABASE_URL: postgresql+asyncpg://eltanix:eltanix@localhost:5432/eltanix_test
+        DATABASE_URL_TEST: postgresql+asyncpg://eltanix:eltanix@localhost:5432/eltanix_test
+      steps:
+        - uses: actions/checkout@v4
+        - uses: astral-sh/setup-uv@v5
+          with:
+            version: "latest"
+            enable-cache: true
+            cache-dependency-glob: "apps/api/uv.lock"
+        - name: Instalar dependências
+          run: uv sync --dev
       - name: upgrade head
         run: uv run alembic upgrade head
       - name: alembic check (autogenerate diff deve estar vazio)

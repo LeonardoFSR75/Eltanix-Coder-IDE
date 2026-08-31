@@ -44,9 +44,10 @@ def upgrade() -> None:
             nullable=False,
         ),
         sa.PrimaryKeyConstraint("id"),
-        sa.UniqueConstraint("username"),
     )
-    op.create_index("ix_app_user_username", "app_user", ["username"])
+    # Índice único (não constraint nomeada + índice simples): bate com
+    # `unique=True, index=True` no modelo `AppUser.username`.
+    op.create_index("ix_app_user_username", "app_user", ["username"], unique=True)
 
     op.create_table(
         "auth_session",
@@ -62,10 +63,13 @@ def upgrade() -> None:
         sa.Column("user_agent", sa.String(length=512), nullable=True),
         sa.ForeignKeyConstraint(["user_id"], ["app_user.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
-        sa.UniqueConstraint("token_hash"),
     )
     op.create_index("ix_auth_session_user_id", "auth_session", ["user_id"])
-    op.create_index("ix_auth_session_token_hash", "auth_session", ["token_hash"])
+    # Índice único — bate com `unique=True, index=True` no modelo
+    # `AuthSession.token_hash`.
+    op.create_index(
+        "ix_auth_session_token_hash", "auth_session", ["token_hash"], unique=True
+    )
 
 
 def downgrade() -> None:

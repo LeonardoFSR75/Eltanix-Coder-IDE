@@ -24,7 +24,9 @@ def upgrade() -> None:
     op.create_table(
         "audit_log",
         sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
         sa.Column("actor", sa.String(length=128), nullable=False),
         sa.Column("module", sa.String(length=32), nullable=False),
         sa.Column("action", sa.String(length=255), nullable=False),

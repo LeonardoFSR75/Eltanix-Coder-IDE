@@ -29,7 +29,9 @@ def upgrade() -> None:
         sa.Column("iteration", sa.Integer(), nullable=False),
         sa.Column("path", sa.Text(), nullable=False),
         sa.Column("content_before", sa.Text(), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index(
