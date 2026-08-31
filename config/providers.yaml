@@ -23,10 +23,23 @@ providers:
     tags: [local, tiny, fast, utility]
     capabilities: [chat]
 
+  # `embedding_dim` é obrigatório em todo modelo de embedding: a coluna
+  # pgvector tem dimensão fixa (EMBEDDING_DIM), e `router/catalog.py::
+  # validate_catalog` desabilita na carga quem não bater — antes que o vetor
+  # errado entre no índice.
+  # `embedding_prefixes` só entra em vigor com EMBEDDING_PREFIXES_ENABLED=true.
+  # O nomic foi treinado com objetivo assimétrico: consulta e documento levam
+  # instruções diferentes. Sem prefixo o modelo roda fora do regime de treino —
+  # mas ligá-los muda o espaço vetorial, então a etiqueta de proveniência vira
+  # `ollama/nomic-embed-text#prefixed` e o índice antigo precisa ser refeito.
   - id: ollama/nomic-embed-text
     provider: ollama
     model: nomic-embed-text
     context_window: 8192
+    embedding_dim: 768
+    embedding_prefixes:
+      query: "search_query: "
+      document: "search_document: "
     tags: [local, embedding]
     capabilities: [embedding]
 
@@ -68,10 +81,20 @@ providers:
     capabilities: [chat, tools]
     enabled: true
 
+  # bge-large-en devolve 1024 dimensões. Com o EMBEDDING_DIM padrão (768, do
+  # nomic) `validate_catalog` desabilita este modelo na carga e o perfil
+  # `embedding` cai para o Ollama — que é o comportamento correto, não uma
+  # regressão. Para usá-lo de fato: EMBEDDING_DIM=1024 + migração das colunas
+  # `Vector(...)` e reindexação completa (o espaço vetorial muda).
   - id: databricks/bge-large-en
     provider: databricks
     endpoint: databricks-bge-large-en
     context_window: 512
+    embedding_dim: 1024
+    # BGE instrui só o lado da consulta — o documento vai cru. Assimetria de um
+    # lado só é assimetria igual; deixar `document` de fora é o correto aqui.
+    embedding_prefixes:
+      query: "Represent this sentence for searching relevant passages: "
     tags: [cloud, embedding]
     capabilities: [embedding]
     enabled: true
@@ -396,11 +419,15 @@ providers:
     capabilities:
       - chat
     enabled: true
+  # Cadastrado como `chat` por engano na sincronização automática do catálogo
+  # Databricks: é um modelo de embedding e devolve 1024 dimensões, então num
+  # pool de chat só produz erro do provedor.
   - id: databricks/databricks-qwen3-embedding-0-6b
     provider: databricks
     endpoint: databricks-qwen3-embedding-0-6b
     context_window: 8192
-    tags: []
+    embedding_dim: 1024
+    tags: [cloud, embedding]
     capabilities:
-      - chat
+      - embedding
     enabled: true

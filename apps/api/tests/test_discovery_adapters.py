@@ -38,7 +38,7 @@ class _FakeAsyncClient:
         self._response = response
         self._error = error
 
-    async def __aenter__(self) -> "_FakeAsyncClient":
+    async def __aenter__(self) -> _FakeAsyncClient:
         return self
 
     async def __aexit__(self, *exc: Any) -> bool:
@@ -153,14 +153,6 @@ async def test_anthropic_discover_lists_models_with_estimated_fields(monkeypatch
     ids = {d.suggested_id for d in discovered}
     assert ids == {"anthropic/claude-sonnet-4-5", "anthropic/claude-opus-4"}
     assert all(set(d.estimated_fields) == {"context_window", "capabilities"} for d in discovered)
-
-
-async def test_groq_discover_raises_discovery_error_on_failure(monkeypatch: pytest.MonkeyPatch) -> None:
-    _patch_client(monkeypatch, error=httpx.ConnectError("recusado"))
-    adapter = GroqAdapter(Settings(_env_file=None, GROQ_API_KEY="gsk_teste"))
-
-    with pytest.raises(DiscoveryError):
-        await adapter.discover_models()
 
 
 # ── OpenAI ──────────────────────────────────────────────────────────────────

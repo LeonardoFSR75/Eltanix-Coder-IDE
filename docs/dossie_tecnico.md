@@ -13,7 +13,7 @@
 ## 📋 Sumário Executivo do Dossiê
 
 1. [Visão Geral & Princípio Arquitetural Mestre](#1-visão-geral--princípio-arquitetural-mestre)
-2. [Matriz de Conformidade dos 11 ADRs](#2-matriz-de-conformidade-dos-11-adrs)
+2. [Matriz de Conformidade dos 16 ADRs](#2-matriz-de-conformidade-dos-16-adrs)
 3. [Stack Tecnológica Completa & Motores Nativos em Rust](#3-stack-tecnológica-completa--motores-nativos-em-rust)
 4. [Detalhamento do Funcionamento dos 7 Módulos Principais](#4-detalhamento-do-funcionamento-dos-7-módulos-principais)
 5. [Análise Específica e Avaliação do Firecrawl](#5-análise-específica-e-avaliação-do-firecrawl)
@@ -40,7 +40,7 @@ O **Eltanix Coder IDE** é uma plataforma **local-first de codificação agênti
 
 ---
 
-## 🏛️ 2. Matriz de Conformidade dos 11 ADRs
+## 🏛️ 2. Matriz de Conformidade dos 16 ADRs
 
 | ADR | Título | Módulo Responsável | Status | Descrição & Mecanismos de Controle |
 |---|---|---|---|---|
@@ -55,6 +55,11 @@ O **Eltanix Coder IDE** é uma plataforma **local-first de codificação agênti
 | **ADR 0009** | 6 Suítes de Extensões & Open VSX | `eltanix.extensions` | ✅ Conforme | Ecossistema de extensões divididas em 6 suítes nativas com auto-update do Open VSX Registry. |
 | **ADR 0010** | Segurança de Servidores MCP & Cisco Scanner | `eltanix.mcp.scanner` | ✅ Conforme | Varredura estática/dinâmica YARA + LLM-as-a-judge e atribuição de RiskClass.WRITE por padrão em tools MCP. |
 | **ADR 0011** | Sanitização Dinâmica de Prompts & PII | `eltanix.security.pii_redactor` | ✅ Conforme | Mascaramento automático preventivo de CPFs, cartões, e-mails e API keys antes do envio para LLMs em nuvem pública. |
+| **ADR 0012** | Modos Customizáveis & Gate de Ferramentas por Nome | `agent/modes.py`, `agent/graph.py` | ✅ Conforme | Modos CRUD do usuário (migração 0024); allow/deny de ferramentas por nome antes da execução no grafo. |
+| **ADR 0013** | `apps/desktop` Congelado | `apps/desktop` | ✅ Conforme | Svelte 5/Tauri em standby até `apps/web` cruzar a Onda 1; gap de paridade rastreado em `docs/desktop_parity_gap.md`. |
+| **ADR 0014** | Autocompletar Inline (Ghost Text) | `api/routes/context.py` | ✅ Conforme | `POST /api/context/completions` READ-only; egress só por `RouterEngine.complete()` (`source="ide:completion"`); perfil de rota `completion`; telemetria em `completion_event` (migração 0029); kill switch `IDE_INLINE_COMPLETIONS_ENABLED`. |
+| **ADR 0015** | Predição do Próximo Edit ("Tab to Jump") | `api/routes/context.py` | ✅ Conforme | `POST /api/context/next-edit` READ-only; `source="ide:next_edit"`; perfil de rota `next-edit`; migração 0030 (`kind`/`jump_lines` em `completion_event`); MVP restrito ao arquivo aberto; kill switch `IDE_NEXT_EDIT_ENABLED`. |
+| **ADR 0016** | `local_path` Fonte de Verdade do Projeto | `workspace/projects.py` | ✅ Conforme | `resolve()` consulta `ProjectRecord.local_path` (cache em memória `_slug_to_local_path`, rehidratado no `lifespan` e em `sync_projects_db`) antes do fallback `PROJECTS_ROOT/<slug>`; só usa o cache se o caminho existe e está autorizado no `PathGuard`. |
 
 ---
 

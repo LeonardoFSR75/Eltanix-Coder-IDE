@@ -16,6 +16,7 @@ Este documento estratifica a arquitetura, ferramentas, classes de risco, fluxos 
 8. [🐛 Debug (Observabilidade, Testes & Diagnósticos)](#8--debug-observabilidade-testes--diagnósticos)
 9. [🧠 RAG & Segundo Cérebro (Grafo de Conhecimento e Ingestão)](#9--rag--segundo-cérebro-grafo-de-conhecimento-e-ingestão)
 10. [🛡️ Segurança & Sandboxing (Políticas e Classes de Risco)](#10--segurança--sandboxing-políticas-e-classes-de-risco)
+11. [✍️ Editor (Inteligência Inline: Ghost Text, Next-Edit & Cmd+K)](#11--editor-inteligência-inline-ghost-text-next-edit--cmd-k)
 
 ---
 
@@ -139,6 +140,31 @@ Sistema de recuperação de informação multi-modal e grafo de conhecimento int
 - **RAG Multi-Formato ([ADR 0008](adr/0008-rag-multi-formato-anydoc-e-pdf-inspector.md))**:
   - Ingestão de arquivos de escritório (Word, Excel, PowerPoint) via motor `calamine` (`firecrawl-anydoc`).
   - Inspeção de PDFs por `pdf-inspector` em Rust com fallback para `pypdf`.
+- **Camada de recuperação ([ADR 0019](adr/0019-camada-de-recuperacao.md))**: pipeline
+  `preparo → fontes → fusão → rerank → diversidade → packing`, **acima** das quatro
+  fontes, sem fundi-las. `search_code` e `POST /api/context/retrieve` passam por ela;
+  `RETRIEVAL_ENABLED=false` volta ao caminho anterior.
+  - **Três sinais por fonte de código**: vetor (pgvector HNSW), full-text
+    code-aware (`camelCase`/`snake_case` separados no índice e na consulta pela
+    mesma função SQL, migração 0032) e trigrama (`pg_trgm` sobre `symbol`/`path`,
+    para nome parcial e erro de digitação).
+  - **Fusão entre fontes por rank**, nunca por score: os scores de código, documento
+    e nota vivem em escalas incomparáveis.
+  - **Rerank de segunda passagem**: léxico determinístico (identificador da pergunta
+    presente no trecho, valendo mais na assinatura que no corpo) + listwise por LLM
+    no perfil `utility`. Modelo caído ou resposta fora do formato mantém a ordem.
+  - **MMR + dedupe**: oito trechos do mesmo arquivo deixam de ocupar o orçamento
+    inteiro; cobertura vale mais que repetição dentro de um limite fixo.
+  - **Packing por orçamento de tokens** (`RETRIEVAL_TOKEN_BUDGET`), com citação
+    estável por bloco. Nada entra pela metade.
+- **Contrato do espaço vetorial ([ADR 0017](adr/0017-contrato-do-espaco-vetorial.md))**:
+  cada vetor guarda o modelo que o gerou (`embedding_model`) e a busca filtra por ele;
+  modelo de embedding com dimensão incompatível é desabilitado na carga do catálogo.
+- **Régua versionada ([ADR 0018](adr/0018-gate-de-qualidade-de-recuperacao.md))**:
+  `eltanix-eval-rag` (recall@k, MRR, nDCG) contra `config/eval_dataset.yaml`,
+  `eltanix-eval-gate` contra o baseline em commit, e `eltanix-eval-judge` calibrando o
+  juiz de geração com rótulo humano, concordância inter-execução e intervalo de
+  confiança por bootstrap.
 
 ---
 
@@ -152,6 +178,32 @@ Modelagem de ameaças e controle de privilégios em todas as operações agênti
   - `EXEC`: Execução de comandos de terminal, mutação de infraestrutura ou instalações (exigem aprovação explícita do usuário).
 - **Autenticação Obrigatória ([ADR 0005](adr/0005-login-obrigatorio.md))**: Toda rota HTTP exige `AuthDep` (sessão via cookie HttpOnly ou chave `ELTANIX_API_KEY`).
 - **Prevenção contra Perda de Dados (`accidental-data-loss-prevention`)**: Confirmação mandatória antes de comandos destrutivos (`DROP TABLE`, `rm -rf`, deleção de projetos/buckets).
+
+---
+
+## 11. ✍️ Editor (Inteligência Inline: Ghost Text, Next-Edit & Cmd+K)
+
+Camada de assistência dentro do Monaco, entregue na **Onda 1** do roadmap ponta a ponta.
+
+- **Autocompletar inline / ghost text ([ADR 0014](adr/0014-autocompletar-inline-ghost-text.md))**:
+  cursor parado ~250 ms → sugestão cinza de 1–8 linhas, aceita com `Tab`.
+  `POST /api/context/completions`, **READ-only** (não passa por `ApprovalPolicy`).
+  Egress só por `RouterEngine.complete()` (`source="ide:completion"`); perfil de rota
+  `completion` em `routes.yaml` (modelos tiny/locais por latência). Kill switch
+  `IDE_INLINE_COMPLETIONS_ENABLED`; rate limit `IDE_COMPLETION_MAX_PER_MINUTE`.
+- **Predição do próximo edit / "tab to jump" ([ADR 0015](adr/0015-predicao-do-proximo-edit.md))**:
+  após uma edição assentar, o modelo prevê o próximo trecho a mudar no arquivo aberto.
+  `POST /api/context/next-edit`, **READ-only**, `source="ide:next_edit"`, perfil `next-edit`.
+  Precedência de `Tab`: sugestão inline (1.1) → next-edit pendente (1.2) → indentar.
+  Kill switch `IDE_NEXT_EDIT_ENABLED`.
+- **Cmd+K (edição inline sob demanda)**: `POST /api/agent/inline-edit` — seleção +
+  instrução, streaming e accept/reject por hunk. **`WRITE`**: passa por `ApprovalPolicy`
+  porque escreve arquivo.
+- **Gutter intelligence (Onda 1.5)**: blame, cobertura de testes e CVEs na margem do editor.
+- **Busca semântica no painel Search (Onda 1.4)**: consulta o índice `pgvector` do projeto.
+- **Telemetria**: aceitação em `completion_event` (migrações 0029 e 0030, coluna `kind`
+  `inline`/`next_edit`); custo/latência de cada chamada em `request_log`.
+  `GET /api/context/completions/stats?days=` agrega taxa de aceitação por `kind` e linguagem.
 
 ---
 

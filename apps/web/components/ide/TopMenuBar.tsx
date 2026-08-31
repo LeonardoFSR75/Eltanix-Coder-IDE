@@ -26,14 +26,14 @@ export function TopMenuBar({
   onOpenQuickOpen,
   onOpenCommandPalette,
 }: TopMenuBarProps) {
-  const { active, activeGroupId, project, setPanel, splitGroup } = useIde();
+  const { active, activeGroupId, projectName, setPanel, splitGroup } = useIde();
   const [activeMenu, setActiveMenu] = useState<MenuKey>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
   const activeFilename = active ? active.split("/").pop() : null;
   const windowTitle = activeFilename
-    ? `Eltanix Coder IDE - Antigravity IDE - ${activeFilename}`
-    : `Eltanix Coder IDE - Antigravity IDE ${project ? `(${project})` : ""}`;
+    ? `Eltanix Coder IDE — ${activeFilename}`
+    : `Eltanix Coder IDE${projectName ? ` — ${projectName}` : ""}`;
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {

@@ -8,15 +8,11 @@ license = "Apache-2.0"
 # publicado, então não há o que perder.
 requires-python = ">=3.12,<3.13"
 dependencies = [
-    "fastapi>=0.115",
-    "uvicorn[standard]>=0.32",
-    "pydantic>=2.9",
-    "pydantic-settings>=2.6",
-    # Teto proposital: a partir da 1.92 o litellm passou a distribuir uma extensão
-    # Rust e as versões estáveis não publicam wheel win_amd64 — instalar exigiria
-    # MSVC Build Tools. A 1.91.x ainda é py3-none-any e roda em Windows e Linux.
-    # Ao subir de versão, confira o wheel antes: https://pypi.org/pypi/litellm/json
-    "litellm>=1.91.4,<1.99",
+    "fastapi>=0.141.0",
+    "uvicorn[standard]>=0.52.0",
+    "pydantic>=2.13.0",
+    "pydantic-settings>=2.15.0",
+    "litellm>=1.98.0",
     "sqlalchemy[asyncio]>=2.0.36",
     "asyncpg>=0.30",
     "alembic>=1.14",
@@ -28,7 +24,7 @@ dependencies = [
     "python-dotenv>=1.0",
     # Cliente WS server-to-server: a API faz a ponte entre o WS do frontend e o
     # WS de screencast do services/browser (Fase 4a — streaming ao vivo).
-    "websockets>=13",
+    "websockets>=17.0",
     # Fase 2 — indexação do repositório
     "pgvector>=0.3",
     "tree-sitter>=0.23",
@@ -61,7 +57,7 @@ dependencies = [
     # ver auth/secret_box.py). Ao contrário de bcrypt/argon2 (rejeitados no
     # ADR 0005), publica wheel abi3 pré-compilada para win_amd64/manylinux/
     # macOS — não exige toolchain, mesmo critério de psycopg[binary].
-    "cryptography>=44",
+    "cryptography>=50.0.0",
 ]
 
 [project.optional-dependencies]
@@ -77,6 +73,8 @@ securebert = [
 
 [project.scripts]
 eltanix-eval-rag = "eltanix.evals.runner:main"
+eltanix-eval-gate = "eltanix.evals.gate:main"
+eltanix-eval-judge = "eltanix.evals.judge:main"
 
 [dependency-groups]
 dev = [
@@ -110,6 +108,12 @@ select = ["E", "F", "I", "UP", "B", "ASYNC", "RUF"]
 # tipográfica (travessão, aspas curvas) de propósito. RUF001-003 sinalizariam
 # cada ocorrência como "caractere ambíguo".
 ignore = ["E501", "RUF001", "RUF002", "RUF003"]
+
+[tool.ruff.lint.per-file-ignores]
+# Carrega os apps `executor` e `browser` via importlib.util antes de importar os
+# módulos de `eltanix`, então os imports do pacote ficam de propósito após código
+# executável.
+"tests/test_security_pentest.py" = ["E402"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

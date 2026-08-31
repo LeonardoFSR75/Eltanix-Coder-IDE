@@ -16,17 +16,17 @@ RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
 # Instalados globais e fixados por versão: um servidor que muda de comportamento
 # sozinho vira "o editor parou de completar" sem nenhuma mudança no repositório.
 RUN npm install -g --no-audit --no-fund \
-      pyright@1.1.391 \
-      typescript@5.7.3 \
-      typescript-language-server@4.3.3 \
+      pyright@1.1.413 \
+      typescript@5.8.2 \
+      typescript-language-server@6.0.0 \
       vscode-langservers-extracted@4.10.0 \
-      yaml-language-server@1.15.0 \
-      bash-language-server@5.4.3 \
-      dockerfile-language-server-nodejs@0.0.21 \
+      yaml-language-server@1.24.0 \
+      bash-language-server@5.6.0 \
+      dockerfile-language-server-nodejs@0.15.0 \
     && npm cache clean --force
 
 
-COPY --from=ghcr.io/astral-sh/uv:0.5 /uv /usr/local/bin/uv
+COPY --from=ghcr.io/astral-sh/uv:0.12 /uv /usr/local/bin/uv
 
 WORKDIR /app
 

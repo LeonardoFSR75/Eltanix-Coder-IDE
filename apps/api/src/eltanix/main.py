@@ -72,6 +72,7 @@ from eltanix.mcp.manager import MCPManager
 from eltanix.notes.service import NoteService
 from eltanix.optimizer.cache import ResponseCache
 from eltanix.optimizer.semantic_cache import SemanticCache
+from eltanix.retrieval.service import RetrievalService
 from eltanix.router.budget import BudgetGuard
 from eltanix.router.catalog import load_catalog
 from eltanix.router.engine import RouterEngine
@@ -113,7 +114,19 @@ async def lifespan(app: FastAPI):
     init_engine(settings.database_url)
     redis = await _connect_redis(settings.redis_url)
 
-    catalog = load_catalog(settings.providers_file, settings.routes_file)
+    catalog = load_catalog(
+        settings.providers_file,
+        settings.routes_file,
+        expected_embedding_dim=settings.embedding_dim,
+    )
+    fatais = [i for i in catalog.issues if i.fatal]
+    if fatais and settings.catalog_strict:
+        # ELTANIX_CATALOG_STRICT=1: subir com o catálogo inconsistente é pior
+        # que não subir. Sem ele, os modelos problemáticos já saíram do pool
+        # em `load_catalog` e a API sobe degradada, com o erro no log.
+        raise RuntimeError(
+            "Catálogo inválido (ELTANIX_CATALOG_STRICT): " + "; ".join(str(i) for i in fatais)
+        )
     prices = PriceTable.load(settings.pricing_file)
     health = HealthTracker(redis, catalog.resilience)
     cache = ResponseCache(
@@ -171,6 +184,12 @@ async def lifespan(app: FastAPI):
         settings=settings, engine=engine, blob=blob, trace_recorder=trace_recorder
     )
     notes = NoteService(settings=settings, engine=engine, trace_recorder=trace_recorder)
+    # Pipeline de recuperação (ADR 0019). Orquestra as fontes que já existem —
+    # não substitui nenhuma delas, e `RETRIEVAL_ENABLED=false` devolve todo
+    # mundo ao caminho antigo sem tirar código do ar.
+    retrieval = RetrievalService(
+        engine=engine, settings=settings, indexer=indexer, trace_recorder=trace_recorder
+    )
     firecrawl = FirecrawlService(settings=settings, engine=engine)
     skills = SkillService()
     custom_modes = CustomModeService()
@@ -293,6 +312,7 @@ async def lifespan(app: FastAPI):
     app.state.blob = blob
     app.state.documents = documents
     app.state.notes = notes
+    app.state.retrieval = retrieval
     app.state.firecrawl = firecrawl
     app.state.skills = skills
     app.state.custom_modes = custom_modes
@@ -328,6 +348,7 @@ async def lifespan(app: FastAPI):
         browser_config=browser_config,
         documents=documents,
         notes=notes,
+        retrieval=retrieval,
         skills=skills,
         custom_modes=custom_modes,
         snapshots=snapshots,
@@ -350,6 +371,9 @@ async def lifespan(app: FastAPI):
     analytics_batch_reaper = asyncio.create_task(run_analytics_batch_reaper(engine))
     snapshot_prune_reaper = asyncio.create_task(
         run_snapshot_prune_reaper(snapshots, retention_days=settings.agent_snapshot_retention_days)
+    )
+    embedding_backfill_reaper = asyncio.create_task(
+        indexer.run_embedding_backfill_reaper(settings.embedding_backfill_interval_seconds)
     )
 
     log.info(
@@ -382,6 +406,9 @@ async def lifespan(app: FastAPI):
         snapshot_prune_reaper.cancel()
         with suppress(asyncio.CancelledError):
             await snapshot_prune_reaper
+        embedding_backfill_reaper.cancel()
+        with suppress(asyncio.CancelledError):
+            await embedding_backfill_reaper
         # Containers da sessão não podem sobreviver ao processo que os criou:
         # ficariam órfãos consumindo memória até alguém notar.
         await sandboxes.shutdown()

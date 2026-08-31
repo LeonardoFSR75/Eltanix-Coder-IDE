@@ -26,6 +26,12 @@ log = get_logger(__name__)
 # bem sem ajuste: amortece a diferença entre as primeiras posições.
 RRF_K = 60
 
+# Prefixo do `content_hash` de um arquivo cujo embedding falhou. O hash real
+# nunca começa assim (hexadecimal só tem a-f), então o marcador não colide —
+# e faz a próxima indexação reprocessar o arquivo em vez de pulá-lo por
+# "inalterado". Ver `ContextIndexer.index_workspace`.
+PENDING_HASH_PREFIX = "pendente:"
+
 
 def _escape_like(value: str) -> str:
     """Escapa `%`/`_` antes de virar operador LIKE — sem isto, um
@@ -48,6 +54,9 @@ class SearchHit:
     score: float
     vector_rank: int | None = None
     text_rank: int | None = None
+    # Posição na perna de trigrama (pg_trgm sobre `symbol`/`path`). `None`
+    # quando o chunk entrou só pelas outras pernas — é o caso comum.
+    trigram_rank: int | None = None
 
     @property
     def citation(self) -> str:
@@ -69,6 +78,7 @@ async def upsert_file(
     chunks: list[Chunk],
     embeddings: list[list[float] | None],
     fallback_chunking: bool,
+    embedding_model: str | None = None,
 ) -> tuple[IndexedFile, list[CodeChunk]]:
     """Substitui o arquivo e todos os seus chunks.
 
@@ -114,6 +124,10 @@ async def upsert_file(
             content=chunk.content,
             token_count=chunk.token_count,
             embedding=embedding,
+            # Só etiqueta o que tem vetor: `embedding_model` preenchido com
+            # `embedding` nulo seria mentira sobre um chunk que ficou de fora
+            # do ramo vetorial.
+            embedding_model=embedding_model if embedding is not None else None,
         )
         session.add(row)
         persisted.append(row)
@@ -161,19 +175,58 @@ async def hybrid_search(
     limit: int = 12,
     candidate_pool: int = 50,
     path_prefix: str | None = None,
+    embedding_model: str | None = None,
+    ef_search: int | None = None,
+    vector_weight: float = 1.0,
+    text_weight: float = 1.0,
+    trigram_weight: float = 0.5,
+    rrf_k: int = RRF_K,
 ) -> list[SearchHit]:
-    """Busca vetorial + full-text fundidas por Reciprocal Rank Fusion.
+    """Busca vetorial + full-text + trigrama, fundidas por Reciprocal Rank Fusion.
 
-    Sem embedding disponível (modelo local fora do ar), degrada para full-text
-    puro em vez de não devolver nada.
+    Sem embedding disponível (modelo local fora do ar), degrada para as pernas
+    lexicais em vez de não devolver nada.
+
+    **Três sinais, não dois.** Vetor aproxima significado e erra o
+    identificador exato; full-text acerta o identificador e erra a pergunta
+    conceitual; trigrama sobre `symbol`/`path` cobre o que os dois erram —
+    nome parcial e erro de digitação (`extract_failed_call` achando
+    `extract_failed_tool_call`). O peso menor do trigrama é deliberado: ele é
+    sinal de apoio, não par dos outros dois.
+
+    **Pesos por sinal.** O RRF clássico soma `1/(k+rank)` com peso igual. Aqui
+    cada perna tem peso próprio, para que a calibração seja medida
+    (`eltanix-eval-rag`) em vez de herdada do artigo original.
+
+    `embedding_model` restringe o ramo vetorial aos chunks gerados pelo mesmo
+    modelo que produziu `query_embedding` — comparar vetores de modelos
+    diferentes devolve ruído com cara de resultado. Chunks de outro modelo (ou
+    anteriores à coluna de proveniência) continuam achaveis pelas pernas
+    lexicais.
+
+    `ef_search` ajusta `hnsw.ef_search` só nesta transação: o default do
+    pgvector devolve menos vizinhos do que `candidate_pool` pede.
     """
+    if ef_search is not None and session.bind is not None:
+        # `set_config` em vez de `SET LOCAL` porque só ele aceita parâmetro
+        # ligado; `SET LOCAL hnsw.ef_search = :ef` não é interpolável.
+        # `is_local=true` mantém o efeito preso à transação corrente.
+        if session.bind.dialect.name == "postgresql":
+            await session.execute(
+                text("SELECT set_config('hnsw.ef_search', :ef, true)"),
+                {"ef": str(int(ef_search))},
+            )
+
     filters = ["workspace = :workspace"]
     params: dict[str, object] = {
         "workspace": workspace,
         "pool": candidate_pool,
         "limit": limit,
-        "k": RRF_K,
+        "k": rrf_k,
         "q": query_text,
+        "w_vector": float(vector_weight),
+        "w_text": float(text_weight),
+        "w_trigram": float(trigram_weight),
     }
     if path_prefix:
         filters.append(r"path LIKE :path_prefix ESCAPE '\'")
@@ -182,59 +235,125 @@ async def hybrid_search(
 
     # `websearch_to_tsquery` tolera aspas e operadores digitados pelo usuário
     # sem estourar erro de sintaxe, ao contrário de `to_tsquery`.
+    #
+    # O `ORDER BY ... LIMIT` fica na subquery e o `ROW_NUMBER()` por fora, nas
+    # duas pernas.
+    #
+    # Isto NÃO é otimização: medido com EXPLAIN ANALYZE contra pgvector, a
+    # forma anterior (janela na mesma consulta do `LIMIT`) também usava o
+    # índice HNSW — o planner empurra o `LIMIT` através do `WindowAgg` e para
+    # o Index Scan cedo. Os dois planos custam o mesmo.
+    #
+    # O motivo é de correção: `LIMIT` depois de uma função de janela, sem
+    # `ORDER BY` externo, devolve as linhas na ordem em que o `WindowAgg` as
+    # emitiu. Na prática ele emite ordenado, mas isso é detalhe de execução,
+    # não garantia da linguagem. Aqui o top-k está declarado.
+    #
+    # A tsquery é a união de duas: a literal e a com identificadores separados
+    # por `eltanix_split_identifiers` (migração 0032). A função é a **mesma**
+    # que gera a coluna `tsv`, de propósito — se a consulta separasse de um
+    # jeito e o índice de outro, o casamento dependeria de coincidência.
+    # Com as duas: `getUserById` acha `get_user_by_id`, e quem colar
+    # `getuserbyid` inteiro continua achando.
+    tsquery = (
+        "(websearch_to_tsquery('simple', :q)"
+        " || websearch_to_tsquery('simple', eltanix_split_identifiers(:q)))"
+    )
     text_cte = f"""
         texto AS (
-            SELECT id,
-                   ROW_NUMBER() OVER (
-                       ORDER BY ts_rank_cd(tsv, websearch_to_tsquery('simple', :q)) DESC
-                   ) AS rank
-            FROM code_chunk
-            WHERE {where_clause}
-              AND tsv @@ websearch_to_tsquery('simple', :q)
-            LIMIT :pool
+            SELECT id, ROW_NUMBER() OVER (ORDER BY relevancia DESC) AS rank
+            FROM (
+                SELECT id, ts_rank_cd(tsv, {tsquery}) AS relevancia
+                FROM code_chunk
+                WHERE {where_clause}
+                  AND tsv @@ {tsquery}
+                ORDER BY relevancia DESC
+                LIMIT :pool
+            ) AS candidatos_texto
+        )
+    """
+
+    # `%` é o operador de similaridade do pg_trgm e usa os índices GIN trigram
+    # criados na 0032; `similarity()` só ordena o que ele já filtrou.
+    trigram_cte = f"""
+        trigrama AS (
+            SELECT id, ROW_NUMBER() OVER (ORDER BY semelhanca DESC) AS rank
+            FROM (
+                SELECT id,
+                       GREATEST(
+                           similarity(COALESCE(symbol, ''), :q),
+                           similarity(path, :q)
+                       ) AS semelhanca
+                FROM code_chunk
+                WHERE {where_clause}
+                  AND (COALESCE(symbol, '') % :q OR path % :q)
+                ORDER BY semelhanca DESC
+                LIMIT :pool
+            ) AS candidatos_trigrama
         )
     """
 
     if query_embedding is not None:
         params["embedding"] = str(query_embedding)
+        modelo_filtro = ""
+        if embedding_model:
+            params["embedding_model"] = embedding_model
+            modelo_filtro = "AND embedding_model = :embedding_model"
         sql = f"""
             WITH vetor AS (
-                SELECT id,
-                       ROW_NUMBER() OVER (ORDER BY embedding <=> CAST(:embedding AS vector)) AS rank
-                FROM code_chunk
-                WHERE {where_clause} AND embedding IS NOT NULL
-                LIMIT :pool
+                SELECT id, ROW_NUMBER() OVER (ORDER BY distancia) AS rank
+                FROM (
+                    SELECT id, embedding <=> CAST(:embedding AS vector) AS distancia
+                    FROM code_chunk
+                    WHERE {where_clause} AND embedding IS NOT NULL {modelo_filtro}
+                    ORDER BY embedding <=> CAST(:embedding AS vector)
+                    LIMIT :pool
+                ) AS candidatos_vetor
             ),
             {text_cte},
+            {trigram_cte},
             fusao AS (
-                SELECT COALESCE(v.id, t.id) AS id,
+                SELECT COALESCE(v.id, t.id, g.id) AS id,
                        v.rank AS vector_rank,
                        t.rank AS text_rank,
-                       COALESCE(1.0 / (:k + v.rank), 0.0)
-                     + COALESCE(1.0 / (:k + t.rank), 0.0) AS score
+                       g.rank AS trigram_rank,
+                       COALESCE(:w_vector / (:k + v.rank), 0.0)
+                     + COALESCE(:w_text / (:k + t.rank), 0.0)
+                     + COALESCE(:w_trigram / (:k + g.rank), 0.0) AS score
                 FROM vetor v
                 FULL OUTER JOIN texto t ON v.id = t.id
+                FULL OUTER JOIN trigrama g ON g.id = COALESCE(v.id, t.id)
             )
             SELECT c.path, c.symbol, c.parent, c.kind, c.start_line, c.end_line,
                    c.content, c.language, c.token_count,
-                   f.score, f.vector_rank, f.text_rank
+                   f.score, f.vector_rank, f.text_rank, f.trigram_rank
             FROM fusao f
             JOIN code_chunk c ON c.id = f.id
             ORDER BY f.score DESC
             LIMIT :limit
         """
     else:
-        log.warning("context.search.no_embedding", detail="degradando para full-text puro")
+        log.warning("context.search.no_embedding", detail="degradando para pernas lexicais")
         sql = f"""
-            WITH {text_cte}
+            WITH {text_cte},
+            {trigram_cte},
+            fusao AS (
+                SELECT COALESCE(t.id, g.id) AS id,
+                       t.rank AS text_rank,
+                       g.rank AS trigram_rank,
+                       COALESCE(:w_text / (:k + t.rank), 0.0)
+                     + COALESCE(:w_trigram / (:k + g.rank), 0.0) AS score
+                FROM texto t
+                FULL OUTER JOIN trigrama g ON g.id = t.id
+            )
             SELECT c.path, c.symbol, c.parent, c.kind, c.start_line, c.end_line,
                    c.content, c.language, c.token_count,
-                   1.0 / (:k + t.rank) AS score,
+                   f.score,
                    NULL::bigint AS vector_rank,
-                   t.rank AS text_rank
-            FROM texto t
-            JOIN code_chunk c ON c.id = t.id
-            ORDER BY score DESC
+                   f.text_rank, f.trigram_rank
+            FROM fusao f
+            JOIN code_chunk c ON c.id = f.id
+            ORDER BY f.score DESC
             LIMIT :limit
         """
 
@@ -254,6 +373,7 @@ async def hybrid_search(
             score=float(row["score"]),
             vector_rank=int(row["vector_rank"]) if row["vector_rank"] is not None else None,
             text_rank=int(row["text_rank"]) if row["text_rank"] is not None else None,
+            trigram_rank=int(row["trigram_rank"]) if row["trigram_rank"] is not None else None,
         )
         for row in rows
     ]
@@ -290,17 +410,63 @@ async def index_stats(session: AsyncSession, workspace: str) -> dict[str, object
         )
     ).all()
 
+    # Proveniência: mais de um modelo aqui significa índice com espaços
+    # vetoriais misturados — a busca vai filtrar por um só e o resto vira
+    # invisível ao ramo vetorial até reindexar.
+    by_model = (
+        await session.execute(
+            select(CodeChunk.embedding_model, func.count(CodeChunk.id))
+            .where(CodeChunk.workspace == workspace, CodeChunk.embedding.is_not(None))
+            .group_by(CodeChunk.embedding_model)
+            .order_by(func.count(CodeChunk.id).desc())
+        )
+    ).all()
+
+    pendentes = await session.scalar(
+        select(func.count(IndexedFile.id)).where(
+            IndexedFile.workspace == workspace,
+            IndexedFile.content_hash.like(f"{PENDING_HASH_PREFIX}%"),
+        )
+    )
+
+    total_chunks = int(chunks or 0)
     return {
         "files": int(files or 0),
-        "chunks": int(chunks or 0),
+        "chunks": total_chunks,
         "total_tokens": int(tokens or 0),
         "chunks_with_embedding": int(embedded or 0),
+        # Sem isto, "chunks_with_embedding" sozinho não diz se o índice está
+        # 99% ou 40% vetorizado — é o número que o reaper de backfill persegue.
+        "embedding_coverage": round(int(embedded or 0) / total_chunks, 4) if total_chunks else 0.0,
+        "files_pending_embedding": int(pendentes or 0),
         "files_line_chunked": int(fallback or 0),
         "by_language": [
             {"language": language or "desconhecida", "files": int(count)}
             for language, count in by_language
         ],
+        "by_embedding_model": [
+            {"model": model or "desconhecido", "chunks": int(count)} for model, count in by_model
+        ],
     }
+
+
+async def workspaces_pending_embedding(session: AsyncSession) -> list[tuple[str, int]]:
+    """Workspaces com arquivo marcado `pendente:` — embedding indisponível na
+    hora da indexação (ver `ContextIndexer.index_workspace`).
+
+    O arquivo não fica perdido: como o hash gravado não é o real, a próxima
+    passagem de indexação o reprocessa. O que faltava era alguém *disparar*
+    essa passagem — é o que `run_embedding_backfill_reaper` faz com esta lista.
+    """
+    rows = (
+        await session.execute(
+            select(IndexedFile.workspace, func.count(IndexedFile.id))
+            .where(IndexedFile.content_hash.like(f"{PENDING_HASH_PREFIX}%"))
+            .group_by(IndexedFile.workspace)
+            .order_by(func.count(IndexedFile.id).desc())
+        )
+    ).all()
+    return [(str(workspace), int(count)) for workspace, count in rows]
 
 
 # --- Code Knowledge Graph -------------------------------------------------

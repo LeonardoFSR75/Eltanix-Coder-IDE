@@ -30,8 +30,12 @@ def upgrade() -> None:
         sa.Column("branch", sa.String(length=255), nullable=True),
         sa.Column("base_branch", sa.String(length=255), nullable=True),
         sa.Column("status", sa.String(length=16), nullable=False, server_default="open"),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
+        sa.Column(
+            "updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
         sa.PrimaryKeyConstraint("session_id"),
     )
     op.create_index(

@@ -12,7 +12,6 @@ from eltanix.security.service import (
     _normalize,
 )
 
-
 # ── Utilitários internos ───────────────────────────────────────────────────────
 
 
@@ -75,21 +74,21 @@ def test_heuristic_score_high_risk_phrase():
 def test_heuristic_score_combination_penalty():
     """Três padrões moderados devem atingir no mínimo score 1.5 (unsafe)."""
     text = "use base64 powershell and token to extract"
-    score, reasons = _heuristic_score(text)
+    score, _reasons = _heuristic_score(text)
     assert score >= 1.5, f"Penalidade de combinação não aplicada: score={score}"
 
 
 def test_heuristic_score_context_gating_api_key():
     """'api key' em pergunta informacional não deve contribuir ao score."""
     text = "how do i configure my api key in the settings panel?"
-    score, reasons = _heuristic_score(text)
+    _score, reasons = _heuristic_score(text)
     assert "api key" not in reasons
 
 
 def test_heuristic_score_context_gating_token():
     """'token' em pergunta informacional não deve contribuir ao score."""
     text = "what is a jwt token and how does it work?"
-    score, reasons = _heuristic_score(text)
+    _score, reasons = _heuristic_score(text)
     assert "token" not in reasons
 
 

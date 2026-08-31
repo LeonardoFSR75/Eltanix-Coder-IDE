@@ -92,12 +92,21 @@ class FirecrawlService:
         validate_target_url(url)
         return await self.client.map_urls(url, search=search, limit=limit)
 
-    async def _embed_chunks(self, chunks: list[TextChunk]) -> list[list[float] | None]:
-        """Gera embeddings para os chunks através do RouterEngine."""
+    async def _embed_chunks(
+        self, chunks: list[TextChunk]
+    ) -> tuple[list[list[float] | None], str | None]:
+        """Gera embeddings para os chunks através do RouterEngine.
+
+        Devolve também a etiqueta de proveniência do modelo que gerou os
+        vetores: sem ela o chunk fica com `embedding_model` nulo e o filtro do
+        ADR 0017 o tira do ramo vetorial da busca de documentos para sempre —
+        indexado, mas invisível ao vetor.
+        """
         if not chunks or self.engine is None:
-            return [None] * len(chunks)
+            return [None] * len(chunks), None
 
         vectors: list[list[float] | None] = []
+        modelo: str | None = None
         batch_size = max(1, self.settings.embedding_batch_size)
 
         for start in range(0, len(chunks), batch_size):
@@ -118,8 +127,22 @@ class FirecrawlService:
             except Exception as exc:
                 log.warning("firecrawl.embed.failed", error=str(exc)[:200], batch=len(batch))
                 vectors.extend([None] * len(batch))
+                continue
 
-        return vectors
+            if modelo is None:
+                modelo = result.provenance_tag
+            elif modelo != result.provenance_tag:
+                # Fallback no meio da página: os lotes seguintes vieram de outro
+                # espaço vetorial. Abortar o vetor inteiro é mais barato que
+                # gravar uma página meio num espaço e meio noutro.
+                log.warning(
+                    "firecrawl.embed.model_changed_midpage",
+                    first=modelo,
+                    then=result.provenance_tag,
+                )
+                return [None] * len(chunks), None
+
+        return vectors, modelo
 
     async def ingest_page_content(
         self,
@@ -143,7 +166,7 @@ class FirecrawlService:
             overlap_tokens=self.settings.documents_chunk_overlap_tokens,
         )
 
-        vectors = await self._embed_chunks(chunks)
+        vectors, embedding_model = await self._embed_chunks(chunks)
 
         async with session_scope() as session:
             doc = Document(
@@ -167,6 +190,7 @@ class FirecrawlService:
                     content=chunk.content,
                     token_count=chunk.token_count,
                     embedding=vector,
+                    embedding_model=embedding_model if vector is not None else None,
                 )
                 session.add(doc_chunk)
 

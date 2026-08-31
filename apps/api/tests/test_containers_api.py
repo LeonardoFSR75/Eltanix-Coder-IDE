@@ -1,7 +1,7 @@
 """Testes automatizados das rotas de Containers Docker (/api/containers/*)."""
 
 import os
-import pytest
+
 from fastapi.testclient import TestClient
 
 os.environ["ELTANIX_API_KEY"] = "chave-de-teste"

@@ -83,6 +83,9 @@ class ToolContext:
     browser: Any | None = None  # BrowserClient
     documents: Any | None = None  # DocumentService
     notes: Any | None = None  # NoteService
+    # RetrievalService — pipeline de recuperação (ADR 0019). `None` faz
+    # `search_code` cair no `IndexerService.search` de sempre.
+    retrieval: Any | None = None
     skills: Any | None = None  # SkillService
     audit: Any | None = None  # AuditService
     firecrawl: Any | None = None  # FirecrawlService

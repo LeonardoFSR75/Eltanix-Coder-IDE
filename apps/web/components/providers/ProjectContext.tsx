@@ -24,19 +24,35 @@ import { useAuth } from "@/components/providers/AuthContext";
 
 export interface ProjectRecordView {
   id: string;
+  /** Identificador aceito pela API em `?project=`. */
   slug: string;
+  /** Rótulo de exibição — nunca usar como identificador. */
   name: string;
   description: string;
   local_path: string | null;
+  /** `false` quando a pasta de `local_path` não existe mais no disco (movida
+   * ou apagada fora da IDE). O cadastro no Postgres não tem essa invariante,
+   * então a lista pode conter projeto-fantasma (ver ADR 0016). */
+  local_path_exists?: boolean;
   git_url: string | null;
   default_branch: string;
   budget_limit_usd: number | null;
   settings: Record<string, unknown>;
+  my_role?: "viewer" | "editor" | "owner" | null;
 }
 
 interface ProjectContextType {
+  /** SLUG do projeto ativo — nunca o `name` de exibição. É o identificador
+   * que a API aceita (`?project=`), e a única coisa que vale guardar/propagar. */
   currentProject: string | null;
   projects: ProjectRecordView[];
+  /** `true` depois da primeira resposta de `GET /api/projects` (com sucesso
+   * ou erro) — quem escolhe um projeto padrão precisa distinguir "lista vazia
+   * porque ainda não carregou" de "lista vazia porque não há projeto". */
+  projectsLoaded: boolean;
+  /** Mensagem da última falha de `GET /api/projects`, `null` se deu certo.
+   * Antes o erro era engolido e cada consumidor via só uma lista vazia. */
+  projectsError: string | null;
   setCurrentProject: (slug: string | null) => void;
   reloadProjects: () => Promise<void>;
 }
@@ -49,14 +65,17 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const [projects, setProjects] = useState<ProjectRecordView[]>([]);
   const [projectsLoaded, setProjectsLoaded] = useState(false);
+  const [projectsError, setProjectsError] = useState<string | null>(null);
   const [currentProject, setCurrentProjectState] = useState<string | null>(null);
 
   const reloadProjects = useCallback(async () => {
     try {
       const data = await get<{ projects: ProjectRecordView[] }>("/api/projects");
       setProjects(data.projects);
-    } catch {
+      setProjectsError(null);
+    } catch (err) {
       setProjects([]);
+      setProjectsError(err instanceof Error ? err.message : String(err));
     } finally {
       setProjectsLoaded(true);
     }
@@ -68,7 +87,10 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
   // montagem, que aconteceria antes de existir sessão nenhuma.
   useEffect(() => {
     if (user) void reloadProjects();
-    else setProjects([]);
+    else {
+      setProjects([]);
+      setProjectsError(null);
+    }
   }, [user, reloadProjects]);
 
   // Query param manda quando presente (link direto/compartilhável tipo
@@ -110,14 +132,27 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
   // contra um slug morto, cada um sem saber que o motivo era esse. Só roda
   // depois que `projects` reflete de fato uma resposta do backend — antes
   // disso `projects` é só `[]` inicial, e podaria um slug válido à toa.
+  //
+  // `projectsError` também barra a poda: com a API fora do ar `projects` fica
+  // `[]` sem que nada tenha sido apagado, e podar aqui faria o usuário perder
+  // a seleção (e o IDE fechar o projeto) por causa de uma falha passageira.
   useEffect(() => {
-    if (!projectsLoaded || !currentProject) return;
+    if (!projectsLoaded || projectsError || !currentProject) return;
     const aindaExiste = projects.some((p) => p.slug === currentProject);
     if (!aindaExiste) setCurrentProject(null);
-  }, [projectsLoaded, projects, currentProject, setCurrentProject]);
+  }, [projectsLoaded, projectsError, projects, currentProject, setCurrentProject]);
 
   return (
-    <Ctx.Provider value={{ currentProject, projects, setCurrentProject, reloadProjects }}>
+    <Ctx.Provider
+      value={{
+        currentProject,
+        projects,
+        projectsLoaded,
+        projectsError,
+        setCurrentProject,
+        reloadProjects,
+      }}
+    >
       {children}
     </Ctx.Provider>
   );

@@ -1,33 +1,426 @@
-# Casos de avaliação de qualidade do RAG — usado por `eltanix-eval-rag`
-# (`eltanix/evals/runner.py`). Cada caso testa se a busca híbrida (RRF)
-# traz um resultado relevante nos primeiros `limit` hits.
+# Casos de avaliação de qualidade do RAG — `eltanix-eval-rag`
+# (`eltanix/evals/runner.py`). Cada caso testa se a busca híbrida traz um
+# trecho relevante dentro dos primeiros `limit` hits.
 #
-# `expected_keywords`: substring (case-insensitive) procurada no conteúdo dos
-# hits — mais fácil de escrever à mão. `expected_ids`: id exato do chunk
-# (mais preciso, quando você já sabe qual é). Um caso precisa de pelo menos
-# um dos dois.
+# COMO RODAR
+# ----------
+#   export ELTANIX_EVAL_ROOT=/caminho/para/seu/eltanix-coder-ide
+#   # indexe o workspace uma vez (pela IDE ou por POST /api/context/index)
+#   uv run eltanix-eval-rag --json /tmp/eval.json
+#   uv run eltanix-eval-gate --report /tmp/eval.json
 #
-# `source: context` exige `root` (caminho absoluto do workspace já indexado
-# via `POST /api/context/index` ou pela IDE) — os exemplos abaixo apontam
-# para o próprio backend do Eltanix Coder IDE, ajuste para o seu ambiente.
+# `defaults.root` expande `${ELTANIX_EVAL_ROOT}`: ninguém precisa editar este
+# arquivo para rodar em outra máquina, e o diff de um caso novo não vem
+# poluído com o caminho absoluto de quem o escreveu.
+#
+# COMO ESCREVER UM CASO
+# ---------------------
+# `query` é o que uma pessoa digitaria — em português, do jeito torto que se
+# pergunta de verdade, não o nome exato do símbolo. Se a query já contém o
+# identificador esperado, o caso só exercita o ramo full-text e passa mesmo
+# com o embedding fora do ar, que é justamente o que não se quer medir.
+#
+# `expected_keywords` é substring case-insensitive no conteúdo do chunk.
+# Prefira identificador estável (classe, função, constante) a frase de
+# comentário, que muda em qualquer revisão de texto.
+#
+# `tags` fatiam o relatório e o gate compara tag a tag: uma média única
+# esconde que a recuperação quebrou só numa área.
+
+defaults:
+  source: context
+  root: "${ELTANIX_EVAL_ROOT}"
+  limit: 8
 
 cases:
-  - source: context
-    query: "onde fica o registro de ferramentas do agente"
+  # ── Roteamento de LLM ───────────────────────────────────────────────────
+  - query: "onde o sistema decide qual modelo de linguagem vai atender o pedido"
+    expected_keywords: ["RoutingPolicy"]
+    tags: [router]
+
+  - query: "como as tentativas são ordenadas quando o perfil usa pontuação ponderada"
+    expected_keywords: ["_order_by_score"]
+    tags: [router]
+
+  - query: "o que acontece quando todos os provedores falham na mesma requisição"
+    expected_keywords: ["AllCandidatesFailedError"]
+    tags: [router]
+
+  - query: "quem impede que a plataforma gaste mais do que o teto do mês"
+    expected_keywords: ["BudgetGuard"]
+    tags: [router, custo]
+
+  - query: "disjuntor que tira um provedor do ar depois de várias falhas seguidas"
+    expected_keywords: ["HealthTracker"]
+    tags: [router]
+
+  - query: "quanto tempo um provedor fica de fora depois que o circuito abre"
+    expected_keywords: ["cooldown_max_seconds"]
+    tags: [router]
+
+  - query: "como o preço de cada chamada ao modelo é calculado"
+    expected_keywords: ["PriceTable"]
+    tags: [router, custo]
+
+  - query: "marcar o prefixo estável para reaproveitar o cache do provedor"
+    expected_keywords: ["cache_control"]
+    tags: [router, custo]
+
+  - query: "descartar parâmetro que o provedor não conhece em vez de falhar"
+    expected_keywords: ["drop_params"]
+    tags: [router]
+
+  - query: "por que o número de retentativas da biblioteca fica zerado"
+    expected_keywords: ["num_retries"]
+    tags: [router]
+
+  - query: "leitura dos arquivos de configuração de provedores e rotas"
+    expected_keywords: ["load_catalog"]
+    tags: [router, config]
+
+  - query: "conferência que impede vetor de dimensão errada de entrar no índice"
+    expected_keywords: ["validate_catalog"]
+    tags: [router, rag]
+
+  - query: "substituir variável de ambiente dentro do arquivo de configuração"
+    expected_keywords: ["_expand_env"]
+    tags: [config]
+
+  - query: "provedor que não aceita mais de uma chamada de ferramenta por turno"
+    expected_keywords: ["_NO_PARALLEL_TOOL_CALLS"]
+    tags: [router, agente]
+
+  - query: "recuperar a chamada de função que veio dentro da mensagem de erro"
+    expected_keywords: ["extract_failed_tool_call"]
+    tags: [router]
+
+  - query: "escolher o perfil de rota conforme a origem do pedido"
+    expected_keywords: ["_apply_complexity"]
+    tags: [router]
+
+  # ── Otimização de contexto e custo ──────────────────────────────────────
+  - query: "como o histórico longo de uma sessão encolhe antes de ir para o modelo"
+    expected_keywords: ["ContextCompressor"]
+    tags: [otimizacao]
+
+  - query: "quantas mensagens recentes nunca são comprimidas"
+    expected_keywords: ["PROTECTED_RECENT_MESSAGES"]
+    tags: [otimizacao]
+
+  - query: "cortar saída gigante de comando mantendo o começo e o fim"
+    expected_keywords: ["TAIL_LINES"]
+    tags: [otimizacao]
+
+  - query: "classificar a tarefa em trivial ou complexa para usar modelo mais barato"
+    expected_keywords: ["ComplexityVerdict"]
+    tags: [otimizacao, router]
+
+  - query: "quais origens de requisição contam como trabalho auxiliar barato"
+    expected_keywords: ["_UTILITY_SOURCES"]
+    tags: [otimizacao]
+
+  - query: "reaproveitar resposta de pergunta parecida sem chamar o modelo de novo"
+    expected_keywords: ["SemanticCache"]
+    tags: [otimizacao]
+
+  - query: "distância máxima aceita para considerar duas perguntas equivalentes"
+    expected_keywords: ["max_cosine_distance"]
+    tags: [otimizacao]
+
+  - query: "contar tokens quando a biblioteca de tokenização não está instalada"
+    expected_keywords: ["count_text"]
+    tags: [otimizacao]
+
+  # ── RAG: indexação e busca ──────────────────────────────────────────────
+  - query: "como os resultados da busca vetorial e da textual são combinados"
+    expected_keywords: ["RRF_K"]
+    tags: [rag]
+
+  - query: "o que a busca faz quando o modelo de embedding está fora do ar"
+    expected_keywords: ["degradando para full-text"]
+    tags: [rag]
+
+  - query: "quebrar um arquivo de código em pedaços por símbolo"
+    expected_keywords: ["chunk_file"]
+    tags: [rag]
+
+  - query: "tamanho máximo de um pedaço antes de ser dividido"
+    expected_keywords: ["MAX_CHUNK_TOKENS"]
+    tags: [rag]
+
+  - query: "o que acontece com o pedaço que passa do limite de tokens"
+    expected_keywords: ["_split_oversized"]
+    tags: [rag]
+
+  - query: "trechos do arquivo que ficaram fora de qualquer símbolo"
+    expected_keywords: ["_gap_chunks"]
+    tags: [rag]
+
+  - query: "sem parser de sintaxe para a linguagem, como o arquivo é fatiado"
+    expected_keywords: ["_line_chunks"]
+    tags: [rag]
+
+  - query: "carregar o parser de árvore sintática conforme a linguagem"
+    expected_keywords: ["get_parser"]
+    tags: [rag]
+
+  - query: "arquivo que não mudou desde a última vez é processado de novo?"
+    expected_keywords: ["known_hashes"]
+    tags: [rag]
+
+  - query: "marcação do arquivo cujo vetor não pôde ser calculado"
+    expected_keywords: ["PENDING_HASH_PREFIX"]
+    tags: [rag]
+
+  - query: "rotina que reprocessa o que ficou sem vetor"
+    expected_keywords: ["backfill_pending_embeddings"]
+    tags: [rag]
+
+  - query: "saber qual modelo gerou o vetor guardado em cada pedaço"
+    expected_keywords: ["embedding_model"]
+    tags: [rag]
+
+  - query: "quantos vizinhos o índice vetorial percorre antes de responder"
+    expected_keywords: ["ef_search"]
+    tags: [rag, infra]
+
+  - query: "gerar os vetores em lotes durante a indexação"
+    expected_keywords: ["embedding_batch_size"]
+    tags: [rag]
+
+  - query: "tirar do índice os arquivos que sumiram do disco"
+    expected_keywords: ["delete_missing"]
+    tags: [rag]
+
+  - query: "quais pastas são ignoradas na varredura do projeto"
+    expected_keywords: ["ScannedFile"]
+    tags: [rag]
+
+  - query: "ligações entre pedaços de código: quem contém quem"
+    expected_keywords: ["contains_edges"]
+    tags: [rag, grafo]
+
+  - query: "resolver o alvo de um import para um arquivo do próprio projeto"
+    expected_keywords: ["import_targets"]
+    tags: [rag, grafo]
+
+  - query: "módulos que ninguém importa"
+    expected_keywords: ["orphan_modules"]
+    tags: [rag, grafo]
+
+  - query: "resumo do repositório dentro de um orçamento de tokens"
+    expected_keywords: ["build_repo_map"]
+    tags: [rag]
+
+  - query: "reordenar resultados usando recência e co-mudança do histórico"
+    expected_keywords: ["RecencySignal"]
+    tags: [rag, git]
+
+  - query: "expandir os resultados pelos vizinhos no grafo de código"
+    expected_keywords: ["_graph_neighbors"]
+    tags: [rag, grafo]
+
+  - query: "fatiar texto corrido de um documento com sobreposição"
+    expected_keywords: ["chunk_text"]
+    tags: [rag, documentos]
+
+  - query: "estatísticas do índice: cobertura de vetor e arquivos pendentes"
+    expected_keywords: ["index_stats"]
+    tags: [rag]
+
+  - query: "resolver links entre notas escritos com colchetes duplos"
+    expected_keywords: ["wikilink"]
+    tags: [rag, notas]
+
+  - query: "extrair texto de planilha e apresentação para o índice"
+    expected_keywords: ["anydoc"]
+    tags: [rag, documentos]
+
+  # ── Agente e orquestração ───────────────────────────────────────────────
+  - query: "as etapas do ciclo do agente antes de executar uma ferramenta"
+    expected_keywords: ["build_graph"]
+    tags: [agente]
+
+  - query: "quantas voltas o agente pode dar antes de desistir da tarefa"
+    expected_keywords: ["DEFAULT_MAX_ITERATIONS"]
+    tags: [agente]
+
+  - query: "como a execução para e espera a pessoa aprovar uma ação perigosa"
+    expected_keywords: ["PendingApproval"]
+    tags: [agente, seguranca]
+
+  - query: "o que decide se uma ferramenta precisa de aprovação humana"
+    expected_keywords: ["RiskClass"]
+    tags: [agente, seguranca]
+
+  - query: "onde as ferramentas do agente ficam registradas"
     expected_keywords: ["ToolRegistry"]
-    root: "/caminho/para/seu/eltanix-coder-ide/apps/api/src/eltanix"
+    tags: [agente]
 
-  - source: context
-    query: "como funciona o Reciprocal Rank Fusion na busca híbrida"
-    expected_keywords: ["RRF", "rank"]
-    root: "/caminho/para/seu/eltanix-coder-ide/apps/api/src/eltanix"
+  - query: "detectar que o agente está repetindo a mesma chamada sem sair do lugar"
+    expected_keywords: ["_is_stuck_repeat"]
+    tags: [agente]
 
-  # Exemplos de documents/notes — precisam de um PDF/nota real já indexado no
-  # ambiente para fazer sentido; ajuste a query e o expected_keywords para
-  # algo que você sabe que está no seu banco antes de rodar.
-  # - source: documents
-  #   query: "política de reembolso"
-  #   expected_keywords: ["reembolso"]
-  # - source: notes
-  #   query: "ideia sobre onboarding"
-  #   expected_keywords: ["onboarding"]
+  - query: "identificação única de uma chamada para comparar repetição"
+    expected_keywords: ["_tool_fingerprint"]
+    tags: [agente]
+
+  - query: "criar um agente filho a partir do agente principal"
+    expected_keywords: ["spawn_agent"]
+    tags: [agente]
+
+  - query: "coordenar quem é filho de quem na execução multiagente"
+    expected_keywords: ["AgentCoordinator"]
+    tags: [agente]
+
+  - query: "escolher automaticamente as habilidades relevantes para a tarefa"
+    expected_keywords: ["find_relevant"]
+    tags: [agente, skills]
+
+  - query: "similaridade mínima para uma habilidade entrar no prompt do sistema"
+    expected_keywords: ["agent_skill_routing_min_score"]
+    tags: [agente, skills]
+
+  - query: "comandos com barra que forçam uma habilidade específica"
+    expected_keywords: ["resolve_slash_command"]
+    tags: [agente, skills]
+
+  - query: "voltar a sessão do agente para um ponto anterior"
+    expected_keywords: ["rewind_to"]
+    tags: [agente]
+
+  - query: "limpar sessões que ficaram penduradas sem ninguém acompanhando"
+    expected_keywords: ["run_zombie_session_reaper"]
+    tags: [agente]
+
+  - query: "modo personalizado com um conjunto próprio de ferramentas"
+    expected_keywords: ["CustomMode"]
+    tags: [agente]
+
+  - query: "instruções que entram no prompt conforme os arquivos abertos"
+    expected_keywords: ["context_rules"]
+    tags: [agente]
+
+  - query: "guardar o estado dos arquivos a cada passo para poder desfazer"
+    expected_keywords: ["SessionFileSnapshot"]
+    tags: [agente]
+
+  # ── Inteligência do editor ──────────────────────────────────────────────
+  - query: "sugestão em cinza que aparece enquanto a pessoa digita"
+    expected_keywords: ["clean_completion"]
+    tags: [editor]
+
+  - query: "tirar a repetição do texto que já estava antes do cursor"
+    expected_keywords: ["_longest_prefix_overlap"]
+    tags: [editor]
+
+  - query: "limite de quanto código antes e depois do cursor é enviado"
+    expected_keywords: ["MAX_PREFIX_CHARS"]
+    tags: [editor]
+
+  - query: "prever qual será a próxima edição e para onde pular"
+    expected_keywords: ["PredictedEdit"]
+    tags: [editor]
+
+  - query: "conferir se a edição prevista realmente cabe no arquivo"
+    expected_keywords: ["validate_prediction"]
+    tags: [editor]
+
+  - query: "registrar quando a pessoa aceitou ou recusou a sugestão"
+    expected_keywords: ["CompletionEvent"]
+    tags: [editor, telemetria]
+
+  - query: "teto de chamadas de autocompletar por minuto"
+    expected_keywords: ["ide_completion_max_per_minute"]
+    tags: [editor]
+
+  - query: "separar as mudanças propostas em blocos aceitos um a um"
+    expected_keywords: ["split_hunks"]
+    tags: [editor]
+
+  # ── Segurança, execução e sandbox ───────────────────────────────────────
+  - query: "por que a execução de comando não fala direto com o docker da api"
+    expected_keywords: ["EXECUTOR_TOKEN"]
+    tags: [seguranca, sandbox]
+
+  - query: "restrições do container onde o comando do agente roda"
+    expected_keywords: ["cap_drop"]
+    tags: [seguranca, sandbox]
+
+  - query: "bloquear requisição para endereço interno ou metadados da nuvem"
+    expected_keywords: ["validate_target_url"]
+    tags: [seguranca, web]
+
+  - query: "o que toda rota da api exige para não ficar aberta"
+    expected_keywords: ["require_session"]
+    tags: [seguranca, auth]
+
+  - query: "segundo fator de autenticação do usuário"
+    expected_keywords: ["UserMfa"]
+    tags: [seguranca, auth]
+
+  - query: "impedir leitura ou escrita fora da pasta do projeto"
+    expected_keywords: ["PathGuard"]
+    tags: [seguranca]
+
+  - query: "servidor externo confiável pode marcar a ferramenta como só leitura"
+    expected_keywords: ["read_only_hint"]
+    tags: [seguranca, mcp]
+
+  - query: "conferir a segurança dos servidores externos antes de conectar"
+    expected_keywords: ["MCPScanFinding"]
+    tags: [seguranca, mcp]
+
+  # ── Grafo de conhecimento ───────────────────────────────────────────────
+  - query: "calcular a importância dos nós do grafo de conhecimento"
+    expected_keywords: ["pagerank"]
+    tags: [grafo]
+
+  - query: "busca que se expande por vizinhos a alguns saltos de distância"
+    expected_keywords: ["max_hops"]
+    tags: [grafo]
+
+  - query: "subgrafo em volta de um nó específico"
+    expected_keywords: ["get_ego_subgraph"]
+    tags: [grafo]
+
+  - query: "guardar um nó do grafo sem duplicar o que já existe"
+    expected_keywords: ["upsert_node"]
+    tags: [grafo]
+
+  # ── Plataforma, dados e observabilidade ─────────────────────────────────
+  - query: "onde fica registrado o caminho real de cada projeto no disco"
+    expected_keywords: ["local_path"]
+    tags: [infra, projetos]
+
+  - query: "identificador que liga todos os logs de uma mesma requisição"
+    expected_keywords: ["request_id"]
+    tags: [infra, telemetria]
+
+  - query: "registro de quanto cada chamada de modelo custou"
+    expected_keywords: ["RequestLog"]
+    tags: [infra, telemetria, custo]
+
+  - query: "buffer com os últimos spans de ferramenta e de busca"
+    expected_keywords: ["TraceRecorder"]
+    tags: [infra, telemetria]
+
+  - query: "instalar dependência respeitando a stack oficial do projeto"
+    expected_keywords: ["manage_packages"]
+    tags: [pacotes]
+
+  - query: "criar uma árvore de trabalho separada do git para a sessão"
+    expected_keywords: ["worktree"]
+    tags: [git]
+
+  - query: "ponte entre o editor e o servidor de linguagem"
+    expected_keywords: ["LspBridge"]
+    tags: [lsp]
+
+  - query: "agrupar as falhas de sessão parecidas para achar a causa comum"
+    expected_keywords: ["FailureCluster"]
+    tags: [analytics]
+
+  - query: "categorias de falha de uma sessão do agente"
+    expected_keywords: ["FailureCategory"]
+    tags: [analytics]

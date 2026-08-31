@@ -36,9 +36,10 @@ def upgrade() -> None:
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
         sa.PrimaryKeyConstraint("id"),
-        sa.UniqueConstraint("slug"),
     )
-    op.create_index("ix_project_record_slug", "project_record", ["slug"])
+    # Índice único — bate com `unique=True, index=True` no modelo
+    # `ProjectRecord.slug`.
+    op.create_index("ix_project_record_slug", "project_record", ["slug"], unique=True)
 
     # 2. Adicionar project_slug nas tabelas de telemetria, auditoria, notas e documentos
     op.add_column("request_log", sa.Column("project_slug", sa.String(length=128), nullable=True))

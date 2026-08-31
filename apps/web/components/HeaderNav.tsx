@@ -100,7 +100,7 @@ export function HeaderNav() {
         <Link href="/projects" className="brand-link">
           <div className="brand-logo">S</div>
           <span className="brand-name">
-            Eltanix Coder IDE<span className="brand-highlight">Code</span>
+            Eltanix <span className="brand-highlight">Coder</span>
           </span>
         </Link>
       </div>

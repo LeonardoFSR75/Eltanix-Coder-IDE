@@ -40,7 +40,9 @@ def upgrade() -> None:
         # pending -> processing -> ready | failed
         sa.Column("status", sa.String(length=16), nullable=False, server_default="pending"),
         sa.Column("error", sa.Text(), nullable=True),
-        sa.Column("uploaded_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
+        sa.Column(
+            "uploaded_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
         sa.Column("indexed_at", sa.DateTime(timezone=True), nullable=True),
         sa.PrimaryKeyConstraint("id"),
     )

@@ -5,10 +5,10 @@ WORKDIR /srv
 # Superfície mínima: este container tem acesso ao daemon do Docker, então cada
 # pacote instalado aqui é um pacote com esse poder ao alcance.
 RUN pip install --no-cache-dir \
-    "fastapi==0.118.0" \
-    "uvicorn==0.34.0" \
-    "docker==7.1.0" \
-    "pydantic==2.11.0"
+    "fastapi==0.141.1" \
+    "uvicorn==0.52.4" \
+    "docker==7.2.0" \
+    "pydantic==2.13.5"
 
 COPY app.py ./
 

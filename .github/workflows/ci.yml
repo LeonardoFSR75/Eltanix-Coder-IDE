@@ -26,8 +26,8 @@ jobs:
       run:
         working-directory: apps/api
     steps:
-      - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v7
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
         with:
           version: "latest"
           enable-cache: true
@@ -37,7 +37,7 @@ jobs:
       - name: ruff format --check
         run: uv run ruff format --check src
       - name: ruff check
-        run: uv run ruff check src
+        run: uv run ruff check src tests
       - name: pytest
         # `--cov` sem valor usa o `source` de [tool.coverage.run] no pyproject.
         run: >-
@@ -46,7 +46,7 @@ jobs:
           --cov-fail-under=0
       - name: Publicar cobertura
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v4
         with:
           name: coverage-api
           path: apps/api/coverage.xml
@@ -64,8 +64,8 @@ jobs:
       run:
         working-directory: apps/api
     steps:
-      - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v7
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
         with:
           version: "latest"
           enable-cache: true
@@ -83,8 +83,8 @@ jobs:
       run:
         working-directory: apps/web
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: "22"
           cache: "npm"
@@ -107,7 +107,7 @@ jobs:
         working-directory: apps/api
     services:
       postgres:
-        image: pgvector/pgvector:pg17
+        image: pgvector/pgvector:0.8.6-pg18
         env:
           POSTGRES_USER: eltanix
           POSTGRES_PASSWORD: eltanix
@@ -123,8 +123,8 @@ jobs:
       DATABASE_URL: postgresql+asyncpg://eltanix:eltanix@localhost:5432/eltanix_test
       DATABASE_URL_TEST: postgresql+asyncpg://eltanix:eltanix@localhost:5432/eltanix_test
     steps:
-      - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v7
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
         with:
           version: "latest"
           enable-cache: true
@@ -140,39 +140,35 @@ jobs:
     name: API — migrações (drift & reversibilidade)
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    # Não bloqueante na estreia: se houver drift model↔migração ou um
-    # downgrade quebrado pré-existente, isto revela sem travar todo PR.
-    # Trocar para bloqueante depois da primeira execução verde.
-    continue-on-error: true
     defaults:
       run:
         working-directory: apps/api
-    services:
-      postgres:
-        image: pgvector/pgvector:pg17
-        env:
-          POSTGRES_USER: eltanix
-          POSTGRES_PASSWORD: eltanix
-          POSTGRES_DB: eltanix_test
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U eltanix -d eltanix_test"
-          --health-interval 5s
-          --health-timeout 3s
-          --health-retries 20
-    env:
-      DATABASE_URL: postgresql+asyncpg://eltanix:eltanix@localhost:5432/eltanix_test
-      DATABASE_URL_TEST: postgresql+asyncpg://eltanix:eltanix@localhost:5432/eltanix_test
-    steps:
-      - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v7
-        with:
-          version: "latest"
-          enable-cache: true
-          cache-dependency-glob: "apps/api/uv.lock"
-      - name: Instalar dependências
-        run: uv sync --dev
+      services:
+        postgres:
+          image: pgvector/pgvector:0.8.6-pg17
+          env:
+            POSTGRES_USER: eltanix
+            POSTGRES_PASSWORD: eltanix
+            POSTGRES_DB: eltanix_test
+          ports:
+            - 5432:5432
+          options: >-
+            --health-cmd "pg_isready -U eltanix -d eltanix_test"
+            --health-interval 5s
+            --health-timeout 3s
+            --health-retries 20
+      env:
+        DATABASE_URL: postgresql+asyncpg://eltanix:eltanix@localhost:5432/eltanix_test
+        DATABASE_URL_TEST: postgresql+asyncpg://eltanix:eltanix@localhost:5432/eltanix_test
+      steps:
+        - uses: actions/checkout@v4
+        - uses: astral-sh/setup-uv@v5
+          with:
+            version: "latest"
+            enable-cache: true
+            cache-dependency-glob: "apps/api/uv.lock"
+        - name: Instalar dependências
+          run: uv sync --dev
       - name: upgrade head
         run: uv run alembic upgrade head
       - name: alembic check (autogenerate diff deve estar vazio)
@@ -187,8 +183,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v7
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
         with:
           version: "latest"
           enable-cache: true
@@ -196,7 +192,7 @@ jobs:
       - name: pip-audit (Python)
         working-directory: apps/api
         run: uv run --with pip-audit pip-audit
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@v4
         with:
           node-version: "22"
           cache: "npm"

@@ -145,6 +145,11 @@ profiles:
       - foundry/gpt-4o-mini
       - ollama/qwen2.5-coder:1.5b
 
+  # A ordem aqui declara a preferência, não a compatibilidade: um modelo de
+  # embedding só entra no pool se `embedding_dim` (providers.yaml) bater com
+  # EMBEDDING_DIM. Com o padrão 768, o bge-large (1024) é desabilitado na carga
+  # e este perfil resolve para o Ollama. Trocar de modelo aqui exige migrar as
+  # colunas `Vector(...)` e reindexar — o espaço vetorial não é comparável.
   embedding:
     strategy: priority
     models:

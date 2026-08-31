@@ -54,6 +54,7 @@ class NoteService:
             overlap_tokens=self.settings.documents_chunk_overlap_tokens,
         )
         vectors: list[list[float] | None] = [None] * len(chunks)
+        embedding_model: str | None = None
         if chunks:
             try:
                 result = await self.engine.embed(
@@ -67,9 +68,16 @@ class NoteService:
                     for idx, item in enumerate(data)
                 }
                 vectors = [by_index.get(i) for i in range(len(chunks))]
+                embedding_model = result.provenance_tag
             except Exception as exc:
                 log.warning("notes.embed.failed", error=str(exc)[:200])
-        await store.replace_chunks(session, note_id, chunks=chunks, embeddings=vectors)
+        await store.replace_chunks(
+            session,
+            note_id,
+            chunks=chunks,
+            embeddings=vectors,
+            embedding_model=embedding_model,
+        )
 
     async def create(
         self, *, title: str, content: str, tags: list[str], project_slug: str | None = None
@@ -151,28 +159,35 @@ class NoteService:
     ) -> list[NoteSearchHit]:
         inicio = time.perf_counter()
         query_embedding: list[float] | None = None
+        embedding_model: str | None = None
         try:
             result = await self.engine.embed(
                 requested_model=self.settings.embedding_profile,
                 inputs=[query],
                 source="notes_search",
+                purpose="query",
             )
             data = result.payload.get("data") or []
             if data:
                 query_embedding = data[0].get("embedding")
+                embedding_model = result.provenance_tag
         except Exception as exc:
             log.warning("notes.search.embed_failed", error=str(exc)[:200])
 
         status = "ok"
+        hits: list[NoteSearchHit] = []
         try:
             async with session_scope() as session:
-                return await store.hybrid_search(
+                hits = await store.hybrid_search(
                     session,
                     query_text=query,
                     query_embedding=query_embedding,
                     limit=limit,
                     project_slug=project_slug,
+                    embedding_model=embedding_model,
+                    ef_search=self.settings.hnsw_ef_search,
                 )
+                return hits
         except Exception:
             status = "error"
             raise
@@ -183,4 +198,14 @@ class NoteService:
                     name="notes",
                     latency_ms=(time.perf_counter() - inicio) * 1000.0,
                     status=status,
+                    attributes={
+                        "query_chars": len(query),
+                        "hits": len(hits),
+                        "vector_hits": sum(1 for h in hits if h.vector_rank is not None),
+                        "text_hits": sum(1 for h in hits if h.text_rank is not None),
+                        "top_score": round(hits[0].score, 6) if hits else 0.0,
+                        "embedding_model": embedding_model or "",
+                        "degraded_to_fulltext": query_embedding is None,
+                        "project_slug": project_slug or "",
+                    },
                 )

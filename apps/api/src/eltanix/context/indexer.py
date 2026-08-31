@@ -54,6 +54,9 @@ class IndexReport:
     chunks: int = 0
     embedded: int = 0
     embedding_failures: int = 0
+    # Modelo que atendeu o perfil `embedding` nesta passagem — o que ficou
+    # gravado em `CodeChunk.embedding_model`.
+    embedding_model: str | None = None
     duration_ms: int = 0
     errors: list[str] = field(default_factory=list)
 
@@ -74,13 +77,20 @@ class ContextIndexer:
         """
         return str(root.resolve()).replace("\\", "/")
 
-    async def _embed(self, chunks: list[Chunk]) -> tuple[list[list[float] | None], int]:
-        """Gera embeddings em lote. Falha degrada para chunk sem vetor."""
+    async def _embed(self, chunks: list[Chunk]) -> tuple[list[list[float] | None], int, str | None]:
+        """Gera embeddings em lote. Falha degrada para chunk sem vetor.
+
+        Devolve também o id do modelo que atendeu, para gravar a proveniência
+        do vetor junto do chunk (`CodeChunk.embedding_model`). O perfil é
+        `embedding`, mas quem responde pode ser qualquer candidato dele — é o
+        modelo resolvido que importa, não o nome do perfil.
+        """
         if not chunks:
-            return [], 0
+            return [], 0, None
 
         vectors: list[list[float] | None] = []
         failures = 0
+        model_id: str | None = None
         batch_size = max(1, self.settings.embedding_batch_size)
 
         for start in range(0, len(chunks), batch_size):
@@ -110,7 +120,22 @@ class ContextIndexer:
                     failures += 1
                 vectors.append(vector)
 
-        return vectors, failures
+            if model_id is None:
+                model_id = result.provenance_tag
+            elif model_id != result.provenance_tag:
+                # Fallback no meio do arquivo: os lotes seguintes vieram de
+                # outro modelo, e misturar espaços vetoriais dentro do mesmo
+                # arquivo é justamente o que a proveniência existe pra evitar.
+                # Descarta os vetores; o arquivo fica marcado como pendente e
+                # volta inteiro no próximo passe.
+                log.warning(
+                    "indexer.embed.model_changed_midfile",
+                    first=model_id,
+                    then=result.provenance_tag,
+                )
+                return [None] * len(chunks), len(chunks), None
+
+        return vectors, failures, model_id
 
     async def _insert_edges(
         self,
@@ -185,9 +210,11 @@ class ContextIndexer:
                 continue
             result, content = outcome
 
-            vectors, failures = await self._embed(result.chunks)
+            vectors, failures, embedding_model = await self._embed(result.chunks)
             report.embedding_failures += failures
             report.embedded += sum(1 for v in vectors if v is not None)
+            if embedding_model is not None:
+                report.embedding_model = embedding_model
 
             # Um arquivo cujo embedding falhou não pode ser marcado como em dia.
             # Gravar o hash real faria a próxima passagem pulá-lo — e os chunks
@@ -199,7 +226,9 @@ class ContextIndexer:
             # com letras fora de a-f, então o marcador jamais casa com um hash
             # de verdade — que é a única propriedade de que este valor precisa.
             hash_registrado = (
-                scanned.content_hash if failures == 0 else f"pendente:{scanned.content_hash}"[:64]
+                scanned.content_hash
+                if failures == 0
+                else f"{store.PENDING_HASH_PREFIX}{scanned.content_hash}"[:64]
             )
 
             try:
@@ -215,6 +244,7 @@ class ContextIndexer:
                         chunks=result.chunks,
                         embeddings=vectors,
                         fallback_chunking=result.fallback_used,
+                        embedding_model=embedding_model,
                     )
                     await self._insert_edges(
                         session,
@@ -269,23 +299,27 @@ class ContextIndexer:
         inicio = time.perf_counter()
 
         query_embedding: list[float] | None = None
+        embedding_model: str | None = None
         try:
             result = await self.engine.embed(
                 requested_model=self.settings.embedding_profile,
                 inputs=[query],
                 source="search",
+                purpose="query",
             )
             data = result.payload.get("data") or []
             if data:
                 query_embedding = data[0].get("embedding")
+                embedding_model = result.provenance_tag
         except Exception as exc:
             log.warning("indexer.query_embed.failed", error=str(exc)[:200])
 
         status = "ok"
+        hits: list[store.SearchHit] = []
         try:
             async with session_scope() as session:
                 if git_aware:
-                    return await _git_aware.git_aware_search(
+                    hits = await _git_aware.git_aware_search(
                         session,
                         root=root,
                         workspace=workspace,
@@ -293,15 +327,21 @@ class ContextIndexer:
                         query_embedding=query_embedding,
                         limit=limit,
                         path_prefix=path_prefix,
+                        embedding_model=embedding_model,
+                        ef_search=self.settings.hnsw_ef_search,
                     )
-                return await store.hybrid_search(
-                    session,
-                    workspace=workspace,
-                    query_text=query,
-                    query_embedding=query_embedding,
-                    limit=limit,
-                    path_prefix=path_prefix,
-                )
+                else:
+                    hits = await store.hybrid_search(
+                        session,
+                        workspace=workspace,
+                        query_text=query,
+                        query_embedding=query_embedding,
+                        limit=limit,
+                        path_prefix=path_prefix,
+                        embedding_model=embedding_model,
+                        ef_search=self.settings.hnsw_ef_search,
+                    )
+                return hits
         except Exception:
             status = "error"
             raise
@@ -312,8 +352,81 @@ class ContextIndexer:
                     name="context",
                     latency_ms=(time.perf_counter() - inicio) * 1000.0,
                     status=status,
+                    # Sem isto, um span de RAG só diz "demorou X e não deu
+                    # erro" — o que não distingue busca boa de busca que
+                    # degradou para full-text puro e devolveu qualquer coisa.
+                    attributes={
+                        "query_chars": len(query),
+                        "hits": len(hits),
+                        "vector_hits": sum(1 for h in hits if h.vector_rank is not None),
+                        "text_hits": sum(1 for h in hits if h.text_rank is not None),
+                        "top_score": round(hits[0].score, 6) if hits else 0.0,
+                        "embedding_model": embedding_model or "",
+                        "degraded_to_fulltext": query_embedding is None,
+                        "git_aware": git_aware,
+                    },
                 )
 
     async def stats(self, root: Path) -> dict[str, object]:
         async with session_scope() as session:
             return await store.index_stats(session, self.workspace_key(root))
+
+    async def backfill_pending_embeddings(self) -> dict[str, int]:
+        """Reindexa os workspaces com arquivo `pendente:` de embedding.
+
+        Um arquivo cujo embedding falhou fica encontrável só por full-text até
+        alguém reindexar. Antes disso só acontecia quando um humano pedia
+        `POST /api/context/index` de novo — na prática, quase nunca, porque o
+        sintoma (busca pior) não aponta para a causa.
+
+        Reindexar o workspace inteiro é barato aqui: os arquivos íntegros são
+        pulados pelo hash, e só os marcados voltam a ser lidos.
+        """
+        async with session_scope() as session:
+            pendentes = await store.workspaces_pending_embedding(session)
+
+        resumo = {"workspaces": 0, "files_recovered": 0, "still_pending": 0}
+        for workspace, arquivos in pendentes:
+            root = Path(workspace)
+            if not await asyncio.to_thread(root.is_dir):
+                # Workspace removido do disco: nada a recuperar, e reindexar
+                # apagaria o índice de um projeto que pode voltar.
+                log.info("indexer.backfill.workspace_gone", workspace=workspace, files=arquivos)
+                continue
+            try:
+                report = await self.index_workspace(root)
+            except Exception as exc:
+                log.warning("indexer.backfill.failed", workspace=workspace, error=str(exc)[:200])
+                continue
+
+            resumo["workspaces"] += 1
+            resumo["files_recovered"] += max(0, arquivos - report.embedding_failures)
+            resumo["still_pending"] += report.embedding_failures
+            log.info(
+                "indexer.backfill.workspace_done",
+                workspace=workspace,
+                pending_before=arquivos,
+                embedded=report.embedded,
+                still_failing=report.embedding_failures,
+            )
+        return resumo
+
+    async def run_embedding_backfill_reaper(self, interval_seconds: int) -> None:
+        """Loop de background do backfill. `interval_seconds <= 0` desliga.
+
+        Nunca propaga exceção: um erro aqui não pode derrubar o processo da
+        API, e o próximo ciclo tenta de novo.
+        """
+        if interval_seconds <= 0:
+            log.info("indexer.backfill.disabled")
+            return
+        while True:
+            await asyncio.sleep(interval_seconds)
+            try:
+                resumo = await self.backfill_pending_embeddings()
+                if resumo["workspaces"]:
+                    log.info("indexer.backfill.cycle", **resumo)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                log.warning("indexer.backfill.cycle_failed", error=str(exc)[:200])

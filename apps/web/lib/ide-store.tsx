@@ -33,14 +33,17 @@ import {
 } from "react";
 import { get, post } from "@/lib/client";
 import { clearBuffer } from "@/lib/editor-buffer-cache";
-import { useProject } from "@/components/providers/ProjectContext";
+import {
+  useProject,
+  type ProjectRecordView,
+} from "@/components/providers/ProjectContext";
 
-export interface Project {
-  name: string;
-  path: string;
-  is_git: boolean;
-  branch: string | null;
-}
+/** O shape que `GET /api/projects` devolve de verdade. Antes daqui saía uma
+ * interface própria (`{ name, path, is_git, branch }`) que a rota nunca
+ * respondeu: `branch`/`is_git`/`path` chegavam `undefined` em runtime (a
+ * StatusBar mostrava "main*" fixo por causa disso) e, pior, `name` era usado
+ * como identificador — mas quem a API aceita em `?project=` é o `slug`. */
+export type Project = ProjectRecordView;
 
 export interface FileEntry {
   path: string;
@@ -108,12 +111,17 @@ function firstLeafGroupId(node: PaneNode): string {
 }
 
 interface IdeState {
+  /** SLUG do projeto ativo — é isto que vai em `?project=` para a API.
+   * Nunca o `name` de exibição: a API resolve o projeto por slug
+   * (`workspace/projects.py::resolve`, ADR 0016) e devolve 400
+   * "Projeto não encontrado" para um nome com espaço/maiúscula. */
   project: string | null;
+  /** Nome de exibição do projeto ativo — só para rótulo de UI. */
+  projectName: string | null;
   projects: Project[];
   projectsError: string | null;
-  setProject: (name: string) => void;
+  setProject: (slug: string) => void;
   reloadProjects: () => Promise<void>;
-  createProject: (name: string, gitInit?: boolean) => Promise<Project>;
 
   /** Abas/ativa/dirty/preview do GRUPO ATIVO — ver nota no topo do arquivo. */
   tabs: string[];
@@ -246,10 +254,15 @@ export function IdeProvider({ children }: { children: ReactNode }) {
   // HeaderNav) via `ProjectContext` — o IDE não guarda mais sua própria
   // fonte de verdade, só reage a ela e propaga de volta quando o usuário
   // troca de projeto por aqui (picker, Ctrl+O, criar projeto).
-  const { currentProject: globalProject, setCurrentProject: setGlobalProject } = useProject();
+  const {
+    currentProject: globalProject,
+    setCurrentProject: setGlobalProject,
+    projects,
+    projectsLoaded,
+    projectsError,
+    reloadProjects,
+  } = useProject();
   const [project, setProjectState] = useState<string | null>(null);
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [projectsError, setProjectsError] = useState<string | null>(null);
   const [groups, setGroups] = useState<Record<string, EditorGroup>>(() => ({
     [DEFAULT_GROUP_ID]: newGroup(DEFAULT_GROUP_ID),
   }));
@@ -360,26 +373,10 @@ export function IdeProvider({ children }: { children: ReactNode }) {
     );
   }, [hydrated, project, groups, sidebarWidth, agentDockWidth, terminalHeight]);
 
-  const reloadProjects = useCallback(async () => {
-    try {
-      const data = await get<{ projects: Project[] }>("/api/projects");
-      setProjects(data.projects);
-      setProjectsError(null);
-      // Um projeto salvo que sumiu do disco deixaria o IDE preso num estado
-      // inválido; nesse caso caímos no primeiro disponível.
-      setProjectState((atual) => {
-        if (atual && data.projects.some((p) => p.name === atual)) return atual;
-        return data.projects[0]?.name ?? null;
-      });
-    } catch (err) {
-      setProjectsError(err instanceof Error ? err.message : String(err));
-    }
-  }, []);
-
   const setProject = useCallback(
-    (name: string) => {
-      setProjectState(name);
-      setGlobalProject(name);
+    (slug: string) => {
+      setProjectState(slug);
+      setGlobalProject(slug);
       // Trocar de projeto com abas/grupos de outro abertos mostraria arquivos
       // que não existem mais no contexto atual — volta para um painel só.
       setGroups({ [DEFAULT_GROUP_ID]: newGroup(DEFAULT_GROUP_ID) });
@@ -389,31 +386,46 @@ export function IdeProvider({ children }: { children: ReactNode }) {
     [setGlobalProject],
   );
 
-  // Projeto trocado por fora do IDE (Central de Projetos, HeaderNav) —
-  // reflete aqui, com o mesmo reset de abas/grupos de `setProject`.
+  // Projeto trocado por fora do IDE (Central de Projetos, HeaderNav, link
+  // `?project=`) — reflete aqui, com o mesmo reset de abas/grupos.
   useEffect(() => {
     if (globalProject && globalProject !== project) setProject(globalProject);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [globalProject]);
 
-  const createProject = useCallback(
-    async (name: string, gitInit: boolean = false) => {
-      const p = await post<Project & { created: boolean }>("/api/projects", {
-        name,
-        init_git: gitInit,
-      });
-      await reloadProjects();
-      setProject(p.name);
-      return p;
-    },
-    [reloadProjects, setProject],
-  );
+  // Reconcilia o valor restaurado do `localStorage` com a lista real.
+  //
+  // Até esta correção o IDE guardava o `name` de exibição ("Meu Dash") onde a
+  // API espera o `slug` ("meu-dash"), então todo request saía como
+  // `?project=Meu Dash` e voltava 400 "Projeto não encontrado" (Explorer,
+  // busca, git, LSP, agente — todos de uma vez). O estado quebrado ficou
+  // persistido no navegador de quem já usou a IDE, então aqui: slug válido
+  // passa direto; valor que só bate com um `name` é migrado para o slug
+  // correspondente; qualquer outro resto (projeto apagado, membership
+  // perdido) é descartado. Sem projeto no fim, cai no primeiro da lista —
+  // sem projeto o IDE não tem árvore de arquivos, busca nem agente.
+  //
+  // Espera `projectsLoaded` de propósito: antes da primeira resposta a lista
+  // é só `[]` inicial e não dá para distinguir "não carregou" de "não há".
+  // E sai em `projectsError` para não descartar a seleção só porque a API
+  // está fora do ar.
+  useEffect(() => {
+    if (!hydrated || !projectsLoaded || projectsError) return;
+    if (project && projects.some((p) => p.slug === project)) return;
+    const porNome = project ? projects.find((p) => p.name === project) : undefined;
+    // Ao cair no primeiro da lista, pula os projetos cuja pasta sumiu do
+    // disco (`local_path_exists === false`): abrir a IDE já num deles só
+    // renderiza erro em todo painel.
+    const primeiroUtil =
+      projects.find((p) => p.local_path_exists !== false) ?? projects[0];
+    const alvo = porNome?.slug ?? primeiroUtil?.slug ?? null;
+    if (alvo) setProject(alvo);
+    else if (project) setProjectState(null);
+  }, [hydrated, projectsLoaded, projectsError, projects, project, setProject]);
 
   useEffect(() => {
-    // Um único bootstrap em vez de dois efeitos concorrentes: evita duas
-    // idas à rede disputando a mesma conexão logo no primeiro paint.
-    if (hydrated) void Promise.all([reloadProjects(), checkRouterHealth()]);
-  }, [hydrated, reloadProjects, checkRouterHealth]);
+    if (hydrated) void checkRouterHealth();
+  }, [hydrated, checkRouterHealth]);
 
   const reloadFiles = useCallback(async () => {
     if (!project) return;
@@ -650,14 +662,21 @@ export function IdeProvider({ children }: { children: ReactNode }) {
     if (project) clearBuffer(project, path);
   }, [project]);
 
+  // Rótulo de exibição: o `<select>` do IDE, a splash e o título da janela
+  // mostram o nome do projeto, mas o identificador que circula é o slug.
+  const projectName = useMemo(
+    () => projects.find((p) => p.slug === project)?.name ?? project,
+    [projects, project],
+  );
+
   const value = useMemo<IdeState>(
     () => ({
       project,
+      projectName,
       projects,
       projectsError,
       setProject,
       reloadProjects,
-      createProject,
       tabs: activeGroup.tabs,
       active: activeGroup.active,
       dirty: activeGroup.dirty,
@@ -717,7 +736,7 @@ export function IdeProvider({ children }: { children: ReactNode }) {
       setActiveSessionId,
     }),
     [
-      project, projects, projectsError, setProject, reloadProjects, createProject,
+      project, projectName, projects, projectsError, setProject, reloadProjects,
       activeGroup, openFile, previewFile, pinTab, reorderTabs,
       reveal, clearReveal, revealFolderPath, revealFolder, clearRevealFolder, closeTab, setActiveTab, markDirty,
       groups, activeGroupId, layout, setActiveGroup, paneSplitRatios, setPaneSplitRatio, splitGroup, moveTabToGroup, closeGroup,

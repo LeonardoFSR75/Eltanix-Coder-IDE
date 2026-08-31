@@ -1,0 +1,129 @@
+name: Qualidade de recuperação (RAG)
+
+# Por que não roda em todo PR:
+#
+# Medir recuperação de verdade exige Postgres+pgvector com o repositório
+# indexado e um modelo de embedding no ar. Puxar o `nomic-embed-text` (~275 MB)
+# e indexar o workspace leva minutos — caro demais por PR, e um gate lento é um
+# gate que as pessoas aprendem a ignorar.
+#
+# Rodar sem embedding seria pior: a busca degrada para full-text puro e o
+# número medido não é o número que a IDE entrega.
+#
+# Então: agendado (noturno) e sob demanda. Quem mexer no chunker, no RRF ou no
+# modelo de embedding dispara à mão antes de fechar o PR.
+on:
+  schedule:
+    - cron: "0 5 * * *"
+  workflow_dispatch:
+    inputs:
+      write_baseline:
+        description: "Promover o resultado a novo baseline (imprime o JSON para revisão)"
+        type: boolean
+        default: false
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  retrieval-gate:
+    name: Gate de recall@k / MRR / nDCG
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    services:
+      postgres:
+        # Mesma imagem do docker-compose: o índice HNSW e o `set_config` de
+        # `hnsw.ef_search` dependem do pgvector, não do Postgres puro.
+        image: pgvector/pgvector:0.8.6-pg17
+        env:
+          POSTGRES_USER: eltanix
+          POSTGRES_PASSWORD: eltanix
+          POSTGRES_DB: eltanix
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U eltanix"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+      ollama:
+        # Versão fixada pelo mesmo motivo do docker-compose: `latest` troca de
+        # binário sem aviso, e aqui isso moveria a métrica sem ninguém mexer
+        # em código.
+        image: ollama/ollama:0.33.2
+        ports:
+          - 11434:11434
+
+    env:
+      DATABASE_URL: postgresql+asyncpg://eltanix:eltanix@localhost:5432/eltanix
+      OLLAMA_BASE_URL: http://localhost:11434
+      # O perfil `embedding` cai no Ollama: o candidato Databricks é
+      # desabilitado na carga por dimensão incompatível (1024 ≠ 768), que é
+      # exatamente o comportamento que `validate_catalog` garante.
+      EMBEDDING_DIM: "768"
+      ELTANIX_CATALOG_STRICT: "1"
+
+    defaults:
+      run:
+        working-directory: apps/api
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: "latest"
+          enable-cache: true
+          cache-dependency-glob: "apps/api/uv.lock"
+
+      - name: Instalar dependências
+        run: uv sync --dev
+
+      - name: Baixar o modelo de embedding
+        run: |
+          for _ in $(seq 1 30); do
+            curl -sf "$OLLAMA_BASE_URL/api/version" && break
+            sleep 2
+          done
+          curl -sf "$OLLAMA_BASE_URL/api/pull" \
+            -d '{"model":"nomic-embed-text","stream":false}' \
+            --max-time 900
+
+      - name: Migrar o banco
+        run: uv run alembic upgrade head
+
+      - name: Indexar o repositório
+        env:
+          ELTANIX_EVAL_ROOT: ${{ github.workspace }}
+        run: uv run python -m eltanix.evals.index_workspace "$ELTANIX_EVAL_ROOT"
+
+      - name: Rodar a avaliação
+        env:
+          ELTANIX_EVAL_ROOT: ${{ github.workspace }}
+        run: uv run eltanix-eval-rag --json "$RUNNER_TEMP/eval.json"
+
+      - name: Comparar com o baseline
+        if: ${{ !inputs.write_baseline }}
+        run: uv run eltanix-eval-gate --report "$RUNNER_TEMP/eval.json"
+
+      - name: Gerar baseline novo (para revisão manual)
+        if: ${{ inputs.write_baseline }}
+        run: |
+          uv run eltanix-eval-gate --report "$RUNNER_TEMP/eval.json" \
+            --write --baseline "$RUNNER_TEMP/eval_baseline.json"
+          echo "::notice::Copie o conteúdo abaixo para config/eval_baseline.json num commit"
+          cat "$RUNNER_TEMP/eval_baseline.json"
+
+      - name: Publicar o relatório
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rag-eval-report
+          path: ${{ runner.temp }}/eval.json
+          retention-days: 30

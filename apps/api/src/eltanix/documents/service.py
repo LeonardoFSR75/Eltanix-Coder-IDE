@@ -260,14 +260,18 @@ class DocumentService:
         self.blob = blob
         self.trace_recorder = trace_recorder
 
-    async def _embed(self, chunks: list[TextChunk]) -> tuple[list[list[float] | None], int]:
+    async def _embed(
+        self, chunks: list[TextChunk]
+    ) -> tuple[list[list[float] | None], int, str | None]:
         """Espelha `ContextIndexer._embed`: falha degrada para chunk sem vetor,
-        em vez de perder o documento inteiro."""
+        em vez de perder o documento inteiro. Devolve também o modelo que
+        atendeu, para gravar a proveniência do vetor."""
         if not chunks:
-            return [], 0
+            return [], 0, None
 
         vectors: list[list[float] | None] = []
         failures = 0
+        model_id: str | None = None
         batch_size = max(1, self.settings.embedding_batch_size)
 
         for start in range(0, len(chunks), batch_size):
@@ -295,7 +299,19 @@ class DocumentService:
                     failures += 1
                 vectors.append(vector)
 
-        return vectors, failures
+            if model_id is None:
+                model_id = result.provenance_tag
+            elif model_id != result.provenance_tag:
+                # Mesma regra do `ContextIndexer._embed`: dois modelos no mesmo
+                # documento produziriam vetores incomparáveis entre si.
+                log.warning(
+                    "documents.embed.model_changed_middoc",
+                    first=model_id,
+                    then=result.provenance_tag,
+                )
+                return [None] * len(chunks), len(chunks), None
+
+        return vectors, failures, model_id
 
     async def ingest(self, document_id: uuid.UUID) -> None:
         """Roda como BackgroundTask: extrai texto, fatia, embeda, persiste.
@@ -385,7 +401,7 @@ class DocumentService:
         for position, chunk in enumerate(all_chunks):
             chunk.chunk_index = position
 
-        vectors, failures = await self._embed(all_chunks)
+        vectors, failures, embedding_model = await self._embed(all_chunks)
         if failures:
             log.warning(
                 "documents.ingest.embed_partial", document=str(document_id), failures=failures
@@ -398,6 +414,7 @@ class DocumentService:
                 page_count=len(pages),
                 chunks=all_chunks,
                 embeddings=vectors,
+                embedding_model=embedding_model,
             )
 
         log.info(
@@ -415,28 +432,35 @@ class DocumentService:
     ) -> list[DocumentSearchHit]:
         inicio = time.perf_counter()
         query_embedding: list[float] | None = None
+        embedding_model: str | None = None
         try:
             result = await self.engine.embed(
                 requested_model=self.settings.embedding_profile,
                 inputs=[query],
                 source="documents_search",
+                purpose="query",
             )
             data = result.payload.get("data") or []
             if data:
                 query_embedding = data[0].get("embedding")
+                embedding_model = result.provenance_tag
         except Exception as exc:
             log.warning("documents.search.embed_failed", error=str(exc)[:200])
 
         status = "ok"
+        hits: list[DocumentSearchHit] = []
         try:
             async with session_scope() as session:
-                return await store.hybrid_search(
+                hits = await store.hybrid_search(
                     session,
                     query_text=query,
                     query_embedding=query_embedding,
                     limit=limit,
                     project_slug=project_slug,
+                    embedding_model=embedding_model,
+                    ef_search=self.settings.hnsw_ef_search,
                 )
+                return hits
         except Exception:
             status = "error"
             raise
@@ -447,4 +471,14 @@ class DocumentService:
                     name="documents",
                     latency_ms=(time.perf_counter() - inicio) * 1000.0,
                     status=status,
+                    attributes={
+                        "query_chars": len(query),
+                        "hits": len(hits),
+                        "vector_hits": sum(1 for h in hits if h.vector_rank is not None),
+                        "text_hits": sum(1 for h in hits if h.text_rank is not None),
+                        "top_score": round(hits[0].score, 6) if hits else 0.0,
+                        "embedding_model": embedding_model or "",
+                        "degraded_to_fulltext": query_embedding is None,
+                        "project_slug": project_slug or "",
+                    },
                 )

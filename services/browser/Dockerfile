@@ -12,11 +12,11 @@ WORKDIR /srv
 # então cada pacote aqui é superfície a mais numa fronteira que já é a mais
 # permissiva de rede do sistema.
 RUN pip install --no-cache-dir \
-    "fastapi==0.118.0" \
-    "uvicorn==0.34.0" \
-    "playwright==1.48.0" \
-    "pydantic==2.11.0" \
-    "websockets>=13"
+    "fastapi==0.141.1" \
+    "uvicorn==0.52.4" \
+    "playwright==1.62.0" \
+    "pydantic==2.13.5" \
+    "websockets>=17.1"
 
 # Chromium + as bibliotecas de sistema que ele precisa (--with-deps) — sem
 # isto o navegador falha ao abrir por falta de libs gráficas do slim.

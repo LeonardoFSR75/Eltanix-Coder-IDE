@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from eltanix.agent.tools.base import RiskClass, ToolContext, ToolResult, tool
+from eltanix.retrieval.service import RetrievalRequest
 from eltanix.workspace.fs import FileTooLargeError, PathEscapeError
 
 # Truncar aqui e não no prompt: a saída da ferramenta é o que entra no histórico
@@ -353,10 +354,44 @@ async def search_code(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
             "e as dependências antes de `search_code`."
         )
 
+    limite = args.get("limit", 8)
+
+    if ctx.retrieval is not None and ctx.indexer.settings.retrieval_enabled:
+        resultado = await ctx.retrieval.retrieve(
+            RetrievalRequest(
+                query=args["query"],
+                root=Path(ctx.workspace_root),
+                project_slug=ctx.project_slug or None,
+                limit=limite,
+                session_id=ctx.session_id,
+            )
+        )
+        if not resultado.items:
+            return ToolResult(ok=True, content="Nenhum trecho encontrado.", data={"hits": []})
+        # O texto já sai do empacotador com citação por bloco e dentro do
+        # orçamento de tokens. Truncar de novo aqui cortaria o último trecho
+        # pelo meio — exatamente o que `retrieval/pack.py` existe para evitar.
+        return ToolResult(
+            ok=True,
+            content=resultado.packed.text,
+            data={
+                "hits": [
+                    {
+                        "path": item.path,
+                        "citation": item.citation,
+                        "score": item.score,
+                        "source": item.source,
+                    }
+                    for item in resultado.items
+                ],
+                "retrieval": resultado.stats,
+            },
+        )
+
     hits = await ctx.indexer.search(
         root=Path(ctx.workspace_root),
         query=args["query"],
-        limit=args.get("limit", 8),
+        limit=limite,
         git_aware=ctx.indexer.settings.context_git_aware_search,
     )
     if not hits:

@@ -105,6 +105,14 @@ class CompletionResult:
     cache_hit: bool = False
     fallback_from: list[str] = field(default_factory=list)
     attempts: int = 1
+    # Etiqueta a gravar em `embedding_model` (ADR 0017). Igual a `model_id`
+    # quando nenhum prefixo assimétrico foi aplicado; com prefixo, carrega o
+    # esquema, porque o espaço vetorial passa a ser outro.
+    provenance_tag: str = ""
+
+    def __post_init__(self) -> None:
+        if not self.provenance_tag:
+            self.provenance_tag = self.model_id
 
 
 class RouterEngine:
@@ -848,7 +856,14 @@ class RouterEngine:
         project_slug: str | None = None,
         actor: str | None = None,
         session_id: str | None = None,
+        purpose: str = "document",
     ) -> CompletionResult:
+        """`purpose="query"` embute uma consulta; `"document"`, um trecho a
+        indexar. A distinção existe porque nomic/BGE/E5 foram treinados com
+        objetivo assimétrico e esperam prefixos diferentes nos dois lados —
+        embutir a pergunta como se fosse documento é usar o modelo fora do
+        regime dele. Ver `ModelSpec.embedding_query_prefix`."""
+
         async def record(entry: TelemetryEntry) -> None:
             entry.actor = actor
             entry.session_id = session_id
@@ -872,11 +887,16 @@ class RouterEngine:
         tried: list[str] = []
         last_error: Exception | None = None
 
+        prefixos_ligados = self.settings.embedding_prefixes_enabled
+
         for candidate in decision.candidates[: self.catalog.resilience.max_attempts]:
             spec = candidate.spec
             started = time.perf_counter()
+            entradas = self._apply_embedding_prefix(
+                inputs, spec=spec, purpose=purpose, enabled=prefixos_ligados
+            )
             try:
-                response = await self.litellm_router.aembedding(model=spec.id, input=inputs)
+                response = await self.litellm_router.aembedding(model=spec.id, input=entradas)
             except Exception as exc:
                 last_error = exc
                 tried.append(spec.id)
@@ -921,6 +941,7 @@ class RouterEngine:
                 latency_ms=latency,
                 fallback_from=tried,
                 attempts=len(tried) + 1,
+                provenance_tag=spec.provenance_tag(prefixes_applied=prefixos_ligados),
             )
 
         assert last_error is not None
@@ -929,6 +950,27 @@ class RouterEngine:
             attempts=tried,
             last_error=last_error,
         )
+
+    @staticmethod
+    def _apply_embedding_prefix(
+        inputs: list[str], *, spec: ModelSpec, purpose: str, enabled: bool
+    ) -> list[str]:
+        """Prefixa cada entrada conforme o lado (consulta ou documento).
+
+        Desligado por padrão (`EMBEDDING_PREFIXES_ENABLED`): ligar muda o
+        espaço vetorial e exige reindexação. O filtro de proveniência do ADR
+        0017 torna a transição segura — os vetores antigos saem do ramo
+        vetorial em vez de serem comparados com os novos —, mas até reindexar a
+        busca cai para as pernas lexicais, e isso é decisão de quem opera.
+        """
+        if not enabled:
+            return inputs
+        prefixo = (
+            spec.embedding_query_prefix if purpose == "query" else spec.embedding_document_prefix
+        )
+        if not prefixo:
+            return inputs
+        return [f"{prefixo}{texto}" for texto in inputs]
 
     def _savings_value(self, model_id: str, tokens_saved: int) -> Decimal:
         """Valor em dólar dos tokens de input que deixaram de ser enviados."""
