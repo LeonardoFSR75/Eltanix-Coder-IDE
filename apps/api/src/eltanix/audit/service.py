@@ -11,6 +11,8 @@ from __future__ import annotations
 import uuid
 from typing import Any
 
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from eltanix.audit import store
 from eltanix.db.models import AuditLogEntry
 from eltanix.db.session import session_scope
@@ -30,21 +32,27 @@ class AuditService:
         project_slug: str | None = None,
         metadata: dict | None = None,
         event_metadata: dict | None = None,
+        session: AsyncSession | None = None,
     ) -> AuditLogEntry:
         meta = metadata if metadata is not None else event_metadata
-        async with session_scope() as session:
-            return await store.record(
-                session,
-                actor=actor,
-                module=module,
-                action=action,
-                details=details,
-                risk_level=risk_level,
-                status=status,
-                session_id=session_id,
-                project_slug=project_slug,
-                metadata=meta,
-            )
+        kwargs = dict(
+            actor=actor,
+            module=module,
+            action=action,
+            details=details,
+            risk_level=risk_level,
+            status=status,
+            session_id=session_id,
+            project_slug=project_slug,
+            metadata=meta,
+        )
+        # Sessão injetada (ex.: teste com a fixture `pg_session`): a transação e
+        # o rollback são do chamador — não abrimos `session_scope()`, que exige a
+        # engine global de `init_engine()`.
+        if session is not None:
+            return await store.record(session, **kwargs)
+        async with session_scope() as own_session:
+            return await store.record(own_session, **kwargs)
 
     async def record_security_event(
         self,
